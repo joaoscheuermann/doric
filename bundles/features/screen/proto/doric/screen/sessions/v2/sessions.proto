@@ -1,0 +1,81 @@
+// `screen.sessions/v2` (host, 2.1.0): the HTML5 screen of a Project's
+// sandbox, an xpra server on an internal display, served to the app through
+// the relay `screen.relay/v1` mounts on the host's own origin. The call is
+// Project-scoped: every Thread of a Project shares the Project's one sandbox,
+// and therefore its one screen. `Attach` never acquires a lease, so a Project
+// whose sandbox is not up answers `pending` or `unavailable` the way the
+// other lease reads do.
+//
+// 2.1.0: the schemas move from zod to `.proto` with the same fields; the
+// answer's `status` is the case of a oneof.
+syntax = "proto3";
+
+package doric.screen.sessions.v2;
+
+import "buf/validate/validate.proto";
+import "doric/platform/v1/options.proto";
+
+option (doric.platform.v1.contract) = {
+  id: "screen.sessions/v2"
+  cardinality: CARDINALITY_ONE
+  environment: ENVIRONMENT_HOST
+};
+
+// The Project screens.
+service SessionsService {
+  // Ensures the Project's screen session and answers where the window may
+  // reach it: it starts the session when the sandbox has none and reuses a
+  // live one. Idempotent; safe to call whenever the screen opens or a session
+  // is believed lost. A screen that cannot be served is an answer, not an
+  // error.
+  rpc Attach(AttachRequest) returns (AttachResponse) {
+    option (doric.platform.v1.method).expose = EXPOSE_DESKTOP;
+  }
+}
+
+// A served screen.
+message ScreenReady {
+  // The host-relative path the window loads, `/screen/<token>/`, resolved by
+  // the client against the origin it reaches the host on.
+  string path = 1 [(buf.validate.field).string.prefix = "/"];
+  // The X display the session runs on (`:100` and up), so a reader can point
+  // a GUI app at it.
+  string display = 2;
+}
+
+// The Project has no sandbox lease yet; retry.
+message ScreenPending {}
+
+// Why a Project's screen cannot be served right now.
+message ScreenUnavailable {
+  // "sandbox" (the sandbox is gone or closing), "missing-xpra" (its image
+  // has no `xpra`) or "start-failed" (the session could not be started).
+  string reason = 1 [(buf.validate.field).string = {
+    in: [
+      "sandbox",
+      "missing-xpra",
+      "start-failed"
+    ]
+  }];
+}
+
+// Asks a Project's screen.
+message AttachRequest {
+  // The Project.
+  string project_id = 1;
+}
+
+// Where the Project's screen is, or why it is not served.
+message AttachResponse {
+  // The outcome.
+  oneof status {
+    option (doric.platform.v1.oneof).discriminator = "status";
+    option (buf.validate.oneof).required = true;
+    // The screen is served.
+    ScreenReady ready = 1;
+    // The Project has no sandbox lease yet.
+    ScreenPending pending = 2;
+    // The screen cannot be served.
+    ScreenUnavailable unavailable = 3;
+  }
+}

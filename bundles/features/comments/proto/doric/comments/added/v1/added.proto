@@ -1,0 +1,39 @@
+// `comments.added/v1` (host, 1.1.0): the event a comment raises when it
+// reaches the Thread's log, owned by `comments`. The send writes it, never a
+// draft. The registry rebuilds `comments/v1.List` from these rows, so
+// `createdAt` is the comment's own time; a row written before it was carried
+// reads the log entry's time.
+//
+// 1.1.0: the schema moves from zod to `.proto`; keys the payload does not
+// declare are dropped.
+syntax = "proto3";
+
+package doric.comments.added.v1;
+
+import "buf/validate/validate.proto";
+import "doric/comments/v1/comments.proto";
+import "doric/platform/v1/options.proto";
+
+option (doric.platform.v1.contract) = {
+  id: "comments.added/v1"
+  cardinality: CARDINALITY_ONE
+  environment: ENVIRONMENT_HOST
+};
+
+// A comment was written.
+message CommentsAdded {
+  option (doric.platform.v1.event).type = "comments.added/v1";
+  // The comment's id.
+  string comment_id = 1;
+  // What it is about.
+  doric.comments.v1.CommentTarget target = 2 [(buf.validate.field).required = true];
+  // Its text.
+  string text = 3;
+  // Who wrote it; absent when unknown.
+  optional string author = 4;
+  // When it was written (ISO-8601); absent on rows written before it was
+  // carried.
+  optional string created_at = 5;
+  // The root comment this one answers; absent on a root comment.
+  optional string in_reply_to = 6;
+}

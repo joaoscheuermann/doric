@@ -1,0 +1,35 @@
+version: v2
+modules:
+  - path: packages/bundle/proto
+  - path: bundles/features/files/proto
+  - path: bundles/foundation/host-config/proto
+  - path: bundles/runtime/runtime/proto
+  - path: bundles/runtime/default/proto
+  - path: bundles/features/terminal/proto
+  - path: bundles/features/git/proto
+  - path: bundles/features/usage/proto
+  - path: bundles/features/resources/proto
+  - path: bundles/foundation/core/proto
+  - path: bundles/features/comments/proto
+  - path: bundles/desktop/history/proto
+  - path: bundles/desktop/layout/proto
+  - path: bundles/features/claude-login/proto
+  - path: bundles/features/screen-relay/proto
+  - path: bundles/features/openui/proto
+  - path: bundles/features/screen/proto
+  - path: bundles/desktop/workspace/proto
+  - path: bundles/features/mcp/proto
+  - path: bundles/features/papercraft/proto
+  - path: bundles/desktop/settings/proto
+  - path: bundles/desktop/chat/proto
+  - path: bundles/foundation/transport/proto
+  - path: benchmarks/proto-codec/proto
+deps:
+  - buf.build/bufbuild/protovalidate
+  - buf.build/googleapis/googleapis
+lint:
+  use:
+    - STANDARD
+breaking:
+  use:
+    - FILE

@@ -1,0 +1,72 @@
+{
+  "name": "doric-spike-stub",
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "projectType": "application",
+  "sourceRoot": "scripts/sea-spike/stub-rs/src",
+  "tags": ["type:rust"],
+  "targets": {
+    "build": {
+      "executor": "@monodon/rust:check",
+      "dependsOn": ["@org/source:proto-export"],
+      "outputs": ["{options.target-dir}"],
+      "options": {
+        "target-dir": "dist/target/doric-spike-stub"
+      }
+    },
+    "compile": {
+      "executor": "@monodon/rust:build",
+      "dependsOn": ["@org/source:proto-export"],
+      "outputs": ["{options.target-dir}"],
+      "options": {
+        "target-dir": "dist/target/doric-spike-stub"
+      },
+      "configurations": {
+        "production": {
+          "release": true
+        }
+      }
+    },
+    "test": {
+      "cache": true,
+      "executor": "@monodon/rust:test",
+      "dependsOn": ["@org/source:proto-export"],
+      "outputs": ["{options.target-dir}"],
+      "options": {
+        "target-dir": "dist/target/doric-spike-stub",
+        "locked": true
+      },
+      "configurations": {
+        "production": {
+          "release": true
+        }
+      }
+    },
+    "lint": {
+      "cache": true,
+      "executor": "@monodon/rust:lint",
+      "dependsOn": ["@org/source:proto-export"],
+      "outputs": ["{options.target-dir}"],
+      "options": {
+        "target-dir": "dist/target/doric-spike-stub",
+        "all-targets": true,
+        "locked": true,
+        "args": ["-D", "warnings"]
+      }
+    },
+    "format-check": {
+      "cache": true,
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "cargo fmt --check -p doric-spike-stub",
+        "cwd": "{workspaceRoot}"
+      }
+    },
+    "clean": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "cargo clean",
+        "cwd": "{projectRoot}"
+      }
+    }
+  }
+}

@@ -1,0 +1,73 @@
+// `workspace.dashboard/v1` (client, 1.1.0): the dashboard's shown page. Two
+// regions extend the dashboard: `workspace.dashboard.nav` items are groups
+// drawn in the dashboard sidebar after the Projects group, and
+// `workspace.dashboard.page` items are pages the main area shows instead of
+// the Project list. At most one page shows at a time; with none, the Project
+// list shows. Only client parts of the same window call it.
+//
+// 1.1.0: every method is asynchronous; `subscribe` becomes the stream
+// `Watch`, whose first item is the present page.
+syntax = "proto3";
+
+package doric.workspace.dashboard.v1;
+
+import "buf/validate/validate.proto";
+import "doric/platform/v1/options.proto";
+
+option (doric.platform.v1.contract) = {
+  id: "workspace.dashboard/v1"
+  cardinality: CARDINALITY_ONE
+  environment: ENVIRONMENT_CLIENT
+};
+
+// The dashboard's shown page.
+service DashboardService {
+  // The shown page; the first item of `Watch` holds the same value.
+  rpc Active(ActiveRequest) returns (ActiveResponse);
+  // Shows the page with this id. An id no item has is stored but draws the
+  // Project list. Showing the shown page notifies no one.
+  rpc Show(ShowRequest) returns (ShowResponse);
+  // Back to the Project list: no page is shown afterwards.
+  rpc Close(CloseRequest) returns (CloseResponse);
+  // Streams the shown page: the present value first, then one item after
+  // every change of it.
+  rpc Watch(WatchRequest) returns (stream WatchResponse) {
+    option (doric.platform.v1.method).resumable = true;
+  }
+}
+
+// Asks the shown page.
+message ActiveRequest {}
+
+// The shown page.
+message ActiveResponse {
+  // The shown `workspace.dashboard.page` item's id; absent while the
+  // Project list shows.
+  optional string page_id = 1;
+}
+
+// Shows a page.
+message ShowRequest {
+  // The `workspace.dashboard.page` item's id; an empty id is refused
+  // (`INVALID_ARGUMENT`, reason `invalid_input`).
+  string page_id = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+// The page is shown.
+message ShowResponse {}
+
+// Goes back to the Project list.
+message CloseRequest {}
+
+// The Project list shows.
+message CloseResponse {}
+
+// Asks the shown page as it changes.
+message WatchRequest {}
+
+// The shown page after a change, or the present one for the first item.
+message WatchResponse {
+  // The shown `workspace.dashboard.page` item's id; absent while the
+  // Project list shows.
+  optional string page_id = 1;
+}

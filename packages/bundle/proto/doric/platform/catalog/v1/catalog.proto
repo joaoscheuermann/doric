@@ -1,0 +1,294 @@
+// `doric.catalog/v1` (platform 2.0.0): the resolved catalog of the host, as
+// the platform publishes it with each generation, and the recovery actions
+// that change its composition. The host process serves it on the router
+// listener; a stream it serves is not lost with a bundle.
+//
+// 2.0.0: `get` is asynchronous; `watch` is the server stream `Watch`, whose
+// first item is the present snapshot; `artifact` is the byte stream
+// `ReadArtifact`.
+syntax = "proto3";
+
+package doric.platform.catalog.v1;
+
+import "buf/validate/validate.proto";
+import "doric/platform/v1/options.proto";
+import "google/protobuf/struct.proto";
+
+option (doric.platform.v1.contract) = {
+  id: "doric.catalog/v1"
+  cardinality: CARDINALITY_ONE
+};
+
+// The host's catalog.
+service CatalogService {
+  // The present snapshot of the host environment; the same value the first
+  // item of `Watch` holds.
+  rpc Get(GetRequest) returns (GetResponse) {
+    option (doric.platform.v1.method).expose = EXPOSE_DESKTOP;
+  }
+  // What the desktop needs of the present host generation: its bundles,
+  // their files and the host snapshot.
+  rpc Distribution(DistributionRequest) returns (DistributionResponse) {
+    option (doric.platform.v1.method).expose = EXPOSE_DESKTOP;
+  }
+  // The bytes of one file a retained generation lists, by its SHA-256; a hash
+  // no retained generation lists is `NOT_FOUND`.
+  rpc ReadArtifact(ReadArtifactRequest) returns (stream ReadArtifactResponse) {
+    option (doric.platform.v1.method).expose = EXPOSE_DESKTOP;
+  }
+  // The present snapshot first, then one item per published generation; the
+  // caller ends it by cancelling.
+  rpc Watch(WatchRequest) returns (stream WatchResponse) {
+    option (doric.platform.v1.method).expose = EXPOSE_DESKTOP;
+  }
+  // Recovery: leaves a bundle out of `enabled` through the host's composition
+  // overrides and publishes a new generation.
+  rpc Disable(DisableRequest) returns (DisableResponse) {
+    option (doric.platform.v1.method).expose = EXPOSE_DESKTOP;
+  }
+  // Recovery: clears the composition overrides, returning to the composition
+  // as written, and publishes a new generation.
+  rpc ResetComposition(ResetCompositionRequest) returns (ResetCompositionResponse) {
+    option (doric.platform.v1.method).expose = EXPOSE_DESKTOP;
+  }
+}
+
+// Why a bundle is quarantined.
+message QuarantineReason {
+  // The quarantine code (for example "invalid_manifest" or
+  // "dependency_quarantined"); the catalog owns the set.
+  string code = 1 [(buf.validate.field).string.min_len = 1];
+  // What is wrong, for a person.
+  string message = 2;
+  // The contract the reason is about, when it is about one.
+  optional string contract = 3;
+}
+
+// The composition the catalog resolved.
+message CatalogComposition {
+  // The id of the composition's core bundle.
+  string core = 1;
+  // The ids of the enabled bundles.
+  repeated string enabled = 2;
+  // The chosen provider of each contract, by contract id.
+  map<string, string> providers = 3;
+}
+
+// The host's storage identity, once the host resolved it.
+message StorageIdentity {
+  // The host's id, a UUID.
+  string host_id = 1 [(buf.validate.field).string.uuid = true];
+  // The storage generation, above 0.
+  uint32 storage_generation = 2 [(buf.validate.field).uint32.gt = 0];
+}
+
+// One bundle of the catalog.
+message CatalogBundle {
+  // The bundle's id.
+  string id = 1;
+  // The bundle's version.
+  string version = 2;
+  // What the bundle does.
+  optional string description = 3;
+  // "active", "quarantined", "disabled" or "inactive".
+  string state = 4 [(buf.validate.field).string = {
+    in: [
+      "active",
+      "quarantined",
+      "disabled",
+      "inactive"
+    ]
+  }];
+  // "foundation", "core" or "others"; absent for a bundle that was not
+  // scheduled.
+  optional string phase = 5 [(buf.validate.field).string = {
+    in: [
+      "foundation",
+      "core",
+      "others"
+    ]
+  }];
+  // The validated manifest, as JSON; absent when it did not validate.
+  optional google.protobuf.Struct manifest = 6;
+  // Why the bundle is quarantined; empty unless it is.
+  repeated QuarantineReason reasons = 7;
+}
+
+// One provider of a contract.
+message ContractProvider {
+  // The providing bundle's id.
+  string bundle_id = 1;
+  // The contract version the provider declares in `provides`.
+  string version = 2;
+  // The providing bundle's version.
+  string bundle_version = 3;
+}
+
+// One contract of the catalog.
+message CatalogContract {
+  // The contract id.
+  string id = 1;
+  // Where the contract is served: "host", "desktopMain" or "client";
+  // phase 5 drops "desktopMain" with that environment.
+  string environment = 2 [(buf.validate.field).string = {
+    in: [
+      "host",
+      "desktopMain",
+      "client"
+    ]
+  }];
+  // "one" or "many".
+  string cardinality = 3 [(buf.validate.field).string = {
+    in: [
+      "one",
+      "many"
+    ]
+  }];
+  // The contract's providers.
+  repeated ContractProvider providers = 4;
+}
+
+// The catalog of one environment at one generation.
+message CatalogSnapshot {
+  // The generation the snapshot belongs to.
+  uint32 generation = 1;
+  // The composition it resolved.
+  CatalogComposition composition = 2 [(buf.validate.field).required = true];
+  // Every bundle of the composition.
+  repeated CatalogBundle bundles = 3;
+  // The environment's activation order, by bundle id; hooks providers order
+  // handlers by it.
+  repeated string order = 4;
+  // Every contract of the environment.
+  repeated CatalogContract contracts = 5;
+  // The storage identity, once the host resolved it.
+  optional StorageIdentity storage = 6;
+}
+
+// One file of a bundle the host distributes to the desktop.
+message DistributionFile {
+  // The file's path relative to the bundle's dist directory, with `/`
+  // separators.
+  string path = 1 [(buf.validate.field).string.min_len = 1];
+  // The lowercase hex SHA-256 of the file's bytes.
+  string sha256 = 2 [(buf.validate.field).string.pattern = "^[0-9a-f]{64}$"];
+  // The file's size in bytes, a whole number.
+  double size = 3 [
+    (buf.validate.field).double.gte = 0,
+    (buf.validate.field).cel = {
+      id: "size.integer"
+      message: "size must be a whole number"
+      expression: "this == double(int(this))"
+    }
+  ];
+}
+
+// The built parts a distributed bundle ships, as paths of its files.
+message DistributionParts {
+  // The desktopMain part.
+  optional string desktop_main = 1;
+  // The client part.
+  optional string client = 2;
+  // The client part's styles.
+  optional string client_styles = 3;
+  // The contracts entry.
+  optional string contracts = 4;
+}
+
+// One bundle of a host generation, as the desktop receives it.
+message DistributionBundle {
+  // The bundle's id.
+  string id = 1;
+  // The bundle's version.
+  string version = 2;
+  // The bundle's state in the host environment, as `CatalogBundle.state`.
+  string state = 3 [(buf.validate.field).string = {
+    in: [
+      "active",
+      "quarantined",
+      "disabled",
+      "inactive"
+    ]
+  }];
+  // The host-side quarantine reasons.
+  repeated QuarantineReason reasons = 4;
+  // The validated manifest, as JSON.
+  optional google.protobuf.Struct manifest = 5;
+  // The bundle's contract descriptor, as JSON; the desktop validates it on
+  // resolution.
+  optional google.protobuf.Struct descriptor = 6;
+  // The files the desktop needs of the bundle.
+  repeated DistributionFile files = 7;
+  // The parts among those files.
+  DistributionParts parts = 8 [(buf.validate.field).required = true];
+}
+
+// Asks the present snapshot.
+message GetRequest {}
+
+// The present snapshot.
+message GetResponse {
+  // The snapshot.
+  CatalogSnapshot catalog_snapshot = 1 [(buf.validate.field).required = true];
+}
+
+// Asks the present host generation's distribution.
+message DistributionRequest {}
+
+// What the desktop needs of a host generation.
+message DistributionResponse {
+  // The host generation; restarts at 1 with every host process.
+  uint32 generation = 1;
+  // Random per host process: with `generation`, identifies a host generation.
+  string host_boot = 2 [(buf.validate.field).string.min_len = 1];
+  // The host platform version, informative.
+  string platform_version = 3;
+  // The composition the generation resolved.
+  CatalogComposition composition = 4 [(buf.validate.field).required = true];
+  // The storage identity, once the host resolved it.
+  optional StorageIdentity storage = 5;
+  // The host environment's snapshot, as `Get` answers it.
+  CatalogSnapshot host = 6 [(buf.validate.field).required = true];
+  // The generation's bundles.
+  repeated DistributionBundle bundles = 7;
+}
+
+// Asks one distributed file's bytes.
+message ReadArtifactRequest {
+  // The lowercase hex SHA-256 of the file.
+  string sha256 = 1 [(buf.validate.field).string.pattern = "^[0-9a-f]{64}$"];
+}
+
+// One item of a `ReadArtifact` read; the file's bytes are the concatenation
+// of the items' chunks, and an empty file is a stream without items.
+message ReadArtifactResponse {
+  // The file's next bytes, at most 1 MiB.
+  bytes chunk = 1 [(buf.validate.field).bytes = {
+    min_len: 1
+    max_len: 1048576
+  }];
+}
+
+// Opens the stream of snapshots.
+message WatchRequest {}
+
+// One snapshot: the present one first, then one per published generation.
+message WatchResponse {
+  // The snapshot.
+  CatalogSnapshot catalog_snapshot = 1 [(buf.validate.field).required = true];
+}
+
+// Disables a bundle.
+message DisableRequest {
+  // The bundle's id.
+  string bundle_id = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+// The bundle is disabled and a new generation is published.
+message DisableResponse {}
+
+// Resets the composition.
+message ResetCompositionRequest {}
+
+// The overrides are cleared and a new generation is published.
+message ResetCompositionResponse {}

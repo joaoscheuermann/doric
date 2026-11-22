@@ -1,0 +1,82 @@
+# Spec appendix: the owner's decisions and the search notes
+
+- Status: part of [Spec: one process per bundle over gRPC](../grpc-processes.md), version 6.8 (2026-11-22), accepted.
+- What this file holds: (1) the project owner's decisions 1–28 for this spec, (2) the decisions of Spec 1 that this spec cites, and (3) a summary of the two search notes that version 2 relied on, with what version 3 re-read in the code. The spec cites the decisions as "decision N" and Spec 1's as "Spec 1 decision N". The originals are notes outside the repository (`/workspace/.notes/grpc-spec2/findings.md`, `/workspace/.notes/bundle-isolation/findings.md`); this file copies their substance so the spec can be read from the repository alone. Where a note gave a decision a question label, this file names the topic instead; the spec's own questions are only those of its [Questions](../grpc-processes.md#questions) section.
+- Builds on: commit `4677b54c`. Paths are from the repository root; a line number names the line at that commit.
+
+## 1. The owner's decisions for this spec (2026-11-21)
+
+Decided earlier, as Spec 1 decision 29 (section 2): (a) bundles in other languages are a goal; (b) bundle processes run only on the host's machine or container; (c) contract types are defined by `.proto` and gRPC; (d) the host supervises every bundle process; (e) desktopMain is emptied.
+
+First round:
+
+1. ~~The transport is local IPC: gRPC over a Unix domain socket inside the host's container.~~ Reopened the same day: the owner prefers TCP, so that a very heavy bundle can later run on another server. This reopens decision 29(b). Superseded by decision 10.
+2. `.proto` is the only source of truth for contract types. No zod.
+3. Validation is protovalidate (`@bufbuild/protovalidate`, which requires `@bufbuild/protobuf`).
+4. TypeScript code generation is protobuf-es (`@bufbuild/protobuf`): it is the most used (about 45.3 million npm downloads in the last week of 2026-11, against about 2.5 million for ts-proto) and the only runtime protovalidate-es supports. Its performance was not measured: the spec includes an encode and decode benchmark.
+5. Every contract becomes data only: no live objects and no synchronous getters.
+6. Generation and drain are per bundle process.
+7. Health endpoints are mandatory: a bundle process that does not expose them is invalid.
+8. Packaging: one Node SEA executable per TypeScript bundle; every process is independent (no shared Node runner). (The Rust bundle ships a native executable instead, the spec's answer A30.)
+9. Database: at `4677b54c`, `postgres.database/v1` no longer exists; `postgres` provides only `storage.backend/v1` and `secrets.backend/v1`, and Prisma is internal (`bundles/foundation/postgres/src/host/postgres.ts`). The concept's OD14 is closed by Spec 1. (After version 3 of the spec the owner replaced both backends with an ordered key-value store on SQLite, provided by a Rust bundle, and removed PostgreSQL from the deployment: the spec's answers A21–A24 and A26–A27. The owner then made the storage layer a library of each bundle's SDK, over keys under each bundle's prefix: A31.)
+
+Second round:
+
+10. The transport is TCP from now on, with no external connections and no mTLS for now: bundles bind and dial `127.0.0.1` only and are authenticated by a per-instance token in metadata. The address is configuration, so remote bundles stay possible later.
+11. Launching and supervising a remote bundle is out of scope of Spec 2.
+12. Only the platform (supervisor, router, gateway, catalog, HTTP listener) stays in the host process. Every bundle becomes a process, `core`, `postgres`, `transport`, `host-config` and `screen-relay` included; their HTTP routes go through the gateway.
+13. Every call between bundles goes through the host's router.
+14. One channel, dialed by the bundle. Host-to-bundle calls (activation, a tool's execution, callbacks, health) travel over a bidirectional stream on that connection. Consequence: the framing of these reverse calls (method, payload, deadline, cancellation, errors) is a Doric protocol on top of gRPC and needs an SDK per language.
+
+Third round:
+
+15. Connect-ES (`@connectrpc/connect-node`) is the TypeScript RPC library.
+16. Health is a message on the control stream (the channel the bundle dials). A bundle is invalid when it does not complete the Hello or does not answer health in time.
+17. Migrate all at once: no coexistence of the envelope and gRPC.
+18. Emptying desktopMain is a phase of Spec 2.
+19. Accepted: one proto package per contract id, with `buf breaking`; the generation per bundle, with calls staying on their generation; the cost of the SEA size; stdout and stderr captured, plus `log/v1` over gRPC and `traceparent`; blob methods that stream, since gRPC's default message limit is 4 MB.
+20. ~~Under discussion: the desktop bridge, the per-instance credential and data-only in-window contracts.~~ Settled by decisions 21–24.
+
+Fourth round:
+
+21. The desktop bridge is Connect over HTTP/2 on the host's public listener. Electron main speaks Connect with the same `.proto`; Socket.IO leaves the bridge. The window keeps talking to Electron main through the Electron bridge. "No external connections" applies to the link between bundles and the router (`127.0.0.1`); the host keeps one public listener with today's authentication.
+22. The REST and Socket.IO API of `transport` is removed; only gRPC is offered. It is a breaking change of a public API with outside consumers (the concept's OD9): it needs a release note and a major. The spec must state which of gRPC, gRPC-Web and the Connect protocol the public listener accepts.
+23. The per-instance credential stays: a random token per instance, given by the supervisor at spawn in the environment, checked at the Hello, bound to the bundle id and the generation, revoked at stop. Its purpose is identity (the router's enforcement of `requires` and `provides`, and of stale generations), not confidentiality. Checked by the owner: the Docker sandbox uses the network mode `bridge` (`packages/docker-sandbox/src/lib/provider.ts:331`), so the agent's commands cannot reach the host's `127.0.0.1`.
+24. Data only applies to every contract, in-window client contracts included. Callbacks across processes (a tool's `execute`, hooks, commands, event subscriptions) become data registrations plus a `.proto` handler service the registering bundle implements (for example `doric.tools.v1.ToolHandler.Execute`), which the router invokes over the control stream. In the window, `TabMenuItem.icon` (a React element) becomes an icon name and `run` becomes a command id with arguments (`bundles/desktop/layout/src/contracts/index.ts:43`); `settings.config/v1.setDraft(update)` takes a data patch. The note proposed that chat projectors (`bundles/desktop/chat/src/contracts/index.ts:49`) be replaced by owners publishing ready blocks; the owner's answer A2 accepted code by reference instead, which the spec applies to projectors (D9).
+
+Fifth round:
+
+25. The owner explicitly approves the multi-process scope for Spec 2; the spec updates `AGENTS.md` HC-003 and HC-004 to the new process model.
+26. The document is a spec, written directly, at `docs/designs/grpc-processes.md` (no concept), on the branch `feat/grpc-processes` from `4677b54c`.
+27. Spec 2 delivers only the language-neutral protocol and the TypeScript SDK; no other language. (Narrowed by the owner after version 3 of the spec, its answer A28: Spec 2 also delivers a server-side Rust SDK for the storage engine, a protocol conformance suite for both SDKs, and a TypeScript SQLite reference backend.)
+28. The public listener accepts gRPC and the Connect protocol, not gRPC-Web.
+
+## 2. Spec 1 decisions cited by this spec
+
+- **6. Processes and transport (Spec 2).** Every bundle becomes its own process and the home-grown protocol is replaced by gRPC. Client parts stay web components in one shared window; each client part talks to its own bundle's process through a gateway.
+- **7. Two specs, isolation first.** Spec 1: boundary rules, core, layout shell, workspace navigation, the logical isolation of responsibilities, without depending on Spec 2. Spec 2: data-only contracts, process per bundle, gRPC. Spec 1 should not make Spec 2 harder and prefers contract shapes that are plain data.
+- **21. Spec 2 timing and the architecture documents (2026-11-17).** Spec 2 starts after Spec 1 is approved. Spec 1 rewrites the whole architecture documentation, knowing that its process and transport parts will be revised by Spec 2.
+- **26. `core.open-settings/v1` (2026-11-17).** The command keeps its id and takes a minor although one call changes meaning; accepted as a stated exception to the versioning table.
+- **27. Versions of Spec 1's changed contracts (2026-11-17).** Five contracts that keep their id and lose a member take a minor, as decision 26 did, as a stated deviation from the versioning table, with the removal named in the release notes.
+- **29. Bundle packaging (2026-11-17).** The owner's answers (a)–(e) are quoted at the top of section 1. On (e): no bundle code runs on the native side of Electron. Shared state moves to the host or to a platform service (`chat.composer/v1`, `screen.views/v1`); the disk cache and the OS integration become platform `doric.*` contracts that bundles use from the window (`history`'s snapshots and `papercraft`'s module cache on `doric.cache/v1`; `core`'s windows, menus, appearance, desktop settings and command bridge; the `notifications` decision; `papercraft`'s open-canvas and window snapshot). The coordinator's proposal of that day, which Spec 2 was to settle, is superseded by decisions 1–28 above.
+- **34. One branch, one merge (2026-11-18).** Every step is built on one branch, each step with its own commit, and the branch merges to `main` once, at the end.
+
+## 3. The search notes
+
+Version 2 marked eight claims "(search note)". They came from two notes written by a search agent on 2026-11-21 and were not re-read then. Version 3 re-read each in the code at `4677b54c`; the spec now cites the code and drops the mark.
+
+| Claim (spec section)                                                                                                                                                                      | Search note                    | Version 3                                                                                                                                                                                                                                                                         |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| The bridge's caller is the principal `doric`, reaching only exposed methods ([section 11](../grpc-processes.md#11-gateway-and-public-listener))                                           | `search-runtime.md`, section 3 | Verified: `app/backend/doric-host/src/lib/bridge/socket.ts:5-7`. "HR-10" is the bridge's allowlist rule of Spec 1's stage 9 (`docs/architecture/bundles/implementation-decisions.md:641,693`); the spec no longer names it.                                                       |
+| `screen-relay`'s relay: HTTP and transparent upgrades to xpra, the token as capability, an unknown token answered 404 ([section 11](../grpc-processes.md#11-gateway-and-public-listener)) | `search-runtime.md`, section 4 | Verified: `bundles/features/screen-relay/src/host/relay.ts:3-26,70,93,328-335,357-360`.                                                                                                                                                                                           |
+| The line counts of `app/desktop/doric/src/platform/generation/` ([section 13](../grpc-processes.md#13-desktop))                                                                           | `search-runtime.md`, section 3 | Verified with `wc -l`: 439, 217, 110, 83, 39 and 22 lines.                                                                                                                                                                                                                        |
+| The supervisor redacts captured lines "as the host's logger does today" ([section 15](../grpc-processes.md#15-observability))                                                             | `search-runtime.md`, tests     | Wrong. The host does not redact its own log; `core`'s `log/v1` redacts records (`bundles/foundation/core/src/shared/log.ts:15-30`), and a generation process's stdout and stderr are inherited unredacted (`packages/bundle/src/process/kernel.ts:197`). Section 15 is corrected. |
+| The tests of `transport` ([Test plan](../grpc-processes.md#test-plan))                                                                                                                    | `search-runtime.md`, tests     | Verified: `bundles/foundation/transport/tests/` holds `routes`, `host-routes`, `http-edges`, `rest-errors`, `sockets` and `resources-contract`.                                                                                                                                   |
+| `sandbox/v1.acquire` returns a live `SandboxLease` and takes an `AbortSignal` (inventory row 114)                                                                                         | `search-contracts.md`, runtime | Verified: `bundles/runtime/runtime/src/contracts/sandbox.ts:32-35`, `packages/sandpool/src/lib/types/sandpool.ts:33-36`.                                                                                                                                                          |
+| 114 methods of 84 contracts are not plain data, by category ([Problem](../grpc-processes.md#problem))                                                                                     | `search-contracts.md`, totals  | Replaced: the spec now counts from the inventory's "Today" column (115 rows), and [the inventory check](../grpc-processes.md#the-inventory-check) recomputes the list in the repository.                                                                                          |
+| The 74 methods the script typed as `any` were taken as data                                                                                                                               | `search-contracts.md`, gaps    | Replaced by the same check, which fails on a member whose type is `any` unless the check's allowlist names it with a reason.                                                                                                                                                      |
+
+What the notes said, in short:
+
+- **`search-runtime.md`** (process model, envelope, bridge, `transport`, build). The kernel keeps the foundation, `core`, embedded and `resident` bundles in the host process and forks one generation process over Node IPC (`packages/bundle/src/process/partition.ts:7-14`, `kernel.ts:192-208`); the generation manager starts, drains and respawns generations (`manager.ts`); the envelope's messages, callback handles and cancellation (`packages/bundle/src/runtime/envelope/`); the desktop bridge's two ends (`app/backend/doric-host/src/lib/bridge/socket.ts`, `app/desktop/doric/src/platform/bridge/host-bridge.ts`) and the absence of authentication on the host's listener (`app/backend/doric-host/src/index.ts:61-62`); desktopMain's generation process and the six desktopMain parts; `transport`'s routes and namespaces, `screen-relay` and `host-config`; the build and staging; the tests that pin current behavior.
+- **`search-contracts.md`** (contracts that are not plain data). A type-checker script run over every `ref<T>('<id>')` of the repository listed 84 contracts and 357 methods, of which 114 were not plain data, by contract, with the provider and the callers of each.

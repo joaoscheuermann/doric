@@ -1,0 +1,629 @@
+// `git.commands/v1` (host, 1.1.0): a Thread's Git summary and local
+// branches, the branch switch, Discard, and the Project's changes, diff and
+// one file's comparison. The `git` bundle provides it.
+//
+// The Thread reads and writes (`Status` to `Discard`) run on the live Thread
+// and answer its state: "ready" with the value, or why not: "missing" (no
+// record), "inactive" (no runtime, closing or terminal) or "pending" (no
+// lease). The Project reads (`Changes` to `FileDiff`) run on the current
+// lease of the Project of the call's scope and answer its lease state. None
+// acquires a lease, and every refusal is an answer, never an error.
+syntax = "proto3";
+
+package doric.git.commands.v1;
+
+import "buf/validate/validate.proto";
+import "doric/platform/v1/options.proto";
+
+option (doric.platform.v1.contract) = {
+  id: "git.commands/v1"
+  cardinality: CARDINALITY_ONE
+  environment: ENVIRONMENT_HOST
+};
+
+// The Git reads and writes of Threads and Projects.
+service CommandsService {
+  // A Thread's Git summary; reading it refreshes the Thread's repository
+  // hint.
+  rpc Status(StatusRequest) returns (StatusResponse) {
+    option (doric.platform.v1.method).expose = EXPOSE_DESKTOP;
+  }
+  // The local branches of a Thread's directory, under the Project lock.
+  rpc Branches(BranchesRequest) returns (BranchesResponse) {
+    option (doric.platform.v1.method).expose = EXPOSE_DESKTOP;
+  }
+  // Switches a Thread's repository to an existing local branch, under the
+  // Project lock. A stale `cwd`, a busy worktree and every Git refusal are
+  // "refused" with the sentence the window shows.
+  rpc SwitchBranch(SwitchBranchRequest) returns (SwitchBranchResponse) {
+    option (doric.platform.v1.method).expose = EXPOSE_DESKTOP;
+  }
+  // Discards changes of one repository the Thread's working directory
+  // reads, under the Project lock; not recoverable. A stale `cwd`, an
+  // unlisted repository, running work in or around it, a path with no
+  // change, a nested repository and a conflict are "refused", and nothing
+  // is written; a failure part-way answers the targets discarded before it.
+  rpc Discard(DiscardRequest) returns (DiscardResponse) {
+    option (doric.platform.v1.method).expose = EXPOSE_DESKTOP;
+  }
+  // The changed paths of the repositories a path reaches
+  // (`GET /projects/:id/changes`).
+  rpc Changes(ChangesRequest) returns (ChangesResponse) {
+    option (doric.platform.v1.method).expose = EXPOSE_DESKTOP;
+  }
+  // The tracked diff of the repositories a path reaches
+  // (`GET /projects/:id/diff`).
+  rpc Diff(DiffRequest) returns (DiffResponse) {
+    option (doric.platform.v1.method).expose = EXPOSE_DESKTOP;
+  }
+  // One changed file, HEAD against the working tree
+  // (`GET /projects/:id/files/diff`).
+  rpc FileDiff(FileDiffRequest) returns (FileDiffResponse) {
+    option (doric.platform.v1.method).expose = EXPOSE_DESKTOP;
+  }
+}
+
+// The counts of a working tree's uncommitted changes.
+message GitDirty {
+  // Staged paths, a whole number.
+  double staged = 1 [
+    (buf.validate.field).double.gte = 0,
+    (buf.validate.field).cel = {
+      id: "staged.integer"
+      message: "staged must be a whole number"
+      expression: "this == double(int(this))"
+    }
+  ];
+  // Modified, unstaged paths, a whole number.
+  double modified = 2 [
+    (buf.validate.field).double.gte = 0,
+    (buf.validate.field).cel = {
+      id: "modified.integer"
+      message: "modified must be a whole number"
+      expression: "this == double(int(this))"
+    }
+  ];
+  // Untracked paths, a whole number.
+  double untracked = 3 [
+    (buf.validate.field).double.gte = 0,
+    (buf.validate.field).cel = {
+      id: "untracked.integer"
+      message: "untracked must be a whole number"
+      expression: "this == double(int(this))"
+    }
+  ];
+}
+
+// The Git summary of one Thread's working directory: `repo` false and
+// nothing else outside a repository, `repo` true and the summary inside one.
+message ThreadGit {
+  option (buf.validate.message).cel = {
+    id: "thread_git.repo"
+    message: "a repository carries its summary, and no repository nothing but repo"
+    expression: "this.repo ? (has(this.root) && has(this.head) && has(this.detached) && has(this.unborn) && has(this.ahead) && has(this.behind) && has(this.dirty) && has(this.conflicted) && has(this.worktree) && has(this.shallow) && has(this.stash) && has(this.submodules)) : !(has(this.root) || has(this.head) || has(this.detached) || has(this.unborn) || has(this.upstream) || has(this.ahead) || has(this.behind) || has(this.dirty) || has(this.conflicted) || has(this.operation) || has(this.worktree) || has(this.shallow) || has(this.stash) || has(this.submodules))"
+  };
+  // Whether the directory is inside a Git repository.
+  bool repo = 1;
+  // The repository's root.
+  optional string root = 2;
+  // HEAD, as the summary names it.
+  optional string head = 3;
+  // Whether HEAD is detached.
+  optional bool detached = 4;
+  // Whether the branch has no commit yet.
+  optional bool unborn = 5;
+  // The upstream branch; absent when it has none.
+  optional string upstream = 6;
+  // Commits ahead of the upstream, a whole number.
+  optional double ahead = 7 [
+    (buf.validate.field).double.gte = 0,
+    (buf.validate.field).cel = {
+      id: "ahead.integer"
+      message: "ahead must be a whole number"
+      expression: "this == double(int(this))"
+    }
+  ];
+  // Commits behind the upstream, a whole number.
+  optional double behind = 8 [
+    (buf.validate.field).double.gte = 0,
+    (buf.validate.field).cel = {
+      id: "behind.integer"
+      message: "behind must be a whole number"
+      expression: "this == double(int(this))"
+    }
+  ];
+  // The uncommitted changes.
+  optional GitDirty dirty = 9;
+  // Conflicted paths, a whole number.
+  optional double conflicted = 10 [
+    (buf.validate.field).double.gte = 0,
+    (buf.validate.field).cel = {
+      id: "conflicted.integer"
+      message: "conflicted must be a whole number"
+      expression: "this == double(int(this))"
+    }
+  ];
+  // The one thing the repository is part-way through: "merge", "rebase",
+  // "cherry-pick", "revert" or "bisect"; absent when none.
+  optional string operation = 11 [(buf.validate.field).string = {
+    in: [
+      "merge",
+      "rebase",
+      "cherry-pick",
+      "revert",
+      "bisect"
+    ]
+  }];
+  // Whether the directory is a linked worktree.
+  optional bool worktree = 12;
+  // Whether the repository is shallow.
+  optional bool shallow = 13;
+  // Stash entries, a whole number.
+  optional double stash = 14 [
+    (buf.validate.field).double.gte = 0,
+    (buf.validate.field).cel = {
+      id: "stash.integer"
+      message: "stash must be a whole number"
+      expression: "this == double(int(this))"
+    }
+  ];
+  // Submodules, a whole number.
+  optional double submodules = 15 [
+    (buf.validate.field).double.gte = 0,
+    (buf.validate.field).cel = {
+      id: "submodules.integer"
+      message: "submodules must be a whole number"
+      expression: "this == double(int(this))"
+    }
+  ];
+}
+
+// One local branch of a Thread's directory.
+message Branch {
+  // The branch name.
+  string name = 1;
+  // Whether it is checked out.
+  bool current = 2;
+  // Its commit.
+  string commit = 3;
+  // The commit's subject.
+  string subject = 4;
+  // The worktree that holds it, as Git lists it.
+  string worktree = 5;
+}
+
+// A Thread directory's local branches, and why switching is blocked.
+message Branches {
+  // The local branches; empty when there are none.
+  repeated Branch branches = 1;
+  // The sentence that says why switching is blocked; absent when it is not.
+  optional string blocked = 2;
+}
+
+// The targets a Discard removed.
+message Discarded {
+  // The targets a read after it no longer lists.
+  repeated string discarded = 1;
+}
+
+// One changed file of a repository, as the changes read lists it; today's
+// `ProjectFileChange`.
+message ProjectFileChange {
+  // The repository-relative path.
+  string path = 1;
+  // The path before a rename; set for "renamed".
+  optional string original_path = 2;
+  // "added", "modified", "deleted", "renamed", "untracked" or "conflicted".
+  string status = 3 [(buf.validate.field).string = {
+    in: [
+      "added",
+      "modified",
+      "deleted",
+      "renamed",
+      "untracked",
+      "conflicted"
+    ]
+  }];
+  // Whether the index holds a change.
+  bool staged = 4;
+  // Whether the working tree holds a change the index does not.
+  bool unstaged = 5;
+  // The index letter of `git status --porcelain`.
+  string index_status = 6;
+  // The working-tree letter of `git status --porcelain`.
+  string worktree_status = 7;
+}
+
+// The changed files of one Git repository and its added and removed lines.
+message RepositoryChanges {
+  // The repository, sandbox-relative; "" for the root.
+  string path = 1;
+  // The changed files; empty when none.
+  repeated ProjectFileChange changes = 2;
+  // Lines added, a whole number.
+  double added = 3 [
+    (buf.validate.field).double.gte = 0,
+    (buf.validate.field).cel = {
+      id: "added.integer"
+      message: "added must be a whole number"
+      expression: "this == double(int(this))"
+    }
+  ];
+  // Lines removed, a whole number.
+  double removed = 4 [
+    (buf.validate.field).double.gte = 0,
+    (buf.validate.field).cel = {
+      id: "removed.integer"
+      message: "removed must be a whole number"
+      expression: "this == double(int(this))"
+    }
+  ];
+}
+
+// The changed paths of the repositories a path reaches.
+message ChangesRead {
+  option (buf.validate.message).cel = {
+    id: "changes_read.read"
+    message: "only a read carries a path and repositories"
+    expression: "this.status == 'read' || (!has(this.path) && size(this.repositories) == 0)"
+  };
+  // "read", or why not: "not_found" or "invalid_path".
+  string status = 1 [(buf.validate.field).string = {
+    in: [
+      "read",
+      "not_found",
+      "invalid_path"
+    ]
+  }];
+  // The path read, workspace-relative; absent for the workspace root.
+  optional string path = 2;
+  // One entry per repository the path reaches; empty unless read.
+  repeated RepositoryChanges repositories = 3;
+}
+
+// One changed path of a repository's tracked diff.
+message ChangeSetEntry {
+  // The repository-relative path.
+  string path = 1;
+  // "added", "modified", "deleted", "renamed" or "untracked".
+  string status = 2 [(buf.validate.field).string = {
+    in: [
+      "added",
+      "modified",
+      "deleted",
+      "renamed",
+      "untracked"
+    ]
+  }];
+}
+
+// One repository's tracked diff and the paths it changes.
+message ProjectChangeSet {
+  // The repository, sandbox-relative; "" for the root.
+  string path = 1;
+  // The unified diff.
+  string diff = 2;
+  // The paths the diff changes; empty when none.
+  repeated ChangeSetEntry changes = 3;
+}
+
+// The tracked diff of the repositories a path reaches.
+message DiffRead {
+  option (buf.validate.message).cel = {
+    id: "diff_read.read"
+    message: "only a read carries a path and repositories"
+    expression: "this.status == 'read' || (!has(this.path) && size(this.repositories) == 0)"
+  };
+  // "read", or why not: "not_found" or "invalid_path".
+  string status = 1 [(buf.validate.field).string = {
+    in: [
+      "read",
+      "not_found",
+      "invalid_path"
+    ]
+  }];
+  // The path read, workspace-relative; absent for the workspace root.
+  optional string path = 2;
+  // One entry per repository the path reaches; empty unless read.
+  repeated ProjectChangeSet repositories = 3;
+}
+
+// One changed file, HEAD against the working tree; today's
+// `ProjectFileDiff`.
+message ProjectFileDiff {
+  // The repository-relative path.
+  string path = 1;
+  // The path before a rename; set for "renamed".
+  optional string original_path = 2;
+  // "added", "modified", "deleted", "renamed", "untracked" or "conflicted".
+  string status = 3 [(buf.validate.field).string = {
+    in: [
+      "added",
+      "modified",
+      "deleted",
+      "renamed",
+      "untracked",
+      "conflicted"
+    ]
+  }];
+  // Whether the index holds a change.
+  bool staged = 4;
+  // Whether the working tree holds a change the index does not.
+  bool unstaged = 5;
+  // The index letter of `git status --porcelain`.
+  string index_status = 6;
+  // The working-tree letter of `git status --porcelain`.
+  string worktree_status = 7;
+  // The repository, sandbox-relative; "" for the root.
+  string repository = 8;
+  // The file's text at HEAD.
+  string original = 9;
+  // The file's text in the working tree.
+  string modified = 10;
+  // Whether either side is binary.
+  bool binary = 11;
+  // Whether either side was cut at the read's bound.
+  bool truncated = 12;
+}
+
+// One changed file's comparison.
+message FileDiffRead {
+  option (buf.validate.message).cel = {
+    id: "file_diff_read.read"
+    message: "diff is set exactly when read"
+    expression: "(this.status == 'read') == has(this.diff)"
+  };
+  // "read", or why not: "not_found" or "invalid_path".
+  string status = 1 [(buf.validate.field).string = {
+    in: [
+      "read",
+      "not_found",
+      "invalid_path"
+    ]
+  }];
+  // The comparison; set when read.
+  optional ProjectFileDiff diff = 2;
+}
+
+// Asks a Thread's Git summary.
+message StatusRequest {
+  // The Thread.
+  string thread_id = 1;
+}
+
+// The Thread's state and, when "ready", its Git summary.
+message StatusResponse {
+  option (buf.validate.message).cel = {
+    id: "status_response.value"
+    message: "value is set exactly when status is ready"
+    expression: "(this.status == 'ready') == has(this.value)"
+  };
+  // "ready", or why not: "missing", "inactive" or "pending".
+  string status = 1 [(buf.validate.field).string = {
+    in: [
+      "ready",
+      "missing",
+      "inactive",
+      "pending"
+    ]
+  }];
+  // The summary; set when ready.
+  optional ThreadGit value = 2;
+}
+
+// Asks a Thread directory's local branches.
+message BranchesRequest {
+  // The Thread.
+  string thread_id = 1;
+}
+
+// The Thread's state and, when "ready", its branches.
+message BranchesResponse {
+  option (buf.validate.message).cel = {
+    id: "branches_response.value"
+    message: "value is set exactly when status is ready"
+    expression: "(this.status == 'ready') == has(this.value)"
+  };
+  // "ready", or why not: "missing", "inactive" or "pending".
+  string status = 1 [(buf.validate.field).string = {
+    in: [
+      "ready",
+      "missing",
+      "inactive",
+      "pending"
+    ]
+  }];
+  // The branches; set when ready.
+  optional Branches value = 2;
+}
+
+// Switches a Thread's repository to a local branch.
+message SwitchBranchRequest {
+  // The Thread.
+  string thread_id = 1;
+  // The existing local branch.
+  string branch = 2;
+  // The working directory the window read the branches with; a stale one is
+  // refused.
+  string cwd = 3;
+}
+
+// The branches after the switch, the refusal's sentence, or the Thread's
+// state.
+message SwitchBranchResponse {
+  option (buf.validate.message).cel = {
+    id: "switch_branch_response.value"
+    message: "value is set exactly when status is ready"
+    expression: "(this.status == 'ready') == has(this.value)"
+  };
+  option (buf.validate.message).cel = {
+    id: "switch_branch_response.message"
+    message: "message is set exactly when status is refused"
+    expression: "(this.status == 'refused') == has(this.message)"
+  };
+  // "ready", "refused", or why it did not run: "missing", "inactive" or
+  // "pending".
+  string status = 1 [(buf.validate.field).string = {
+    in: [
+      "ready",
+      "refused",
+      "missing",
+      "inactive",
+      "pending"
+    ]
+  }];
+  // The branches after the switch; set when ready.
+  optional Branches value = 2;
+  // The sentence the window shows; set when refused.
+  optional string message = 3;
+}
+
+// Discards changes of one repository: the listed `paths`, or, with `all`,
+// every listed change but nested repositories. Today's request without
+// `paths` is `all: true`; today's explicit empty list, a caller's mistake,
+// is refused (neither `all` nor a path).
+message DiscardRequest {
+  option (buf.validate.message).cel = {
+    id: "discard_request.all"
+    message: "all is true exactly when paths is empty"
+    expression: "this.all == (size(this.paths) == 0)"
+  };
+  // The Thread.
+  string thread_id = 1;
+  // The working directory the Changes view read with; a stale one is
+  // refused.
+  string cwd = 2;
+  // The repository, sandbox-relative, "" for the root, as the Changes read
+  // returns it.
+  string repository = 3;
+  // The repository-relative paths to discard; empty exactly when `all`.
+  repeated string paths = 4;
+  // Whether to discard every listed change but nested repositories; true
+  // exactly when `paths` is empty.
+  bool all = 5;
+}
+
+// What a Discard did, or the Thread's state.
+message DiscardResponse {
+  option (buf.validate.message).cel = {
+    id: "discard_response.value"
+    message: "value is set exactly when status is ready"
+    expression: "(this.status == 'ready') == has(this.value)"
+  };
+  option (buf.validate.message).cel = {
+    id: "discard_response.message"
+    message: "message is set exactly when status is refused or failed"
+    expression: "(this.status == 'refused' || this.status == 'failed') == has(this.message)"
+  };
+  option (buf.validate.message).cel = {
+    id: "discard_response.discarded"
+    message: "only a failure carries discarded"
+    expression: "this.status == 'failed' || size(this.discarded) == 0"
+  };
+  // "ready"; "refused" (nothing was written); "failed" (the first failure,
+  // after `discarded`); or why it did not run: "missing", "inactive" or
+  // "pending".
+  string status = 1 [(buf.validate.field).string = {
+    in: [
+      "ready",
+      "refused",
+      "failed",
+      "missing",
+      "inactive",
+      "pending"
+    ]
+  }];
+  // The targets discarded; set when ready.
+  optional Discarded value = 2;
+  // The refusal's or the first failure's sentence; set when refused or
+  // failed.
+  optional string message = 3;
+  // The targets discarded before the failure; empty unless failed.
+  repeated string discarded = 4;
+}
+
+// Asks the changes a path reaches.
+message ChangesRequest {
+  // The path, workspace-relative; the workspace root when absent.
+  optional string path = 1;
+}
+
+// The Project's lease state and, when "ready", the read.
+message ChangesResponse {
+  option (buf.validate.message).cel = {
+    id: "changes_response.value"
+    message: "value is set exactly when status is ready"
+    expression: "(this.status == 'ready') == has(this.value)"
+  };
+  // "ready", or why the lease could not run the read: "pending",
+  // "unavailable", "expired" or "missing".
+  string status = 1 [(buf.validate.field).string = {
+    in: [
+      "ready",
+      "pending",
+      "unavailable",
+      "expired",
+      "missing"
+    ]
+  }];
+  // The read; set when ready.
+  optional ChangesRead value = 2;
+}
+
+// Asks the tracked diff a path reaches.
+message DiffRequest {
+  // The path, workspace-relative; the workspace root when absent.
+  optional string path = 1;
+}
+
+// The Project's lease state and, when "ready", the read.
+message DiffResponse {
+  option (buf.validate.message).cel = {
+    id: "diff_response.value"
+    message: "value is set exactly when status is ready"
+    expression: "(this.status == 'ready') == has(this.value)"
+  };
+  // "ready", or why the lease could not run the read: "pending",
+  // "unavailable", "expired" or "missing".
+  string status = 1 [(buf.validate.field).string = {
+    in: [
+      "ready",
+      "pending",
+      "unavailable",
+      "expired",
+      "missing"
+    ]
+  }];
+  // The read; set when ready.
+  optional DiffRead value = 2;
+}
+
+// Asks one changed file's comparison.
+message FileDiffRequest {
+  // The repository, sandbox-relative; "" for the root.
+  string repository = 1;
+  // The repository-relative path.
+  string path = 2;
+}
+
+// The Project's lease state and, when "ready", the read.
+message FileDiffResponse {
+  option (buf.validate.message).cel = {
+    id: "file_diff_response.value"
+    message: "value is set exactly when status is ready"
+    expression: "(this.status == 'ready') == has(this.value)"
+  };
+  // "ready", or why the lease could not run the read: "pending",
+  // "unavailable", "expired" or "missing".
+  string status = 1 [(buf.validate.field).string = {
+    in: [
+      "ready",
+      "pending",
+      "unavailable",
+      "expired",
+      "missing"
+    ]
+  }];
+  // The read; set when ready.
+  optional FileDiffRead value = 2;
+}

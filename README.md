@@ -237,10 +237,15 @@ desktop UI.
 
 This guide runs the host and the desktop app on one computer. You need:
 
-- Git, **Node.js 22** and **npm 11.13.0**, the versions CI and the host image
+- Git, **Node.js 26** and **npm 11.13.0**, the versions CI and the host image
   use ([`ci.yml`](.github/workflows/ci.yml),
   [`.Dockerfile`](app/backend/doric-host/.Dockerfile)). Install npm with
   `npm install --global npm@11.13.0`: npm 10 refuses `npm ci` on this lockfile.
+- `rustup`, which installs the Rust toolchain
+  [`rust-toolchain.toml`](rust-toolchain.toml) pins. `buf` comes from npm
+  (`npx buf`). `generate-proto`, which `build` and `typecheck` depend on,
+  resolves the `buf.build` modules [`buf.lock`](buf.lock) pins, so the first
+  build needs network access to the Buf Schema Registry or a filled buf cache.
 - Docker with Docker Compose v2, running and reachable by your user.
 - A model provider key; the steps below use OpenRouter.
 
@@ -539,19 +544,20 @@ On macOS, stop the native host with Ctrl+C and PostgreSQL with the same
 
 ## Develop
 
-Doric is an Nx and npm-workspaces monorepo in TypeScript
-([`nx.json`](nx.json), [`package.json`](package.json)). Its top-level folders
+Doric is an Nx and npm-workspaces monorepo in TypeScript and Rust
+([`nx.json`](nx.json), [`package.json`](package.json), [`Cargo.toml`](Cargo.toml)). Its top-level folders
 are:
 
-| Folder             | What it holds                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `app/backend/`     | The host, [`doric-host`](app/backend/doric-host/README.md), and its end-to-end suite `doric-host-e2e`                                                                                                                                                                                                                                                                                                                                   |
-| `app/desktop/`     | The Electron app [`doric`](app/desktop/doric/README.md) (Nx project `doric-app`), the shell [`doric-renderer`](app/desktop/doric-renderer/README.md), `doric-platform`, which builds the shared platform packages, their import map, the theme stylesheet and the bundle JSON schemas into the app's `assets/` ([`build.mjs`](app/desktop/doric-platform/build.mjs)), and the end-to-end suite `doric-e2e` (Nx project `doric-app-e2e`) |
-| `bundles/<group>/` | The 33 bundles, each with a `manifest.json`, a README and an `AGENTS.md`; their map is [Bundles](#bundles)                                                                                                                                                                                                                                                                                                                              |
-| `packages/`        | Libraries the host, the app and the bundles build on; see [Packages](#packages)                                                                                                                                                                                                                                                                                                                                                         |
-| `tools/`           | [`tool-okf`](tools/okf/README.md), the `okf_search` agent tool                                                                                                                                                                                                                                                                                                                                                                          |
-| `scripts/`         | Command-line scripts, among them the [fake host](scripts/fake-host/README.md)                                                                                                                                                                                                                                                                                                                                                           |
-| `tests/`           | The repository checks run by `npm run lint:test` and `npm run test:fake-host`, and [`boundary-exceptions.json`](tests/boundary-exceptions.json), the list of standing boundary violations ([Boundaries](docs/architecture/bundles/boundaries.md))                                                                                                                                                                                       |
+| Folder             | What it holds                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `app/backend/`     | The host, [`doric-host`](app/backend/doric-host/README.md), and its end-to-end suite `doric-host-e2e`                                                                                                                                                                                                                                                                                                                                                    |
+| `app/desktop/`     | The Electron app [`doric`](app/desktop/doric/README.md) (Nx project `doric-app`), the shell [`doric-renderer`](app/desktop/doric-renderer/README.md), `doric-platform`, which builds the shared platform packages, their import map, the theme stylesheet and the bundle JSON schemas into the app's `assets/` ([`build.mjs`](app/desktop/doric-platform/build.mjs)), and the end-to-end suite `doric-e2e` (Nx project `doric-app-e2e`)                  |
+| `bundles/<group>/` | The 33 bundles, each with a `manifest.json`, a README and an `AGENTS.md`; their map is [Bundles](#bundles)                                                                                                                                                                                                                                                                                                                                               |
+| `packages/`        | Libraries the host, the app and the bundles build on; see [Packages](#packages)                                                                                                                                                                                                                                                                                                                                                                          |
+| `tools/`           | [`tool-okf`](tools/okf/README.md), the `okf_search` agent tool                                                                                                                                                                                                                                                                                                                                                                                           |
+| `scripts/`         | Command-line scripts, among them the [fake host](scripts/fake-host/README.md)                                                                                                                                                                                                                                                                                                                                                                            |
+| `tests/`           | The repository checks run by `npm run lint:test` and `npm run test:fake-host`, and [`boundary-exceptions.json`](tests/boundary-exceptions.json), the list of standing boundary violations ([Boundaries](docs/architecture/bundles/boundaries.md)), and [`contract-inventory-allow.json`](tests/contract-inventory-allow.json), the contract members the inventory check allows to be typed `any` ([Bundle processes](docs/features/bundle-processes.md)) |
+| `benchmarks/`      | [`proto-codec`](benchmarks/proto-codec), the codec benchmark of phase 0 of the bundle process model ([Bundle processes](docs/features/bundle-processes.md))                                                                                                                                                                                                                                                                                              |
 
 Use `npx nx show projects` to list the projects and
 `npx nx show project <project>` to see a project's targets, including those
@@ -574,7 +580,7 @@ Each runs from the repository root as `npm run <script>`
 | `codex:oauth`            | A Codex OAuth sign-in in the browser, written to the root `.env` under `CODEX_AUTHORIZATION`, or under the key `CODEX_OAUTH_OUTPUT_KEY` names. It has no paste mode and reuses no existing login ([`codex-oauth.mjs`](scripts/codex-oauth.mjs), [`codex-oauth.ts`](packages/oauth/src/lib/codex-oauth.ts))                                                                                                                                                                                                                                                                                                                                          |
 | `lint`, `lint:fix`       | Biome's linter over the repository, checking or fixing ([`biome.json`](biome.json))                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | `format`, `format:check` | Biome's formatter, then Prettier, writing or checking                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| `lint:test`              | The tests of the Biome configuration and of the bundle boundaries ([`lint.test.mjs`](tests/lint.test.mjs), [`boundaries.test.mjs`](tests/boundaries.test.mjs), [Boundaries](docs/architecture/bundles/boundaries.md))                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| `lint:test`              | The tests of the Biome configuration, of the bundle boundaries and of the contract inventory ([`lint.test.mjs`](tests/lint.test.mjs), [`boundaries.test.mjs`](tests/boundaries.test.mjs), [`contract-inventory.test.mjs`](tests/contract-inventory.test.mjs), [Boundaries](docs/architecture/bundles/boundaries.md))                                                                                                                                                                                                                                                                                                                                |
 | `test:fake-host`         | The test of the fake host's bundle staging; it imports the built `bundle` package, so run `npx nx run bundle:build` first ([`fake-host-bundles.test.mjs`](tests/fake-host-bundles.test.mjs), [fake host README](scripts/fake-host/README.md))                                                                                                                                                                                                                                                                                                                                                                                                       |
 
 ### Build and test
@@ -587,6 +593,9 @@ npx nx run bundle-<name>:test         # one bundle, for example bundle-chat
 npx nx test <package>                 # one package, for example agent
 npx nx run doric-host-e2e:e2e         # the host workflow against a disposable database and Docker sandbox
 npx nx run doric-app-e2e:e2e          # the desktop app under Electron
+npx nx run @org/source:proto-export   # the .proto contracts into dist/proto
+npx nx run proto-codec:bench          # the codec benchmark, into dist/proto-codec
+npx nx run-many -t lint test format-check --projects=tag:type:rust   # the Rust projects
 ```
 
 The targets are in [`doric-host/project.json`](app/backend/doric-host/project.json),
@@ -599,8 +608,24 @@ neither end-to-end suite.
 Every bundle has the targets `build`, `typecheck` and `test`, under the Nx name
 `bundle-<directory>` ([`bundles/desktop/chat/project.json`](bundles/desktop/chat/project.json));
 `bundle-postgres` also has `prisma-generate` and `migrate`
-([`postgres/project.json`](bundles/foundation/postgres/project.json)). Some
-packages have further targets that need outside resources: `e2e` in
+([`postgres/project.json`](bundles/foundation/postgres/project.json)).
+`bundle` and every bundle with `.proto` contracts under its `proto/doric/`
+(`bundle-transport` holds the eight public `doric/api/*/v1`) also have the
+cached target `generate-proto`, which `build` and `typecheck` depend on: it runs
+`buf generate` with [`buf.gen.yaml`](buf.gen.yaml) into the project's
+`src/contracts/gen/`, which Git ignores, exported as `./contracts/gen/*`;
+`buf.gen.yaml`'s `map_imports` make a generated file import another owner's
+code through that export. `bundle`'s `generate-proto` depends on
+`@org/source:proto-export`. To add or change a contract, edit its `.proto`, then
+run `npx buf lint` and the owner's `generate-proto`. Through phase 6 the zod
+`define*` contracts stay the runtime truth and the `.proto` files describe the
+target shape, so a change to a zod contract also updates its `.proto` and its
+row in
+[`contract-inventory.md`](docs/designs/grpc-processes/contract-inventory.md);
+`inventory-targets.test.ts` checks only ids and rows
+([Bundle processes](docs/features/bundle-processes.md)). The root
+project `@org/source` has `proto-export` (writes `dist/proto`) and `proto-check`, which builds `bundle` and runs the proto check
+([`project.json`](project.json)). Some packages have further targets that need outside resources: `e2e` in
 [`docker-sandbox`](packages/docker-sandbox/README.md),
 [`firecracker-sandbox`](packages/firecracker-sandbox/README.md) and
 [`sandpool`](packages/sandpool/README.md), `conformance-live` in
@@ -619,11 +644,16 @@ A new bundle needs `npm install` under npm 11.13.0 and the updated
 `package-lock.json`, because CI installs with `npm ci`
 ([Boundaries](docs/architecture/bundles/boundaries.md)).
 
-CI runs these checks, in this order, on Node.js 22 with npm 11.13.0 and a
-PostgreSQL service ([`ci.yml`](.github/workflows/ci.yml)):
+CI runs these checks, in this order, on Node.js 26 with npm 11.13.0, the Rust
+toolchain `rust-toolchain.toml` pins and a PostgreSQL service, after `npm ci`,
+whose `postinstall` runs `patch-package` to apply `patches/`
+([`ci.yml`](.github/workflows/ci.yml)):
 
 ```sh
 npx nx sync:check
+npx buf lint
+npx nx run @org/source:proto-check
+npx buf breaking --against ".git#ref=$BASE_SHA"
 npm run lint:test
 npm run format:check
 npm run lint
@@ -633,14 +663,33 @@ DORIC_TEST_DATABASE_URL=postgresql://doric:doric@127.0.0.1:5432/doric npx nx run
 npx nx run-many -t test -p bundle,desktop,doric-platform,doric-app
 npm run test:fake-host
 npx nx test agent
+npx nx run-many -t lint test format-check --projects=tag:type:rust
 npx nx run-many -t build typecheck
 ```
 
+`buf breaking` runs only on a pull request whose base has a `buf.yaml` and
+`.proto` files; otherwise CI skips it with a message.
+
+Besides these, the jobs below run `bundle:conformance` and `bundle:bench-rk4`.
 CI runs no other test target: not the tests of `doric-renderer`, `tool-okf`
 and the packages other than `agent`, `bundle` and `desktop`, nor
 [`spawn-agent.test.mjs`](scripts/tests/spawn-agent.test.mjs). Run a package's
 tests with `npx nx test <package>` and the script's with
 `node --test scripts/tests/spawn-agent.test.mjs`.
+
+A second CI job, `sea-spike`, runs on `ubuntu-latest` and `ubuntu-24.04-arm`
+with a PostgreSQL service: it installs npm 11.13.0 and the Rust toolchain,
+builds `bundle` and today's host, applies the migrations, runs
+`node scripts/sea-spike.mjs` and uploads `dist/sea-spike/results-*.json` as the
+artifact `sea-spike-<runner>` ([`ci.yml`](.github/workflows/ci.yml),
+[Bundle processes](docs/features/bundle-processes.md)).
+
+A third job, `conformance`, runs on `ubuntu-latest` and `ubuntu-24.04-arm`:
+after `npm ci` it runs `npx nx run bundle:conformance`, the protocol
+conformance suite on the TypeScript SDK's fixture, and, on `ubuntu-latest`
+only, `npx nx run bundle:bench-rk4` with `RK4_NO_FAIL=1`, which reports RK4's
+numbers without failing the job ([`ci.yml`](.github/workflows/ci.yml),
+[Bundle processes](docs/features/bundle-processes.md)).
 
 Tests that need PostgreSQL read `DORIC_TEST_DATABASE_URL` and skip without it.
 Its role must be allowed to create databases and schemas, because each case
@@ -725,44 +774,45 @@ Its options and the contracts it answers are in the
 
 ### Features
 
-| Feature                                                                   | What it covers                                                                                                          |
-| ------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| [Projects and Threads](docs/features/projects-and-threads.md)             | The life of a Project and of a Thread: states, the queue, leases, recovery at startup                                   |
-| [Conversation](docs/features/conversation.md)                             | The transcript, the composer, the trail, the lifecycle markers, the footer                                              |
-| [Stop, steering and the queue of inputs](docs/features/prompt-control.md) | Stopping a prompt, steering it, and the queue of inputs                                                                 |
-| [Delegation](docs/features/delegation.md)                                 | Child Threads and the tools that create and steer them                                                                  |
-| [Default agent](docs/features/default-agent.md)                           | The executor: system prompt, tool set, model resolution, provider history                                               |
-| [Skills](docs/features/skills.md)                                         | The skill catalog, `load_skill` and the skill sources                                                                   |
-| [Coding workflow](docs/features/coding-workflow.md)                       | The coding workflow, a skill loaded on demand                                                                           |
-| [Context compaction](docs/features/context-compaction.md)                 | Compaction of a Thread's context                                                                                        |
-| [Attachments](docs/features/attachments.md)                               | Images sent to the model as attachments                                                                                 |
-| [Models and providers](docs/features/models-and-providers.md)             | Provider kinds, model catalogs, the configured providers and the default execution                                      |
-| [Per-thread model](docs/features/per-thread-model.md)                     | A Thread's own provider, model and effort                                                                               |
-| [Provider sign-in](docs/features/provider-sign-in.md)                     | The Claude Code sign-in and the Claude and Codex OAuth profiles                                                         |
-| [Credentials](docs/features/credentials.md)                               | Named credentials and the secret store                                                                                  |
-| [Settings](docs/features/settings.md)                                     | The settings window: its sections, autosave and search                                                                  |
-| [Files](docs/features/files.md)                                           | The file tools, the Files panel, the file tabs and the viewer                                                           |
-| [cwd tool](docs/features/cwd-tool.md)                                     | A Thread's working directory and the `cwd` tool                                                                         |
-| [Git](docs/features/git.md)                                               | Branches, the Changes view, comparisons, the `git` tool                                                                 |
-| [Terminal](docs/features/terminal.md)                                     | Tracked commands and manual terminal sessions                                                                           |
-| [Screen](docs/features/screen.md)                                         | The screen of a Project's sandbox, and its relay                                                                        |
-| [Web research](docs/features/web-research.md)                             | The web tool                                                                                                            |
-| [MCP servers](docs/features/mcp.md)                                       | MCP servers per Project: their tools and their OAuth sign-in                                                            |
-| [Sandboxes](docs/features/sandboxes.md)                                   | One sandbox per Project: Docker, Firecracker and the pool                                                               |
-| [Generative UI](docs/features/generative-ui.md)                           | UI the agent writes in its answer, and the question form                                                                |
-| [Diagrams in OpenUI fences](docs/features/openui-diagrams.md)             | The diagram components                                                                                                  |
-| [Papercraft](docs/features/papercraft.md)                                 | Live previews of a Project's code and the canvas window                                                                 |
-| [Comments](docs/features/comments.md)                                     | Anchored comments and their attended state                                                                              |
-| [Usage](docs/features/usage.md)                                           | A Thread's usage, cost and context capacity                                                                             |
-| [Resource monitor](docs/features/resource-monitor.md)                     | The monitor of the host machine and of a Project's sandbox                                                              |
-| [Notifications](docs/features/notifications.md)                           | The native notice when a prompt finishes outside the reader's view                                                      |
-| [Local history](docs/features/local-history.md)                           | The desktop's snapshots of a Thread's history                                                                           |
-| [Thread archive](docs/features/thread-archive.md)                         | Archiving, restoring and pinning a Thread, and the rules that archive on their own                                      |
-| [The workspace window](docs/features/ui-redesign.md)                      | The window's frame, sidebar, tabs, dashboard, side panel and account status                                             |
-| [Error messages](docs/features/error-messages.md)                         | The text of the errors the window shows                                                                                 |
-| [Host API](docs/features/host-api.md)                                     | The host's REST routes and Socket.IO namespaces                                                                         |
-| [Knowledge bundles](docs/features/knowledge-bundles.md)                   | Generating and searching Open Knowledge Format bundles                                                                  |
-| [Bundle isolation](docs/features/bundle-isolation.md)                     | The boundary model: its rules, the manifest, the one import path between bundles, the CI checks and the exceptions file |
+| Feature                                                                   | What it covers                                                                                                       |
+| ------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| [Projects and Threads](docs/features/projects-and-threads.md)             | The life of a Project and of a Thread: states, the queue, leases, recovery at startup                                |
+| [Conversation](docs/features/conversation.md)                             | The transcript, the composer, the trail, the lifecycle markers, the footer                                           |
+| [Stop, steering and the queue of inputs](docs/features/prompt-control.md) | Stopping a prompt, steering it, and the queue of inputs                                                              |
+| [Delegation](docs/features/delegation.md)                                 | Child Threads and the tools that create and steer them                                                               |
+| [Default agent](docs/features/default-agent.md)                           | The executor: system prompt, tool set, model resolution, provider history                                            |
+| [Skills](docs/features/skills.md)                                         | The skill catalog, `load_skill` and the skill sources                                                                |
+| [Coding workflow](docs/features/coding-workflow.md)                       | The coding workflow, a skill loaded on demand                                                                        |
+| [Context compaction](docs/features/context-compaction.md)                 | Compaction of a Thread's context                                                                                     |
+| [Attachments](docs/features/attachments.md)                               | Images sent to the model as attachments                                                                              |
+| [Models and providers](docs/features/models-and-providers.md)             | Provider kinds, model catalogs, the configured providers and the default execution                                   |
+| [Per-thread model](docs/features/per-thread-model.md)                     | A Thread's own provider, model and effort                                                                            |
+| [Provider sign-in](docs/features/provider-sign-in.md)                     | The Claude Code sign-in and the Claude and Codex OAuth profiles                                                      |
+| [Credentials](docs/features/credentials.md)                               | Named credentials and the secret store                                                                               |
+| [Settings](docs/features/settings.md)                                     | The settings window: its sections, autosave and search                                                               |
+| [Files](docs/features/files.md)                                           | The file tools, the Files panel, the file tabs and the viewer                                                        |
+| [cwd tool](docs/features/cwd-tool.md)                                     | A Thread's working directory and the `cwd` tool                                                                      |
+| [Git](docs/features/git.md)                                               | Branches, the Changes view, comparisons, the `git` tool                                                              |
+| [Terminal](docs/features/terminal.md)                                     | Tracked commands and manual terminal sessions                                                                        |
+| [Screen](docs/features/screen.md)                                         | The screen of a Project's sandbox, and its relay                                                                     |
+| [Web research](docs/features/web-research.md)                             | The web tool                                                                                                         |
+| [MCP servers](docs/features/mcp.md)                                       | MCP servers per Project: their tools and their OAuth sign-in                                                         |
+| [Sandboxes](docs/features/sandboxes.md)                                   | One sandbox per Project: Docker, Firecracker and the pool                                                            |
+| [Generative UI](docs/features/generative-ui.md)                           | UI the agent writes in its answer, and the question form                                                             |
+| [Diagrams in OpenUI fences](docs/features/openui-diagrams.md)             | The diagram components                                                                                               |
+| [Papercraft](docs/features/papercraft.md)                                 | Live previews of a Project's code and the canvas window                                                              |
+| [Comments](docs/features/comments.md)                                     | Anchored comments and their attended state                                                                           |
+| [Usage](docs/features/usage.md)                                           | A Thread's usage, cost and context capacity                                                                          |
+| [Resource monitor](docs/features/resource-monitor.md)                     | The monitor of the host machine and of a Project's sandbox                                                           |
+| [Notifications](docs/features/notifications.md)                           | The native notice when a prompt finishes outside the reader's view                                                   |
+| [Local history](docs/features/local-history.md)                           | The desktop's snapshots of a Thread's history                                                                        |
+| [Thread archive](docs/features/thread-archive.md)                         | Archiving, restoring and pinning a Thread, and the rules that archive on their own                                   |
+| [The workspace window](docs/features/ui-redesign.md)                      | The window's frame, sidebar, tabs, dashboard, side panel and account status                                          |
+| [Error messages](docs/features/error-messages.md)                         | The text of the errors the window shows                                                                              |
+| [Host API](docs/features/host-api.md)                                     | The host's REST routes and Socket.IO namespaces                                                                      |
+| [Knowledge bundles](docs/features/knowledge-bundles.md)                   | Generating and searching Open Knowledge Format bundles                                                               |
+| [Bundle isolation](docs/features/bundle-isolation.md)                     | The boundary model: its rules, the manifest, the import paths between bundles, the CI checks and the exceptions file |
+| [Bundle processes](docs/features/bundle-processes.md)                     | The bundle process model: one process per bundle, `.proto` contracts, Rust, and the phase 0 measurements             |
 
 ### Applications, scripts and tools
 

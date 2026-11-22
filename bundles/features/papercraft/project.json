@@ -4,9 +4,29 @@
   "projectType": "library",
   "sourceRoot": "bundles/features/papercraft/src",
   "targets": {
+    "generate-proto": {
+      "executor": "nx:run-commands",
+      "cache": true,
+      "inputs": [
+        "{workspaceRoot}/buf.yaml",
+        "{workspaceRoot}/buf.lock",
+        "{workspaceRoot}/buf.gen.yaml",
+        "{projectRoot}/proto/**/*.proto",
+        {
+          "externalDependencies": ["@bufbuild/buf", "@bufbuild/protoc-gen-es"]
+        }
+      ],
+      "outputs": ["{projectRoot}/src/contracts/gen"],
+      "options": {
+        "commands": [
+          "npx buf generate --template buf.gen.yaml --path bundles/features/papercraft/proto/doric -o bundles/features/papercraft"
+        ],
+        "parallel": false
+      }
+    },
     "build": {
       "executor": "nx:run-commands",
-      "dependsOn": ["^build"],
+      "dependsOn": ["generate-proto", "^build"],
       "outputs": ["{projectRoot}/dist"],
       "options": {
         "commands": [
@@ -21,7 +41,7 @@
     },
     "typecheck": {
       "executor": "nx:run-commands",
-      "dependsOn": ["^build"],
+      "dependsOn": ["generate-proto", "^build"],
       "options": {
         "commands": [
           "tsc --build bundles/features/papercraft/tsconfig.json --emitDeclarationOnly",

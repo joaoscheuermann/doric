@@ -35,8 +35,8 @@ loaded is described in [`packages/bundle`](../../../packages/bundle/README.md).
 - `desktopScope`: `openui.programs/v1` and `openui.questions/v1` are called
   from a window with the keys `projectId` and `threadId`.
 
-The package ([`package.json`](package.json)) exports only `./contracts` and
-`./package.json`.
+The package ([`package.json`](package.json)) exports `./contracts`,
+`./contracts/gen/*` (the protobuf-es code `generate-proto` writes from `proto/`) and `./package.json`.
 
 ## Parts and build output
 

@@ -1,0 +1,26 @@
+// `comments.resolved/v1` (host, 1.1.0): the event a comment raises when it is
+// attended to or reopened, owned by `comments` and written to the Thread's
+// log.
+//
+// 1.1.0: the schema moves from zod to `.proto`; keys the payload does not
+// declare are dropped.
+syntax = "proto3";
+
+package doric.comments.resolved.v1;
+
+import "doric/platform/v1/options.proto";
+
+option (doric.platform.v1.contract) = {
+  id: "comments.resolved/v1"
+  cardinality: CARDINALITY_ONE
+  environment: ENVIRONMENT_HOST
+};
+
+// A comment was attended to or reopened.
+message CommentsResolved {
+  option (doric.platform.v1.event).type = "comments.resolved/v1";
+  // The comment's id.
+  string comment_id = 1;
+  // True when it was attended to, false when it was reopened.
+  bool resolved = 2;
+}

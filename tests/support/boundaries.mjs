@@ -179,13 +179,16 @@ export const isSourcePathImport = (finding) => {
  * Rule (2) applies to files under `bundles/<group>/<id>/{src,tests,stories}/`.
  * Its finding is a specifier that is another bundle's package name
  * (`packageJson.name`, other than `<id>`), or that starts with that name and
- * `/`. Three paths are allowed:
+ * `/`. Four paths are allowed:
  * - exactly `<other>/contracts`, anywhere;
+ * - `<other>/contracts/gen/<path>`, anywhere `<other>/contracts` is allowed
+ *   (`docs/designs/grpc-processes.md` section 8, "Layout");
  * - exactly `<other>/testing`, under `tests/` or `stories/`;
  * - exactly `<other>/package.json`, under `tests/` only.
  *
  * Any other path is a finding, including subpaths such as
- * `<other>/contracts/x`: the spec allows `<id>/contracts` alone.
+ * `<other>/contracts/x`: only the generated code under `contracts/gen/` is
+ * on the contract surface beside `<id>/contracts`.
  * - `bundle` is the importing bundle's id.
  * - `target` is the specifier, verbatim.
  *
@@ -222,6 +225,8 @@ export const findImports = (snapshot) => {
 
         const allowed =
           specifier === `${name}/contracts` ||
+          (specifier.startsWith(`${name}/contracts/gen/`) &&
+            specifier.length > `${name}/contracts/gen/`.length) ||
           (specifier === `${name}/testing` &&
             (area === 'tests' || area === 'stories')) ||
           (specifier === `${name}/package.json` && area === 'tests');
@@ -682,7 +687,11 @@ export const findLists = (snapshot) => {
  * 3. N is `react`, and the bundle has a `.tsx` or `.jsx` file;
  * 4. N is `@types/<m>`, and `<m>` is `node` or a package used by rule 1. In
  *    `<m>`, `a__b` stands for `@a/b`;
- * 5. `(bundle.id, N)` is a pair in `dependencyExceptions`.
+ * 5. `(bundle.id, N)` is a pair in `dependencyExceptions`;
+ * 6. N is `@bufbuild/protobuf`, and `bundle.packageJson.exports` has the key
+ *    `./contracts/gen/*`. That export is required on every package with
+ *    `.proto` files, and its generated code, which Git ignores, imports N
+ *    (`docs/designs/grpc-processes.md` section 8).
  *
  * A listed package that is not used is a finding:
  * - `bundle` is the bundle id;
@@ -722,7 +731,12 @@ export const findDependencies = (snapshot) => {
           (typedPackage === 'node' || imported(typedPackage))) ||
         dependencyExceptions.some(
           (pair) => pair.bundle === bundle.id && pair.package === name,
-        );
+        ) ||
+        (name === '@bufbuild/protobuf' &&
+          Object.hasOwn(
+            bundle.packageJson?.exports ?? {},
+            './contracts/gen/*',
+          ));
 
       if (!used) found.add(bundle.id, name);
     }

@@ -31,7 +31,8 @@ built and loaded.
 `desktopScope` lets a desktop window call `comments/v1` with those three scope
 keys; the desktop refuses any other key
 ([manifest](../../../docs/architecture/bundles/manifest.md#desktopscope)). The
-package exports only `comments/contracts` (and `package.json`)
+package exports `comments/contracts`, `comments/contracts/gen/*` (the
+protobuf-es code `generate-proto` writes from `proto/`) and `package.json`
 ([`package.json`](package.json)).
 
 ## Parts

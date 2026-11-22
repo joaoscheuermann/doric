@@ -6,6 +6,7 @@ import { defineMethod, definePlatformService } from '../contracts/define.js';
 import {
   type BundleState,
   type CatalogChange,
+  type CatalogManifest,
   type CatalogSnapshot,
   type DiagnosticReport,
   type Diagnostics,
@@ -25,6 +26,7 @@ import {
 } from '../contracts/platform.js';
 import type { ResolvedEnvironment } from './catalog.js';
 import type { DiagnosticsStore } from './diagnostics.js';
+import type { Manifest } from './manifest.js';
 import type { Principal } from './principal.js';
 import { toDisposable } from './scope.js';
 
@@ -77,6 +79,68 @@ export const statesOf = (diagnostics: Diagnostics): BundleStates => {
   return { snapshot: () => diagnostics, state: (id) => first.get(id) };
 };
 
+/** A validated manifest as `doric.catalog/v1` publishes it, copied. */
+const publishedManifest = (manifest: Manifest): CatalogManifest => {
+  const common = {
+    id: manifest.id,
+    version: manifest.version,
+    engines: { doric: manifest.engines.doric },
+    provides: [...manifest.provides],
+  };
+  const tail = {
+    ...(manifest.desktopScope === undefined
+      ? {}
+      : {
+          desktopScope: Object.fromEntries(
+            Object.entries(manifest.desktopScope).map(([id, keys]) => [
+              id,
+              [...keys],
+            ]),
+          ),
+        }),
+    ...(manifest.description === undefined
+      ? {}
+      : { description: manifest.description }),
+  };
+
+  if (manifest.manifestVersion === 2) {
+    return {
+      manifestVersion: 2,
+      ...common,
+      host: {
+        requires: [...manifest.host.requires],
+        optional: [...manifest.host.optional],
+        ...(manifest.host.httpPrefix === undefined
+          ? {}
+          : { httpPrefix: manifest.host.httpPrefix }),
+      },
+      client: {
+        requires: [...manifest.client.requires],
+        optional: [...manifest.client.optional],
+      },
+      ...tail,
+    };
+  }
+
+  return {
+    manifestVersion: 1,
+    ...common,
+    requires: [...manifest.requires],
+    ...(manifest.optional === undefined
+      ? {}
+      : { optional: [...manifest.optional] }),
+    ...tail,
+    ...(manifest.host === undefined
+      ? {}
+      : {
+          host:
+            manifest.host.httpPrefix === undefined
+              ? {}
+              : { httpPrefix: manifest.host.httpPrefix },
+        }),
+  };
+};
+
 /**
  * The catalog snapshot `doric.catalog/v1` publishes, with live bundle states
  * and, once resolved, the storage identity.
@@ -108,31 +172,7 @@ export const catalogSnapshot = (
         ...(entry.phase === undefined ? {} : { phase: entry.phase }),
         ...(entry.manifest === undefined
           ? {}
-          : {
-              manifest: {
-                manifestVersion: entry.manifest.manifestVersion,
-                id: entry.manifest.id,
-                version: entry.manifest.version,
-                engines: { doric: entry.manifest.engines.doric },
-                provides: [...entry.manifest.provides],
-                requires: [...entry.manifest.requires],
-                ...(entry.manifest.optional === undefined
-                  ? {}
-                  : { optional: [...entry.manifest.optional] }),
-                ...(entry.manifest.desktopScope === undefined
-                  ? {}
-                  : {
-                      desktopScope: Object.fromEntries(
-                        Object.entries(entry.manifest.desktopScope).map(
-                          ([id, keys]) => [id, [...keys]],
-                        ),
-                      ),
-                    }),
-                ...(entry.manifest.description === undefined
-                  ? {}
-                  : { description: entry.manifest.description }),
-              },
-            }),
+          : { manifest: publishedManifest(entry.manifest) }),
         reasons: [...(live?.reasons ?? entry.reasons)],
       };
     }),

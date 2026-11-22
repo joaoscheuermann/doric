@@ -1,0 +1,272 @@
+// The control protocol between a bundle process and the host, protocol
+// version 1. A bundle process opens one control stream right after start, on
+// the router listener, with its instance token; everything the host asks of
+// the bundle travels on this stream.
+//
+// This file is not a contract and is not held to the contract message rules:
+// closed sets are strings, and `call_id` and `nonce` are 64-bit. In protocol
+// version 1 a frame over 4 MiB, a frame before `Hello`, a second `Hello`, a
+// `CallMessage` or `CallEnd` for an unknown `call_id`, a `CallMessage` beyond
+// credit, or an unknown `oneof` case is a protocol violation: the router
+// answers `Rejected { reason: "protocol_violation" }` and closes the stream.
+syntax = "proto3";
+
+package doric.platform.v1;
+
+import "google/protobuf/struct.proto";
+import "google/rpc/status.proto";
+
+// The host side of the control protocol, served by the router listener.
+service BundleHostService {
+  // Opened once per instance; the first ConnectRequest is a Hello.
+  rpc Connect(stream ConnectRequest) returns (stream ConnectResponse);
+}
+
+// A frame from the bundle. Exactly one case is set.
+message ConnectRequest { // a frame from the bundle
+  // The frame.
+  oneof frame {
+    // The first frame of the stream, and only the first.
+    Hello hello = 1;
+    // The answer to `Activate`.
+    ActivateResult activate_result = 2;
+    // The acknowledgement of a `GenerationChanged`.
+    GenerationAck generation_ack = 3;
+    // The answer to `Stop`.
+    StopResult stop_result = 4;
+    // The answer to a `HealthCheck`.
+    HealthReply health_reply = 5;
+    CallMessage call_message = 6; // a response message of a host-to-bundle call
+    CallEnd call_end = 7; // the end of a host-to-bundle call
+    CallCredit call_credit = 8; // the bundle accepts more request messages
+    ReplayDone replay_done = 9; // the bundle replayed its registrations to a new provider
+  }
+}
+
+// A frame from the host. Exactly one case is set.
+message ConnectResponse { // a frame from the host
+  // The frame.
+  oneof frame {
+    // The router accepted the `Hello`.
+    Accepted accepted = 1;
+    // The router refused the stream and closes it.
+    Rejected rejected = 2;
+    // The bundle's dependencies are active; the bundle runs its `activate`.
+    Activate activate = 3;
+    // A generation of a bundle changed state.
+    GenerationChanged generation_changed = 4;
+    // A signal from another instance.
+    PeerSignal peer_signal = 5;
+    // The bundle stops.
+    Stop stop = 6;
+    // A liveness probe the bundle answers with `HealthReply`.
+    HealthCheck health_check = 7;
+    // Opens a host-to-bundle call.
+    CallStart call_start = 8;
+    CallMessage call_message = 9; // a request message of a client or bidirectional stream
+    // The caller sent its last request message.
+    CallHalfClose call_half_close = 10;
+    // The call is aborted; the bundle still sends `CallEnd`.
+    CallCancel call_cancel = 11;
+    CallCredit call_credit = 12; // the host accepts more response messages
+    // An instance ended; the bundle drops its registrations, holds and leases.
+    InstanceGone instance_gone = 13;
+    // A contract's provider changed; the bundle replays its registrations.
+    ProviderChanged provider_changed = 14;
+  }
+}
+
+// One incarnation of one generation of a bundle.
+message Instance {
+  // The bundle id.
+  string bundle_id = 1;
+  // The generation, which rises with each publish of the bundle.
+  uint32 generation = 2;
+  // The incarnation, which rises with each restart of the generation.
+  uint32 incarnation = 3;
+}
+
+// The bundle's first frame.
+message Hello {
+  uint32 protocol_version = 1; // 1 in Spec 2; read by the router to refuse an unsupported version
+  Instance instance = 2; // read by the router to compare with the token's record
+  repeated string services = 3; // full names of the services it serves; read by the router to route CallStart
+  uint32 http_port = 4; // the loopback port of its HTTP prefix, 0 when it declares none; read by the gateway
+}
+
+// The router accepted the `Hello`; the instance is connected.
+message Accepted {
+  uint32 protocol_version = 1; // the version the router speaks on this stream
+}
+
+// The router refused the stream; it closes the stream after this frame.
+message Rejected {
+  // Why: "protocol_violation", "unsupported_protocol", or another reason.
+  string reason = 1;
+  // A message for logs.
+  string message = 2;
+}
+
+// The bundle's dependencies are active; the bundle runs its `activate`.
+message Activate {}
+
+// The result of the bundle's `activate`.
+message ActivateResult {
+  google.rpc.Status status = 1; // code 0 is success
+}
+
+// A generation of a bundle changed state.
+message GenerationChanged {
+  string event = 1; // "draining", "activated", "lost" or "stopped"
+  Instance subject = 2; // the generation the event is about
+  // read by runtime's handover module, which moves Thread work between
+  // runtime's generations (bundles/runtime/runtime/src/host/handover.ts:13-20,76-89)
+  repeated LiveGeneration live = 3;
+}
+
+// A live generation of a bundle and its state.
+message LiveGeneration {
+  // The instance.
+  Instance instance = 1;
+  string state = 2; // "active" or "draining"
+}
+
+// The acknowledgement of a `GenerationChanged`.
+message GenerationAck {
+  // The acknowledged event.
+  string event = 1;
+}
+
+// A signal from another instance.
+message PeerSignal {
+  // The topic.
+  string topic = 1;
+  // The payload, any JSON value, as the sender passed it to
+  // `doric.generation/v1.Signal`; unset when it passed none.
+  google.protobuf.Value payload = 2;
+  // The sending instance.
+  Instance from = 3;
+}
+
+// The bundle stops.
+message Stop {}
+
+// The bundle has stopped.
+message StopResult {}
+
+// A liveness probe.
+message HealthCheck {
+  // Echoed by the `HealthReply`.
+  uint64 nonce = 1;
+}
+
+// The answer to a `HealthCheck`.
+message HealthReply {
+  // The nonce of the `HealthCheck` it answers.
+  uint64 nonce = 1;
+}
+
+// The caller of a host-to-bundle call.
+message Caller {
+  // The calling bundle's id.
+  string bundle_id = 1;
+  // The calling bundle's version.
+  string version = 2;
+  // The calling instance's generation.
+  uint32 generation = 3;
+  // The calling instance's incarnation.
+  uint32 incarnation = 4;
+}
+
+// Opens a host-to-bundle call.
+message CallStart {
+  // The router's id of the call, unique per stream.
+  uint64 call_id = 1;
+  string method = 2; // "/doric.tools.v1.ToolHandlerService/Execute"
+  string kind = 3; // "unary", "server_stream", "client_stream" or "bidi"
+  // The caller.
+  Caller caller = 4;
+  // The call's scope.
+  map<string, string> scope = 5;
+  // The W3C trace context of the call.
+  string traceparent = 6;
+  double deadline_unix_ms = 7; // 0: none
+  uint32 initial_credit = 8; // response messages the bundle may send before a CallCredit
+  bytes payload = 9; // the request message, for unary and server_stream
+}
+
+// One message of a call: a request from the host or a response from the
+// bundle.
+message CallMessage {
+  // The call.
+  uint64 call_id = 1;
+  // The encoded message.
+  bytes payload = 2;
+}
+
+// The caller sent its last request message.
+message CallHalfClose {
+  // The call.
+  uint64 call_id = 1;
+}
+
+// The call is aborted; the bundle still sends `CallEnd`, with code
+// `CANCELLED`.
+message CallCancel {
+  // The call.
+  uint64 call_id = 1;
+  string reason = 2; // "cancelled", "deadline", "lost" or "drained"
+}
+
+// The end of a host-to-bundle call.
+message CallEnd {
+  // The call.
+  uint64 call_id = 1;
+  // The call's status; code 0 is success.
+  google.rpc.Status status = 2;
+}
+
+// The sender accepts more messages of a streamed call.
+message CallCredit {
+  // The call.
+  uint64 call_id = 1;
+  // How many more messages the peer may send.
+  uint32 messages = 2;
+}
+
+// An instance that stopped, was lost or is invalid; sent to the providers of
+// the contracts it requires, which drop its registrations, holds and leases.
+message InstanceGone {
+  // The instance that ended.
+  Instance instance = 1;
+}
+
+// A contract's provider changed.
+message ProviderChanged {
+  // The contract id.
+  string contract_id = 1;
+  // The new provider instance.
+  Instance instance = 2;
+}
+
+// The bundle replayed its registrations to a new provider.
+message ReplayDone {
+  // The contract id.
+  string contract_id = 1;
+  // The provider instance the registrations were replayed to.
+  Instance instance = 2;
+}
+
+// The scope of a call, serialized in the `doric-scope-bin` header; at most
+// 16 keys and 512-character values.
+message CallScope {
+  // The scope's entries.
+  map<string, string> entries = 1;
+}
+
+// The details of a `ContractError`, a detail of the `google.rpc.Status` that
+// ends a call, next to `google.rpc.ErrorInfo { reason: code, domain: "doric" }`.
+message ErrorDetails {
+  // The error's details.
+  google.protobuf.Struct details = 1;
+}

@@ -1,0 +1,173 @@
+// `navigation/v1` (client, 1.2.0): the routes and history of one window,
+// served by `core`'s client part. A client part registers a route by path
+// with the tag of the element `core` creates for it; a route may name a
+// parent, and the active chain runs root-first through the parents.
+//
+// 1.2.0: every method is asynchronous; a route names an `elementTag` instead
+// of `create`; `subscribe` becomes the stream `Watch`.
+syntax = "proto3";
+
+package doric.navigation.v1;
+
+import "buf/validate/validate.proto";
+import "doric/platform/v1/options.proto";
+
+option (doric.platform.v1.contract) = {
+  id: "navigation/v1"
+  cardinality: CARDINALITY_ONE
+  environment: ENVIRONMENT_CLIENT
+};
+
+// The window's routes and history.
+service NavigationService {
+  // Registers a route of the calling client part and answers a
+  // `registrationId`.
+  rpc Register(RegisterRequest) returns (RegisterResponse);
+  // Removes a registration; an unknown id is a no-op.
+  rpc Unregister(UnregisterRequest) returns (UnregisterResponse);
+  // Moves to a path.
+  rpc Navigate(NavigateRequest) returns (NavigateResponse);
+  // Steps one entry back in the window's history.
+  rpc Back(BackRequest) returns (BackResponse);
+  // Steps one entry forward in the window's history.
+  rpc Forward(ForwardRequest) returns (ForwardResponse);
+  // Whether Back and Forward can move; each item of `Watch` holds the same
+  // value.
+  rpc History(HistoryRequest) returns (HistoryResponse);
+  // The current match, or none; each item of `Watch` holds the same value.
+  rpc Current(CurrentRequest) returns (CurrentResponse);
+  // The active route's chain, root first; empty when no route matches. Each
+  // item of `Watch` holds the same value.
+  rpc Chain(ChainRequest) returns (ChainResponse);
+  // Streams the current match, the history and the chain: the present values
+  // first, then one item per navigation.
+  rpc Watch(WatchRequest) returns (stream WatchResponse) {
+    option (doric.platform.v1.method).resumable = true;
+  }
+}
+
+// A matched route: the path, the pattern it matched and its parameters.
+message RouteMatch {
+  // The matched path.
+  string path = 1;
+  // The route's pattern.
+  string pattern = 2;
+  // The route's own parameters.
+  map<string, string> params = 3;
+}
+
+// A route as it is registered.
+message RouteRegistration {
+  // The route's path pattern.
+  string path = 1;
+  // The tag of the element `core` creates for the route.
+  string element_tag = 2;
+  // The parent route's path pattern.
+  optional string parent = 3;
+}
+
+// One route of the active chain: its match (own params only) and its
+// registration.
+message RouteEntry {
+  // The route's match.
+  RouteMatch match = 1 [(buf.validate.field).required = true];
+  // The route's registration.
+  RouteRegistration route = 2 [(buf.validate.field).required = true];
+}
+
+// Whether the window's history can move back or forward from its entry.
+message NavigationHistory {
+  // Whether Back can move.
+  bool can_go_back = 1;
+  // Whether Forward can move.
+  bool can_go_forward = 2;
+}
+
+// Registers a route.
+message RegisterRequest {
+  // The route's path pattern.
+  string path = 1 [(buf.validate.field).string.min_len = 1];
+  // The tag of the element `core` creates for the route; the caller defined
+  // it with `ui/v1.Define`.
+  string element_tag = 2 [(buf.validate.field).string.min_len = 1];
+  // The parent route's path pattern.
+  optional string parent = 3;
+}
+
+// The route's registration.
+message RegisterResponse {
+  // The id `Unregister` takes.
+  string registration_id = 1;
+}
+
+// Removes a registration.
+message UnregisterRequest {
+  // The id `Register` answered.
+  string registration_id = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+// The registration is gone.
+message UnregisterResponse {}
+
+// Moves to a path.
+message NavigateRequest {
+  // The path.
+  string path = 1;
+  // Whether the move replaces the current history entry.
+  optional bool replace = 2;
+}
+
+// The navigation is done.
+message NavigateResponse {}
+
+// Steps back.
+message BackRequest {}
+
+// The step is done.
+message BackResponse {}
+
+// Steps forward.
+message ForwardRequest {}
+
+// The step is done.
+message ForwardResponse {}
+
+// Asks whether the history can move.
+message HistoryRequest {}
+
+// Whether the history can move.
+message HistoryResponse {
+  // The history.
+  NavigationHistory navigation_history = 1 [(buf.validate.field).required = true];
+}
+
+// Asks the current match.
+message CurrentRequest {}
+
+// The current match, or none.
+message CurrentResponse {
+  // The match; absent when no route matches.
+  optional RouteMatch route_match = 1;
+}
+
+// Asks the active chain.
+message ChainRequest {}
+
+// The active chain.
+message ChainResponse {
+  // The routes, root first.
+  repeated RouteEntry chain = 1;
+}
+
+// Asks the navigation state as it changes.
+message WatchRequest {}
+
+// The navigation state after a navigation.
+message WatchResponse {
+  // The current match; absent when no route matches.
+  optional RouteMatch current = 1;
+  // The history.
+  NavigationHistory history = 2 [(buf.validate.field).required = true];
+  // The active chain, root first.
+  repeated RouteEntry chain = 3;
+}

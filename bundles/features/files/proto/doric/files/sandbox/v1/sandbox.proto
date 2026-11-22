@@ -1,0 +1,134 @@
+// `files.sandbox/v1` (client, 1.1.0): the window's one tree read per Project
+// and working directory, shared by the views that draw the sandbox's files
+// (the Files panel) and the bundles that work from it. The `files` bundle's
+// client part provides it; only client parts of the same window reach it.
+// Observing activates the read; it runs only while observed. The tree is
+// read per directory: the root, and each directory once it is open.
+//
+// 1.1.0: `observeTree` becomes a server stream.
+syntax = "proto3";
+
+package doric.files.sandbox.v1;
+
+import "buf/validate/validate.proto";
+import "doric/platform/v1/options.proto";
+
+option (doric.platform.v1.contract) = {
+  id: "files.sandbox/v1"
+  cardinality: CARDINALITY_ONE
+  environment: ENVIRONMENT_CLIENT
+};
+
+// The sandbox trees of the window's Projects.
+service SandboxService {
+  // Observes the tree of one Project, rooted at a working directory: the
+  // present state first, then one item per change. The caller ends it by
+  // cancelling.
+  rpc ObserveTree(ObserveTreeRequest) returns (stream ObserveTreeResponse) {
+    option (doric.platform.v1.method).resumable = true;
+  }
+}
+
+// One workspace entry as the window reads it; today's `ProjectTreeNode`. A
+// directory carries its children once it was read; one never read carries
+// none and `read` false.
+message ProjectTreeNode {
+  option (buf.validate.message).cel = {
+    id: "project_tree_node.children"
+    message: "only a read directory carries children"
+    expression: "(this.type == 'directory' && this.read) || size(this.children) == 0"
+  };
+  option (buf.validate.message).cel = {
+    id: "project_tree_node.read"
+    message: "only a directory is read"
+    expression: "this.type == 'directory' || !this.read"
+  };
+  // The entry's last path segment.
+  string name = 1;
+  // The workspace-relative path.
+  string path = 2;
+  // "directory" or "file".
+  string type = 3 [(buf.validate.field).string = {
+    in: [
+      "directory",
+      "file"
+    ]
+  }];
+  // The file size in bytes, present when the listing measured it.
+  optional double size = 4 [
+    (buf.validate.field).double.gte = 0,
+    (buf.validate.field).cel = {
+      id: "size.integer"
+      message: "size must be a whole number of bytes"
+      expression: "this == double(int(this))"
+    }
+  ];
+  // A read directory's visible children; empty for a file, for a directory
+  // not read yet, and for a read directory whose every child is hidden or
+  // ignored.
+  repeated ProjectTreeNode children = 5;
+  // Whether the directory's children were read, which tells a read empty
+  // directory from one not read yet; false for a file.
+  bool read = 6;
+}
+
+// Where the window's tree read is: today's
+// `ReadState<readonly ProjectTreeNode[]>`.
+message TreeReadState {
+  option (buf.validate.message).cel = {
+    id: "tree_read_state.value"
+    message: "only a ready read carries entries"
+    expression: "this.status == 'ready' || size(this.value) == 0"
+  };
+  option (buf.validate.message).cel = {
+    id: "tree_read_state.retry"
+    message: "only a refused read carries retryAfterSeconds"
+    expression: "!(this.status in ['idle', 'loading', 'ready']) || !has(this.retry_after_seconds)"
+  };
+  // "idle", "loading", "ready", or why there is no value: "missing",
+  // "pending", "unavailable", "expired", "invalid_path" or "not_found".
+  string status = 1 [(buf.validate.field).string = {
+    in: [
+      "idle",
+      "loading",
+      "ready",
+      "missing",
+      "pending",
+      "unavailable",
+      "expired",
+      "invalid_path",
+      "not_found"
+    ]
+  }];
+  // The root's entries, each directory carrying its children once it was
+  // read; empty unless ready, and empty for a ready root with no visible
+  // entry.
+  repeated ProjectTreeNode value = 2;
+  // When to read again, in seconds; absent when the answer named no time.
+  optional double retry_after_seconds = 3 [(buf.validate.field).double.gte = 0];
+}
+
+// The tree of one Project, rooted at a working directory; today's
+// `TreeScope`.
+message ObserveTreeRequest {
+  // The Project.
+  string project_id = 1 [(buf.validate.field).string.min_len = 1];
+  // The raw working directory the tree is rooted at; the workspace root when
+  // absent.
+  optional string cwd = 2;
+}
+
+// What the tree read of one Project and working directory shows; today's
+// `TreeObservation`.
+message ObserveTreeResponse {
+  // The read's state.
+  TreeReadState read = 1 [(buf.validate.field).required = true];
+  // The failed read's message, as the toast shows it; absent when the last
+  // read did not fail.
+  optional string error = 2;
+  // Whether a read is in flight.
+  bool fetching = 3;
+  // The open directories whose children are being read, workspace-relative;
+  // empty when none.
+  repeated string loading = 4;
+}

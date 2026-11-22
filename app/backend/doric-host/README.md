@@ -2138,7 +2138,7 @@ are queued. They can start further model and tool activity
 ## Docker deployment details
 
 [`.Dockerfile`](.Dockerfile) builds the host from the repository root. Every
-stage starts from `node:22-bookworm-slim` pinned by digest, and every archive
+stage starts from `node:26-bookworm-slim` pinned by digest, and every archive
 or binary it fetches with `curl` is checked against a recorded SHA-256, so a
 changed one fails the build. Of the Debian packages, only those the host
 runs sandboxes with are pinned by version — nftables and openssh-client in
@@ -2147,15 +2147,27 @@ and socat in `runtime`; the build tools, `ca-certificates`, `curl` and the
 other packages install the versions the unpinned `apt-get update` finds.
 Its stages:
 
-- `agent-builder` copies `package.json`, `package-lock.json`, `nx.json`,
-  `tsconfig.json`, `tsconfig.base.json` and the trees `app`, `bundles`,
+- `agent-builder` installs `ca-certificates`, copies `package.json`,
+  `package-lock.json`, `nx.json`, `tsconfig.json`, `tsconfig.base.json`, the
+  root `project.json`, `buf.yaml`, `buf.gen.yaml` and `buf.lock`, the tree
+  `benchmarks/proto-codec/proto` and the trees `patches`, `app`, `bundles`,
   `packages` and `tools`, and installs npm 11.13.0. It runs
   `npm ci --ignore-scripts`, so no lifecycle script runs, then Nx's
-  `post-install` step itself; generates the Prisma client; compiles
+  `post-install` step itself and the root's `postinstall` itself,
+  `npx patch-package --error-on-fail`, which applies `patches/` (the
+  `@connectrpc/connect` 2.3.0 leak fix of
+  [Bundle processes](../../../docs/features/bundle-processes.md)); generates the Prisma client; compiles
   `packages/storage` and the host with `tsc --build`; writes the platform
   schemas; and runs
   `NX_DAEMON=false npx nx run doric-host:build-bundles --skip-nx-cache`, the
   target a local build runs, with no Nx daemon and no Nx cache.
+  Its projects' `generate-proto` targets run `buf generate` on the root buf
+  workspace, whose `buf.yaml` names every module directory, the benchmark's
+  included, and `packages/bundle`'s depends on the root project's
+  `proto-export`, which writes `dist/proto`. `buf` fetches the `buf.lock`
+  dependencies from buf.build, verifying TLS against the `ca-certificates`
+  store, so the build needs network access to buf.build; `protoc-gen-es` runs
+  from `node_modules`.
   `build-bundles` builds every Nx project tagged `type:bundle`, then
   `stage --all` stages every directory `bundles/<group>/<id>` that holds a
   `manifest.json` into `app/backend/doric-host/dist/bundles`
@@ -2301,8 +2313,9 @@ Two traps break the image build or the deployed catalog:
   [`build/cli.ts`](../../../packages/bundle/src/build/cli.ts)).
 - `package-lock.json` must be resolvable by npm 11: `agent-builder` installs
   npm 11.13.0 before `npm ci`
-  ([`.Dockerfile`](.Dockerfile)). A lock rewritten by npm 10, the npm
-  `node:22-bookworm-slim` ships, fails `npm ci` with
+  ([`.Dockerfile`](.Dockerfile)), the version CI pins, although
+  `node:26-bookworm-slim` already ships an npm 11. A
+  lock rewritten by npm 10 fails `npm ci` with
   `Missing: <package> from lock file`; regenerate it with
   `npx npm@11 install --package-lock-only`.
 

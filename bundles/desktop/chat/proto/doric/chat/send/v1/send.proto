@@ -1,0 +1,92 @@
+// `chat.send/v1` (client, 1.2.0): sends a Thread's held draft now, the same
+// send the composer's control makes, read from `chat.composer/v1`: the
+// stack's comments and the draft text become the prompt envelope
+// (`<comments>` then `<message>`), the host is asked through
+// `runtime.threads/v1`, and only after it accepts does the stack flush into
+// `comments.added/v1` (an item whose write fails goes back on the stack) and
+// the draft text clear in every window. A surface outside the composer, such
+// as the papercraft canvas, sends with it. `chat`'s client part provides it;
+// only client parts of the same window call it.
+//
+// 1.2.0: the methods move from zod to `.proto` with the same fields.
+syntax = "proto3";
+
+package doric.chat.send.v1;
+
+import "buf/validate/validate.proto";
+import "doric/platform/v1/options.proto";
+
+option (doric.platform.v1.contract) = {
+  id: "chat.send/v1"
+  cardinality: CARDINALITY_ONE
+  environment: ENVIRONMENT_CLIENT
+};
+
+// The window's send of a Thread's draft.
+service SendService {
+  // Sends the Thread's draft. A refusal is an answer, never an error: the
+  // draft then stays where it was.
+  rpc Send(SendRequest) returns (SendResponse);
+  // Sends `text`, wrapped in a `<ui-action program="…">` envelope, by the
+  // composer's route for a typed message: a steer of the Thread's running
+  // prompt, else a new prompt (resuming a paused, empty queue first).
+  // Answers "refused", with nothing sent or resumed, for a Thread that is
+  // unknown, of another Project or an agent's, and when the route was not
+  // taken. It never touches the composer: the draft, the stack and the
+  // store's pending turn stay as they were.
+  rpc SendAction(SendActionRequest) returns (SendActionResponse);
+}
+
+// Which Thread's draft a send carries, and the Project it belongs to.
+message SendRequest {
+  // The Thread's Project.
+  string project_id = 1 [(buf.validate.field).string.min_len = 1];
+  // The Thread.
+  string thread_id = 2 [(buf.validate.field).string.min_len = 1];
+}
+
+// What a send answered.
+message SendResponse {
+  // "accepted": the host accepted the prompt, the stack was flushed into the
+  // log and the draft text cleared. "empty": the draft carried nothing to
+  // send. "refused": the host refused the prompt, and the draft stays where
+  // it was.
+  string status = 1 [(buf.validate.field).string = {
+    in: [
+      "accepted",
+      "empty",
+      "refused"
+    ]
+  }];
+}
+
+// One click on a control of a UI the agent drew, sent as the reader's next
+// message of the Thread.
+message SendActionRequest {
+  // The Thread's Project.
+  string project_id = 1 [(buf.validate.field).string.min_len = 1];
+  // The Thread.
+  string thread_id = 2 [(buf.validate.field).string.min_len = 1];
+  // The program identity: a written identity or an anonymous `_<n>`.
+  string program = 3 [(buf.validate.field).string.pattern = "^(?:[a-z][a-z0-9-]{0,63}|_[1-9][0-9]{0,8})$"];
+  // The action's text, sent unchanged: not blank, at most 16,000 UTF-16
+  // code units. The rule below bounds code points; the provider refuses a
+  // longer text in UTF-16 code units with `invalid_input`.
+  string text = 4 [
+    (buf.validate.field).string.max_len = 16000,
+    (buf.validate.field).string.pattern = "\\S"
+  ];
+}
+
+// What the action's send answered.
+message SendActionResponse {
+  // "accepted": the Thread took the message (steered into the running
+  // prompt, queued, or a new prompt). "refused": it did not, and nothing was
+  // sent.
+  string status = 1 [(buf.validate.field).string = {
+    in: [
+      "accepted",
+      "refused"
+    ]
+  }];
+}

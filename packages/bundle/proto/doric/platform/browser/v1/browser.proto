@@ -1,0 +1,36 @@
+// `doric.browser/v1` (platform 2.0.0): opens a page in the system browser,
+// outside the app. A window may not open windows of its own; this is the one
+// way out, and it takes only an `https:` URL, which main hands to the
+// operating system.
+//
+// 2.0.0: the schema moves to `.proto` with the same fields.
+syntax = "proto3";
+
+package doric.platform.browser.v1;
+
+import "buf/validate/validate.proto";
+import "doric/platform/v1/options.proto";
+
+option (doric.platform.v1.contract) = {
+  id: "doric.browser/v1"
+  cardinality: CARDINALITY_ONE
+};
+
+// The system browser.
+service BrowserService {
+  // Opens a URL in the system browser.
+  rpc Open(OpenRequest) returns (OpenResponse);
+}
+
+// Opens a URL.
+message OpenRequest {
+  // An absolute `https:` URL of at most 8192 characters.
+  string url = 1 [(buf.validate.field).string = {
+    max_len: 8192
+    uri: true
+    prefix: "https:"
+  }];
+}
+
+// The URL is handed to the operating system.
+message OpenResponse {}

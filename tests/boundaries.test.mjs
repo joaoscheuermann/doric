@@ -239,6 +239,29 @@ test('7. imports: <other>/testing passes in tests/ and stories/ and is found in 
   ]);
 });
 
+test('7a. imports: <other>/contracts/gen/<path> passes in src/, tests/ and stories/', () => {
+  const source =
+    "import { ReadRequestSchema } from 'beta/contracts/gen/doric/beta/v1/beta_pb.js';\n";
+
+  for (const path of [
+    'bundles/features/alpha/src/a.ts',
+    'bundles/features/alpha/tests/a.test.ts',
+    'bundles/features/alpha/stories/a.stories.tsx',
+  ]) {
+    assert.deepEqual(importsIn(path, source), [], path);
+  }
+});
+
+test('7b. imports: <other>/contracts/<file> outside gen/ is still found', () => {
+  assert.deepEqual(
+    importsIn(
+      'bundles/features/alpha/src/a.ts',
+      "import { BetaV1 } from 'beta/contracts/index.js';\n",
+    ),
+    [finding('imports', 'alpha', 'beta/contracts/index.js')],
+  );
+});
+
 // T0.1, declared
 
 const declaredIn = (alpha, source) =>
@@ -782,6 +805,35 @@ test('25. dependencies: an unused dependencies line, an unused devDependencies l
       finding('dependencies', 'alpha', 'right-pad'),
       finding('dependencies', 'beta', 'react'),
     ],
+  );
+});
+
+test('25a. dependencies: @bufbuild/protobuf counts as used only when exports has ./contracts/gen/*', () => {
+  const protobuf = { dependencies: { '@bufbuild/protobuf': '^2.17.0' } };
+
+  assert.deepEqual(
+    findDependencies(
+      snapshot({
+        bundles: [
+          bundle('alpha', {
+            packageJson: {
+              ...protobuf,
+              exports: {
+                './contracts/gen/*': {
+                  '@org/source': './src/contracts/gen/*',
+                },
+              },
+            },
+          }),
+          bundle('beta', { packageJson: protobuf }),
+        ],
+        files: [
+          at('bundles/features/alpha/src/a.ts', 'export const a = 1;\n'),
+          at('bundles/features/beta/src/b.ts', 'export const b = 1;\n'),
+        ],
+      }),
+    ),
+    [finding('dependencies', 'beta', '@bufbuild/protobuf')],
   );
 });
 

@@ -20,7 +20,7 @@ import { compile } from '@tailwindcss/node';
 import { Scanner } from '@tailwindcss/oxide';
 import { type BuildFailure, build, type Plugin } from 'esbuild';
 
-import { manifestV1Schema } from '../runtime/manifest.js';
+import { parseManifest } from '../runtime/manifest.js';
 import {
   clientExternals,
   frameExternals,
@@ -312,7 +312,7 @@ export const buildParts = async (
 ): Promise<BuiltParts> => {
   const root = resolve(options.bundleDir);
   const dist = join(root, 'dist');
-  const manifest = manifestV1Schema.parse(
+  const { manifest } = parseManifest(
     JSON.parse(await readFile(join(root, 'manifest.json'), 'utf8')),
   );
   const contractsDir = join(root, 'src', 'contracts');

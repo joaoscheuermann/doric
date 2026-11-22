@@ -1,0 +1,66 @@
+// `claude.login/v1` (host, 1.1.0): the in-app Claude Code sign-in behind the
+// settings window's provider page. The host prepares the browser
+// authorization and answers its URL; the window opens that URL in the system
+// browser (`doric.browser/v1`), because the host may run where no browser
+// does, and then waits on `Finish` for the host to receive the callback.
+// `Finish` answers the stored `API_TOKEN` credential's public view, never the
+// authorization value.
+//
+// Errors of `Finish`: `claude_login_not_started` (no sign-in waiting),
+// `claude_login_busy` (another `Finish` waits on it), `claude_login_aborted`
+// (the caller cancelled, or a newer `Start` replaced it) and
+// `claude_login_failed` (the authorization failed); `Start` fails
+// `claude_login_failed` when it cannot prepare the authorization and
+// `claude_login_aborted` when the caller cancels it.
+//
+// 1.1.0: the schemas move to `.proto` with the same fields.
+syntax = "proto3";
+
+package doric.claude.login.v1;
+
+import "buf/validate/validate.proto";
+import "doric/platform/v1/options.proto";
+import "doric/secrets/v1/secrets.proto";
+
+option (doric.platform.v1.contract) = {
+  id: "claude.login/v1"
+  cardinality: CARDINALITY_ONE
+  environment: ENVIRONMENT_HOST
+};
+
+// Sign in with a Claude Code subscription.
+service LoginService {
+  // Prepares a fresh browser sign-in: binds the loopback callback and
+  // answers the authorization URL to open. A sign-in already waiting is
+  // cancelled and replaced; one nobody finishes ends on its own after a
+  // deadline.
+  rpc Start(StartRequest) returns (StartResponse) {
+    option (doric.platform.v1.method).expose = EXPOSE_DESKTOP;
+  }
+  // Waits for the browser to answer the started sign-in, stores its
+  // authorization and answers the stored credential's public view.
+  rpc Finish(FinishRequest) returns (FinishResponse) {
+    option (doric.platform.v1.method).expose = EXPOSE_DESKTOP;
+  }
+}
+
+// Starts a sign-in.
+message StartRequest {}
+
+// A started sign-in: the authorization page the browser opens.
+message StartResponse {
+  // The `https:` authorization URL; it carries the sign-in's state.
+  string url = 1 [(buf.validate.field).string = {
+    uri: true
+    prefix: "https:"
+  }];
+}
+
+// Finishes the started sign-in.
+message FinishRequest {}
+
+// The stored credential.
+message FinishResponse {
+  // The public view of the stored `API_TOKEN` credential.
+  doric.secrets.v1.CredentialDescription credential_description = 1 [(buf.validate.field).required = true];
+}

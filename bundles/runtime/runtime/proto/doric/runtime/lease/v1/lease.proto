@@ -1,0 +1,281 @@
+// `runtime.lease/v1` (host, 1.4.0): the sandbox operations bundles run on a
+// Project's current sandbox, served by `runtime`, which never acquires a
+// sandbox for them. Each operation holds a `LeaseTarget` and the content
+// messages `sandbox/v1` declares for the same operation.
+//
+// Which sandbox an operation runs on: with `target.threadSessionId`, the
+// Thread session's sandbox (`runtime.workspace/v1`); else, with a `promptId`
+// in the call's scope, the prompt's bound sandbox; else the current lease of
+// the Project of the scope's `projectId` (or of its `threadId`). A call whose
+// scope names neither a Project nor a Thread, and has no session, fails with
+// `INVALID_ARGUMENT` ("runtime.lease/v1 needs a Project or Thread scope.").
+//
+// When the Project's lease is not ready, or `target.expectSandboxId` names
+// another sandbox, the operation does nothing and fails with `UNAVAILABLE`,
+// reason `unavailable`, and the detail `ErrorDetails`.
+//
+// 1.4.0: `withLease` is removed; `Diff`, `Start`, `PutFile`, `GetFile` and
+// `Stats` are added; every operation takes a `LeaseTarget`; `readFileBytes`
+// streams its bytes; an operation without a ready lease fails with
+// `unavailable` and a `leaseStatus` detail instead of answering the state.
+syntax = "proto3";
+
+package doric.runtime.lease.v1;
+
+import "buf/validate/validate.proto";
+import "doric/platform/v1/options.proto";
+import "doric/sandbox/v1/sandbox.proto";
+
+option (doric.platform.v1.contract) = {
+  id: "runtime.lease/v1"
+  cardinality: CARDINALITY_ONE
+  environment: ENVIRONMENT_HOST
+};
+
+// Operations on a Project's current sandbox.
+service LeaseService {
+  // The sandbox's identity and workspace root. A caller that runs several
+  // steps on one sandbox calls it first and passes its `id` as every step's
+  // `expectSandboxId`.
+  rpc Describe(DescribeRequest) returns (DescribeResponse);
+  // Runs one command to its end.
+  rpc Exec(ExecRequest) returns (ExecResponse);
+  // Reads one file as UTF-8 text.
+  rpc ReadFile(ReadFileRequest) returns (ReadFileResponse);
+  // Reads one file's exact bytes, what `ReadFile` would decode as UTF-8, in
+  // chunks; an empty file answers no item.
+  rpc ReadFileBytes(ReadFileBytesRequest) returns (stream ReadFileBytesResponse);
+  // Writes one file as UTF-8 text.
+  rpc WriteFile(WriteFileRequest) returns (WriteFileResponse);
+  // The SSH access of the sandbox.
+  rpc Ssh(SshRequest) returns (SshResponse);
+  // The unified diff of the workspace, or of some of its paths.
+  rpc Diff(DiffRequest) returns (DiffResponse);
+  // Starts a live process, as `sandbox/v1.Start` does. The process keeps
+  // running after a Thread session that started it ends; cancelling this
+  // stream terminates it.
+  rpc Start(stream StartRequest) returns (stream StartResponse);
+  // Writes one file's exact bytes: a head, then the bytes in chunks.
+  rpc PutFile(stream PutFileRequest) returns (PutFileResponse);
+  // Reads one file's exact bytes, in chunks; an empty file answers no item.
+  rpc GetFile(GetFileRequest) returns (stream GetFileResponse);
+  // What the sandbox consumes now; absent when its provider offers no
+  // reading.
+  rpc Stats(StatsRequest) returns (StatsResponse);
+}
+
+// Which sandbox an operation must run on.
+message LeaseTarget {
+  // The sandbox the caller expects; when the resolved sandbox has another
+  // id the operation does nothing and fails with `leaseStatus`
+  // "unavailable".
+  optional string expect_sandbox_id = 1 [(buf.validate.field).string.min_len = 1];
+  // A Thread session of the calling instance; the operation runs on the
+  // session's sandbox.
+  optional string thread_session_id = 2 [(buf.validate.field).string.min_len = 1];
+}
+
+// The detail of an `UNAVAILABLE` failure: why the Project's lease could not
+// run the operation.
+message ErrorDetails {
+  // "pending" (no lease yet), "unavailable" (no runtime, closing, lease lost
+  // or another sandbox than `expectSandboxId`), "expired" (a terminal
+  // Project without a runtime) or "missing" (no Project).
+  string lease_status = 1 [(buf.validate.field).string = {
+    in: [
+      "pending",
+      "unavailable",
+      "expired",
+      "missing"
+    ]
+  }];
+}
+
+// Asks the sandbox's identity.
+message DescribeRequest {
+  // The sandbox to run on.
+  LeaseTarget target = 1;
+}
+
+// The sandbox's identity; today's `LeaseDescription`.
+message DescribeResponse {
+  // The sandbox's id.
+  string id = 1;
+  // The sandbox's workspace root, absolute.
+  string root = 2;
+}
+
+// Runs one command.
+message ExecRequest {
+  // The sandbox to run on.
+  LeaseTarget target = 1;
+  // The command.
+  doric.sandbox.v1.SandboxExecInput request = 2 [(buf.validate.field).required = true];
+}
+
+// The command's output.
+message ExecResponse {
+  // What the command produced.
+  doric.sandbox.v1.SandboxExecResult response = 1 [(buf.validate.field).required = true];
+}
+
+// Reads one file as text.
+message ReadFileRequest {
+  // The sandbox to run on.
+  LeaseTarget target = 1;
+  // The file.
+  doric.sandbox.v1.ReadFileInput request = 2 [(buf.validate.field).required = true];
+}
+
+// The file's text.
+message ReadFileResponse {
+  // The content.
+  doric.sandbox.v1.ReadFileOutput response = 1 [(buf.validate.field).required = true];
+}
+
+// Reads one file's exact bytes.
+message ReadFileBytesRequest {
+  // The sandbox to run on.
+  LeaseTarget target = 1;
+  // The file.
+  doric.sandbox.v1.GetFileInput request = 2 [(buf.validate.field).required = true];
+}
+
+// One chunk of the file's bytes; the file is the chunks' concatenation.
+message ReadFileBytesResponse {
+  // The file's next bytes, at most 1 MiB.
+  bytes chunk = 1 [(buf.validate.field).bytes = {
+    min_len: 1
+    max_len: 1048576
+  }];
+}
+
+// Writes one file as text.
+message WriteFileRequest {
+  // The sandbox to run on.
+  LeaseTarget target = 1;
+  // The file and its content.
+  doric.sandbox.v1.WriteFileInput request = 2 [(buf.validate.field).required = true];
+}
+
+// The file is written.
+message WriteFileResponse {}
+
+// Asks the sandbox's SSH access.
+message SshRequest {
+  // The sandbox to run on.
+  LeaseTarget target = 1;
+}
+
+// The sandbox's SSH access.
+message SshResponse {
+  // The sandbox's id.
+  string vm_id = 1;
+  // The access; absent when the sandbox offers none.
+  optional doric.sandbox.v1.SandboxSshAccess response = 2;
+}
+
+// Diffs the workspace.
+message DiffRequest {
+  // The sandbox to run on.
+  LeaseTarget target = 1;
+  // What the diff covers; the whole workspace when absent.
+  optional doric.sandbox.v1.SandboxDiffInput request = 2;
+}
+
+// The workspace's diff.
+message DiffResponse {
+  // The diff.
+  doric.sandbox.v1.DiffOutput response = 1 [(buf.validate.field).required = true];
+}
+
+// The first item of a `Start` stream.
+message StartHead {
+  // The sandbox to run on.
+  LeaseTarget target = 1;
+  // The process to start.
+  doric.sandbox.v1.SandboxProcessInput request = 2 [(buf.validate.field).required = true];
+}
+
+// One item a `Start` caller sends: the head first, and only first, then
+// writes and resizes.
+message StartRequest {
+  // The item.
+  oneof item {
+    option (buf.validate.oneof).required = true;
+    // The process to start; the first item.
+    StartHead head = 1;
+    // Text written to the process's stdin.
+    string write = 2;
+    // A new terminal size.
+    doric.sandbox.v1.SandboxProcessResize resize = 3;
+  }
+}
+
+// One item of a live process: its output, then its exit.
+message StartResponse {
+  // The item.
+  oneof item {
+    option (buf.validate.oneof).required = true;
+    // Output, in the order produced.
+    doric.sandbox.v1.SandboxProcessOutput output = 1;
+    // The process ended; the last item.
+    doric.sandbox.v1.SandboxExecResult exit = 2;
+  }
+}
+
+// The first item of a `PutFile` stream.
+message PutFileHead {
+  // The sandbox to run on.
+  LeaseTarget target = 1;
+  // The file to write.
+  doric.sandbox.v1.PutFileInput request = 2 [(buf.validate.field).required = true];
+}
+
+// One item a `PutFile` caller sends: the head first, and only first, then
+// the bytes in chunks; the file's bytes are the chunks' concatenation.
+message PutFileRequest {
+  // The item.
+  oneof item {
+    option (buf.validate.oneof).required = true;
+    // The file to write; the first item.
+    PutFileHead head = 1;
+    // The file's next bytes, at most 1 MiB.
+    bytes chunk = 2 [(buf.validate.field).bytes = {
+      min_len: 1
+      max_len: 1048576
+    }];
+  }
+}
+
+// The file is written.
+message PutFileResponse {}
+
+// Reads one file's exact bytes.
+message GetFileRequest {
+  // The sandbox to run on.
+  LeaseTarget target = 1;
+  // The file.
+  doric.sandbox.v1.GetFileInput request = 2 [(buf.validate.field).required = true];
+}
+
+// One chunk of the file's bytes; the file is the chunks' concatenation.
+message GetFileResponse {
+  // The file's next bytes, at most 1 MiB.
+  bytes chunk = 1 [(buf.validate.field).bytes = {
+    min_len: 1
+    max_len: 1048576
+  }];
+}
+
+// Asks the sandbox's resource reading.
+message StatsRequest {
+  // The sandbox to run on.
+  LeaseTarget target = 1;
+}
+
+// The resource reading, when the provider offers one.
+message StatsResponse {
+  // The reading; absent when the provider offers none.
+  optional doric.sandbox.v1.SandboxStats response = 1;
+}

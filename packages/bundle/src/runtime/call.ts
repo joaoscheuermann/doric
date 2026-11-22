@@ -69,27 +69,43 @@ export const anySignal = (signals: readonly AbortSignal[]): AbortSignal => {
   return controller.signal;
 };
 
+/**
+ * Aborts `controller` with a `TimeoutError` once `now()` reaches `deadline`.
+ * A timer can fire up to a millisecond before the wall clock reaches the
+ * deadline, so an early timer is armed again for the rest.
+ */
+export const abortAtDeadline = (
+  controller: AbortController,
+  deadline: number,
+  now: () => number,
+): void => {
+  const remaining = Math.max(0, deadline - now());
+
+  if (remaining === 0) {
+    controller.abort(timeoutError());
+
+    return;
+  }
+
+  const timer: ReturnType<typeof setTimeout> = setTimeout(
+    () => abortAtDeadline(controller, deadline, now),
+    remaining,
+  );
+  const unref = (timer as { unref?: () => void }).unref;
+
+  if (typeof unref === 'function') {
+    unref.call(timer);
+  }
+};
+
 const deadlineSignal = (
   signal: AbortSignal,
   deadline: number,
   now: () => number,
 ): AbortSignal => {
-  const remaining = Math.max(0, deadline - now());
   const controller = new AbortController();
 
-  if (remaining === 0) {
-    controller.abort(timeoutError());
-  } else {
-    const timer: ReturnType<typeof setTimeout> = setTimeout(
-      () => controller.abort(timeoutError()),
-      remaining,
-    );
-    const unref = (timer as { unref?: () => void }).unref;
-
-    if (typeof unref === 'function') {
-      unref.call(timer);
-    }
-  }
+  abortAtDeadline(controller, deadline, now);
 
   return anySignal([signal, controller.signal]);
 };

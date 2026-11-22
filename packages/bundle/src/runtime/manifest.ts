@@ -56,6 +56,7 @@ const checkEntries = (
   entries: readonly string[],
   field: 'provides' | 'requires',
   context: z.core.$RefinementCtx,
+  path: readonly PropertyKey[] = [field],
 ) => {
   const seen = new Set<string>();
 
@@ -67,7 +68,7 @@ const checkEntries = (
     }
 
     const issue = (message: string) =>
-      context.addIssue({ code: 'custom', path: [field, index], message });
+      context.addIssue({ code: 'custom', path: [...path, index], message });
 
     if (isPlatformContract(parsed.id)) {
       issue(`"${parsed.id}" is a platform contract and is never declared.`);
@@ -144,7 +145,26 @@ const checkDesktopScope = (
   }
 };
 
-/** Manifest v1: identity, platform range and declared contracts; nothing else. */
+/**
+ * The shape of `host.httpPrefix`: one lowercase path segment between slashes,
+ * `"/screen/"`. The gateway serves the bundle's HTTP routes under it
+ * (spec §11). Anchored; matches the whole string or nothing.
+ */
+export const httpPrefixPattern = /^\/[a-z][a-z0-9-]*\/$/;
+
+const httpPrefix = z
+  .string()
+  .regex(
+    httpPrefixPattern,
+    'Expected one path segment between slashes, "/<segment>/".',
+  );
+
+/**
+ * Manifest v1: identity, platform range, declared contracts and, from phase 2,
+ * an optional strict `host: { httpPrefix? }` (G7). Any other `host` key is
+ * refused. Its `requires` and `optional` are bundle-wide: `partLists` answers
+ * them for every part.
+ */
 export const manifestV1Schema = z
   .object({
     manifestVersion: z.literal(1),
@@ -160,6 +180,8 @@ export const manifestV1Schema = z
     optional: z.array(z.string().regex(contractIdPattern)).optional(),
     desktopScope: desktopScopeSchema.optional(),
     description: z.string().trim().min(1).optional(),
+    /** The host part's settings; v1 holds `httpPrefix` only (G7). */
+    host: z.object({ httpPrefix: httpPrefix.optional() }).strict().optional(),
   })
   .strict()
   .superRefine((manifest, context) => {
@@ -171,6 +193,132 @@ export const manifestV1Schema = z
 export type ManifestV1 = z.output<typeof manifestV1Schema>;
 
 export type ManifestV1Input = z.input<typeof manifestV1Schema>;
+
+/** A part of a bundle whose requirements a v2 manifest lists apart. */
+export type Part = 'host' | 'client';
+
+/** One part's lists as written: `requires` entries and `optional` ids. */
+const partListFields = {
+  /** `<id>/v<major>@<range>`; the part cannot activate without each. */
+  requires: z.array(contractRef).default([]),
+  /** Contract ids usable when present, without becoming dependencies. */
+  optional: z.array(z.string().regex(contractIdPattern)).default([]),
+};
+
+/**
+ * Refines one part of a v2 manifest: each `requires` entry as v1's
+ * `checkEntries` refuses it, a `doric.*` id under `requires` or `optional`,
+ * and a contract id listed twice in the part (under `requires` and `optional`
+ * together included). Issues are reported at `[part, list, index]`.
+ */
+const checkPart = (
+  lists: {
+    readonly requires: readonly string[];
+    readonly optional: readonly string[];
+  },
+  part: Part,
+  context: z.core.$RefinementCtx,
+): void => {
+  checkEntries(lists.requires, 'requires', context, [part, 'requires']);
+
+  const seen = new Set(
+    lists.requires.map((entry) => parseContractEntry(entry)?.id),
+  );
+
+  lists.optional.forEach((id, index) => {
+    const issue = (message: string) =>
+      context.addIssue({
+        code: 'custom',
+        path: [part, 'optional', index],
+        message,
+      });
+
+    if (isPlatformContract(id)) {
+      issue(`"${id}" is a platform contract and is never declared.`);
+    }
+
+    if (seen.has(id)) {
+      issue(`"${id}" is listed more than once.`);
+    }
+
+    seen.add(id);
+  });
+};
+
+/**
+ * Manifest v2 (A41, D30): v1's `id`, `version`, `engines`, `provides`,
+ * `desktopScope` and `description` with their v1 rules, and `requires` and
+ * `optional` moved under each part. `host` and `client` are optional and parse
+ * to `{ requires: [], optional: [] }` when absent; `host` also holds
+ * `httpPrefix`. Unknown keys at any level are refused. Top-level `requires` or
+ * `optional` is refused.
+ */
+export const manifestV2Schema = z
+  .object({
+    manifestVersion: z.literal(2),
+    id: z
+      .string()
+      .regex(bundleIdPattern, 'Expected a lowercase bundle ID.')
+      .refine((id) => id !== 'doric', '"doric" is reserved for the platform.'),
+    version: semverString,
+    engines: z.object({ doric: semverRange }).strict(),
+    provides: z.array(contractRef).default([]),
+    host: z
+      .object({ ...partListFields, httpPrefix: httpPrefix.optional() })
+      .strict()
+      .prefault({}),
+    client: z.object(partListFields).strict().prefault({}),
+    desktopScope: desktopScopeSchema.optional(),
+    description: z.string().trim().min(1).optional(),
+  })
+  .strict()
+  .superRefine((manifest, context) => {
+    checkEntries(manifest.provides, 'provides', context);
+    checkPart(manifest.host, 'host', context);
+    checkPart(manifest.client, 'client', context);
+    checkDesktopScope(manifest.desktopScope, manifest.provides, context);
+  });
+
+export type ManifestV2 = z.output<typeof manifestV2Schema>;
+
+export type ManifestV2Input = z.input<typeof manifestV2Schema>;
+
+/** A validated manifest of a version the platform reads. */
+export type Manifest = ManifestV1 | ManifestV2;
+
+/** The requirements of one part, as the catalog and the run-time checks read them. */
+export interface PartLists {
+  /** Parsed `requires` entries, in manifest order; never malformed. */
+  readonly requires: readonly ContractEntry[];
+  /** `optional` contract ids, in manifest order; empty when none. */
+  readonly optional: readonly string[];
+}
+
+/**
+ * The lists of `part` in `manifest`. A v2 manifest answers that part's own
+ * lists (empty when the part's object is absent); a v1 manifest answers its
+ * bundle-wide `requires` and `optional` for either part. Pure; never throws
+ * on a manifest produced by `parseManifest`.
+ */
+export const partLists = (manifest: Manifest, part: Part): PartLists => {
+  const lists = manifest.manifestVersion === 2 ? manifest[part] : manifest;
+
+  return {
+    requires: lists.requires.flatMap((entry) => {
+      const parsed = parseContractEntry(entry);
+
+      return parsed === undefined ? [] : [parsed];
+    }),
+    optional: lists.optional ?? [],
+  };
+};
+
+/**
+ * `host.httpPrefix` of either version, or undefined when the manifest sets
+ * none. A defined result matches `httpPrefixPattern`.
+ */
+export const httpPrefixOf = (manifest: Manifest): string | undefined =>
+  manifest.host?.httpPrefix;
 
 const nameSchema = z.string().trim().min(1);
 
@@ -206,7 +354,8 @@ export interface LegacyResource {
 }
 
 export interface ReadManifest {
-  readonly manifest: ManifestV1;
+  /** v1 or v2 as written; a converted v0 manifest is v1. */
+  readonly manifest: Manifest;
   /** Present only for a converted v0 manifest. */
   readonly legacy?: {
     readonly tools: readonly LegacyResource[];
@@ -249,14 +398,25 @@ export const convertV0 = (v0: ManifestV0): ReadManifest => {
   };
 };
 
-/** Parses a manifest document: v1 when `manifestVersion` is present, else v0. */
+/**
+ * Parses a manifest document by its `manifestVersion`: `1` with
+ * `manifestV1Schema`, `2` with `manifestV2Schema`; without the key, as v0
+ * converted to v1 (unchanged until phase 3). Throws a `ZodError` for any other
+ * `manifestVersion` or an invalid document; the result's `manifest` is valid
+ * for its version.
+ */
 export const parseManifest = (document: unknown): ReadManifest => {
   if (
     typeof document === 'object' &&
     document !== null &&
     'manifestVersion' in document
   ) {
-    return { manifest: manifestV1Schema.parse(document) };
+    return {
+      manifest:
+        document.manifestVersion === 2
+          ? manifestV2Schema.parse(document)
+          : manifestV1Schema.parse(document),
+    };
   }
 
   return convertV0(manifestV0Schema.parse(document));

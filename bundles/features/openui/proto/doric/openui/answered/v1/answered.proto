@@ -1,0 +1,31 @@
+// `openui.answered/v1` (host, 1.1.0): the event the reader's answers raise
+// once they reached the Thread, owned by `openui`. It is written under the
+// prompt that took the answers and names the question's prompt and digest.
+// The first row of a question is its final answer.
+//
+// 1.1.0: the schema moves from zod to `.proto` with the same fields; keys the
+// payload does not declare are dropped.
+syntax = "proto3";
+
+package doric.openui.answered.v1;
+
+import "buf/validate/validate.proto";
+import "doric/openui/questions/v1/questions.proto";
+import "doric/platform/v1/options.proto";
+
+option (doric.platform.v1.contract) = {
+  id: "openui.answered/v1"
+  cardinality: CARDINALITY_ONE
+  environment: ENVIRONMENT_HOST
+};
+
+// The reader's answers reached the Thread.
+message OpenuiAnswered {
+  option (doric.platform.v1.event).type = "openui.answered/v1";
+  // The prompt that wrote the question fence.
+  string question_prompt_id = 1 [(buf.validate.field).string.min_len = 1];
+  // The hex SHA-256 of the parsed questions' JSON.
+  string digest = 2 [(buf.validate.field).string.pattern = "^[0-9a-f]{64}$"];
+  // The answers; empty for none.
+  repeated doric.openui.questions.v1.AskAnswer answers = 3;
+}

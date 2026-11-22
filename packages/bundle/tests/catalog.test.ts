@@ -4,7 +4,9 @@ import test from 'node:test';
 import {
   type CatalogCandidate,
   type Composition,
+  type ManifestV2Input,
   manifestV1Schema,
+  manifestV2Schema,
   type ResolvedEnvironment,
   resolveEnvironment,
 } from '../src/runtime/index.js';
@@ -36,6 +38,66 @@ const candidate = (
         : { kind: 'installed', dir: `/bundles/${id}` },
     manifest: manifestV1Schema.parse(source),
     descriptor: descriptorFor(source, options.shapes),
+    errors: [],
+  };
+};
+
+interface PartOptions {
+  readonly requires?: readonly string[];
+  readonly optional?: readonly string[];
+}
+
+/** A candidate with a version 2 manifest: requirements per part (A41). */
+const candidateV2 = (
+  id: string,
+  options: {
+    readonly version?: string;
+    readonly engines?: string;
+    readonly provides?: readonly string[];
+    readonly host?: PartOptions & { readonly httpPrefix?: string };
+    readonly client?: PartOptions;
+    readonly shapes?: Readonly<
+      Record<string, ContractShape | readonly ContractShape[]>
+    >;
+  } = {},
+): CatalogCandidate => {
+  const version = options.version ?? '1.0.0';
+  const provides = [...(options.provides ?? [])];
+  const source: ManifestV2Input = {
+    manifestVersion: 2,
+    id,
+    version,
+    engines: { doric: options.engines ?? '^1.0.0' },
+    provides,
+    ...(options.host === undefined
+      ? {}
+      : {
+          host: {
+            requires: [...(options.host.requires ?? [])],
+            optional: [...(options.host.optional ?? [])],
+            ...(options.host.httpPrefix === undefined
+              ? {}
+              : { httpPrefix: options.host.httpPrefix }),
+          },
+        }),
+    ...(options.client === undefined
+      ? {}
+      : {
+          client: {
+            requires: [...(options.client.requires ?? [])],
+            optional: [...(options.client.optional ?? [])],
+          },
+        }),
+  };
+
+  return {
+    id,
+    source: { kind: 'installed', dir: `/bundles/${id}` },
+    manifest: manifestV2Schema.parse(source),
+    descriptor: descriptorFor(
+      manifest(id, { version, provides }),
+      options.shapes,
+    ),
     errors: [],
   };
 };
@@ -446,4 +508,192 @@ void test('a provider choice applies only where the chosen bundle provides the c
     entry(resolve(candidates, composition), 'xa').state,
     'scheduled',
   );
+});
+
+// T2.15, AC2.4: the catalog per part (Requirements per part, "How the catalog
+// resolves each part"; The environment rule, "The check").
+
+const clientPanel = () =>
+  candidateV2('ui', {
+    provides: ['ui.panel/v1@1.0.0'],
+    shapes: { 'ui.panel/v1': { environment: 'client' } },
+  });
+
+void test('quarantines a host part whose host.requires names a contract only client parts provide', () => {
+  const resolved = resolve([
+    core(),
+    clientPanel(),
+    candidateV2('reader', { host: { requires: ['ui.panel/v1@^1.0.0'] } }),
+  ]);
+
+  assert.equal(entry(resolved, 'reader').state, 'quarantined');
+  assert.deepEqual(
+    entry(resolved, 'reader').reasons.map(({ code, message }) => ({
+      code,
+      message,
+    })),
+    [
+      {
+        code: 'unreachable_dependency',
+        message:
+          'host.requires ui.panel/v1; only client parts provide it, and a host part cannot reach a client part',
+      },
+    ],
+  );
+  assert.ok(!resolved.order.includes('reader'));
+});
+
+void test('quarantines a host part whose host.optional names a contract only client parts provide', () => {
+  const resolved = resolve([
+    core(),
+    clientPanel(),
+    candidateV2('peeker', { host: { optional: ['ui.panel/v1'] } }),
+  ]);
+
+  assert.deepEqual(
+    entry(resolved, 'peeker').reasons.map(({ code, message }) => ({
+      code,
+      message,
+    })),
+    [
+      {
+        code: 'unreachable_dependency',
+        message:
+          'host.optional ui.panel/v1; only client parts provide it, and a host part cannot reach a client part',
+      },
+    ],
+  );
+  assert.ok(!resolved.order.includes('peeker'));
+});
+
+void test('cascades an unreachable dependency to the bundles that require the quarantined one', () => {
+  const resolved = resolve([
+    core(),
+    clientPanel(),
+    candidateV2('reader', {
+      provides: ['reader.api/v1@1.0.0'],
+      host: { requires: ['ui.panel/v1@^1.0.0'] },
+    }),
+    candidateV2('user', { host: { requires: ['reader.api/v1@^1.0.0'] } }),
+  ]);
+
+  assert.deepEqual(codes(resolved, 'reader'), ['unreachable_dependency']);
+  assert.deepEqual(codes(resolved, 'user'), ['dependency_quarantined']);
+  assert.deepEqual(resolved.order, ['core', 'ui']);
+});
+
+void test('lets client.requires name a client contract a host part could not reach', () => {
+  const candidates = [
+    core(),
+    clientPanel(),
+    candidateV2('viewer', { client: { requires: ['ui.panel/v1@^1.0.0'] } }),
+  ];
+
+  assert.equal(entry(resolve(candidates), 'viewer').state, 'scheduled');
+  assert.equal(
+    entry(resolve(candidates, {}, 'client'), 'viewer').state,
+    'scheduled',
+  );
+});
+
+void test('resolves each environment with the lists of its own part', () => {
+  const candidates = [
+    core(),
+    candidateV2('panel', { client: { requires: ['ghost.api/v1@^1.0.0'] } }),
+    candidateV2('worker', { host: { requires: ['ghost.api/v1@^1.0.0'] } }),
+  ];
+  const host = resolve(candidates);
+  const client = resolve(candidates, {}, 'client');
+
+  assert.equal(entry(host, 'panel').state, 'scheduled');
+  assert.deepEqual(entry(host, 'panel').dependencies, []);
+  assert.deepEqual(codes(host, 'worker'), ['missing_dependency']);
+  assert.deepEqual(codes(client, 'panel'), ['missing_dependency']);
+  assert.equal(entry(client, 'worker').state, 'scheduled');
+  assert.deepEqual(entry(client, 'worker').dependencies, []);
+});
+
+void test('checks a bundle without a part in the environment only for what does not depend on a part', () => {
+  const host = resolve([
+    core(),
+    candidateV2('future', {
+      engines: '^2.0.0',
+      client: { requires: ['ghost.api/v1@^1.0.0'] },
+    }),
+  ]);
+
+  assert.deepEqual(codes(host, 'future'), ['engines_unsatisfied']);
+});
+
+void test('orders a host part after the host part of the provider its host.requires names', () => {
+  const resolved = resolve([
+    core(),
+    candidateV2('alpha', { host: { requires: ['zeta.api/v1@^1.0.0'] } }),
+    candidateV2('zeta', { provides: ['zeta.api/v1@1.2.0'] }),
+  ]);
+
+  assert.deepEqual(resolved.order, ['core', 'zeta', 'alpha']);
+  assert.deepEqual(entry(resolved, 'alpha').dependencies, ['zeta']);
+});
+
+void test('orders a client part after the client part of the provider of a client contract it requires', () => {
+  const client = resolve(
+    [
+      core(),
+      candidateV2('apanel', {
+        client: { requires: ['zview.panel/v1@^1.0.0'] },
+      }),
+      candidateV2('zview', {
+        provides: ['zview.panel/v1@1.0.0'],
+        shapes: { 'zview.panel/v1': { environment: 'client' } },
+      }),
+    ],
+    {},
+    'client',
+  );
+
+  assert.deepEqual(client.order, ['core', 'zview', 'apanel']);
+  assert.deepEqual(entry(client, 'apanel').dependencies, ['zview']);
+});
+
+void test('a host contract under client.requires constrains its version but adds no order', () => {
+  const client = resolve(
+    [
+      core(),
+      candidateV2('apanel', {
+        client: { requires: ['zgit.commands/v1@^1.0.0'] },
+      }),
+      candidateV2('astrict', {
+        client: { requires: ['zgit.commands/v1@^1.4.0'] },
+      }),
+      candidateV2('zgit', { provides: ['zgit.commands/v1@1.3.0'] }),
+    ],
+    {},
+    'client',
+  );
+
+  assert.equal(entry(client, 'apanel').state, 'scheduled');
+  assert.deepEqual(entry(client, 'apanel').dependencies, []);
+  assert.deepEqual(client.order, ['core', 'apanel', 'zgit']);
+  assert.deepEqual(codes(client, 'astrict'), ['incompatible_version']);
+});
+
+void test('quarantines the second bundle in activation order that takes an HTTP prefix', () => {
+  const resolved = resolve([
+    core(),
+    // `arelay` sorts first by id but activates after `zrelay`, its provider.
+    candidateV2('arelay', {
+      host: { requires: ['zrelay.api/v1@^1.0.0'], httpPrefix: '/screen/' },
+    }),
+    candidateV2('zrelay', {
+      provides: ['zrelay.api/v1@1.0.0'],
+      host: { httpPrefix: '/screen/' },
+    }),
+    candidateV2('other', { host: { httpPrefix: '/other/' } }),
+  ]);
+
+  assert.equal(entry(resolved, 'zrelay').state, 'scheduled');
+  assert.equal(entry(resolved, 'other').state, 'scheduled');
+  assert.deepEqual(codes(resolved, 'arelay'), ['duplicate_http_prefix']);
+  assert.deepEqual(resolved.order, ['core', 'other', 'zrelay']);
 });

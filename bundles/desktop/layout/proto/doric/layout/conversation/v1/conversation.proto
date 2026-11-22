@@ -1,0 +1,35 @@
+// `layout.conversation/v1` (client, 1.1.0): the conversation's frame in one
+// workspace window.
+//
+// 1.1.0: `setBottomVisible` is asynchronous.
+syntax = "proto3";
+
+package doric.layout.conversation.v1;
+
+import "buf/validate/validate.proto";
+import "doric/platform/v1/options.proto";
+
+option (doric.platform.v1.contract) = {
+  id: "layout.conversation/v1"
+  cardinality: CARDINALITY_ONE
+  environment: ENVIRONMENT_CLIENT
+};
+
+// The conversation's frame.
+service ConversationService {
+  // Shows or hides the `shell.conversation.bottom` split for one item. The
+  // split is shown while any item asks for it; its items mount only while it
+  // is shown.
+  rpc SetBottomVisible(SetBottomVisibleRequest) returns (SetBottomVisibleResponse);
+}
+
+// One item's ask for the bottom split.
+message SetBottomVisibleRequest {
+  // The item that asks.
+  string item_id = 1 [(buf.validate.field).string.min_len = 1];
+  // Whether the item wants the split shown.
+  bool visible = 2;
+}
+
+// The ask is recorded.
+message SetBottomVisibleResponse {}

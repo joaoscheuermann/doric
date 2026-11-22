@@ -1,0 +1,33 @@
+// `doric.notifications/v1` (platform 2.0.0): native notifications. Electron
+// main serves it to client parts.
+//
+// 2.0.0: served to client parts. No member changes.
+syntax = "proto3";
+
+package doric.platform.notifications.v1;
+
+import "doric/platform/v1/options.proto";
+
+option (doric.platform.v1.contract) = {
+  id: "doric.notifications/v1"
+  cardinality: CARDINALITY_ONE
+};
+
+// The native notifications.
+service NotificationsService {
+  // Shows one notification. Main bounds each line to 200 code points; an
+  // empty title or an unsupported platform is a silent no-op, and an
+  // operating system's refusal is only logged.
+  rpc Show(ShowRequest) returns (ShowResponse);
+}
+
+// One notification.
+message ShowRequest {
+  // The title.
+  string title = 1;
+  // The body.
+  string body = 2;
+}
+
+// The notification is handed to the operating system, or skipped.
+message ShowResponse {}

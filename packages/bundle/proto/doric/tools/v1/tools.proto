@@ -1,0 +1,240 @@
+// `tools/v1` (host, 1.5.0): the tools a model can call. A bundle registers a
+// tool's definition as data; `core` keeps it with the registering instance,
+// lists it, and runs it through that instance's `ToolHandlerService`.
+//
+// A tool's key is the pair `(name, projectId)`, `projectId` absent for an
+// unscoped tool. Two keys collide when their names are equal and their
+// Projects overlap (the same `projectId`, or either one unscoped), which is
+// refused with `duplicate_tool`. A call lists the unscoped tools and those of
+// its scope's `projectId`.
+//
+// 1.5.0: `register` takes data and `list` answers data; a tool runs through
+// `Execute` and the registering bundle's `ToolHandlerService`.
+syntax = "proto3";
+
+package doric.tools.v1;
+
+import "buf/validate/validate.proto";
+import "doric/platform/v1/options.proto";
+import "google/protobuf/struct.proto";
+
+option (doric.platform.v1.contract) = {
+  id: "tools/v1"
+  cardinality: CARDINALITY_ONE
+  environment: ENVIRONMENT_HOST
+};
+
+// The tool registry.
+service ToolsService {
+  // Registers a tool for the calling instance and answers a
+  // `registrationId`. The same key again from the same instance replaces the
+  // registration and answers the same id; a colliding key of another bundle,
+  // or another key of the same bundle that collides, is `duplicate_tool`.
+  rpc Register(RegisterRequest) returns (RegisterResponse);
+  // Removes a registration; an unknown id is a no-op.
+  rpc Unregister(UnregisterRequest) returns (UnregisterResponse);
+  // The tools the call sees, sorted by `order` (unordered entries last), then
+  // registration order; for each key, the newest instance's registration.
+  rpc List(ListRequest) returns (ListResponse);
+  // The tools `List` answers, as catalog entries, in the same order.
+  rpc Catalog(CatalogRequest) returns (CatalogResponse) {
+    option (doric.platform.v1.method).expose = EXPOSE_DESKTOP;
+  }
+  // Runs a tool the call sees through its registering instance's
+  // `ToolHandlerService.Execute` and answers its result.
+  rpc Execute(ExecuteRequest) returns (ExecuteResponse);
+}
+
+// A registered tool's behavior, implemented by the bundle that registers it
+// and called by `core` on the registering instance.
+service ToolHandlerService {
+  option (doric.platform.v1.service).role = SERVICE_ROLE_HANDLER;
+
+  // Validates a payload with the tool's own schema; never runs the tool.
+  rpc Check(ToolHandlerServiceCheckRequest) returns (ToolHandlerServiceCheckResponse);
+  // Runs the tool with a payload and answers its result.
+  rpc Execute(ToolHandlerServiceExecuteRequest) returns (ToolHandlerServiceExecuteResponse);
+}
+
+// The serializable definition a model sees for one tool.
+message ContractToolDefinition {
+  // The tool's name as the model calls it.
+  string name = 1;
+  // What the tool does, for the model.
+  optional string description = 2;
+  // The JSON Schema of the tool's input, as JSON text.
+  string input_schema = 3 [(buf.validate.field).string.min_len = 1];
+  // The JSON Schema of the tool's output, as JSON text.
+  string output_schema = 4 [(buf.validate.field).string.min_len = 1];
+  // Whether the model must follow the input schema exactly.
+  optional bool strict = 5;
+}
+
+// A tool as `tools/v1` holds it: its definition and metadata. Its behavior
+// is the registering instance's `ToolHandlerService`.
+message ContractTool {
+  // The tool's name, not blank.
+  string name = 1 [(buf.validate.field).string.pattern = "\\S"];
+  // What the tool does.
+  optional string description = 2;
+  // The definition the model sees.
+  ContractToolDefinition definition = 3 [(buf.validate.field).required = true];
+  // The configuration fields the tool declares (the `tool` package's
+  // `ConfigField`), opaque here.
+  repeated google.protobuf.Struct settings = 4;
+  // What the tool's results hand the model besides text (`image`, ...); a
+  // model whose catalog says it reads none of them is not offered the tool.
+  repeated string result_modalities = 5;
+}
+
+// How a tool is registered.
+message ToolRegistrationOptions {
+  // Whether the tool is offered on every turn.
+  bool always_available = 1;
+  // The global position in `List`, ascending, a positive whole number;
+  // entries without it follow every ordered entry, in registration order.
+  optional double order = 2 [
+    (buf.validate.field).double = {
+      gte: 1
+      lte: 9007199254740991
+    },
+    (buf.validate.field).cel = {
+      id: "order.integer"
+      message: "order must be a whole number"
+      expression: "this == double(int(this))"
+    }
+  ];
+  // The Project the tool belongs to; absent, the tool is unscoped and every
+  // call sees it.
+  optional string project_id = 3 [(buf.validate.field).string.min_len = 1];
+}
+
+// A tool as `List` answers it: with the bundle that registered it.
+message RegisteredTool {
+  // The registering bundle's id.
+  string bundle_id = 1;
+  // Whether the tool is offered on every turn.
+  bool always_available = 2;
+  // The global position the registrant gave; absent when unordered.
+  optional double order = 3;
+  // The Project the tool was registered for; absent for a tool every call
+  // sees.
+  optional string project_id = 4;
+  // The tool.
+  ContractTool tool = 5;
+}
+
+// One tool as `GET /tools` lists it: its name, description and configuration
+// fields.
+message ToolCatalogEntry {
+  // The tool's name.
+  string name = 1;
+  // What the tool does.
+  optional string description = 2;
+  // The configuration fields the tool declares.
+  repeated google.protobuf.Struct settings = 3;
+}
+
+// One validation issue of a tool payload, as the model repair flow shows it.
+message ToolIssueView {
+  // The path of the issue in the payload.
+  string path = 1;
+  // What is wrong.
+  string message = 2;
+}
+
+// Registers a tool.
+message RegisterRequest {
+  // The tool.
+  ContractTool tool = 1 [(buf.validate.field).required = true];
+  // How it is registered.
+  ToolRegistrationOptions options = 2 [(buf.validate.field).required = true];
+}
+
+// The tool's registration.
+message RegisterResponse {
+  // The id `Unregister` takes.
+  string registration_id = 1;
+}
+
+// Removes a registration.
+message UnregisterRequest {
+  // The id `Register` answered.
+  string registration_id = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+// The registration is gone.
+message UnregisterResponse {}
+
+// Asks the tools the call sees.
+message ListRequest {}
+
+// The tools the call sees, in `List` order.
+message ListResponse {
+  // The tools.
+  repeated RegisteredTool tools = 1;
+}
+
+// Asks the tool catalog the call sees.
+message CatalogRequest {}
+
+// The catalog, in `List` order.
+message CatalogResponse {
+  // One entry per tool.
+  repeated ToolCatalogEntry entries = 1;
+}
+
+// Runs a tool by name.
+message ExecuteRequest {
+  // The tool's name; the call's scope picks the Project.
+  string name = 1 [(buf.validate.field).string.min_len = 1];
+  // The tool's input, JSON.
+  google.protobuf.Value payload = 2;
+}
+
+// The tool's result.
+message ExecuteResponse {
+  // The result, JSON.
+  google.protobuf.Value result = 1;
+}
+
+// Validates a payload for one registered tool.
+message ToolHandlerServiceCheckRequest {
+  // The tool's name.
+  string name = 1;
+  // The Project the tool was registered for; absent for an unscoped tool.
+  optional string project_id = 2;
+  // The payload to validate, JSON.
+  google.protobuf.Value payload = 3;
+}
+
+// The result of validating a payload with the tool's own schema.
+message ToolHandlerServiceCheckResponse {
+  option (buf.validate.message).cel = {
+    id: "tool_handler_service_check_response.result"
+    message: "a success carries data and no issues, a failure issues and no data"
+    expression: "this.success ? (has(this.data) && size(this.issues) == 0) : (!has(this.data) && size(this.issues) > 0)"
+  };
+  // Whether the payload is valid.
+  bool success = 1;
+  // The parsed payload; set on success.
+  optional google.protobuf.Value data = 2;
+  // What is wrong with the payload; empty on success.
+  repeated ToolIssueView issues = 3;
+}
+
+// Runs one registered tool.
+message ToolHandlerServiceExecuteRequest {
+  // The tool's name.
+  string name = 1;
+  // The Project the tool was registered for; absent for an unscoped tool.
+  optional string project_id = 2;
+  // The tool's input, JSON.
+  google.protobuf.Value payload = 3;
+}
+
+// The tool's result.
+message ToolHandlerServiceExecuteResponse {
+  // The result, JSON.
+  google.protobuf.Value result = 1;
+}

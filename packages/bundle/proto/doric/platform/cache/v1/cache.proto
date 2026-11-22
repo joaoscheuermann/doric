@@ -1,0 +1,85 @@
+// `doric.cache/v1` (platform 2.0.0): the calling bundle's cache directory,
+// for the files window storage cannot hold (files main's `doric://`
+// protocol serves). Electron main serves it to client parts. Every path is
+// relative to the caller's cache directory.
+//
+// 2.0.0: `directory()` is removed; `Ensure` and `Read` are added.
+syntax = "proto3";
+
+package doric.platform.cache.v1;
+
+import "buf/validate/validate.proto";
+import "doric/platform/v1/options.proto";
+
+option (doric.platform.v1.contract) = {
+  id: "doric.cache/v1"
+  cardinality: CARDINALITY_ONE
+};
+
+// The caller's cache.
+service CacheService {
+  // Writes content-addressed files: the stream's items are the chunks of one
+  // file after another. Each file is visible only once its bytes match its
+  // SHA-256; a file already cached with that hash is kept and not written
+  // again. Answers, by path, what was written, kept and refused.
+  rpc Ensure(stream EnsureRequest) returns (EnsureResponse);
+  // The bytes of one file of the cache; a missing file is `NOT_FOUND`. The
+  // file is not deleted.
+  rpc Read(ReadRequest) returns (stream ReadResponse);
+}
+
+// One chunk of one file. The items of a file are consecutive, carry the same
+// `path` and `sha256`, and have offsets that start at 0 and follow each other;
+// an empty file is one item with no bytes.
+message EnsureRequest {
+  // The file's path in the cache directory.
+  string path = 1 [(buf.validate.field).string.min_len = 1];
+  // The lowercase hex SHA-256 of the file's bytes.
+  string sha256 = 2 [(buf.validate.field).string.pattern = "^[0-9a-f]{64}$"];
+  // The offset of the chunk in the file, in bytes, a whole number.
+  double offset = 3 [
+    (buf.validate.field).double.gte = 0,
+    (buf.validate.field).cel = {
+      id: "offset.integer"
+      message: "offset must be a whole number"
+      expression: "this == double(int(this))"
+    }
+  ];
+  // The chunk, at most 1 MiB.
+  bytes bytes = 4 [(buf.validate.field).bytes.max_len = 1048576];
+}
+
+// A file the cache refused.
+message EnsureFailure {
+  // The file's path.
+  string path = 1;
+  // Why it was refused (a bad path, a hash mismatch, a failed write).
+  string message = 2;
+}
+
+// What one `Ensure` left in the cache, by path; every file of the stream is
+// in exactly one list.
+message EnsureResponse {
+  // The files verified and written now.
+  repeated string written = 1;
+  // The files already cached with the hash they declare.
+  repeated string kept = 2;
+  // The files the cache refused.
+  repeated EnsureFailure failed = 3;
+}
+
+// Asks one file's bytes.
+message ReadRequest {
+  // The file's path in the cache directory.
+  string path = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+// One item of a `Read`; the file's bytes are the concatenation of the items'
+// chunks, and an empty file is a stream without items.
+message ReadResponse {
+  // The file's next bytes, at most 1 MiB.
+  bytes chunk = 1 [(buf.validate.field).bytes = {
+    min_len: 1
+    max_len: 1048576
+  }];
+}

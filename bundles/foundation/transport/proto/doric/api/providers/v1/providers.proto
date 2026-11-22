@@ -1,0 +1,57 @@
+// `api.providers/v1` (host, 1.0.0): the public API of the model provider
+// kinds, which replaces `GET /providers/kinds` and `POST /providers/models`.
+// The `transport` bundle provides it over `models/v1`.
+//
+// A refusal is a gRPC status whose `google.rpc.ErrorInfo` has `domain`
+// "doric" and `reason` the REST error code of today: `invalid_provider`
+// (`INVALID_ARGUMENT`) and `model_catalog_unreadable` (`UNAVAILABLE`, today's
+// 502 by the `google.rpc.Code` HTTP mapping). No response carries an error.
+syntax = "proto3";
+
+package doric.api.providers.v1;
+
+import "buf/validate/validate.proto";
+import "doric/models/provider/v1/provider.proto";
+import "doric/platform/v1/options.proto";
+
+option (doric.platform.v1.contract) = {
+  id: "api.providers/v1"
+  cardinality: CARDINALITY_ONE
+  environment: ENVIRONMENT_HOST
+};
+
+// The provider kinds this host can configure.
+service ProvidersService {
+  // Every provider kind, internal kinds included, in registration order
+  // (`GET /providers/kinds`).
+  rpc ListKinds(ListKindsRequest) returns (ListKindsResponse);
+  // The model catalog of a draft provider (`POST /providers/models`). A kind
+  // no registration holds, an undeclared key, a missing required value, an
+  // empty value or a value its field's kind refuses is `invalid_provider`; a
+  // catalog that cannot be read is `model_catalog_unreadable`.
+  rpc ListModels(ListModelsRequest) returns (ListModelsResponse);
+}
+
+// Asks every provider kind.
+message ListKindsRequest {}
+
+// Every provider kind.
+message ListKindsResponse {
+  // The kinds, in registration order.
+  repeated doric.models.provider.v1.ModelKindDescriptor kinds = 1;
+}
+
+// A draft provider whose catalog to read.
+message ListModelsRequest {
+  // The provider kind: 1 to 128 characters once trimmed.
+  string kind = 1 [(buf.validate.field).string.pattern = "^\\s*\\S([\\s\\S]{0,126}\\S)?\\s*$"];
+  // The draft's configuration values by field key; a `secret` field holds a
+  // credential id.
+  map<string, string> configuration = 2;
+}
+
+// The draft's model catalog.
+message ListModelsResponse {
+  // The catalog's models.
+  repeated doric.models.provider.v1.CatalogModel models = 1;
+}

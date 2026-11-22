@@ -1,0 +1,36 @@
+// `runtime.usage/v1` (host, 1.1.0): a Thread's stored usage projection, as
+// the store answers it, without the context capacity fill that
+// `runtime.threads/v1.Usage` adds; the `usage` bundle fills it through
+// `models/v1`. Served by `runtime`.
+//
+// 1.1.0: the schema moves from zod to `.proto` with the same fields.
+syntax = "proto3";
+
+package doric.runtime.usage.v1;
+
+import "doric/platform/v1/options.proto";
+import "doric/runtime/v2/runtime.proto";
+
+option (doric.platform.v1.contract) = {
+  id: "runtime.usage/v1"
+  cardinality: CARDINALITY_ONE
+  environment: ENVIRONMENT_HOST
+};
+
+// The stored usage of Threads.
+service UsageService {
+  // A Thread's stored usage; absent when the Thread does not exist.
+  rpc Read(ReadRequest) returns (ReadResponse);
+}
+
+// Asks a Thread's stored usage.
+message ReadRequest {
+  // The Thread.
+  string thread_id = 1;
+}
+
+// The stored usage, when the Thread exists.
+message ReadResponse {
+  // The usage; absent when the Thread does not exist.
+  optional doric.runtime.v2.ThreadUsage thread_usage = 1;
+}

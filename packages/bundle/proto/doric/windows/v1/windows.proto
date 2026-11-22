@@ -1,0 +1,89 @@
+// `windows/v1` (client, 1.2.0): the windows a bundle asks the app to open.
+// A window's content is an app route (`path`) or a page on the host (a
+// `view` with its own session partition), one or the other.
+//
+// 1.2.0: the provider moves to the window (`core`'s client part); the
+// desktopMain provider is removed. No member changes.
+syntax = "proto3";
+
+package doric.windows.v1;
+
+import "buf/validate/validate.proto";
+import "doric/platform/v1/options.proto";
+
+option (doric.platform.v1.contract) = {
+  id: "windows/v1"
+  cardinality: CARDINALITY_ONE
+  environment: ENVIRONMENT_CLIENT
+};
+
+// The app's windows.
+service WindowsService {
+  // Opens a window. A primary window is refused while another primary window
+  // is open.
+  rpc Open(OpenRequest) returns (OpenResponse);
+}
+
+// A window's size.
+message WindowSize {
+  // The width.
+  double width = 1;
+  // The height.
+  double height = 2;
+  // The smallest width.
+  optional double min_width = 3;
+  // The smallest height.
+  optional double min_height = 4;
+}
+
+// A window's visual intent.
+message WindowAppearance {
+  // The window's size.
+  optional WindowSize size = 1;
+  // "native", "integrated" or "none"; absent is "integrated".
+  optional string title_bar = 2 [(buf.validate.field).string = {
+    in: [
+      "native",
+      "integrated",
+      "none"
+    ]
+  }];
+  // The background token's name, not a color; absent is "window".
+  optional string background = 3;
+}
+
+// A page on the host as a window's content. The view is the window's own
+// `webContents`: it draws no app chrome, hosts no preload and no bundle
+// contracts, and the app owns its navigation.
+message WindowView {
+  // The host-relative path to load, starting with `/`, which the app
+  // resolves against the origin it reaches the host on.
+  string path = 1 [(buf.validate.field).string.prefix = "/"];
+  // The Electron session partition of the view's `webContents`.
+  string partition = 2;
+  // The window title; absent, the page's own title.
+  optional string title = 3;
+}
+
+// The window to open.
+message OpenRequest {
+  // The window's key.
+  string key = 1;
+  // The window's content.
+  oneof content {
+    option (buf.validate.oneof).required = true;
+    // An app route: the shell the window loads renders `doric://app/<path>`
+    // with the app's own preload and contracts.
+    string path = 2;
+    // A page on the host.
+    WindowView view = 3;
+  }
+  // The window's visual intent.
+  optional WindowAppearance appearance = 4;
+  // Marks the primary window: a core client that fails there is reported as
+  // a core failure instead of ready.
+  optional bool primary = 5;
+}
+
+// The window is open.
+message OpenResponse {}

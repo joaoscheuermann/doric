@@ -6,7 +6,7 @@ import { AppHooksV1, type QuarantineCode } from '../contracts/platform.js';
 import type { CatalogEntry, ResolvedEnvironment } from './catalog.js';
 import type { DiagnosticsStore } from './diagnostics.js';
 import { isRegistrationConflict } from './dispatch.js';
-import { parseContractEntry } from './manifest.js';
+import { parseContractEntry, partLists } from './manifest.js';
 import type {
   ContractCatalogView,
   DeclaredProvide,
@@ -108,14 +108,22 @@ export const principalOptionsFor = (
       }),
     );
 
+  const lists =
+    entry.manifest === undefined
+      ? undefined
+      : partLists(
+          entry.manifest,
+          resolved.environment === 'host' ? 'host' : 'client',
+        );
+
   return {
     bundleId: entry.id,
     version: entry.version,
     provides,
     ownContracts: ids(entry.manifest?.provides),
     requires: new Set([
-      ...ids(entry.manifest?.requires),
-      ...(entry.manifest?.optional ?? []),
+      ...(lists?.requires ?? []).map(({ id }) => id),
+      ...(lists?.optional ?? []),
     ]),
     isCore: entry.id === resolved.composition.core,
   };

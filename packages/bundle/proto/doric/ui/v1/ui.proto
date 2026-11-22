@@ -1,0 +1,54 @@
+// `ui/v1` (client, 1.1.0): the custom elements of one window. A client
+// part's entry module exports `elements`, a record of element classes by
+// tag; `Define` names one of them by tag, and the provider defines it with
+// `customElements.define`. A caller creates a defined element with the DOM
+// and sets its `view` property; the SDK's element base class attaches the
+// services of the bundle that defined the tag while the element is
+// connected.
+//
+// 1.1.0: `create` and `dispose` are removed; `define` names an export of the
+// caller's module; `Owner` is added.
+syntax = "proto3";
+
+package doric.ui.v1;
+
+import "buf/validate/validate.proto";
+import "doric/platform/v1/options.proto";
+
+option (doric.platform.v1.contract) = {
+  id: "ui/v1"
+  cardinality: CARDINALITY_ONE
+  environment: ENVIRONMENT_CLIENT
+};
+
+// The window's custom elements.
+service UiService {
+  // Defines the element class `elements[tag]` of the caller's client module
+  // under `tag`. A tag without that export is `invalid_input`. A definition
+  // lasts as long as the window, so it answers no registration.
+  rpc Define(DefineRequest) returns (DefineResponse);
+  // The bundle that defined a tag, or none.
+  rpc Owner(OwnerRequest) returns (OwnerResponse);
+}
+
+// Defines one element.
+message DefineRequest {
+  // The custom element tag, a key of the caller's `elements` export.
+  string tag = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+// The element is defined.
+message DefineResponse {}
+
+// Asks who defined a tag.
+message OwnerRequest {
+  // The custom element tag.
+  string tag = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+// The bundle that defined the tag, or none.
+message OwnerResponse {
+  // The defining bundle's id; absent when the tag is not defined, or its
+  // bundle is quarantined or gone.
+  optional string bundle_id = 1;
+}

@@ -1,0 +1,69 @@
+// `default.skill-sources/v1` (host, many providers, 1.1.0): a source of
+// skills the `default` bundle offers to the agent. `default` declares it and
+// does not provide it; each provider is one source, named by its bundle id,
+// and `default` calls every live provider. `default` names a source's skills
+// `<bundleId>/<group>/<name>`, or `<bundleId>/<name>` without a group, and
+// ignores a provider whose bundle id is `cwd`.
+//
+// 1.1.0: the schema moves from zod to `.proto` with the same fields.
+syntax = "proto3";
+
+package doric.default.skill_sources.v1;
+
+import "buf/validate/validate.proto";
+import "doric/platform/v1/options.proto";
+
+option (doric.platform.v1.contract) = {
+  id: "default.skill-sources/v1"
+  cardinality: CARDINALITY_MANY
+  environment: ENVIRONMENT_HOST
+};
+
+// One source of skills.
+service SkillSourcesService {
+  // The skills the source offers to the prompt of the call's scope.
+  rpc List(ListRequest) returns (ListResponse);
+  // One skill's text, and the sentence that says where it comes from. The
+  // source bounds the time the read may take.
+  rpc Read(ReadRequest) returns (ReadResponse);
+}
+
+// One skill a source offers to the agent.
+message SkillSourceEntry {
+  // A second part of the skill's id, such as an MCP server's slug; absent
+  // when the skill has none.
+  optional string group = 1 [(buf.validate.field).string.min_len = 1];
+  // The skill's name; with the source and the group it is unique.
+  string name = 2 [(buf.validate.field).string.min_len = 1];
+  // What the skill is for; may be empty.
+  string description = 3;
+  // What `Read` takes to read the skill; only the source interprets it.
+  string reference = 4 [(buf.validate.field).string.min_len = 1];
+}
+
+// Asks for the skills a source offers to a prompt.
+message ListRequest {
+  // The working directory of the prompt's Thread; may be empty.
+  string cwd = 1;
+}
+
+// The skills a source offers to a prompt.
+message ListResponse {
+  // The skills; empty when the source offers none.
+  repeated SkillSourceEntry skills = 1;
+}
+
+// Asks for one skill's text.
+message ReadRequest {
+  // The skill's `reference`, as `List` answered it.
+  string reference = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+// One skill's text.
+message ReadResponse {
+  // The sentence that says where the skill comes from; absent when the
+  // source gives none.
+  optional string origin = 1;
+  // The skill's text.
+  string text = 2;
+}

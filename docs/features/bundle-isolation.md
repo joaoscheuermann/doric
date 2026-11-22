@@ -6,12 +6,12 @@
 
 Doric is a platform and 33 bundles, and every feature of the app is a bundle or a part of one ([The bundle map](../architecture/bundles/feature-split.md)). A bundle is worth having only when it can change alone: a change to a feature lands in the bundle that owns it, a bundle loads in a composition that lacks the bundles that extend it, and the platform does not change when a bundle does. Nothing in a language or a package manager keeps that true. A bundle can import another bundle's source, name the bundles that fill it, enumerate their tools, hand out another bundle's records through its own contract or give out a live database client, and the code still compiles and runs.
 
-Bundle isolation is the boundary model that keeps the bundles apart: eleven rules, a manifest that lists every contract a bundle provides or uses, one import path between bundles, the checks CI runs over the whole repository, and one file that lists every violation the checks find and the document that keeps it. A rule a machine can decide is a test; the others are applied in review.
+Bundle isolation is the boundary model that keeps the bundles apart: eleven rules, a manifest that lists every contract a bundle provides or uses, the import paths between bundles (`<id>/contracts` and its generated code), the checks CI runs over the whole repository, and one file that lists every violation the checks find and the document that keeps it. A rule a machine can decide is a test; the others are applied in review.
 
 ## Decisions
 
 - **One function.** A bundle's manifest `description` states one function, and every contract, slot, route and tool the bundle provides serves it.
-- **Contracts only.** A bundle reaches another bundle only through what that bundle publishes: its contracts, imported from `<id>/contracts`. A file under the bundle's `tests/` or `stories/` may also import `<id>/testing`, and a file under `tests/` `<id>/package.json`, which locates the other bundle's built parts. No file anywhere imports `<package>/src/…` of a workspace package, and no entry of the exceptions file can excuse such an import.
+- **Contracts only.** A bundle reaches another bundle only through what that bundle publishes: its contracts, imported from `<id>/contracts`, or from `<id>/contracts/gen/<path>` for the code generated from its `.proto` files. A file under the bundle's `tests/` or `stories/` may also import `<id>/testing`, and a file under `tests/` `<id>/package.json`, which locates the other bundle's built parts. No file anywhere imports `<package>/src/…` of a workspace package, and no entry of the exceptions file can excuse such an import.
 - **One direction.** Where bundle B contributes into bundle A, A does not name B. The edges between bundles, drawn from every `requires` and `optional` line, form no cycle. For a contract that one bundle declares and other bundles provide, the edge runs from each provider to the declarer: `executor/v1` and `sandbox/v1`, declared by `runtime`; `default.skill-sources/v1`, declared by `default`; `files.decorations/v1`, declared by `files`.
 - **Declared extension points.** Every way to add something to a bundle is a contract it provides or a slot it declares. A set other bundles extend (tools with a drawing, icons, tab kinds, provider kinds, input sources, skill sources) is open: its members are registered, not enumerated.
 - **Owners announce.** A bundle registers its own tools, commands, routes, slot items and drawings from its own code. No bundle registers, opens or draws on behalf of another.
@@ -66,11 +66,11 @@ Both `requires` and `optional` lines are edges between bundles for the `cycles` 
 
 ### Imports between bundles
 
-- A bundle's source names another bundle's package only as exactly `<id>/contracts`; its tests and stories may also name `<id>/testing`, and its tests `<id>/package.json`. Any other subpath is a finding of the `imports` check ([`boundaries.mjs`](../../tests/support/boundaries.mjs), [Contracts](../architecture/bundles/contracts.md#what-a-bundle-may-import)).
+- A bundle's source names another bundle's package only as exactly `<id>/contracts` or as `<id>/contracts/gen/<path>`, its generated code; its tests and stories may also name `<id>/testing`, and its tests `<id>/package.json`. Any other subpath, `<id>/contracts/<file>` outside `gen/` included, is a finding of the `imports` check ([`boundaries.mjs`](../../tests/support/boundaries.mjs), [Contracts](../architecture/bundles/contracts.md#what-a-bundle-may-import), [gRPC processes](../designs/grpc-processes.md#8-contracts-in-proto)). Until phase 3 a client or desktopMain part imports neither `<id>/contracts/gen/*` nor its own generated code: its build externalizes only `bundle/contracts` and `*/contracts` and turns its own `src/contracts/…` imports into `<id>/contracts` ([`parts.ts`](../../packages/bundle/src/build/parts.ts), [`externals.ts`](../../packages/bundle/src/build/externals.ts)).
 - A bundle imports its own contracts by relative path. The build of a desktop or client part turns an import that resolves into its own `src/contracts/` into the external `<id>/contracts`, so each process or window holds one instance of the module; a client frame (`src/client/frames/*.ts`) bundles the contracts it imports, and the host part is compiled by `tsc` ([`terminal/project.json`](../../bundles/features/terminal/project.json), [`cli.ts`](../../packages/bundle/src/build/cli.ts), [`parts.ts`](../../packages/bundle/src/build/parts.ts)).
 - For a contract under `requires`, a client part imports the ref from `<id>/contracts` as a value. For a contract under `optional`, it imports the types only and declares the ref by its id, so the part loads in a window without the provider: `terminal` reaches `chat.views/v1` as `ref<ChatViews>('chat.views/v1')` ([`terminal/src/client/peers.ts`](../../bundles/features/terminal/src/client/peers.ts), [`terminal`](../../bundles/features/terminal/README.md)).
 - A bundle may keep a structural copy of another bundle's contract, a local interface under the same id, where it must load without the owner; the copy keeps its manifest line. `chat` reads `workspace.selection/v1` through such a copy and lists it under `optional` ([`workspace-selection.ts`](../../bundles/desktop/chat/src/client/api/workspace-selection.ts), [`chat`](../../bundles/desktop/chat/README.md), [Contracts](../architecture/bundles/contracts.md#structural-copies)).
-- A bundle's `package.json` lists every package it imports and none it does not use: Biome's rule `noUndeclaredDependencies` reports the first half for `bundles/**`, and the `dependencies` check the second ([`biome.json`](../../biome.json), [Bundle boundaries](../architecture/bundles/boundaries.md#what-a-bundles-packagejson-lists)).
+- A bundle's `package.json` lists every package it imports and none it does not use: Biome's rule `noUndeclaredDependencies` reports the first half for `bundles/**`, and the `dependencies` check the second, which counts `@bufbuild/protobuf` as used by a package that exports `./contracts/gen/*`, since its Git-ignored generated code imports it (rule 6 of the `dependencies` finder) ([`biome.json`](../../biome.json), [Bundle boundaries](../architecture/bundles/boundaries.md#what-a-bundles-packagejson-lists)).
 
 ### Slots and extension points
 
@@ -81,7 +81,7 @@ Both `requires` and `optional` lines are edges between bundles for the `cycles` 
 
 ### The boundary checks and the exceptions file
 
-- `npm run lint:test` runs `tests/lint.test.mjs` and then [`tests/boundaries.test.mjs`](../../tests/boundaries.test.mjs), one after the other, and CI runs it in the step "Test Biome configuration and bundle boundaries" ([`package.json`](../../package.json), [`ci.yml`](../../.github/workflows/ci.yml)). The test reads the repository once and runs six finders over it ([`tests/support/boundaries.mjs`](../../tests/support/boundaries.mjs)):
+- `npm run lint:test` runs `tests/lint.test.mjs`, then [`tests/boundaries.test.mjs`](../../tests/boundaries.test.mjs) and then [`tests/contract-inventory.test.mjs`](../../tests/contract-inventory.test.mjs) ([bundle processes](bundle-processes.md)), one after the other, and CI runs it in the step "Test Biome configuration, bundle boundaries and the contract inventory" ([`package.json`](../../package.json), [`ci.yml`](../../.github/workflows/ci.yml)). The test reads the repository once and runs six finders over it ([`tests/support/boundaries.mjs`](../../tests/support/boundaries.mjs)):
 
   | Check          | Holds                          | Reports                                                                                                                                             |
   | -------------- | ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -104,3 +104,16 @@ No boundary check decides one function, declared extension points, owners announ
 
 - One bundle's own test holds part of data has one owner: `workspace` checks that no source file under its `src` names `runtime/v2` or `runtime.threads/v1`, or their refs, so it reads and writes Projects and Threads through `runtime.records/v1` only ([`records-boundary.test.ts`](../../bundles/desktop/workspace/tests/records-boundary.test.ts)).
 - The `description` of [`files`](../../bundles/features/files/manifest.json), "Core capabilities available to the Doric agent.", names no single function.
+
+## Evolution
+
+- 2026-11-22: `npm run lint:test` also runs the contract inventory check of
+  phase 0 of [`docs/designs/grpc-processes.md`](../designs/grpc-processes.md).
+- 2026-11-22: the `imports` check also allows `<id>/contracts/gen/<path>`, a
+  bundle's generated code, as part of its contract surface; any other subpath of
+  `<id>/contracts` stays a finding. Client and desktopMain parts may not use it
+  before phase 3
+  ([`docs/designs/grpc-processes.md`](../designs/grpc-processes.md), phase 1).
+- 2026-11-22: the `dependencies` check counts `@bufbuild/protobuf` as used by a
+  package that exports `./contracts/gen/*` (rule 6;
+  [`docs/designs/grpc-processes.md`](../designs/grpc-processes.md) v6.6).

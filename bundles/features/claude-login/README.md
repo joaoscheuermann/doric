@@ -45,7 +45,7 @@ other key
 ([manifest](../../../docs/architecture/bundles/manifest.md#desktopscope)).
 
 The bundle has two parts, `src/host/` and `src/client/`, and no desktop part.
-The package exports only `./contracts` (and `./package.json`)
+The package exports `./contracts`, `./contracts/gen/*` (the protobuf-es code `generate-proto` writes from `proto/`) and `./package.json`
 ([`package.json`](package.json)). The host of Doric loads the bundle because
 its composition lists it
 ([`composition.json`](../../../app/backend/doric-host/composition.json)).

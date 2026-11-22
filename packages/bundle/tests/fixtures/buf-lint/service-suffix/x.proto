@@ -1,0 +1,13 @@
+// T1.1: a service without the `Service` suffix; buf lint refuses it with
+// SERVICE_SUFFIX. Otherwise clean under STANDARD.
+syntax = "proto3";
+
+package fixture.v1;
+
+service Fixture {
+  rpc Get(GetRequest) returns (GetResponse);
+}
+
+message GetRequest {}
+
+message GetResponse {}

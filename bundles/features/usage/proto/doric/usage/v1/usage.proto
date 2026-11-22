@@ -1,0 +1,151 @@
+// `usage/v1` (host, 1.0.0): a Thread's usage projection with its context
+// capacity filled from the live model catalog, the read behind
+// `GET /threads/:id/usage` and the footer's usage summary; on-demand
+// compaction and the compaction line. The `usage` bundle provides it.
+syntax = "proto3";
+
+package doric.usage.v1;
+
+import "buf/validate/validate.proto";
+import "doric/platform/v1/options.proto";
+import "doric/runtime/v2/runtime.proto";
+
+option (doric.platform.v1.contract) = {
+  id: "usage/v1"
+  cardinality: CARDINALITY_ONE
+  environment: ENVIRONMENT_HOST
+};
+
+// Thread usage and context compaction.
+service UsageService {
+  // A Thread's usage, with the context capacity `models/v1` names for its
+  // model; absent is `thread_not_found`.
+  rpc Thread(ThreadRequest) returns (ThreadResponse) {
+    option (doric.platform.v1.method).expose = EXPOSE_DESKTOP;
+  }
+  // Compacts one idle Thread's context on demand; the Thread's log carries
+  // the attempt either way. A "busy" Thread answers without recording.
+  rpc Compact(CompactRequest) returns (CompactResponse) {
+    option (doric.platform.v1.method).expose = EXPOSE_DESKTOP;
+  }
+  // The context fraction at which the executor condenses, in percent.
+  rpc CompactionTarget(CompactionTargetRequest) returns (CompactionTargetResponse) {
+    option (doric.platform.v1.method).expose = EXPOSE_DESKTOP;
+  }
+  // Moves that fraction: the executor reads it from the configuration in
+  // force, so the next run condenses at the new line. Answers the line in
+  // force afterwards: the new one, or the old one when the configuration
+  // refused it (outside 50 to 95).
+  rpc SetCompactionTarget(SetCompactionTargetRequest) returns (SetCompactionTargetResponse) {
+    option (doric.platform.v1.method).expose = EXPOSE_DESKTOP;
+  }
+}
+
+// Asks a Thread's usage.
+message ThreadRequest {
+  // The Thread.
+  string thread_id = 1;
+}
+
+// The usage, when the Thread exists.
+message ThreadResponse {
+  // The usage with its context capacity; absent is `thread_not_found`.
+  optional doric.runtime.v2.ThreadUsage thread_usage = 1;
+}
+
+// Compacts an idle Thread's context.
+message CompactRequest {
+  // The Thread.
+  string thread_id = 1;
+}
+
+// What the compaction became; today's `CompactResult`, with the fields
+// `runtime.threads/v1.Compact` answers.
+message CompactResponse {
+  option (buf.validate.message).cel = {
+    id: "compact_response.compacted"
+    message: "the counts are set exactly when compacted"
+    expression: "this.status == 'compacted' ? (has(this.condensed_messages) && has(this.retained_messages) && has(this.tokens_freed)) : !(has(this.condensed_messages) || has(this.retained_messages) || has(this.tokens_freed))"
+  };
+  option (buf.validate.message).cel = {
+    id: "compact_response.reason"
+    message: "reason is set exactly when refused"
+    expression: "(this.status == 'refused') == has(this.reason)"
+  };
+  option (buf.validate.message).cel = {
+    id: "compact_response.code"
+    message: "code is set exactly when failed"
+    expression: "(this.status == 'failed') == has(this.code)"
+  };
+  // "compacted", "refused", "failed" (a failure the log already carries),
+  // or why it did not run: "missing", "inactive", "busy" or
+  // "not_supported".
+  string status = 1 [(buf.validate.field).string = {
+    in: [
+      "compacted",
+      "refused",
+      "failed",
+      "missing",
+      "inactive",
+      "busy",
+      "not_supported"
+    ]
+  }];
+  // The messages condensed, a whole number; set when compacted.
+  optional double condensed_messages = 2 [(buf.validate.field).cel = {
+    id: "condensed_messages.integer"
+    message: "condensedMessages must be a whole number"
+    expression: "this == double(int(this))"
+  }];
+  // The messages kept, a whole number; set when compacted.
+  optional double retained_messages = 3 [(buf.validate.field).cel = {
+    id: "retained_messages.integer"
+    message: "retainedMessages must be a whole number"
+    expression: "this == double(int(this))"
+  }];
+  // The tokens freed, an estimate, a whole number; set when compacted.
+  optional double tokens_freed = 4 [(buf.validate.field).cel = {
+    id: "tokens_freed.integer"
+    message: "tokensFreed must be a whole number"
+    expression: "this == double(int(this))"
+  }];
+  // Why it was refused: "disabled", "missing_history" or
+  // "nothing_to_compact"; set when refused.
+  optional string reason = 5 [(buf.validate.field).string = {
+    in: [
+      "disabled",
+      "missing_history",
+      "nothing_to_compact"
+    ]
+  }];
+  // Why it failed: "summarizer_failed" or "unsafe_boundary"; set when
+  // failed.
+  optional string code = 6 [(buf.validate.field).string = {
+    in: [
+      "summarizer_failed",
+      "unsafe_boundary"
+    ]
+  }];
+}
+
+// Asks the compaction line.
+message CompactionTargetRequest {}
+
+// The compaction line in force.
+message CompactionTargetResponse {
+  // The context pressure, in percent, at which the executor condenses.
+  int32 pressure_percent = 1;
+}
+
+// Moves the compaction line.
+message SetCompactionTargetRequest {
+  // The new line, in percent; the configuration takes 50 to 95.
+  int32 pressure_percent = 1;
+}
+
+// The compaction line in force after the move.
+message SetCompactionTargetResponse {
+  // The line in force, in percent: the new one, or the old one when the
+  // configuration refused the new one.
+  int32 pressure_percent = 1;
+}

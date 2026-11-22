@@ -373,7 +373,13 @@ export const workspaceDistribution = async (
   );
   const missing = new Set(
     real
-      .flatMap(({ bundle }) => bundle.manifest?.requires ?? [])
+      .flatMap(({ bundle }) => {
+        const manifest = bundle.manifest;
+        if (manifest === undefined) return [];
+        return manifest.manifestVersion === 1
+          ? manifest.requires
+          : [...manifest.host.requires, ...manifest.client.requires];
+      })
       .map((entry) => entry.slice(0, entry.indexOf('@')))
       .filter((id) => !provided.has(id) && !id.endsWith('.backend/v1')),
   );

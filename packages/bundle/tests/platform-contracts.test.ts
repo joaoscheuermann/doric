@@ -6,7 +6,10 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { DoricNotificationsV1 } from '../src/contracts/index.js';
-import { platformContracts } from '../src/contracts/platform.js';
+import {
+  catalogManifestSchema,
+  platformContracts,
+} from '../src/contracts/platform.js';
 import { platformSchemaDocuments } from '../src/index.js';
 
 void test('doric.notifications/v1 is a desktopMain contract only (WP-10N), taking exactly a title and a body', () => {
@@ -75,4 +78,54 @@ void test('the platform schema documents include the new contract members', () =
   ]);
   assert.ok(Object.hasOwn(windows?.$defs as object, 'lastPath.output'));
   assert.ok(Object.hasOwn(catalog?.$defs as object, 'watch.input'));
+});
+
+const publishedV1 = {
+  manifestVersion: 1,
+  id: 'git',
+  version: '1.4.0',
+  engines: { doric: '^1.0.0' },
+  provides: ['git.commands/v1@1.3.0'],
+  requires: ['tools/v1@^1.0.0'],
+  optional: ['chat.views/v1'],
+  host: { httpPrefix: '/git/' },
+};
+
+const publishedV2 = {
+  manifestVersion: 2,
+  id: 'files',
+  version: '2.0.0',
+  engines: { doric: '^2.0.0' },
+  provides: ['files/v1@1.4.0'],
+  host: { requires: ['tools/v1@^1.4.0'], optional: [], httpPrefix: '/files/' },
+  client: { requires: ['ui/v1@^1.0.0'], optional: ['chat.views/v1'] },
+  desktopScope: { 'files/v1': ['projectId'] },
+};
+
+void test('catalogManifestSchema accepts a published v1 and a published v2 manifest (G6)', () => {
+  assert.deepEqual(catalogManifestSchema.parse(publishedV1), publishedV1);
+  assert.deepEqual(catalogManifestSchema.parse(publishedV2), publishedV2);
+});
+
+void test('catalogManifestSchema refuses a v2 manifest without its part lists or with top-level lists', () => {
+  const { host: _host, ...withoutHost } = publishedV2;
+  const { client: _client, ...withoutClient } = publishedV2;
+  const cases: Record<string, unknown> = {
+    'without host': withoutHost,
+    'without client': withoutClient,
+    'with top-level requires': { ...publishedV2, requires: [] },
+    'with a client part missing optional': {
+      ...publishedV2,
+      client: { requires: [] },
+    },
+    'with an unknown version': { ...publishedV2, manifestVersion: 3 },
+  };
+
+  for (const [name, document] of Object.entries(cases)) {
+    assert.equal(
+      catalogManifestSchema.safeParse(document).success,
+      false,
+      name,
+    );
+  }
 });

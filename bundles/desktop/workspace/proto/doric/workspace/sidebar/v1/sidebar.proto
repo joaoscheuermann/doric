@@ -1,0 +1,75 @@
+// `workspace.sidebar/v1` (client, 1.1.0): rows other bundles add under each
+// Thread of the sidebar tree, as data. A client part publishes one source of
+// rows: the element the workspace mounts under a Thread and, per Thread, how
+// many rows it has and whether its work keeps the Thread active. The part
+// publishes again after every change; the rows end with `RemoveThreadRows`
+// or with the client part that published them. Only client parts of the same
+// window call it.
+//
+// 1.1.0: `addThreadRows`, which took functions, is removed for
+// `PutThreadRows` and `RemoveThreadRows`.
+syntax = "proto3";
+
+package doric.workspace.sidebar.v1;
+
+import "buf/validate/validate.proto";
+import "doric/platform/v1/options.proto";
+
+option (doric.platform.v1.contract) = {
+  id: "workspace.sidebar/v1"
+  cardinality: CARDINALITY_ONE
+  environment: ENVIRONMENT_CLIENT
+};
+
+// The sidebar tree's Thread rows.
+service SidebarService {
+  // Publishes a source's rows, replacing what the same source published
+  // before. A source another client part published fails with
+  // `ALREADY_EXISTS`, reason `registration_conflict`.
+  rpc PutThreadRows(PutThreadRowsRequest) returns (PutThreadRowsResponse);
+  // Removes a source's rows; a source the calling part did not publish is
+  // a no-op.
+  rpc RemoveThreadRows(RemoveThreadRowsRequest) returns (RemoveThreadRowsResponse);
+}
+
+// One Thread's state in a source of rows.
+message ThreadRowState {
+  // How many rows the Thread has, a whole number of at least 0; above 0 the
+  // Thread row is expandable.
+  double count = 1 [
+    (buf.validate.field).double.gte = 0,
+    (buf.validate.field).cel = {
+      id: "count.integer"
+      message: "count must be a whole number"
+      expression: "this == double(int(this))"
+    }
+  ];
+  // Whether work the source tracks directly under the Thread, not under its
+  // descendants, keeps the Thread active. While true the workspace draws the
+  // Thread and every ancestor active (shimmer and elapsed badge).
+  bool busy = 2;
+}
+
+// Publishes a source's rows.
+message PutThreadRowsRequest {
+  // The source's id, unique in the sidebar.
+  string source = 1 [(buf.validate.field).string.min_len = 1];
+  // The custom element mounted as `<tag thread-id="…">` before each
+  // Thread's child Threads.
+  string tag = 2 [(buf.validate.field).string.min_len = 1];
+  // Each Thread's state, by Thread id; a Thread not listed has no rows and
+  // is not busy. Empty for none.
+  map<string, ThreadRowState> rows = 3 [(buf.validate.field).map.keys.string.min_len = 1];
+}
+
+// The rows are published.
+message PutThreadRowsResponse {}
+
+// Removes a source's rows.
+message RemoveThreadRowsRequest {
+  // The source's id, as `PutThreadRows` took it.
+  string source = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+// The rows are gone.
+message RemoveThreadRowsResponse {}

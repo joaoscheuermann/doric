@@ -1,0 +1,146 @@
+// The service of the protocol conformance fixtures (spec
+// `docs/designs/grpc-processes.md`, section 10, "Protocol conformance across
+// SDKs"; T2.14, T4.5). Every SDK's fixture serves it, and the conformance
+// suite of `bundle/testing`, which plays the router, calls it over the
+// control stream to check that the SDK speaks the protocol.
+//
+// This file is not a contract: it has no `(doric.platform.v1.contract)` or
+// `(doric.platform.v1.hooks)` option, no manifest provides it and no router
+// routes it outside the suite, so the contract rules of `proto-check` do not
+// apply to it. It has no `buf.validate` rules either: the Rust SDK does not
+// validate (section 10, "No protovalidate"), and both fixtures must answer
+// the same request the same way. Its integers stay 32-bit all the same.
+syntax = "proto3";
+
+package doric.conformance.v1;
+
+import "google/protobuf/struct.proto";
+
+// The fixture's handlers. Each handler answers only from its request and the
+// call it receives; `Wait` records what it saw under a key, and `Observed`
+// reads that record.
+service ConformanceService {
+  // Unary: answers the request's text, with `pad_bytes` bytes of padding.
+  rpc Echo(EchoRequest) returns (EchoResponse);
+  // Server streaming: answers `n` messages, `index` 0 to n - 1, in order.
+  rpc Count(CountRequest) returns (stream CountResponse);
+  // Client streaming: answers, after the caller half-closes, the sum and the
+  // number of the request messages.
+  rpc Sum(stream SumRequest) returns (SumResponse);
+  // Unary: always fails with the `ContractError` the request names.
+  rpc Fail(FailRequest) returns (FailResponse);
+  // Unary: records the call under `key`, then answers after `hold_ms`, or,
+  // with `hold_ms` 0, runs until the call is cancelled.
+  rpc Wait(WaitRequest) returns (WaitResponse);
+  // Unary: answers what the `Wait` call of `key` saw.
+  rpc Observed(ObservedRequest) returns (ObservedResponse);
+  // Unary: stops the fixture's process with `SIGSTOP`; it may never answer.
+  rpc Freeze(FreezeRequest) returns (FreezeResponse);
+}
+
+// The request of `Echo`.
+message EchoRequest {
+  // The text to answer.
+  string text = 1;
+  // How many bytes of padding the response carries; 0 for none. A value that
+  // makes the response pass 4 MiB checks the sender's size limit.
+  uint32 pad_bytes = 2;
+}
+
+// The response of `Echo`.
+message EchoResponse {
+  // The request's text.
+  string text = 1;
+  // `pad_bytes` bytes, each 0.
+  bytes padding = 2;
+}
+
+// The request of `Count`.
+message CountRequest {
+  // How many messages to answer; 0 ends the call with no message.
+  uint32 n = 1;
+}
+
+// One message of `Count`.
+message CountResponse {
+  // The message's place, from 0.
+  uint32 index = 1;
+}
+
+// One request message of `Sum`.
+message SumRequest {
+  // The value to add.
+  int32 value = 1;
+}
+
+// The response of `Sum`.
+message SumResponse {
+  // The sum of the values; the suite keeps it within 32 bits.
+  int32 total = 1;
+  // How many request messages arrived.
+  uint32 count = 2;
+}
+
+// The request of `Fail`: the `ContractError` the handler raises.
+message FailRequest {
+  // The error's code, a code of `contractErrorCodes` or of a bundle.
+  string code = 1;
+  // The error's message.
+  string message = 2;
+  // The error's details; unset for none.
+  google.protobuf.Struct details = 3;
+}
+
+// The response of `Fail`, never sent.
+message FailResponse {}
+
+// The request of `Wait`.
+message WaitRequest {
+  // The key `Observed` reads the record by; a later `Wait` of the same key
+  // replaces the record.
+  string key = 1;
+  // Milliseconds before the handler answers; 0 waits until the call is
+  // cancelled.
+  uint32 hold_ms = 2;
+}
+
+// The response of `Wait`.
+message WaitResponse {
+  // The request's key.
+  string key = 1;
+}
+
+// The request of `Observed`.
+message ObservedRequest {
+  // The key of a `Wait` call.
+  string key = 1;
+}
+
+// What a `Wait` handler saw of its call. Every field but `found` is its
+// default when `found` is false.
+message ObservedResponse {
+  // A `Wait` of this key has started in this process.
+  bool found = 1;
+  // The caller's bundle id.
+  string caller_bundle_id = 2;
+  // The caller's version.
+  string caller_version = 3;
+  // The caller's generation.
+  uint32 caller_generation = 4;
+  // The call's scope.
+  map<string, string> scope = 5;
+  // The call's W3C trace context.
+  string traceparent = 6;
+  // The call's deadline in epoch milliseconds; 0 for none.
+  double deadline_unix_ms = 7;
+  // The handler saw the call cancelled, by the caller or by its deadline.
+  bool cancelled = 8;
+  // The handler answered, after `hold_ms`.
+  bool answered = 9;
+}
+
+// The request of `Freeze`.
+message FreezeRequest {}
+
+// The response of `Freeze`, sent at most before the process stops.
+message FreezeResponse {}

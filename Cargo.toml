@@ -1,0 +1,21 @@
+[workspace]
+members = ["scripts/sea-spike/stub-rs"]
+resolver = "2"
+
+[workspace.package]
+edition = "2024"
+
+[workspace.dependencies]
+prost = "0.14.6"
+prost-types = "0.14.6"
+protox = "0.10.0"
+tokio = { version = "1.54.1", features = ["macros", "rt-multi-thread", "time"] }
+tokio-stream = "0.1.19"
+tonic = "0.14.9"
+tonic-prost = "0.14.9"
+tonic-prost-build = "0.14.9"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = "symbols"

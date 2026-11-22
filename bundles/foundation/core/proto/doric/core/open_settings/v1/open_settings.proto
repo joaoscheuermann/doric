@@ -1,0 +1,38 @@
+// `core.open-settings/v1` (client command, 1.2.0): opens the settings window.
+// `core`'s client part registers it with `commands/v1`; a caller runs it with
+// `commands/v1.Execute`, the input below carried as its
+// `google.protobuf.Any`. The contract has no service.
+//
+// The command's four cases:
+// - `path` given: the settings window opens at `path` (focused and navigated
+//   when it is already open).
+// - no `path`, a settings window open: it is only focused and keeps its
+//   section; `defaultPath` is ignored.
+// - no `path`, no settings window, `defaultPath` given: a new settings window
+//   opens at `defaultPath`.
+// - neither, no settings window: `invalid_input`, and nothing opens.
+//
+// 1.2.0: the provider moves to the window; the input moves from zod to
+// `.proto` with the same fields.
+syntax = "proto3";
+
+package doric.core.open_settings.v1;
+
+import "doric/platform/v1/options.proto";
+
+option (doric.platform.v1.contract) = {
+  id: "core.open-settings/v1"
+  cardinality: CARDINALITY_ONE
+  environment: ENVIRONMENT_CLIENT
+};
+
+// The command's input.
+message OpenSettingsInput {
+  option (doric.platform.v1.command).id = "core.open-settings/v1";
+
+  // Where the settings window opens; absent opens or focuses it as the cases
+  // above say.
+  optional string path = 1;
+  // 1.1.0: where a new settings window opens when `path` is absent.
+  optional string default_path = 2;
+}

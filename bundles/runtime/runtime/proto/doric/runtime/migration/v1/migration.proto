@@ -1,0 +1,56 @@
+// `runtime.migration/v1` (host, 1.1.0): the storage type of the one marker
+// document (id `legacy-prisma`) that records the copy of the legacy Prisma
+// tables, owned by `runtime`.
+//
+// 1.1.0: the schema moves from zod to `.proto` with the same fields.
+syntax = "proto3";
+
+package doric.runtime.migration.v1;
+
+import "buf/validate/validate.proto";
+import "doric/platform/v1/options.proto";
+
+option (doric.platform.v1.contract) = {
+  id: "runtime.migration/v1"
+  cardinality: CARDINALITY_ONE
+  environment: ENVIRONMENT_HOST
+};
+
+// The legacy migration's marker, as stored.
+message MigrationDocument {
+  option (doric.platform.v1.storage_type) = {type: "runtime.migration/v1"};
+  // Always "prisma-legacy".
+  string source = 1 [(buf.validate.field).string.const = "prisma-legacy"];
+  // When the migration completed (ISO-8601).
+  string completed_at = 2;
+  // What the migration copied.
+  MigrationCounts counts = 3 [(buf.validate.field).required = true];
+}
+
+// The records a legacy migration copied.
+message MigrationCounts {
+  // Projects copied, a whole number.
+  double projects = 1 [(buf.validate.field).cel = {
+    id: "projects.integer"
+    message: "projects must be a whole number"
+    expression: "this == double(int(this))"
+  }];
+  // Threads copied, a whole number.
+  double threads = 2 [(buf.validate.field).cel = {
+    id: "threads.integer"
+    message: "threads must be a whole number"
+    expression: "this == double(int(this))"
+  }];
+  // Events copied, a whole number.
+  double events = 3 [(buf.validate.field).cel = {
+    id: "events.integer"
+    message: "events must be a whole number"
+    expression: "this == double(int(this))"
+  }];
+  // History parts copied, a whole number.
+  double histories = 4 [(buf.validate.field).cel = {
+    id: "histories.integer"
+    message: "histories must be a whole number"
+    expression: "this == double(int(this))"
+  }];
+}

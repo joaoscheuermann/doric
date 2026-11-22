@@ -1,0 +1,118 @@
+// `runtime.hooks/v1` (host, 1.3.0): the hooks `runtime` defines in the host's
+// `hooks/v1` and runs at a Project's and a Thread's lifecycle points. Each
+// message of this file is the input of one hook; a bundle registers a
+// handler with `hooks/v1.Register` and `runtime` runs it with `hooks/v1.Run`.
+// Hooks run in the host only. No default handler exists, so they change no
+// behavior of their own. `onProjectReadyHook` and `onProjectClosingHook` are
+// fired without waiting; the others are awaited.
+//
+// 1.3.0: the schema moves from zod to `.proto` with the same fields.
+syntax = "proto3";
+
+package doric.runtime.hooks.v1;
+
+import "buf/validate/validate.proto";
+import "doric/platform/v1/options.proto";
+import "doric/runtime/v2/runtime.proto";
+
+option (doric.platform.v1.hooks) = {id: "runtime.hooks/v1"};
+
+// A Project became ready, after its `ready` commit.
+message OnProjectReadyHookInput {
+  option (doric.platform.v1.hook) = {
+    name: "onProjectReadyHook"
+    kind: HOOK_KIND_OBSERVE
+  };
+  // The Project.
+  string project_id = 1;
+}
+
+// A Project started closing, after its `cancelling` commit.
+message OnProjectClosingHookInput {
+  option (doric.platform.v1.hook) = {
+    name: "onProjectClosingHook"
+    kind: HOOK_KIND_OBSERVE
+  };
+  // The Project.
+  string project_id = 1;
+}
+
+// Some of a Project's Threads are closing (termination, host stop, drain).
+// Awaited where the runner closes their terminals, before it awaits their
+// running work.
+message OnThreadsClosingHookInput {
+  option (doric.platform.v1.hook) = {
+    name: "onThreadsClosingHook"
+    kind: HOOK_KIND_OBSERVE
+  };
+  // The Project.
+  string project_id = 1;
+  // The closing Threads.
+  repeated string thread_ids = 2;
+}
+
+// A prompt started. Awaited before the executor runs it, so an instruction a
+// handler gives it is read before the first model request.
+message OnPromptStartedHookInput {
+  option (doric.platform.v1.hook) = {
+    name: "onPromptStartedHook"
+    kind: HOOK_KIND_OBSERVE
+  };
+  // The Project.
+  string project_id = 1;
+  // The Thread.
+  string thread_id = 2;
+  // The prompt.
+  string prompt_id = 3;
+  // Where the prompt came from.
+  doric.runtime.v2.InputSource source = 4 [(buf.validate.field).required = true];
+  // The Thread's working directory at that moment.
+  string cwd = 5;
+  // The repository at `cwd`: "git" or "github"; absent when none.
+  optional string cwd_repo = 6 [(buf.validate.field).string = {
+    in: [
+      "git",
+      "github"
+    ]
+  }];
+}
+
+// A Thread's working directory and its repository hint at one moment.
+message CwdSnapshot {
+  // The working directory.
+  string cwd = 1;
+  // The repository at `cwd`: "git" or "github"; absent when none.
+  optional string cwd_repo = 2 [(buf.validate.field).string = {
+    in: [
+      "git",
+      "github"
+    ]
+  }];
+}
+
+// A Thread's working directory or its repository hint changed. Awaited
+// before the change answers its caller, so an instruction a handler gives
+// the running prompt is read at its next safe point.
+message OnThreadCwdChangedHookInput {
+  option (doric.platform.v1.hook) = {
+    name: "onThreadCwdChangedHook"
+    kind: HOOK_KIND_OBSERVE
+  };
+  // The Project.
+  string project_id = 1;
+  // The Thread.
+  string thread_id = 2;
+  // The prompt running then; absent when none ran.
+  optional string prompt_id = 3;
+  // The new working directory.
+  string cwd = 4;
+  // The new repository hint: "git" or "github"; absent when none.
+  optional string cwd_repo = 5 [(buf.validate.field).string = {
+    in: [
+      "git",
+      "github"
+    ]
+  }];
+  // The directory and hint before the change.
+  CwdSnapshot previous = 6 [(buf.validate.field).required = true];
+}

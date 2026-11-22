@@ -95,3 +95,77 @@ describe('desktop resolution of a host distribution', () => {
     );
   });
 });
+
+// T2.15 (G15): the catalog per part on the desktop, with version 2 manifests.
+describe('desktop resolution per part', () => {
+  const unreachable = {
+    code: 'unreachable_dependency' as const,
+    message:
+      'host.requires ui.panel/v1; only client parts provide it, and a host part cannot reach a client part',
+    contract: 'ui.panel/v1',
+  };
+  const { catalog: perPart } = fixtureDistribution({
+    core: 'mincore',
+    bundles: [
+      { id: 'mincore', files: { 'desktop/index.js': part } },
+      {
+        id: 'ui',
+        provides: [{ id: 'ui.panel/v1', environment: 'client' }],
+        client: {},
+        files: { 'client/index.js': part },
+      },
+      // Active on the host; its client part requires what nothing provides.
+      {
+        id: 'probe-client',
+        host: {},
+        client: { requires: ['ghost.api/v1@^1.0.0'] },
+        files: { 'client/index.js': part },
+      },
+      // Quarantined by the host for its host part.
+      {
+        id: 'probe-unreachable',
+        state: 'quarantined',
+        reasons: [unreachable],
+        host: { requires: ['ui.panel/v1@^1.0.0'] },
+        client: {},
+        files: { 'client/index.js': part },
+      },
+    ],
+  });
+
+  // The desktop reports the quarantine to the host's diagnostics only for a
+  // bundle the host keeps active.
+  test("a client part's quarantine leaves its host part active", () => {
+    const resolution = resolveDistribution(perPart, 1);
+    const entry = resolution.client.entries.find(
+      (candidate) => candidate.id === 'probe-client',
+    );
+
+    assert.equal(stateOf(resolution.client, 'ui'), 'scheduled');
+    assert.equal(entry?.state, 'quarantined');
+    assert.deepEqual(
+      entry?.reasons.map((reason) => reason.code),
+      ['missing_dependency'],
+    );
+    assert.deepEqual(
+      resolution.quarantines.map((quarantine) => quarantine.id),
+      ['probe-client'],
+    );
+  });
+
+  test("a host part's quarantine keeps its client part out of the window", () => {
+    const resolution = resolveDistribution(perPart, 1);
+    const entry = resolution.client.entries.find(
+      (candidate) => candidate.id === 'probe-unreachable',
+    );
+
+    assert.equal(entry?.state, 'quarantined');
+    assert.deepEqual(entry?.reasons, [unreachable]);
+    assert.ok(!resolution.client.order.includes('probe-unreachable'));
+    assert.ok(
+      !resolution.quarantines.some(
+        (quarantine) => quarantine.id === 'probe-unreachable',
+      ),
+    );
+  });
+});

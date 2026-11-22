@@ -11,6 +11,12 @@
       "import": "./dist/contracts/index.js",
       "default": "./dist/contracts/index.js"
     },
+    "./contracts/gen/*": {
+      "@org/source": "./src/contracts/gen/*",
+      "types": "./dist/contracts/gen/*",
+      "import": "./dist/contracts/gen/*",
+      "default": "./dist/contracts/gen/*"
+    },
     "./kernel": {
       "@org/source": "./src/kernel.ts",
       "types": "./dist/kernel.d.ts",
@@ -25,6 +31,7 @@
     }
   },
   "dependencies": {
+    "@bufbuild/protobuf": "^2.17.0",
     "bundle": "0.0.1",
     "core": "0.0.1",
     "llms": "0.0.1",

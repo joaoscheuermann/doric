@@ -1,0 +1,116 @@
+// `doric.menus/v1` (platform 2.0.0): the app's native menu, its items and
+// keybindings, and the context their `when` conditions read. Electron main
+// serves it to client parts and accepts it only from the bundle that
+// provides `menus/v1`, which names each item's owner.
+//
+// 2.0.0: served to client parts. No member changes.
+syntax = "proto3";
+
+package doric.platform.menus.v1;
+
+import "buf/validate/validate.proto";
+import "doric/menus/v1/menus.proto";
+import "doric/platform/v1/options.proto";
+
+option (doric.platform.v1.contract) = {
+  id: "doric.menus/v1"
+  cardinality: CARDINALITY_ONE
+};
+
+// The native menu.
+service MenusService {
+  // Replaces the menu's skeleton: its top-level menus and their submenus,
+  // into which items are added.
+  rpc SetSkeleton(SetSkeletonRequest) returns (SetSkeletonResponse);
+  // Adds a menu item that runs a command, for its owner.
+  rpc Add(AddRequest) returns (AddResponse);
+  // Binds a key to a command, for its owner.
+  rpc AddKeybinding(AddKeybindingRequest) returns (AddKeybindingResponse);
+  // Sets or clears one key of a window's context.
+  rpc SetContext(SetContextRequest) returns (SetContextResponse);
+}
+
+// One entry of the menu's skeleton.
+message MenuSkeletonEntry {
+  // The entry's id.
+  string id = 1;
+  // The entry's label.
+  string label = 2;
+  // The native role of the entry, when it has one.
+  optional string role = 3;
+  // The entry's submenu; empty when it has none.
+  repeated MenuSkeletonEntry submenu = 4;
+}
+
+// The bundle instance an item or a binding belongs to.
+message MenuOwner {
+  // The bundle's id.
+  string bundle_id = 1;
+  // The bundle's version.
+  string version = 2;
+  // The instance's generation.
+  uint32 generation = 3;
+}
+
+// Sets the skeleton.
+message SetSkeletonRequest {
+  // The top-level entries, in order.
+  repeated MenuSkeletonEntry skeleton = 1;
+}
+
+// The skeleton is set.
+message SetSkeletonResponse {}
+
+// Adds a menu item.
+message AddRequest {
+  // The item's id.
+  string id = 1;
+  // Where the item goes: "app/<menu>" or "dock".
+  string location = 2;
+  // The command the item runs.
+  string command = 3;
+  // The item's label.
+  string label = 4;
+  // When the item applies; absent, always.
+  optional doric.menus.v1.MenuWhen when = 5;
+  // The item's position in its menu.
+  optional double order = 6;
+  // The item's owner.
+  MenuOwner owner = 7 [(buf.validate.field).required = true];
+}
+
+// The item is added.
+message AddResponse {}
+
+// Binds a key.
+message AddKeybindingRequest {
+  // The command the key runs.
+  string command = 1;
+  // The key.
+  string key = 2;
+  // When the binding applies; absent, always.
+  optional doric.menus.v1.MenuWhen when = 3;
+  // The binding's owner.
+  MenuOwner owner = 4 [(buf.validate.field).required = true];
+}
+
+// The binding is added.
+message AddKeybindingResponse {}
+
+// Sets one key of a window's context.
+message SetContextRequest {
+  // The window's key.
+  string window_key = 1;
+  // "path" or "focus".
+  string key = 2 [(buf.validate.field).string = {
+    in: [
+      "path",
+      "focus"
+    ]
+  }];
+  // The key's value; absent clears it.
+  optional string value = 3;
+}
+
+// The context is set.
+message SetContextResponse {}

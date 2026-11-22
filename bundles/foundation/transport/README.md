@@ -442,9 +442,22 @@ schemas above and the 100 KiB JSON body of `express.json()`. The largest
 Socket.IO message is the kernel's setting
 ([How the host is built](../../../app/backend/doric-host/README.md#how-the-host-is-built)).
 
+## The public API protos
+
+[`proto/doric/api/`](proto/doric/api) holds the eight contracts of the public
+API's target shape, `api.<resource>/v1` in the packages
+`doric.api.<resource>.v1` for `config`, `credentials`, `providers`, `host`,
+`projects`, `threads`, `terminals` and `status` (spec A60). `manifest.json`
+does not provide them yet: `transport` adds them to `provides` in phase 3.
+The target `generate-proto` writes their protobuf-es code into
+`src/contracts/gen/`, which Git ignores, and `package.json` exports it as
+`./contracts/gen/*`; `@bufbuild/protobuf` is the dependency that code imports
+([`project.json`](project.json), [`package.json`](package.json)).
+
 ## The `transport/kernel` entry
 
-`package.json` exports `./kernel` ([`src/kernel.ts`](src/kernel.ts)):
+`package.json` exports `./package.json`, `./contracts/gen/*` (above) and
+`./kernel` ([`src/kernel.ts`](src/kernel.ts)):
 
 - `createTransport(options)` returns the bundle as an `EmbeddedBundle`: an
   inline manifest (id `transport`, version `0.0.0`, the description above,
@@ -469,7 +482,8 @@ npx nx run bundle-transport:test
 npx nx run bundle-transport:build
 ```
 
-`build` compiles with `tsc --build` and runs the bundle builder, which writes
+`build` and `typecheck` run `generate-proto` first, and `test` runs `build`
+first. `build` compiles with `tsc --build` and runs the bundle builder, which writes
 `dist/`; `test` compiles `tests/` with `tsconfig.spec.json` into `dist-tests/`
 and runs `node --test` on it ([`project.json`](project.json)).
 `npx nx run doric-host:build-bundles` stages every built bundle, this one

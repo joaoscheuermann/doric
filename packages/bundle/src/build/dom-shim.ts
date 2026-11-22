@@ -163,13 +163,14 @@ const shimGlobals = (): Record<string, unknown> => ({
 /**
  * Installs the shim globals that are missing (`window` and `self` are
  * `globalThis`) and returns the function that removes them again. Globals
- * Node already has are left as they are.
+ * Node already has are left as they are; one Node declares without a value
+ * (Node 26's `localStorage` without `--localstorage-file`) counts as missing.
  */
 export const installDomShim = (): (() => void) => {
   const target = globalThis as unknown as Record<string, unknown>;
   const added: string[] = [];
   const define = (name: string, value: unknown) => {
-    if (name in target) {
+    if (target[name] !== undefined) {
       return;
     }
 

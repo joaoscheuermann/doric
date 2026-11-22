@@ -1,0 +1,82 @@
+// `runtime.project/v1` (host, 1.2.0): the storage type of a Project's
+// document, owned by `runtime`. `createdKey` is `createdAt + '|' + id`: one
+// sortable field that keeps today's (createdAt, id) order and id cursor.
+//
+// 1.2.0: the schema moves from zod to `.proto` with the same fields; a
+// `null` is an absent field.
+syntax = "proto3";
+
+package doric.runtime.project.v1;
+
+import "buf/validate/validate.proto";
+import "doric/platform/v1/options.proto";
+import "doric/runtime/v2/runtime.proto";
+import "google/protobuf/struct.proto";
+
+option (doric.platform.v1.contract) = {
+  id: "runtime.project/v1"
+  cardinality: CARDINALITY_ONE
+  environment: ENVIRONMENT_HOST
+};
+
+// One Project, as stored.
+message ProjectDocument {
+  option (doric.platform.v1.storage_type) = {
+    type: "runtime.project/v1"
+    indexes: [
+      {
+        name: "byCreated"
+        fields: ["createdKey"]
+      },
+      {
+        name: "byOpen"
+        fields: [
+          "open",
+          "createdKey"
+        ]
+      }
+    ]
+  };
+  // The Project's id, a UUID.
+  string id = 1 [(buf.validate.field).string.uuid = true];
+  // The display name.
+  string name = 2;
+  // Any stored color text; readers expose palette values only. Absent when
+  // unmarked.
+  optional string color = 3;
+  // "queued", "ready", "cancelling", "cancelled" or "failed".
+  string state = 4 [(buf.validate.field).string = {
+    in: [
+      "queued",
+      "ready",
+      "cancelling",
+      "cancelled",
+      "failed"
+    ]
+  }];
+  // Whether the Project is open.
+  bool open = 5;
+  // The configuration revision at create, a whole number.
+  double config_revision = 6 [(buf.validate.field).cel = {
+    id: "config_revision.integer"
+    message: "configRevision must be a whole number"
+    expression: "this == double(int(this))"
+  }];
+  // The full configuration at create, verbatim; never read for execution.
+  google.protobuf.Value config_snapshot = 7;
+  // Why the Project failed; absent unless it failed.
+  optional string error_code = 8;
+  // When it was created (ISO-8601).
+  string created_at = 9;
+  // When it last changed (ISO-8601).
+  string updated_at = 10;
+  // When it started (ISO-8601).
+  optional string started_at = 11;
+  // When it finished (ISO-8601).
+  optional string finished_at = 12;
+  // `createdAt + '|' + id`, the sortable field of the list indexes.
+  string created_key = 13;
+  // The runtime process holding the Project live; internal, the public
+  // record never shows it. Absent when no process does.
+  optional doric.runtime.v2.RuntimeOwner owner = 14;
+}

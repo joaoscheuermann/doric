@@ -1,0 +1,28 @@
+// `papercraft.cwd/v1` (host event, 1.1.0, D10): the Thread's working
+// directory, appended by the `papercraft` host part at a prompt's start and at
+// a move during a prompt. A papercraft fence binds to the `cwd` of the last
+// such event whose `sequence` is below the fence's `turnSequence`; without one
+// its library is `none` (`papercraft.programs/v1.Library`).
+//
+// 1.1.0: the payload moves from zod to `.proto` with the same field; keys the
+// payload does not declare are dropped.
+syntax = "proto3";
+
+package doric.papercraft.cwd.v1;
+
+import "buf/validate/validate.proto";
+import "doric/platform/v1/options.proto";
+
+option (doric.platform.v1.contract) = {
+  id: "papercraft.cwd/v1"
+  cardinality: CARDINALITY_ONE
+  environment: ENVIRONMENT_HOST
+};
+
+// The Thread's working directory changed, or a prompt started in it.
+message PapercraftCwd {
+  option (doric.platform.v1.event).type = "papercraft.cwd/v1";
+
+  // The working directory, as the runtime hooks give it; never empty.
+  string cwd = 1 [(buf.validate.field).string.min_len = 1];
+}

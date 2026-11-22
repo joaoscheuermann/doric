@@ -1,0 +1,150 @@
+// `executor.session/v1` (host, 1.0.0): the callbacks of an executor call,
+// provided by `runtime` and called by the bundle that provides `executor/v1`.
+// `runtime` opens one session per run, compaction, checkpoint or rewind, with
+// a random 128-bit id, the Thread, the prompt and the call's lifetime, and
+// passes its id to the executor; the session ends when that executor call
+// ends. A session is bound to the provider bundle of `executor/v1` and, at
+// its first callback, to the calling instance. An id that is unknown or
+// ended, a caller of another bundle and, after the first callback, a caller
+// of another instance get `NOT_FOUND`, reason `unknown_session`.
+//
+// History parts travel as chunked JSON: the UTF-8 JSON text of a part's
+// value, in `bytes` chunks of at most 1 MiB whose concatenation is the text.
+//
+// 1.0.0: new; it replaces the functions of `executor/v1`'s `PromptSession`.
+syntax = "proto3";
+
+package doric.executor.session.v1;
+
+import "buf/validate/validate.proto";
+import "doric/platform/v1/options.proto";
+import "doric/runtime/attachments/v1/attachments.proto";
+import "doric/runtime/v2/runtime.proto";
+import "google/protobuf/struct.proto";
+
+option (doric.platform.v1.contract) = {
+  id: "executor.session/v1"
+  cardinality: CARDINALITY_ONE
+  environment: ENVIRONMENT_HOST
+};
+
+// The callbacks of one executor call.
+service SessionService {
+  // Reads one part of the Thread's history: a first item with the format the
+  // stored history was written in, then the part's value as chunked JSON; no
+  // chunk follows when the part is absent.
+  rpc ReadHistory(ReadHistoryRequest) returns (stream ReadHistoryResponse);
+  // Saves history parts and appends one event, applied when the stream ends:
+  // a first item with the session, then for each part its name followed by
+  // its chunks, then at most one event. The history is saved, then the event
+  // appended to the Thread's log and published. On failure the call fails
+  // with the runtime's persistence error, and the runtime remembers the
+  // retry.
+  rpc Record(stream RecordRequest) returns (RecordResponse);
+  // Takes the inputs that arrived for the running prompt since the last
+  // call, oldest first: the reader's steering and the results of child
+  // Threads and background terminals. An input the executor never records
+  // returns to the Thread's queue once the run ends.
+  rpc TakeSteers(TakeSteersRequest) returns (TakeSteersResponse);
+  // Describes one attachment of the Thread's Project, without its bytes;
+  // absent when the Project holds none by that id.
+  rpc DescribeAttachment(DescribeAttachmentRequest) returns (DescribeAttachmentResponse);
+}
+
+// One input that steers a running prompt.
+message SteerInput {
+  // The input's text.
+  string prompt = 1;
+  // Where it came from.
+  doric.runtime.v2.InputSource source = 2 [(buf.validate.field).required = true];
+}
+
+// Reads one history part.
+message ReadHistoryRequest {
+  // The session.
+  string session_id = 1 [(buf.validate.field).string.min_len = 1];
+  // The part's name.
+  string part = 2 [(buf.validate.field).string.min_len = 1];
+}
+
+// The first item of a `ReadHistory` stream.
+message ReadHistoryHead {
+  // The format the stored history was written in; absent when none exists
+  // yet.
+  optional string format = 1;
+}
+
+// One item of a `ReadHistory` stream: the head first, and only first, then
+// the part's JSON text in chunks.
+message ReadHistoryResponse {
+  // The item.
+  oneof item {
+    option (buf.validate.oneof).required = true;
+    // The history's format; the first item.
+    ReadHistoryHead head = 1;
+    // The next chunk of the part's JSON text, at most 1 MiB.
+    bytes chunk = 2 [(buf.validate.field).bytes = {
+      min_len: 1
+      max_len: 1048576
+    }];
+  }
+}
+
+// The first item of a `Record` stream.
+message RecordHead {
+  // The session.
+  string session_id = 1 [(buf.validate.field).string.min_len = 1];
+  // The format the parts that follow are written in; set when parts follow.
+  optional string format = 2;
+}
+
+// One item a `Record` caller sends: the head first, and only first; then
+// for each history part its name followed by the chunks of its JSON text;
+// then at most one event, last.
+message RecordRequest {
+  // The item.
+  oneof item {
+    option (buf.validate.oneof).required = true;
+    // The session; the first item.
+    RecordHead head = 1;
+    // The name of the history part whose chunks follow.
+    string part = 2;
+    // The next chunk of the current part's JSON text, at most 1 MiB.
+    bytes chunk = 3 [(buf.validate.field).bytes = {
+      min_len: 1
+      max_len: 1048576
+    }];
+    // The event to append to the Thread's log after the history is saved.
+    google.protobuf.Struct event = 4;
+  }
+}
+
+// The history is saved and the event appended.
+message RecordResponse {}
+
+// Takes the steering inputs.
+message TakeSteersRequest {
+  // The session.
+  string session_id = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+// The steering inputs, oldest first.
+message TakeSteersResponse {
+  // The inputs; empty when none arrived.
+  repeated SteerInput steers = 1;
+}
+
+// Describes one attachment.
+message DescribeAttachmentRequest {
+  // The session.
+  string session_id = 1 [(buf.validate.field).string.min_len = 1];
+  // The attachment's id.
+  string id = 2;
+}
+
+// The attachment, when the Thread's Project holds it.
+message DescribeAttachmentResponse {
+  // Its id, name, media type and size; absent when the Project holds none
+  // by that id.
+  optional doric.runtime.attachments.v1.Attachment attachment = 1;
+}

@@ -1,0 +1,168 @@
+// `layout.tabs/v2` (client, 2.1.0): the viewer tabs of the owner `SetOwner`
+// last named, in one workspace window. Another client part asks the shell to
+// open, focus, retitle and close a tab; each tab's content is the custom
+// element `ui/v1` creates for its `tag`.
+//
+// 2.1.0: a tab menu entry names an icon and a `commands/v1` command instead
+// of carrying a React element and a function; every method is asynchronous;
+// `subscribe` becomes the stream `Watch`, whose first item is the value
+// `Current` answers.
+syntax = "proto3";
+
+package doric.layout.tabs.v2;
+
+import "buf/validate/validate.proto";
+import "doric/platform/v1/options.proto";
+import "google/protobuf/any.proto";
+import "google/protobuf/struct.proto";
+
+option (doric.platform.v1.contract) = {
+  id: "layout.tabs/v2"
+  cardinality: CARDINALITY_ONE
+  environment: ENVIRONMENT_CLIENT
+};
+
+// The tabs of the active owner.
+service TabsService {
+  // Opens the tab, or only focuses it when its id is open. With no owner it
+  // fails `unavailable` ("No thread or project is selected.").
+  rpc Open(OpenRequest) returns (OpenResponse);
+  // Closes the tab and disposes its element (`ui/v1` dispose); a tab that is
+  // not open is a no-op.
+  rpc Close(CloseRequest) returns (CloseResponse);
+  // Focuses the open tab with that id of the active owner.
+  rpc Focus(FocusRequest) returns (FocusResponse);
+  // Sets the title of the tab with that id in the owners `Close` would
+  // reach; without such a tab it does nothing.
+  rpc Retitle(RetitleRequest) returns (RetitleResponse);
+  // The selected tab of the active owner, if any; the first item of `Watch`
+  // is the same value.
+  rpc Current(CurrentRequest) returns (CurrentResponse);
+  // Streams the selected tab of the active owner: the present value first,
+  // then one item after every change of the tabs or of the owner.
+  rpc Watch(WatchRequest) returns (stream WatchResponse) {
+    option (doric.platform.v1.method).resumable = true;
+  }
+  // Names the set of tabs the frame shows; absent, no set.
+  rpc SetOwner(SetOwnerRequest) returns (SetOwnerResponse);
+}
+
+// One entry of a viewer tab's context menu. Picking it closes the menu and
+// runs `command_id` through `commands/v1.Execute` with `args` as its input.
+message TabMenuItem {
+  // The entry's id, unique in its menu.
+  string id = 1;
+  // The entry's text.
+  string label = 2;
+  // The name of the entry's leading 16 px icon, a lucide icon in kebab case
+  // ("folder-open"); absent, the label aligns with the labels of the entries
+  // that have one.
+  optional string icon = 3 [(buf.validate.field).string.pattern = "^[a-z0-9]+(-[a-z0-9]+)*$"];
+  // Drawn with the destructive item variant.
+  optional bool destructive = 4;
+  // The `commands/v1` command the entry runs, `<name>/v<major>`.
+  string command_id = 5 [(buf.validate.field).string.pattern = "^[a-z][a-z0-9-]*(\\.[a-z0-9-]+)*/v[1-9][0-9]*$"];
+  // The command's input, a message with the option
+  // `(doric.platform.v1.command).id` of `command_id`; absent for none.
+  optional google.protobuf.Any args = 6;
+}
+
+// The selected tab of the active owner.
+message CurrentTab {
+  // The tab's id.
+  string id = 1;
+  // The props an element tab was opened with.
+  optional google.protobuf.Struct props = 2;
+}
+
+// A tab another bundle asks the shell to show.
+message OpenRequest {
+  // Unique among the tabs of one owner; opening an open id focuses it.
+  string id = 1 [(buf.validate.field).string.min_len = 1];
+  // The trigger's text.
+  string title = 2;
+  // The custom element `ui/v1` creates for the tab's content.
+  string tag = 3 [(buf.validate.field).string.min_len = 1];
+  // The props the element is created with.
+  optional google.protobuf.Struct props = 4;
+  // The element drawn as the trigger's 16 px icon, created through `ui/v1`
+  // with the tab's `props`.
+  optional string icon_tag = 5 [(buf.validate.field).string.min_len = 1];
+  // The viewer card draws no bottom padding while this tab is selected.
+  optional bool open_bottom = 6;
+  // The trigger's accessible name; defaults to `title`.
+  optional string aria_label = 7;
+  // The trigger's tooltip (`title` attribute); defaults to `title`.
+  optional string tooltip = 8;
+  // The entries the tab's context menu shows besides "Close tab"; empty for
+  // none.
+  repeated TabMenuItem menu = 9;
+}
+
+// The tab is open and focused.
+message OpenResponse {}
+
+// Closes a tab.
+message CloseRequest {
+  // The tab's id.
+  string id = 1 [(buf.validate.field).string.min_len = 1];
+  // The owner key whose tab closes; absent, the active owner.
+  optional string thread_id = 2 [(buf.validate.field).string.min_len = 1];
+  // Closes the tab with this id in every owner; `thread_id` is then ignored.
+  optional bool every_owner = 3;
+}
+
+// The tab is closed.
+message CloseResponse {}
+
+// Focuses a tab.
+message FocusRequest {
+  // The tab's id.
+  string id = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+// The tab is focused.
+message FocusResponse {}
+
+// Sets a tab's title.
+message RetitleRequest {
+  // The tab's id.
+  string id = 1 [(buf.validate.field).string.min_len = 1];
+  // The new title.
+  string title = 2;
+  // The owner key whose tab is retitled; absent, the active owner.
+  optional string thread_id = 3;
+  // Retitles the tab with this id in every owner; `thread_id` is then
+  // ignored.
+  optional bool every_owner = 4;
+}
+
+// The title is set, or no such tab was open.
+message RetitleResponse {}
+
+// Asks the selected tab.
+message CurrentRequest {}
+
+// The selected tab of the active owner.
+message CurrentResponse {
+  // The tab; absent when the owner has none selected or there is no owner.
+  optional CurrentTab current_tab = 1;
+}
+
+// Asks the selected tab as it changes.
+message WatchRequest {}
+
+// The selected tab of the active owner after a change.
+message WatchResponse {
+  // The tab; absent when the owner has none selected or there is no owner.
+  optional CurrentTab current_tab = 1;
+}
+
+// Names the set of tabs the frame shows.
+message SetOwnerRequest {
+  // The owner key; absent, no set.
+  optional string owner = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+// The owner is set.
+message SetOwnerResponse {}

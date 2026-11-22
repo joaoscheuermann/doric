@@ -2,30 +2,51 @@
 
 # Pin the base image by digest so every stage uses the same reviewed Node and
 # Debian userspace even if the upstream tag later moves.
-ARG BASE_IMAGE=node:22-bookworm-slim@sha256:d649c27dae7ba0137b3cef5dd75baa422c08dc3d9e3fc0c23dfb172dc3cc6436
+ARG BASE_IMAGE=node:26-bookworm-slim@sha256:5df79989ed685e09f0a98019db4cebfb22fb9df1a53c0161664a011f7ff6b0f1
 
 # Build Doric and its built-in bundles in one stage so compilation is complete
 # before the verified VMM and guest artifacts are assembled into the runtime.
 FROM ${BASE_IMAGE} AS agent-builder
 WORKDIR /workspace
 
+# The slim base carries no system CA store. `buf` (a Go binary, unlike Node
+# with its bundled roots) verifies TLS against it when it fetches the
+# `buf.lock` dependencies from buf.build during `generate-proto`. The store
+# stays in this stage; the runtime stages copy only /workspace.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends ca-certificates \
+ && rm -rf /var/lib/apt/lists/*
+
 # Root metadata and the relevant workspace trees are all required before
 # installation: npm materializes workspace links and TypeScript follows project
 # references across package boundaries while compiling Doric and its bundles.
 COPY package.json package-lock.json nx.json tsconfig.json tsconfig.base.json ./
+COPY patches ./patches
+# Each project's `generate-proto` target runs `buf generate` against the root
+# buf workspace. `buf.yaml` lists every module directory, so each must exist,
+# including the benchmark's `.proto` module (only its `proto/` tree: the
+# benchmark itself is not built here). `packages/bundle`'s `generate-proto`
+# depends on the root project's (`project.json`) `proto-export`, which writes
+# the `buf/validate` and `google/rpc` sources to `dist/proto`. The `buf.lock`
+# dependencies (protovalidate, googleapis) are fetched from buf.build, so this
+# stage needs network access; `protoc-gen-es` runs locally from node_modules.
+COPY project.json buf.yaml buf.gen.yaml buf.lock ./
+COPY benchmarks/proto-codec/proto ./benchmarks/proto-codec/proto
 COPY app ./app
 COPY bundles ./bundles
 COPY packages ./packages
 COPY tools ./tools
 
-# The lockfile is resolved by npm 11, the version the repository is developed
-# with. The base image's bundled npm 10 re-resolves a caret range to a version
-# the lock does not carry and refuses `npm ci` with "Missing: <pkg> from lock
-# file"; pinning the major here keeps the builder and the toolchain in step.
+# The lockfile is resolved by npm 11.13.0, the version CI pins. Another npm
+# can re-resolve a caret range to a version the lock does not carry and refuse
+# `npm ci` with "Missing: <pkg> from lock file"; pinning the exact version here
+# keeps the builder and the toolchain in step.
 RUN npm install --global npm@11.13.0
 
 # Lifecycle scripts are disabled because dependencies are untrusted build
-# inputs; Nx's required post-install step is then invoked explicitly. The
+# inputs; Nx's required post-install step is then invoked explicitly, and so
+# is the root's `postinstall`, `patch-package`, which applies `patches/` to
+# the installed dependencies. The
 # Prisma client is generated before compiling, and the Doric entrypoint is
 # placed at the path expected by its package metadata.
 # Nx's `build-bundles` target is the single definition of the bundle build: it
@@ -39,6 +60,7 @@ RUN npm install --global npm@11.13.0
 # than at boot.
 RUN npm ci --ignore-scripts \
  && node node_modules/nx/bin/post-install \
+ && npx patch-package --error-on-fail \
  && npx prisma generate --config app/backend/doric-host/prisma.config.ts \
  && npx tsc --build packages/storage/tsconfig.lib.json app/backend/doric-host/tsconfig.lib.json --force \
  && node packages/bundle/dist/build/platform-schemas.js \

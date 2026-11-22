@@ -38,7 +38,8 @@ export interface ProbeOptions {
 
 /**
  * Host part of the `probe` bundle: `probe/v1` answers who and where it runs,
- * holds work through `doric.generation/v1`, answers `wait` late; the optional `probe`
+ * holds work through `doric.generation/v1`, answers `wait` late and `park`
+ * once `unpark` was called (in either order); the optional `probe`
  * tool reports its process and generation, or blocks until the process dies.
  */
 export const probeSource = (options: ProbeOptions = {}) => `
@@ -55,6 +56,10 @@ import {
 
 const ProbeV1 = ref(${JSON.stringify(`${probeIdOf(options)}/v1`)});
 const holds = [];
+let unpark;
+const parked = new Promise((resolve) => {
+  unpark = resolve;
+});
 
 export const activate = ({ services }) => {
   services.provide(
@@ -88,6 +93,24 @@ export const activate = ({ services }) => {
           await new Promise((resolve) => setTimeout(resolve, ms));
 
           return process.pid;
+        },
+      }),
+      park: defineMethod({
+        input: z.tuple([]),
+        output: z.number(),
+        execute: async () => {
+          await parked;
+
+          return process.pid;
+        },
+      }),
+      unpark: defineMethod({
+        input: z.tuple([]),
+        output: z.null(),
+        execute: () => {
+          unpark();
+
+          return null;
         },
       }),
       releaseAll: defineMethod({

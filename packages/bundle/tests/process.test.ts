@@ -64,6 +64,8 @@ interface Probe {
   hold(promptId: string): Promise<null>;
   releaseAll(): Promise<null>;
   wait(ms: number): Promise<number>;
+  park(): Promise<number>;
+  unpark(): Promise<null>;
 }
 
 const ProbeV1 = ref<Probe>('probe/v1');
@@ -493,8 +495,9 @@ void test('a draining generation without holds stops only after its calls in fli
 
     try {
       const firstPid = pidOf(platform, 1);
-      // A call into generation 1 without any work hold.
-      const answer = platform.view(1).use(ProbeV1).wait(600);
+      // A call into generation 1 without any work hold, answered only once
+      // the test unparks it: no timer decides whether it outlives the publish.
+      const answer = platform.view(1).use(ProbeV1).park();
 
       await new Promise((resolve) => setTimeout(resolve, 50));
       await writeProbe(root, { version: '1.1.0' });
@@ -507,6 +510,7 @@ void test('a draining generation without holds stops only after its calls in fli
       assert.equal(platform.generations.describe()[0]?.state, 'draining');
       assert.ok(alive(firstPid), 'the call in flight keeps generation 1');
 
+      await platform.view(1).use(ProbeV1).unpark();
       assert.equal(await answer, firstPid);
       await eventually(
         () => platform.generations.describe()[0]?.state === 'stopped',

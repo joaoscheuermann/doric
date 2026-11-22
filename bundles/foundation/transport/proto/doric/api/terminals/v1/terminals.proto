@@ -1,0 +1,102 @@
+// `api.terminals/v1` (host, 1.0.0): the public API of one terminal session,
+// which replaces the `/terminals/:id` routes. The `transport` bundle provides
+// it over `terminal/v1`. Terminal data is never cached and never stored in a
+// Thread's events.
+//
+// A refusal is a gRPC status whose `google.rpc.ErrorInfo` has `domain`
+// "doric" and `reason` the REST error code of today: `invalid_cursor`,
+// `invalid_input` and `invalid_size` (`INVALID_ARGUMENT`) and
+// `terminal_missing` (`NOT_FOUND`). No response carries an error.
+syntax = "proto3";
+
+package doric.api.terminals.v1;
+
+import "buf/validate/validate.proto";
+import "doric/platform/v1/options.proto";
+import "doric/terminal/v1/terminal.proto";
+
+option (doric.platform.v1.contract) = {
+  id: "api.terminals/v1"
+  cardinality: CARDINALITY_ONE
+  environment: ENVIRONMENT_HOST
+};
+
+// One terminal session, by its id. A terminal id is an opaque string whose
+// form no call checks.
+service TerminalsService {
+  // The session with its retained output after a cursor
+  // (`GET /terminals/:id`).
+  rpc GetTerminal(GetTerminalRequest) returns (GetTerminalResponse);
+  // Writes text to a running session (`POST /terminals/:id/input`).
+  rpc SendInput(SendInputRequest) returns (SendInputResponse);
+  // Resizes a running session (`POST /terminals/:id/resize`).
+  rpc Resize(ResizeRequest) returns (ResizeResponse);
+  // Stops and removes a session (`DELETE /terminals/:id`); idempotent, so an
+  // unknown session succeeds too.
+  rpc DeleteTerminal(DeleteTerminalRequest) returns (DeleteTerminalResponse);
+}
+
+// Asks a session's output after a cursor.
+message GetTerminalRequest {
+  // The session.
+  string terminal_id = 1;
+  // The UTF-16 offset to read after, a whole number; 0 reads all that is
+  // retained.
+  double after = 2 [
+    (buf.validate.field).double = {
+      gte: 0
+      lte: 9007199254740991
+    },
+    (buf.validate.field).cel = {
+      id: "after.integer"
+      message: "after must be a whole number"
+      expression: "this == double(int(this))"
+    }
+  ];
+}
+
+// The session and its output.
+message GetTerminalResponse {
+  // The session, its retained output after the cursor and the offset after
+  // it.
+  doric.terminal.v1.TerminalSnapshot terminal_snapshot = 1 [(buf.validate.field).required = true];
+}
+
+// Writes text to a session.
+message SendInputRequest {
+  // The session.
+  string terminal_id = 1;
+  // The text, as typed: at most 65,536 characters.
+  string data = 2 [(buf.validate.field).string.max_len = 65536];
+}
+
+// The text was written.
+message SendInputResponse {}
+
+// Resizes a session.
+message ResizeRequest {
+  // The session.
+  string terminal_id = 1;
+  // The columns, 1 to 1000.
+  int32 cols = 2 [(buf.validate.field).int32 = {
+    gte: 1
+    lte: 1000
+  }];
+  // The rows, 1 to 1000.
+  int32 rows = 3 [(buf.validate.field).int32 = {
+    gte: 1
+    lte: 1000
+  }];
+}
+
+// The session was resized.
+message ResizeResponse {}
+
+// Stops a session.
+message DeleteTerminalRequest {
+  // The session.
+  string terminal_id = 1;
+}
+
+// The session is stopped and removed, or none existed.
+message DeleteTerminalResponse {}

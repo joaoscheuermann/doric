@@ -1,0 +1,29 @@
+// `doric.tokens/v1` (platform 2.0.0): the app's design tokens. Electron main
+// serves it to client parts.
+//
+// 2.0.0: served to client parts. No member changes.
+syntax = "proto3";
+
+package doric.platform.tokens.v1;
+
+import "doric/platform/v1/options.proto";
+
+option (doric.platform.v1.contract) = {
+  id: "doric.tokens/v1"
+  cardinality: CARDINALITY_ONE
+};
+
+// The design tokens.
+service TokensService {
+  // The present tokens.
+  rpc Get(GetRequest) returns (GetResponse);
+}
+
+// Asks the tokens.
+message GetRequest {}
+
+// The present tokens.
+message GetResponse {
+  // Each token's value, by token name.
+  map<string, string> tokens = 1;
+}

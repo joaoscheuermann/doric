@@ -1,0 +1,129 @@
+// `api.host/v1` (host, 1.0.0): the public API of what the host runs, which
+// replaces `GET /tools`, `GET /resources`, `GET /vms` and `GET /vms/:id/ssh`.
+// The `transport` bundle provides it over `tools/v1`, `resources/v1`,
+// `sandbox/v1` and `runtime/v2`. An SSH key is answered only by `GetVmSsh`,
+// never logged and never cached.
+//
+// A refusal is a gRPC status whose `google.rpc.ErrorInfo` has `domain`
+// "doric" and `reason` the REST error code of today: `vm_not_found`
+// (`NOT_FOUND`) and `vm_ssh_unavailable` (`FAILED_PRECONDITION`). No response
+// carries an error.
+syntax = "proto3";
+
+package doric.api.host.v1;
+
+import "buf/validate/validate.proto";
+import "doric/platform/v1/options.proto";
+import "doric/sandbox/v1/sandbox.proto";
+import "doric/tools/v1/tools.proto";
+
+option (doric.platform.v1.contract) = {
+  id: "api.host/v1"
+  cardinality: CARDINALITY_ONE
+  environment: ENVIRONMENT_HOST
+};
+
+// The host's tools, machine and sandbox machines.
+service HostService {
+  // The tools the loaded bundles expose, with the configuration fields each
+  // declares (`GET /tools`); the read executes no tool.
+  rpc ListTools(ListToolsRequest) returns (ListToolsResponse);
+  // A reading of the machine the host runs on (`GET /resources`); it never
+  // needs a lease and is always answered.
+  rpc ListResources(ListResourcesRequest) returns (ListResourcesResponse);
+  // The machines the sandbox provider runs (`GET /vms`).
+  rpc ListVms(ListVmsRequest) returns (ListVmsResponse);
+  // One machine with its Project and its SSH access (`GET /vms/:id/ssh`). An
+  // unknown machine is `vm_not_found`; a machine without SSH access is
+  // `vm_ssh_unavailable`.
+  rpc GetVmSsh(GetVmSshRequest) returns (GetVmSshResponse);
+}
+
+// Asks the exposed tools.
+message ListToolsRequest {}
+
+// The exposed tools.
+message ListToolsResponse {
+  // The tools, as `tools/v1` lists them.
+  repeated doric.tools.v1.ToolCatalogEntry tools = 1;
+}
+
+// Asks the host machine's reading.
+message ListResourcesRequest {}
+
+// The machine the host runs on: today's `HostResources`. Its fields are
+// redeclared from `resources/v1`'s `HostResponse`, a response no other
+// message may hold.
+message ListResourcesResponse {
+  // The time of the reading (ISO-8601).
+  string at = 1;
+  // The machine's CPUs, a whole number.
+  double cpu_count = 2 [
+    (buf.validate.field).double.gte = 0,
+    (buf.validate.field).cel = {
+      id: "cpu_count.integer"
+      message: "cpuCount must be a whole number"
+      expression: "this == double(int(this))"
+    }
+  ];
+  // The CPU use between all cores since the previous reading, 0 to 100;
+  // absent on the first reading of the process.
+  optional double cpu_percent = 3 [(buf.validate.field).double = {
+    gte: 0
+    lte: 100
+  }];
+  // The one-minute load average; absent when not read.
+  optional double load_average = 4 [(buf.validate.field).double.gte = 0];
+  // The machine's memory, in bytes, a whole number.
+  double memory_total_bytes = 5 [
+    (buf.validate.field).double.gte = 0,
+    (buf.validate.field).cel = {
+      id: "memory_total_bytes.integer"
+      message: "memoryTotalBytes must be a whole number"
+      expression: "this == double(int(this))"
+    }
+  ];
+  // The memory in use, in bytes, a whole number.
+  double memory_used_bytes = 6 [
+    (buf.validate.field).double.gte = 0,
+    (buf.validate.field).cel = {
+      id: "memory_used_bytes.integer"
+      message: "memoryUsedBytes must be a whole number"
+      expression: "this == double(int(this))"
+    }
+  ];
+  // How long the machine has run, in seconds, a whole number.
+  double uptime_seconds = 7 [
+    (buf.validate.field).double.gte = 0,
+    (buf.validate.field).cel = {
+      id: "uptime_seconds.integer"
+      message: "uptimeSeconds must be a whole number"
+      expression: "this == double(int(this))"
+    }
+  ];
+}
+
+// Asks the running machines.
+message ListVmsRequest {}
+
+// The running machines; today's bare array.
+message ListVmsResponse {
+  // The machines, as the sandbox provider lists them.
+  repeated doric.sandbox.v1.RunningMachine vms = 1;
+}
+
+// Asks one machine's SSH access.
+message GetVmSshRequest {
+  // The machine's id, an opaque string.
+  string vm_id = 1;
+}
+
+// One machine with its Project and SSH access.
+message GetVmSshResponse {
+  // The machine.
+  doric.sandbox.v1.RunningMachine vm = 1 [(buf.validate.field).required = true];
+  // The Project the machine serves.
+  string project_id = 2;
+  // The SSH access; its private key is a secret.
+  doric.sandbox.v1.SandboxSshAccess ssh = 3 [(buf.validate.field).required = true];
+}

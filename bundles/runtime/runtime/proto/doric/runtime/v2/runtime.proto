@@ -1,0 +1,862 @@
+// `runtime/v2` (host, 2.1.0): Projects, boot recovery, the generation
+// handover, host stop and the live notices of the workspace, served by
+// `runtime`. This file also declares the public records of Projects and
+// Threads (`Project`, `Thread`, `ThreadEvent`, `InputSource`, ...) that the
+// other runtime contracts hold.
+//
+// Errors: `CreateProject` fails with `FAILED_PRECONDITION` after `Dispose`
+// ("Doric is shutting down."); every other refusal is an answer.
+//
+// 2.1.0: `drain` streams the released Projects instead of calling a
+// function; `watch` and `watchProject` become server streams.
+syntax = "proto3";
+
+package doric.runtime.v2;
+
+import "buf/validate/validate.proto";
+import "doric/platform/v1/options.proto";
+import "doric/sandbox/v1/sandbox.proto";
+import "google/protobuf/struct.proto";
+
+option (doric.platform.v1.contract) = {
+  id: "runtime/v2"
+  cardinality: CARDINALITY_ONE
+  environment: ENVIRONMENT_HOST
+};
+
+// Projects, recovery, handover, stop and notices.
+service RuntimeService {
+  // Once per runtime process, at boot and after each respawn: reconciles
+  // Threads and Projects, re-enqueues interrupted prompts and recovers
+  // Projects, in that order. One recovery per process: a second call, or a
+  // `RecoverWith` after it, answers the first one's summary.
+  rpc Recover(RecoverRequest) returns (RecoverResponse);
+  // `Recover` for a process that starts while other runtime processes are
+  // alive: the Projects a process of `handover.live` owns are left to it.
+  rpc RecoverWith(RecoverWithRequest) returns (RecoverWithResponse);
+  // Takes up the Projects left in standby whose owner let them go or is no
+  // longer in `handover.live`.
+  rpc Adopt(AdoptRequest) returns (AdoptResponse);
+  // The runtime of a replaced generation lets every live Project go: each
+  // lets its running prompts finish, closes its terminals and releases its
+  // sandbox lease and its owner. One item per released Project; the stream
+  // ends when every Project is released.
+  rpc Drain(DrainRequest) returns (stream DrainResponse);
+  // Host stop; idempotent.
+  rpc Dispose(DisposeRequest) returns (DisposeResponse);
+  // Creates a Project.
+  rpc CreateProject(CreateProjectRequest) returns (CreateProjectResponse) {
+    option (doric.platform.v1.method).expose = EXPOSE_DESKTOP;
+  }
+  // One Project; absent when there is none by that id.
+  rpc Project(ProjectRequest) returns (ProjectResponse);
+  // A page of Projects.
+  rpc Projects(ProjectsRequest) returns (ProjectsResponse) {
+    option (doric.platform.v1.method).expose = EXPOSE_DESKTOP;
+  }
+  // Every Project, ordered by its own or its Threads' latest activity.
+  rpc ProjectActivity(ProjectActivityRequest) returns (ProjectActivityResponse) {
+    option (doric.platform.v1.method).expose = EXPOSE_DESKTOP;
+  }
+  // Renames a Project; absent when there is none by that id.
+  rpc RenameProject(RenameProjectRequest) returns (RenameProjectResponse) {
+    option (doric.platform.v1.method).expose = EXPOSE_DESKTOP;
+  }
+  // Sets or clears a Project's color; absent when there is none by that id.
+  rpc SetProjectColor(SetProjectColorRequest) returns (SetProjectColorResponse) {
+    option (doric.platform.v1.method).expose = EXPOSE_DESKTOP;
+  }
+  // Terminates a Project; absent when there is none by that id.
+  rpc TerminateProject(TerminateProjectRequest) returns (TerminateProjectResponse) {
+    option (doric.platform.v1.method).expose = EXPOSE_DESKTOP;
+  }
+  // Deletes a Project, or says why it did not.
+  rpc DeleteProject(DeleteProjectRequest) returns (DeleteProjectResponse) {
+    option (doric.platform.v1.method).expose = EXPOSE_DESKTOP;
+  }
+  // The SSH access of a machine, with its Project; absent when no live
+  // Project holds it.
+  rpc VmSsh(VmSshRequest) returns (VmSshResponse);
+  // Every notice, in publication order, each after its commit.
+  rpc Watch(WatchRequest) returns (stream WatchResponse) {
+    option (doric.platform.v1.method).resumable = true;
+  }
+  // One snapshot of a Project and its Threads, then its Project and Thread
+  // notices.
+  rpc WatchProject(WatchProjectRequest) returns (stream WatchProjectResponse) {
+    option (doric.platform.v1.method).expose = EXPOSE_DESKTOP;
+    option (doric.platform.v1.method).resumable = true;
+  }
+}
+
+// A Project's public record.
+message Project {
+  // The Project's id.
+  string id = 1;
+  // The display name.
+  string name = 2;
+  // The color the Project is marked with: "red", "orange", "amber", "green",
+  // "teal", "blue", "violet" or "pink"; absent when unmarked.
+  optional string color = 3 [(buf.validate.field).string = {
+    in: [
+      "red",
+      "orange",
+      "amber",
+      "green",
+      "teal",
+      "blue",
+      "violet",
+      "pink"
+    ]
+  }];
+  // "queued", "ready", "cancelling", "cancelled" or "failed".
+  string state = 4 [(buf.validate.field).string = {
+    in: [
+      "queued",
+      "ready",
+      "cancelling",
+      "cancelled",
+      "failed"
+    ]
+  }];
+  // The configuration revision the Project was created with, a whole number.
+  double config_revision = 5 [(buf.validate.field).cel = {
+    id: "config_revision.integer"
+    message: "configRevision must be a whole number"
+    expression: "this == double(int(this))"
+  }];
+  // Why the Project failed; absent unless it failed.
+  optional string error_code = 6;
+  // When it was created (ISO-8601).
+  string created_at = 7;
+  // When it last changed (ISO-8601).
+  string updated_at = 8;
+  // When it started (ISO-8601).
+  optional string started_at = 9;
+  // When it finished (ISO-8601).
+  optional string finished_at = 10;
+}
+
+// The result of a Thread's most recent finished prompt.
+message ThreadOutcome {
+  // How the prompt ended, for example "completed".
+  string status = 1;
+  // The prompt's final text.
+  string text = 2;
+  // The prompt.
+  string prompt_id = 3;
+  // When it finished (ISO-8601).
+  string at = 4;
+}
+
+// The agent a Thread was spawned as, by name and source; never its
+// instructions.
+message ThreadAgent {
+  // The agent's name.
+  string name = 1;
+  // Where the agent is defined: "built-in" or "workspace".
+  string source = 2 [(buf.validate.field).string = {
+    in: [
+      "built-in",
+      "workspace"
+    ]
+  }];
+}
+
+// A Thread's public record.
+message Thread {
+  // The Thread's id.
+  string id = 1;
+  // The Thread's Project.
+  string project_id = 2;
+  // The parent of a child Thread; absent for a top-level Thread.
+  optional string parent_thread_id = 3;
+  // Who opened it: "user" or "agent"; absent on a Thread that predates the
+  // distinction, which reads as the reader's.
+  optional string origin = 4 [(buf.validate.field).string = {
+    in: [
+      "user",
+      "agent"
+    ]
+  }];
+  // The display name.
+  string name = 5;
+  // "queued", "ready", "running", "cancelling", "cancelled" or "failed".
+  string state = 6 [(buf.validate.field).string = {
+    in: [
+      "queued",
+      "ready",
+      "running",
+      "cancelling",
+      "cancelled",
+      "failed"
+    ]
+  }];
+  // The sequence of the Thread's last event, a whole number; 0 before any.
+  double last_sequence = 7 [
+    (buf.validate.field).double.gte = 0,
+    (buf.validate.field).cel = {
+      id: "last_sequence.integer"
+      message: "lastSequence must be a whole number"
+      expression: "this == double(int(this))"
+    }
+  ];
+  // True while the Thread's queue is paused.
+  optional bool queue_paused = 8;
+  // The working directory, absolute in the sandbox.
+  string cwd = 9;
+  // The repository at `cwd` itself: "git" or "github"; absent when none.
+  optional string cwd_repo = 10 [(buf.validate.field).string = {
+    in: [
+      "git",
+      "github"
+    ]
+  }];
+  // The prompt that runs now.
+  optional string active_prompt_id = 11;
+  // When the running prompt started executing (ISO-8601).
+  optional string execution_started_at = 12;
+  // How long the last execution took, in milliseconds, a whole number.
+  optional double last_execution_ms = 13 [
+    (buf.validate.field).double.gte = 0,
+    (buf.validate.field).cel = {
+      id: "last_execution_ms.integer"
+      message: "lastExecutionMs must be a whole number"
+      expression: "this == double(int(this))"
+    }
+  ];
+  // Why the Thread failed; absent unless it failed.
+  optional string error_code = 14;
+  // When it was created (ISO-8601).
+  string created_at = 15;
+  // When it last changed (ISO-8601).
+  string updated_at = 16;
+  // When it started (ISO-8601).
+  optional string started_at = 17;
+  // When it finished (ISO-8601).
+  optional string finished_at = 18;
+  // The result of its most recent finished prompt.
+  optional ThreadOutcome result = 19;
+  // The agent it was spawned as; absent for the default agent. Never
+  // inherited from the parent.
+  optional ThreadAgent agent = 20;
+  // The model it runs on.
+  optional string model = 21;
+  // The reasoning effort: "none", "minimal", "low", "medium", "high",
+  // "xhigh" or "max"; absent with `providerId` present means no effort.
+  optional string effort = 22 [(buf.validate.field).string = {
+    in: [
+      "none",
+      "minimal",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ]
+  }];
+  // The provider it runs on. Present: the Thread has a stored execution and
+  // `model` is present too. Absent: a Thread created before
+  // `runtime.threads/v1` 1.7.0, which follows the workspace default.
+  optional string provider_id = 23;
+  // When it was archived (ISO-8601); absent unless archived.
+  optional string archived_at = 24;
+  // True while the reader has it pinned; absent when not pinned.
+  optional bool pinned = 25;
+}
+
+// Where an input came from, named by today's `kind`.
+message InputSource {
+  // The source.
+  oneof kind {
+    option (doric.platform.v1.oneof).discriminator = "kind";
+    option (buf.validate.oneof).required = true;
+    // The reader wrote it.
+    UserInputSource user = 1;
+    // A background terminal's result.
+    TerminalInputSource terminal = 2;
+    // The parent Thread's prompt.
+    ParentInputSource parent = 3;
+    // A child Thread's result.
+    ResultInputSource result = 4;
+    // An instruction a bundle gave the Thread.
+    BundleInputSource bundle = 5;
+  }
+}
+
+// An input the reader wrote.
+message UserInputSource {}
+
+// A background terminal's result.
+message TerminalInputSource {
+  // The terminal.
+  string terminal_id = 1;
+  // The prompt that started the terminal.
+  string prompt_id = 2;
+}
+
+// A prompt the parent Thread sent.
+message ParentInputSource {
+  // The parent Thread.
+  string thread_id = 1;
+  // The parent's prompt that sent it.
+  string prompt_id = 2;
+}
+
+// A child Thread's result delivered to its parent.
+message ResultInputSource {
+  // The child Thread.
+  string thread_id = 1;
+  // The child's prompt whose result it is.
+  string prompt_id = 2;
+  // The parent's prompt that asked for it.
+  string request_prompt_id = 3;
+}
+
+// An instruction a bundle gave the Thread (`runtime.threads/v1.Instruct`).
+message BundleInputSource {
+  // The calling bundle, never a value the caller supplied.
+  string bundle_id = 1;
+  // Why the bundle spoke.
+  string reason = 2;
+  // Present (true) for a standing instruction: the executor keeps it in the
+  // history the model reads, one per bundle and reason, through every
+  // compaction.
+  optional bool retain = 3 [(buf.validate.field).bool.const = true];
+}
+
+// A persisted event of a Thread.
+message ThreadEvent {
+  // The Project.
+  string project_id = 1;
+  // The Thread.
+  string thread_id = 2;
+  // The prompt the event belongs to.
+  string prompt_id = 3;
+  // The event's position in the Thread's log, from 1, a whole number.
+  double sequence = 4 [
+    (buf.validate.field).double.gte = 1,
+    (buf.validate.field).cel = {
+      id: "sequence.integer"
+      message: "sequence must be a whole number"
+      expression: "this == double(int(this))"
+    }
+  ];
+  // The event's durable type.
+  string type = 5;
+  // The event's body, JSON.
+  google.protobuf.Value event = 6;
+  // When it was stored (ISO-8601).
+  string created_at = 7;
+}
+
+// A Thread was deleted.
+message ThreadDeleted {
+  // The deleted Thread's Project.
+  string project_id = 1;
+  // The deleted Thread.
+  string thread_id = 2;
+}
+
+// A Project was deleted.
+message ProjectDeleted {
+  // The deleted Project.
+  string project_id = 1;
+}
+
+// A terminal of a Thread.
+message Terminal {
+  // The terminal's id.
+  string id = 1;
+  // The Project.
+  string project_id = 2;
+  // The Thread that started it.
+  string thread_id = 3;
+  // Who started it: "agent" or "user".
+  string origin = 4 [(buf.validate.field).string = {
+    in: [
+      "agent",
+      "user"
+    ]
+  }];
+  // The command it runs.
+  string command = 5;
+  // Its working directory.
+  string cwd = 6;
+  // When it started (ISO-8601).
+  string started_at = 7;
+  // How long it may run, in milliseconds, a whole number; absent for no
+  // limit.
+  optional double timeout_ms = 8 [
+    (buf.validate.field).double.gte = 0,
+    (buf.validate.field).cel = {
+      id: "timeout_ms.integer"
+      message: "timeoutMs must be a whole number"
+      expression: "this == double(int(this))"
+    }
+  ];
+  // "starting", "running" or "exited".
+  string state = 9 [(buf.validate.field).string = {
+    in: [
+      "starting",
+      "running",
+      "exited"
+    ]
+  }];
+  // Whether it runs in a terminal.
+  bool pty = 10;
+}
+
+// A chunk of a terminal's output.
+message TerminalOutput {
+  // The Project.
+  string project_id = 1;
+  // The Thread.
+  string thread_id = 2;
+  // The terminal.
+  string terminal_id = 3;
+  // The text.
+  string data = 4;
+  // The exclusive UTF-16 offset after this chunk, a whole number.
+  double offset = 5 [
+    (buf.validate.field).double.gte = 0,
+    (buf.validate.field).cel = {
+      id: "offset.integer"
+      message: "offset must be a whole number"
+      expression: "this == double(int(this))"
+    }
+  ];
+}
+
+// A terminal was removed.
+message TerminalRemoved {
+  // The Project.
+  string project_id = 1;
+  // The Thread.
+  string thread_id = 2;
+  // The removed terminal.
+  string terminal_id = 3;
+}
+
+// Usage totals: calls, cost and tokens.
+message UsageTotals {
+  // Model calls, a whole number.
+  double calls = 1 [(buf.validate.field).cel = {
+    id: "calls.integer"
+    message: "calls must be a whole number"
+    expression: "this == double(int(this))"
+  }];
+  // Model calls without a price, a whole number.
+  double unpriced_calls = 2 [(buf.validate.field).cel = {
+    id: "unpriced_calls.integer"
+    message: "unpricedCalls must be a whole number"
+    expression: "this == double(int(this))"
+  }];
+  // The cost of the priced calls.
+  double cost = 3;
+  // Input tokens, a whole number.
+  double input_tokens = 4 [(buf.validate.field).cel = {
+    id: "input_tokens.integer"
+    message: "inputTokens must be a whole number"
+    expression: "this == double(int(this))"
+  }];
+  // Output tokens, a whole number.
+  double output_tokens = 5 [(buf.validate.field).cel = {
+    id: "output_tokens.integer"
+    message: "outputTokens must be a whole number"
+    expression: "this == double(int(this))"
+  }];
+  // Cached input tokens, a whole number.
+  double cached_input_tokens = 6 [(buf.validate.field).cel = {
+    id: "cached_input_tokens.integer"
+    message: "cachedInputTokens must be a whole number"
+    expression: "this == double(int(this))"
+  }];
+  // Reasoning tokens, a whole number.
+  double reasoning_tokens = 7 [(buf.validate.field).cel = {
+    id: "reasoning_tokens.integer"
+    message: "reasoningTokens must be a whole number"
+    expression: "this == double(int(this))"
+  }];
+}
+
+// The usage totals of one Thread of a usage tree.
+message ThreadUsageTotals {
+  // Model calls, a whole number.
+  double calls = 1 [(buf.validate.field).cel = {
+    id: "calls.integer"
+    message: "calls must be a whole number"
+    expression: "this == double(int(this))"
+  }];
+  // Model calls without a price, a whole number.
+  double unpriced_calls = 2 [(buf.validate.field).cel = {
+    id: "unpriced_calls.integer"
+    message: "unpricedCalls must be a whole number"
+    expression: "this == double(int(this))"
+  }];
+  // The cost of the priced calls.
+  double cost = 3;
+  // Input tokens, a whole number.
+  double input_tokens = 4 [(buf.validate.field).cel = {
+    id: "input_tokens.integer"
+    message: "inputTokens must be a whole number"
+    expression: "this == double(int(this))"
+  }];
+  // Output tokens, a whole number.
+  double output_tokens = 5 [(buf.validate.field).cel = {
+    id: "output_tokens.integer"
+    message: "outputTokens must be a whole number"
+    expression: "this == double(int(this))"
+  }];
+  // Cached input tokens, a whole number.
+  double cached_input_tokens = 6 [(buf.validate.field).cel = {
+    id: "cached_input_tokens.integer"
+    message: "cachedInputTokens must be a whole number"
+    expression: "this == double(int(this))"
+  }];
+  // Reasoning tokens, a whole number.
+  double reasoning_tokens = 7 [(buf.validate.field).cel = {
+    id: "reasoning_tokens.integer"
+    message: "reasoningTokens must be a whole number"
+    expression: "this == double(int(this))"
+  }];
+  // The Thread.
+  string thread_id = 8;
+  // The Thread's name.
+  string name = 9;
+  // The Thread's parent; absent for the root.
+  optional string parent_thread_id = 10;
+}
+
+// How full a model's context is.
+message ContextUsage {
+  // The model.
+  string model = 1;
+  // The model's provider.
+  optional string provider_id = 2;
+  // Where `contextWindow` comes from: "catalog".
+  optional string context_window_source = 3 [(buf.validate.field).string.const = "catalog"];
+  // The model's context window, in tokens, a whole number.
+  optional double context_window = 4 [(buf.validate.field).cel = {
+    id: "context_window.integer"
+    message: "contextWindow must be a whole number"
+    expression: "this == double(int(this))"
+  }];
+  // The input tokens of the last call, a whole number.
+  optional double input_tokens = 5 [(buf.validate.field).cel = {
+    id: "input_tokens.integer"
+    message: "inputTokens must be a whole number"
+    expression: "this == double(int(this))"
+  }];
+}
+
+// A Thread's usage: its context and the totals of its tree.
+message ThreadUsage {
+  // The context of the Thread's last call; absent before any.
+  optional ContextUsage context = 1;
+  // The totals of the Thread and its descendants.
+  UsageTotals total = 2 [(buf.validate.field).required = true];
+  // The totals of each Thread of the tree.
+  repeated ThreadUsageTotals threads = 3;
+}
+
+// One runtime process: its bundle generation and that generation's
+// incarnation, as `doric.generation/v1` describes it.
+message RuntimeOwner {
+  // The bundle generation.
+  uint32 generation = 1;
+  // The incarnation of the generation's process.
+  uint32 incarnation = 2;
+}
+
+// The other runtime processes that are still alive. A Project one of them
+// owns is left to it; one owned by a process not listed is reconciled as
+// after a host restart.
+message Handover {
+  // The live runtime processes.
+  repeated RuntimeOwner live = 1;
+}
+
+// What a boot recovery did.
+message RecoverySummary {
+  // Threads moved back to ready, a whole number.
+  double interrupted_threads = 1 [(buf.validate.field).cel = {
+    id: "interrupted_threads.integer"
+    message: "interruptedThreads must be a whole number"
+    expression: "this == double(int(this))"
+  }];
+  // Projects moved back to queued, a whole number.
+  double interrupted_projects = 2 [(buf.validate.field).cel = {
+    id: "interrupted_projects.integer"
+    message: "interruptedProjects must be a whole number"
+    expression: "this == double(int(this))"
+  }];
+  // Prompts re-enqueued, a whole number.
+  double resumed_prompts = 3 [(buf.validate.field).cel = {
+    id: "resumed_prompts.integer"
+    message: "resumedPrompts must be a whole number"
+    expression: "this == double(int(this))"
+  }];
+}
+
+// A machine's SSH access with its Project.
+message VmSsh {
+  // The Project the machine serves.
+  string project_id = 1;
+  // The SSH access.
+  doric.sandbox.v1.SandboxSshAccess ssh = 2 [(buf.validate.field).required = true];
+}
+
+// A Project ordered by its own or its Threads' latest activity.
+message ProjectActivity {
+  // The Project.
+  Project project = 1 [(buf.validate.field).required = true];
+  // When the Project or one of its Threads last changed (ISO-8601).
+  string activity_at = 2;
+  // The Thread that changed last, when one did.
+  optional string latest_active_thread_id = 3;
+}
+
+// The first item of a Project watch: the Project and its Threads.
+message ProjectSnapshot {
+  // The watched Project.
+  string project_id = 1;
+  // The Project; absent when there is none by that id.
+  optional Project project = 2;
+  // The Project's Threads.
+  repeated Thread threads = 3;
+}
+
+// Asks for the boot recovery.
+message RecoverRequest {}
+
+// What the recovery did.
+message RecoverResponse {
+  // The summary.
+  RecoverySummary recovery_summary = 1 [(buf.validate.field).required = true];
+}
+
+// Asks for the boot recovery of a process that starts beside live ones.
+message RecoverWithRequest {
+  // The live runtime processes.
+  Handover handover = 1 [(buf.validate.field).required = true];
+}
+
+// What the recovery did.
+message RecoverWithResponse {
+  // The summary.
+  RecoverySummary recovery_summary = 1 [(buf.validate.field).required = true];
+}
+
+// Takes up the Projects in standby that are free.
+message AdoptRequest {
+  // The live runtime processes.
+  Handover handover = 1 [(buf.validate.field).required = true];
+}
+
+// The free Projects are taken up.
+message AdoptResponse {}
+
+// Lets every live Project go.
+message DrainRequest {}
+
+// One released Project.
+message DrainResponse {
+  // The Project now released.
+  string project_id = 1;
+}
+
+// Stops the runtime.
+message DisposeRequest {}
+
+// The runtime is stopped.
+message DisposeResponse {}
+
+// Creates a Project.
+message CreateProjectRequest {
+  // The display name.
+  string name = 1;
+}
+
+// The new Project.
+message CreateProjectResponse {
+  // The Project.
+  Project project = 1 [(buf.validate.field).required = true];
+}
+
+// Asks one Project.
+message ProjectRequest {
+  // The Project's id.
+  string id = 1;
+}
+
+// One Project, when it exists.
+message ProjectResponse {
+  // The Project; absent when there is none by that id.
+  optional Project project = 1;
+}
+
+// Asks a page of Projects.
+message ProjectsRequest {
+  // The most Projects to answer, a positive whole number.
+  int32 limit = 1 [(buf.validate.field).int32.gt = 0];
+  // Where the page starts: the previous page's `nextCursor`; the first page
+  // when absent.
+  optional string cursor = 2;
+}
+
+// A page of Projects; today's `Page<Project>`.
+message ProjectsResponse {
+  // The Projects of the page.
+  repeated Project items = 1;
+  // The cursor of the next page; absent on the last page.
+  optional string next_cursor = 2;
+}
+
+// Asks every Project by activity.
+message ProjectActivityRequest {}
+
+// Every Project, latest activity first.
+message ProjectActivityResponse {
+  // The Projects with their activity.
+  repeated ProjectActivity project_activity = 1;
+}
+
+// Renames a Project.
+message RenameProjectRequest {
+  // The Project's id.
+  string id = 1;
+  // The new name.
+  string name = 2;
+}
+
+// The renamed Project, when it exists.
+message RenameProjectResponse {
+  // The Project; absent when there is none by that id.
+  optional Project project = 1;
+}
+
+// Sets or clears a Project's color.
+message SetProjectColorRequest {
+  // The Project's id.
+  string id = 1;
+  // The new color; absent clears it, leaving the record's field absent.
+  optional string color = 2 [(buf.validate.field).string = {
+    in: [
+      "red",
+      "orange",
+      "amber",
+      "green",
+      "teal",
+      "blue",
+      "violet",
+      "pink"
+    ]
+  }];
+}
+
+// The Project, when it exists.
+message SetProjectColorResponse {
+  // The Project; absent when there is none by that id.
+  optional Project project = 1;
+}
+
+// Terminates a Project.
+message TerminateProjectRequest {
+  // The Project's id.
+  string id = 1;
+}
+
+// The terminated Project, when it exists.
+message TerminateProjectResponse {
+  // The Project; absent when there is none by that id.
+  optional Project project = 1;
+}
+
+// Deletes a Project.
+message DeleteProjectRequest {
+  // The Project's id.
+  string id = 1;
+}
+
+// What the delete became.
+message DeleteProjectResponse {
+  // "deleted", or why not: "active", "missing" or "forbidden".
+  string delete_result = 1 [(buf.validate.field).string = {
+    in: [
+      "deleted",
+      "active",
+      "missing",
+      "forbidden"
+    ]
+  }];
+}
+
+// Asks a machine's SSH access.
+message VmSshRequest {
+  // The machine's id.
+  string vm_id = 1;
+}
+
+// The machine's SSH access, when a live Project holds it.
+message VmSshResponse {
+  // The access and its Project; absent when no live Project holds the
+  // machine.
+  optional VmSsh vm_ssh = 1;
+}
+
+// Watches every notice.
+message WatchRequest {}
+
+// One notice, in publication order, after its commit; today's
+// `RuntimeNotice`, named by its `kind`.
+message WatchResponse {
+  // The notice.
+  oneof notice {
+    option (doric.platform.v1.oneof).discriminator = "kind";
+    option (buf.validate.oneof).required = true;
+    // An event was appended to a Thread.
+    ThreadEvent event = 1;
+    // A Thread's record changed.
+    Thread thread_updated = 2;
+    // A Thread was deleted.
+    ThreadDeleted thread_deleted = 3;
+    // A Project's record changed.
+    Project project_updated = 4;
+    // A Project was deleted.
+    ProjectDeleted project_deleted = 5;
+    // A terminal's record changed.
+    Terminal terminal_updated = 6;
+    // A terminal wrote output.
+    TerminalOutput terminal_output = 7;
+    // A terminal was removed.
+    TerminalRemoved terminal_removed = 8;
+  }
+}
+
+// Watches one Project.
+message WatchProjectRequest {
+  // The Project's id.
+  string project_id = 1 [(buf.validate.field).string.uuid = true];
+}
+
+// One item of a Project watch: the snapshot first, and only first, then the
+// Project's and its Threads' notices; today's `ProjectWatchItem`, named by
+// its `kind`.
+message WatchProjectResponse {
+  // The item.
+  oneof item {
+    option (doric.platform.v1.oneof).discriminator = "kind";
+    option (buf.validate.oneof).required = true;
+    // `project:snapshot`: the Project and its Threads.
+    ProjectSnapshot snapshot = 1;
+    // `project:updated`.
+    Project project_updated = 2;
+    // `project:deleted`.
+    ProjectDeleted project_deleted = 3;
+    // `thread:updated`.
+    Thread thread_updated = 4;
+    // `thread:deleted`.
+    ThreadDeleted thread_deleted = 5;
+  }
+}

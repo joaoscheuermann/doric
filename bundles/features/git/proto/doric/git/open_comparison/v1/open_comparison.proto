@@ -1,0 +1,28 @@
+// `git.open-comparison/v1` (client command, 1.0.0): opens one changed file's
+// comparison as a workspace tab. The `git` bundle's client part registers it
+// with `commands/v1`; a caller runs it with `commands/v1.Execute`, the input
+// below carried as its `google.protobuf.Any`. The contract has no service.
+syntax = "proto3";
+
+package doric.git.open_comparison.v1;
+
+import "doric/platform/v1/options.proto";
+
+option (doric.platform.v1.contract) = {
+  id: "git.open-comparison/v1"
+  cardinality: CARDINALITY_ONE
+  environment: ENVIRONMENT_CLIENT
+};
+
+// The command's input, today's diff tab key: the Project, the repository and
+// the changed path.
+message OpenComparisonInput {
+  option (doric.platform.v1.command).id = "git.open-comparison/v1";
+
+  // The Project.
+  string project_id = 1;
+  // The repository, sandbox-relative; "" for the root.
+  string repository = 2;
+  // The changed file, repository-relative.
+  string path = 3;
+}

@@ -1,0 +1,72 @@
+// `runtime.attachment/v1` (host, 1.1.0): the storage type of one image a
+// Thread attached, owned by `runtime`. The document id is
+// `<threadId>:<attachment id>`; the bytes are the blob the attachment id
+// names. The record lets the Thread's Project read the image and keeps the
+// blob: deleting the Thread or its Project deletes the record, and a blob no
+// record names any more is deleted after it.
+//
+// 1.1.0: the schema moves from zod to `.proto` with the same fields.
+syntax = "proto3";
+
+package doric.runtime.attachment.v1;
+
+import "buf/validate/validate.proto";
+import "doric/platform/v1/options.proto";
+
+option (doric.platform.v1.contract) = {
+  id: "runtime.attachment/v1"
+  cardinality: CARDINALITY_ONE
+  environment: ENVIRONMENT_HOST
+};
+
+// One attached image, as stored.
+message AttachmentDocument {
+  option (doric.platform.v1.storage_type) = {
+    type: "runtime.attachment/v1"
+    indexes: [
+      {
+        name: "byProject"
+        fields: [
+          "projectId",
+          "id"
+        ]
+      },
+      {
+        name: "byThread"
+        fields: ["threadId"]
+      },
+      {
+        name: "byBlob"
+        fields: ["id"]
+      }
+    ]
+  };
+  // The Project, a UUID.
+  string project_id = 1 [(buf.validate.field).string.uuid = true];
+  // The Thread that attached it, a UUID.
+  string thread_id = 2 [(buf.validate.field).string.uuid = true];
+  // The attachment's id: `sha256-<64 hex>`.
+  string id = 3 [(buf.validate.field).string.pattern = "^sha256-[0-9a-f]{64}$"];
+  // The name to show.
+  string name = 4;
+  // "image/png", "image/jpeg", "image/webp" or "image/gif".
+  string media_type = 5 [(buf.validate.field).string = {
+    in: [
+      "image/png",
+      "image/jpeg",
+      "image/webp",
+      "image/gif"
+    ]
+  }];
+  // The size in bytes, a positive whole number.
+  double size = 6 [
+    (buf.validate.field).double.gt = 0,
+    (buf.validate.field).cel = {
+      id: "size.integer"
+      message: "size must be a whole number of bytes"
+      expression: "this == double(int(this))"
+    }
+  ];
+  // When it was attached (ISO-8601).
+  string created_at = 7;
+}

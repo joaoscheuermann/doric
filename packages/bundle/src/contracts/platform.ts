@@ -171,6 +171,12 @@ export const quarantineCodes = [
   'skill_invalid',
   'generation_failed',
   'kernel_requires_generation',
+  // gRPC processes (phase 2)
+  'invalid_bundle',
+  'health_timeout',
+  'process_failed',
+  'duplicate_http_prefix',
+  'unreachable_dependency',
 ] as const;
 
 export type QuarantineCode = (typeof quarantineCodes)[number];
@@ -196,32 +202,88 @@ export const quarantineReasonSchema = z
   .strict();
 
 /** The validated v1 manifest as the catalog publishes it. */
-export interface CatalogManifest {
+export interface CatalogManifestV1 {
   readonly manifestVersion: 1;
   readonly id: string;
   readonly version: string;
   readonly engines: { readonly doric: string };
   readonly provides: readonly string[];
+  /** Bundle-wide; holds for every part. */
   readonly requires: readonly string[];
   readonly optional?: readonly string[];
   /** The scope keys a desktop window may send to each provided contract. */
   readonly desktopScope?: Readonly<Record<string, readonly string[]>>;
   readonly description?: string;
+  readonly host?: { readonly httpPrefix?: string };
 }
 
-export const catalogManifestSchema = z
-  .object({
-    manifestVersion: z.literal(1),
-    id: z.string(),
-    version: z.string(),
-    engines: z.object({ doric: z.string() }).strict(),
-    provides: z.array(z.string()),
-    requires: z.array(z.string()),
-    optional: z.array(z.string()).optional(),
-    desktopScope: z.record(z.string(), z.array(z.string())).optional(),
-    description: z.string().optional(),
-  })
-  .strict();
+/** One part's lists in a published v2 manifest; both always present. */
+export interface CatalogPartLists {
+  readonly requires: readonly string[];
+  readonly optional: readonly string[];
+}
+
+/** The validated v2 manifest as the catalog publishes it: lists per part. */
+export interface CatalogManifestV2 {
+  readonly manifestVersion: 2;
+  readonly id: string;
+  readonly version: string;
+  readonly engines: { readonly doric: string };
+  readonly provides: readonly string[];
+  readonly host: CatalogPartLists & { readonly httpPrefix?: string };
+  readonly client: CatalogPartLists;
+  /** The scope keys a desktop window may send to each provided contract. */
+  readonly desktopScope?: Readonly<Record<string, readonly string[]>>;
+  readonly description?: string;
+}
+
+/**
+ * A published manifest of either version, told apart by `manifestVersion`.
+ * A reader of `requires`/`optional` must branch on it (or use the runtime's
+ * `partLists`); v2 has no top-level lists.
+ */
+export type CatalogManifest = CatalogManifestV1 | CatalogManifestV2;
+
+const catalogPartListsShape = {
+  requires: z.array(z.string()),
+  optional: z.array(z.string()),
+};
+
+/**
+ * Accepts a published v1 or v2 manifest (G6), strict at every level; checks
+ * shape only, not contract-entry syntax, which the host validated.
+ */
+export const catalogManifestSchema = z.discriminatedUnion('manifestVersion', [
+  z
+    .object({
+      manifestVersion: z.literal(1),
+      id: z.string(),
+      version: z.string(),
+      engines: z.object({ doric: z.string() }).strict(),
+      provides: z.array(z.string()),
+      requires: z.array(z.string()),
+      optional: z.array(z.string()).optional(),
+      desktopScope: z.record(z.string(), z.array(z.string())).optional(),
+      description: z.string().optional(),
+      host: z.object({ httpPrefix: z.string().optional() }).strict().optional(),
+    })
+    .strict(),
+  z
+    .object({
+      manifestVersion: z.literal(2),
+      id: z.string(),
+      version: z.string(),
+      engines: z.object({ doric: z.string() }).strict(),
+      provides: z.array(z.string()),
+      host: z
+        .object({ ...catalogPartListsShape, httpPrefix: z.string().optional() })
+        .strict(),
+      client: z.object(catalogPartListsShape).strict(),
+      desktopScope: z.record(z.string(), z.array(z.string())).optional(),
+      description: z.string().optional(),
+    })
+    .strict(),
+]);
 
 export interface CatalogComposition {
   readonly core: string;

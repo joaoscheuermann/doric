@@ -1,0 +1,71 @@
+// `doric.window.lifecycle/v1` (platform 2.0.0): the flushes a window runs
+// before it closes. The window bootstrap serves it in every app window and
+// nowhere else; a registration ends with `Unregister` or with the
+// registering client part's deactivation.
+//
+// 2.0.0: new; it replaces `doric.window.hooks/v1`'s `onFlushHook`. The close
+// guard (`onCloseHook`) is removed and not replaced.
+syntax = "proto3";
+
+package doric.platform.window.lifecycle.v1;
+
+import "buf/validate/validate.proto";
+import "doric/platform/v1/options.proto";
+
+option (doric.platform.v1.contract) = {
+  id: "doric.window.lifecycle/v1"
+  cardinality: CARDINALITY_ONE
+};
+
+// The window's lifecycle.
+service WindowLifecycleService {
+  // Registers the calling client part's `FlushHandlerService` as a flush of
+  // the window and answers a `registrationId`.
+  rpc RegisterFlush(RegisterFlushRequest) returns (RegisterFlushResponse);
+  // Removes a registration; an unknown id is a no-op.
+  rpc Unregister(UnregisterRequest) returns (UnregisterResponse);
+}
+
+// A flush of the window, implemented by each client part that registers one
+// and called by the window bootstrap when the window closes, on every
+// registered flush at once. The window closes when every flush has settled
+// or the deadline has passed; a failed flush is logged and closes the window
+// all the same.
+service FlushHandlerService {
+  option (doric.platform.v1.service).role = SERVICE_ROLE_HANDLER;
+
+  // Writes what the part has pending before the deadline.
+  rpc Flush(FlushHandlerServiceFlushRequest) returns (FlushHandlerServiceFlushResponse);
+}
+
+// Registers a flush.
+message RegisterFlushRequest {}
+
+// The flush's registration.
+message RegisterFlushResponse {
+  // The id `Unregister` takes.
+  string registration_id = 1;
+}
+
+// Removes a registration.
+message UnregisterRequest {
+  // The id `RegisterFlush` answered.
+  string registration_id = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+// The registration is gone.
+message UnregisterResponse {}
+
+// One flush, before the window closes.
+message FlushHandlerServiceFlushRequest {
+  // When the window closes whether the flush settled or not, in epoch
+  // milliseconds, a whole number.
+  double deadline_unix_ms = 1 [(buf.validate.field).cel = {
+    id: "deadline_unix_ms.integer"
+    message: "deadlineUnixMs must be a whole number"
+    expression: "this == double(int(this))"
+  }];
+}
+
+// The flush settled.
+message FlushHandlerServiceFlushResponse {}

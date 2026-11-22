@@ -1,0 +1,7 @@
+[
+  {
+    "contract": "fixture/v1",
+    "method": "allowed",
+    "reason": "The input is a JSON value the provider validates."
+  }
+]

@@ -41,8 +41,8 @@ prompts, with OAuth sign-in for remote servers.`
   `threadId` and `promptId` in its scope
   ([manifest](../../../docs/architecture/bundles/manifest.md)).
 
-The package ([`package.json`](package.json)) exports only `./contracts`
-(`mcp/contracts`) and `./package.json`.
+The package ([`package.json`](package.json)) exports `./contracts`
+(`mcp/contracts`), `./contracts/gen/*` (the protobuf-es code `generate-proto` writes from `proto/`) and `./package.json`.
 
 ## Parts
 

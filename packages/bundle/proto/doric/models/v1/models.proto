@@ -1,0 +1,329 @@
+// `models/v1` (host, 1.5.0): the configured model providers, served by
+// `core`. It resolves a configured model, describes the provider kinds,
+// reads catalogs and icons, and relays the model operations of
+// `models.provider/v1` to the provider bundle of a configured provider:
+// a request names the provider by `providerId`, and `core` reads its secret
+// through `secrets/v1` and forwards the request with the provider's
+// `ProviderTarget`, so the secret never reaches the caller. The content
+// messages are those `models.provider/v1` declares.
+//
+// 1.5.0: `resolve` no longer answers `languageModel`; the six operations of
+// `models.provider/v1` are added, with the same streaming, relayed by `core`.
+syntax = "proto3";
+
+package doric.models.v1;
+
+import "buf/validate/validate.proto";
+import "doric/models/provider/v1/provider.proto";
+import "doric/platform/v1/options.proto";
+import "google/protobuf/struct.proto";
+
+option (doric.platform.v1.contract) = {
+  id: "models/v1"
+  cardinality: CARDINALITY_ONE
+  environment: ENVIRONMENT_HOST
+};
+
+// The configured model providers.
+service ModelsService {
+  // A configured model of the current configuration revision; a provider
+  // that is not built fails with "Configured provider is unavailable.".
+  rpc Resolve(ResolveRequest) returns (ResolveResponse);
+  // The advertised provider kinds, in registration order.
+  rpc Kinds(KindsRequest) returns (KindsResponse) {
+    option (doric.platform.v1.method).expose = EXPOSE_DESKTOP;
+  }
+  // Any registered kind, internal ones included, or none.
+  rpc Kind(KindRequest) returns (KindResponse) {
+    option (doric.platform.v1.method).expose = EXPOSE_DESKTOP;
+  }
+  // Resolves a draft's secret field through `secrets/v1`, then reads the
+  // kind's catalog.
+  rpc Catalog(CatalogRequest) returns (CatalogResponse) {
+    option (doric.platform.v1.method).expose = EXPOSE_DESKTOP;
+  }
+  // Builds and caches every provider of a configuration; fails when one
+  // cannot be built.
+  rpc Prepare(PrepareRequest) returns (PrepareResponse);
+  // A model's context capacity from its provider's live catalog, when
+  // exactly one candidate provider knows it; never fails.
+  rpc ContextWindow(ContextWindowRequest) returns (ContextWindowResponse);
+  // What a model reads from its provider's live catalog, found the way
+  // `ContextWindow` finds its capacity; never fails.
+  rpc InputModalities(InputModalitiesRequest) returns (InputModalitiesResponse);
+  // The icons of some models and of their providers. An unknown provider or
+  // kind, or a provider whose icons fail or are slow, answers no provider
+  // icon and none for each model; never fails for those.
+  rpc Icons(IconsRequest) returns (IconsResponse) {
+    option (doric.platform.v1.method).expose = EXPOSE_DESKTOP;
+  }
+  // Runs one completion on a configured provider: a `header` item first,
+  // then one `message` item per message; relayed to
+  // `models.provider/v1.Complete`.
+  rpc Complete(stream CompleteRequest) returns (CompleteResponse);
+  // Runs one completion as a stream on a configured provider; relayed item
+  // by item to and from `models.provider/v1.Stream`.
+  rpc Stream(stream StreamRequest) returns (stream StreamResponse);
+  // Embeds one text on a configured provider.
+  rpc Embedding(EmbeddingRequest) returns (EmbeddingResponse);
+  // Ranks documents on a configured provider.
+  rpc Rerank(RerankRequest) returns (RerankResponse);
+  // A configured provider's models.
+  rpc Models(ModelsRequest) returns (ModelsResponse);
+  // One model of a configured provider; an unknown model fails.
+  rpc ValidateModel(ValidateModelRequest) returns (ValidateModelResponse);
+}
+
+// One request of an `Icons` call: a configured provider by id, or a draft by
+// kind and values.
+message ModelIconRequest {
+  option (buf.validate.message).cel = {
+    id: "model_icon_request.target"
+    message: "a request names either providerId or kind, and only a draft carries configuration"
+    expression: "has(this.provider_id) ? (!has(this.kind) && size(this.configuration) == 0) : has(this.kind)"
+  };
+  // A provider of the active configuration.
+  optional string provider_id = 1;
+  // A draft's provider kind.
+  optional string kind = 2;
+  // A draft's configuration values.
+  map<string, string> configuration = 3;
+  // The models, at most 1000, each at most 512 characters.
+  repeated string models = 4 [(buf.validate.field).repeated = {
+    max_items: 1000
+    items: {
+      string: {max_len: 512}
+    }
+  }];
+}
+
+// The first item of a completion: which configured provider it runs on and
+// its options.
+message ModelCallHeader {
+  // The configured provider's id.
+  string provider_id = 1 [(buf.validate.field).string.min_len = 1];
+  // The request's fields other than its messages.
+  doric.models.provider.v1.ProviderRequestOptions options = 2 [(buf.validate.field).required = true];
+}
+
+// Asks a configured model.
+message ResolveRequest {
+  // The configured provider's id.
+  string provider_id = 1;
+  // The model.
+  string model = 2;
+  // The reasoning effort.
+  optional string effort = 3;
+}
+
+// The configured model.
+message ResolveResponse {
+  // The configured provider's id.
+  string provider_id = 1;
+  // The model.
+  string model = 2;
+  // The reasoning effort.
+  optional string effort = 3;
+}
+
+// Asks the advertised kinds.
+message KindsRequest {}
+
+// The advertised kinds.
+message KindsResponse {
+  // The kinds, in registration order.
+  repeated doric.models.provider.v1.ModelKindDescriptor kinds = 1;
+}
+
+// Asks one kind.
+message KindRequest {
+  // The kind's id.
+  string id = 1;
+}
+
+// One kind, or none.
+message KindResponse {
+  // The kind; absent when none has the id.
+  optional doric.models.provider.v1.ModelKindDescriptor model_kind_descriptor = 1;
+}
+
+// Reads a kind's catalog for a draft.
+message CatalogRequest {
+  // The provider kind.
+  string kind = 1;
+  // The draft's configuration values.
+  map<string, string> configuration = 2;
+}
+
+// The catalog read.
+message CatalogResponse {
+  // The read.
+  doric.models.provider.v1.CatalogResult catalog_result = 1 [(buf.validate.field).required = true];
+}
+
+// Builds a configuration's providers.
+message PrepareRequest {
+  // The models configuration.
+  google.protobuf.Struct configuration = 1 [(buf.validate.field).required = true];
+}
+
+// Every provider of the configuration is built.
+message PrepareResponse {}
+
+// Asks a model's context capacity.
+message ContextWindowRequest {
+  // The configured provider; absent, every configured provider that lists
+  // the model is a candidate.
+  optional string provider_id = 1;
+  // The model.
+  string model = 2;
+}
+
+// A model's context capacity, or none.
+message ContextWindowResponse {
+  // A finite capacity above 0; absent when no single candidate knows it.
+  optional double context_window = 1;
+}
+
+// Asks what a model reads.
+message InputModalitiesRequest {
+  // The configured provider; absent, every configured provider that lists
+  // the model is a candidate.
+  optional string provider_id = 1;
+  // The model.
+  string model = 2;
+}
+
+// What a model reads, or unknown.
+message InputModalitiesResponse {
+  option (buf.validate.message).cel = {
+    id: "input_modalities_response.known"
+    message: "only a known answer carries modalities"
+    expression: "this.known || size(this.input_modalities) == 0"
+  };
+  // Whether a single candidate provider lists the model with its input
+  // modalities.
+  bool known = 1;
+  // What the model reads (`text`, `image`, ...); empty unless known.
+  repeated string input_modalities = 2;
+}
+
+// Asks the icons of some models and their providers.
+message IconsRequest {
+  // The requests, at most 64.
+  repeated ModelIconRequest requests = 1 [(buf.validate.field).repeated.max_items = 64];
+}
+
+// The answers to one `Icons` call, by icon name, with the fallback applied
+// to each model.
+message IconsResponse {
+  // The SVG of every icon name the answers use, once: at most 16,384
+  // characters, starting with `<svg`.
+  map<string, string> svgs = 1 [(buf.validate.field).map = {
+    keys: {
+      string: {
+        min_len: 1
+        max_len: 64
+      }
+    }
+    values: {
+      string: {
+        max_len: 16384
+        prefix: "<svg"
+      }
+    }
+  }];
+  // One answer per request, in request order.
+  repeated doric.models.provider.v1.ModelIconChoice answers = 2;
+}
+
+// One item of a completion request: the header first, then the messages.
+message CompleteRequest {
+  // The item.
+  oneof item {
+    option (buf.validate.oneof).required = true;
+    // The first item, once.
+    ModelCallHeader header = 1;
+    // The next message of the conversation.
+    doric.models.provider.v1.ProviderMessage message = 2;
+  }
+}
+
+// The finished completion.
+message CompleteResponse {
+  // The completion.
+  doric.models.provider.v1.ProviderFinished provider_finished = 1 [(buf.validate.field).required = true];
+}
+
+// One item of a streamed completion request: the header first, then the
+// messages.
+message StreamRequest {
+  // The item.
+  oneof item {
+    option (buf.validate.oneof).required = true;
+    // The first item, once.
+    ModelCallHeader header = 1;
+    // The next message of the conversation.
+    doric.models.provider.v1.ProviderMessage message = 2;
+  }
+}
+
+// One event of the streamed completion.
+message StreamResponse {
+  // The event.
+  doric.models.provider.v1.ProviderStreamEvent provider_stream_event = 1 [(buf.validate.field).required = true];
+}
+
+// Embeds one text on a configured provider.
+message EmbeddingRequest {
+  // The configured provider's id.
+  string provider_id = 1 [(buf.validate.field).string.min_len = 1];
+  // The request.
+  doric.models.provider.v1.ProviderEmbeddingRequest request = 2 [(buf.validate.field).required = true];
+}
+
+// The embedding.
+message EmbeddingResponse {
+  // The embedding.
+  doric.models.provider.v1.ProviderEmbeddingFinished provider_embedding_finished = 1 [(buf.validate.field).required = true];
+}
+
+// Ranks documents on a configured provider.
+message RerankRequest {
+  // The configured provider's id.
+  string provider_id = 1 [(buf.validate.field).string.min_len = 1];
+  // The request.
+  doric.models.provider.v1.ProviderRerankRequest request = 2 [(buf.validate.field).required = true];
+}
+
+// The ranking.
+message RerankResponse {
+  // The ranking.
+  doric.models.provider.v1.ProviderRerankFinished provider_rerank_finished = 1 [(buf.validate.field).required = true];
+}
+
+// Asks a configured provider's models.
+message ModelsRequest {
+  // The configured provider's id.
+  string provider_id = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+// The provider's models.
+message ModelsResponse {
+  // The models.
+  repeated doric.models.provider.v1.Model models = 1;
+}
+
+// Asks one model of a configured provider.
+message ValidateModelRequest {
+  // The configured provider's id.
+  string provider_id = 1 [(buf.validate.field).string.min_len = 1];
+  // The model's id.
+  string model = 2 [(buf.validate.field).string.min_len = 1];
+}
+
+// The model as the provider reports it.
+message ValidateModelResponse {
+  // The model.
+  doric.models.provider.v1.Model model = 1 [(buf.validate.field).required = true];
+}

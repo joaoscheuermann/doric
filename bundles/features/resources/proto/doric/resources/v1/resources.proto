@@ -1,0 +1,143 @@
+// `resources/v1` (host, 1.0.0): the machine the host runs on
+// (`GET /resources`) and the calling Project's sandbox container
+// (`GET /projects/:id/resources`). The `resources` bundle provides it.
+syntax = "proto3";
+
+package doric.resources.v1;
+
+import "buf/validate/validate.proto";
+import "doric/platform/v1/options.proto";
+
+option (doric.platform.v1.contract) = {
+  id: "resources/v1"
+  cardinality: CARDINALITY_ONE
+  environment: ENVIRONMENT_HOST
+};
+
+// Resource readings of the host and of Project sandboxes.
+service ResourcesService {
+  // The machine the host runs on, read on demand; never needs a lease.
+  rpc Host(HostRequest) returns (HostResponse) {
+    option (doric.platform.v1.method).expose = EXPOSE_DESKTOP;
+  }
+  // The container of the Project of the call's scope, on the lease it holds
+  // now, never acquiring one. A Project without a usable lease answers its
+  // lease state; a provider without a reading, or a failing one, answers
+  // "ready" with a container whose status is "unavailable". Never an error.
+  rpc Project(ProjectRequest) returns (ProjectResponse) {
+    option (doric.platform.v1.method).expose = EXPOSE_DESKTOP;
+  }
+}
+
+// One sandbox's own resource usage, or why there is no reading.
+message ContainerResources {
+  // "ready", or "unavailable" when the provider has no reading.
+  string status = 1 [(buf.validate.field).string = {
+    in: [
+      "ready",
+      "unavailable"
+    ]
+  }];
+  // The time of the reading (ISO-8601).
+  string at = 2;
+  // The CPU use, in percent; absent when not measured.
+  optional double cpu_percent = 3 [(buf.validate.field).double.gte = 0];
+  // The CPUs the container may use; absent when not measured.
+  optional double cpu_count = 4 [(buf.validate.field).double.gte = 0];
+  // The memory in use, in bytes, a whole number; absent when not measured.
+  optional double memory_used_bytes = 5 [
+    (buf.validate.field).double.gte = 0,
+    (buf.validate.field).cel = {
+      id: "memory_used_bytes.integer"
+      message: "memoryUsedBytes must be a whole number"
+      expression: "this == double(int(this))"
+    }
+  ];
+  // The memory limit, in bytes, a whole number; absent when not measured.
+  optional double memory_limit_bytes = 6 [
+    (buf.validate.field).double.gte = 0,
+    (buf.validate.field).cel = {
+      id: "memory_limit_bytes.integer"
+      message: "memoryLimitBytes must be a whole number"
+      expression: "this == double(int(this))"
+    }
+  ];
+}
+
+// Asks the host machine's reading.
+message HostRequest {}
+
+// The machine the host runs on; today's `HostResources`.
+message HostResponse {
+  // The time of the reading (ISO-8601).
+  string at = 1;
+  // The machine's CPUs, a whole number.
+  double cpu_count = 2 [
+    (buf.validate.field).double.gte = 0,
+    (buf.validate.field).cel = {
+      id: "cpu_count.integer"
+      message: "cpuCount must be a whole number"
+      expression: "this == double(int(this))"
+    }
+  ];
+  // The CPU use between all cores since the previous reading, 0 to 100;
+  // absent on the first reading of the process.
+  optional double cpu_percent = 3 [(buf.validate.field).double = {
+    gte: 0
+    lte: 100
+  }];
+  // The one-minute load average; absent when not read.
+  optional double load_average = 4 [(buf.validate.field).double.gte = 0];
+  // The machine's memory, in bytes, a whole number.
+  double memory_total_bytes = 5 [
+    (buf.validate.field).double.gte = 0,
+    (buf.validate.field).cel = {
+      id: "memory_total_bytes.integer"
+      message: "memoryTotalBytes must be a whole number"
+      expression: "this == double(int(this))"
+    }
+  ];
+  // The memory in use, in bytes, a whole number.
+  double memory_used_bytes = 6 [
+    (buf.validate.field).double.gte = 0,
+    (buf.validate.field).cel = {
+      id: "memory_used_bytes.integer"
+      message: "memoryUsedBytes must be a whole number"
+      expression: "this == double(int(this))"
+    }
+  ];
+  // How long the machine has run, in seconds, a whole number.
+  double uptime_seconds = 7 [
+    (buf.validate.field).double.gte = 0,
+    (buf.validate.field).cel = {
+      id: "uptime_seconds.integer"
+      message: "uptimeSeconds must be a whole number"
+      expression: "this == double(int(this))"
+    }
+  ];
+}
+
+// Asks the calling Project's container reading.
+message ProjectRequest {}
+
+// The Project's lease state and, when "ready", the container's reading.
+message ProjectResponse {
+  option (buf.validate.message).cel = {
+    id: "project_response.value"
+    message: "value is set exactly when status is ready"
+    expression: "(this.status == 'ready') == has(this.value)"
+  };
+  // "ready", or why the lease could not run the read: "pending",
+  // "unavailable", "expired" or "missing".
+  string status = 1 [(buf.validate.field).string = {
+    in: [
+      "ready",
+      "pending",
+      "unavailable",
+      "expired",
+      "missing"
+    ]
+  }];
+  // The container's reading; set when ready.
+  optional ContainerResources value = 2;
+}

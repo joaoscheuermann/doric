@@ -14,7 +14,7 @@ import {
 import type { JsonObject } from '../contracts/types.js';
 import { compositionSchema } from '../runtime/composition.js';
 import { descriptorSchema } from '../runtime/descriptor.js';
-import { manifestV1Schema } from '../runtime/manifest.js';
+import { manifestV1Schema, manifestV2Schema } from '../runtime/manifest.js';
 import { contractDocument, JSON_SCHEMA_DIALECT } from './schemas.js';
 
 const documentOf = (schema: z.ZodType, id: string): JsonObject => {
@@ -34,6 +34,13 @@ export const platformSchemaDocuments = (): ReadonlyMap<string, JsonObject> => {
       documentOf(
         manifestV1Schema,
         'doric://app/schemas/bundle-manifest/v1.json',
+      ),
+    ],
+    [
+      'bundle-manifest/v2.json',
+      documentOf(
+        manifestV2Schema,
+        'doric://app/schemas/bundle-manifest/v2.json',
       ),
     ],
     [

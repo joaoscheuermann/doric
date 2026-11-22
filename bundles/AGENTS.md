@@ -56,10 +56,21 @@ the decisions behind the boundary rules before changing one of them.
 
 ## Imports
 
-- Import another bundle's package only as exactly `<other>/contracts`; import
-  `<other>/testing` only under `tests/` or `stories/`, and `<other>/package.json`
-  only under `tests/`. Never import any other subpath, such as
-  `<other>/contracts/<file>` or `<other>/host`.
+- Import another bundle's package only as exactly `<other>/contracts` or as
+  `<other>/contracts/gen/<path>`, its generated code; import `<other>/testing`
+  only under `tests/` or `stories/`, and `<other>/package.json` only under
+  `tests/`. Never import any other subpath, such as `<other>/contracts/<file>`
+  or `<other>/host` (spec §8 "Layout",
+  [`grpc-processes.md`](../docs/designs/grpc-processes.md#8-contracts-in-proto)).
+- Until phase 3, a client or desktopMain part imports neither
+  `<other>/contracts/gen/*` nor its own generated code: its build externalizes
+  only `bundle/contracts` and `*/contracts`, and turns its own
+  `src/contracts/…` imports into `<id>/contracts`.
+- Through phase 6 the zod `define*` contracts are the runtime truth and the
+  `.proto` files the target shape. When you change a zod contract, also update
+  its `.proto` and its row in
+  `docs/designs/grpc-processes/contract-inventory.md`; the inventory test
+  checks only ids and rows.
 - Never add an entry of the exceptions file for an import of a workspace
   package's `src/` path: no entry can excuse it.
 - Apply these rules to a dynamic `import()` and to a resolve call as to a

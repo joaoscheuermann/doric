@@ -1,0 +1,560 @@
+// `api.threads/v1` (host, 1.0.0): the public API of Threads, the
+// conversations, which replaces the `/threads` routes and the Socket.IO
+// namespace `/threads`. The `transport` bundle provides it over
+// `runtime.threads/v1`, `git.commands/v1`, `usage/v1` and `terminal/v1`. An
+// event is committed before it is streamed; a caller's input never supplies
+// a privileged origin.
+//
+// A refusal is a gRPC status whose `google.rpc.ErrorInfo` has `domain`
+// "doric" and `reason` the REST error code of today: `invalid_thread_id`,
+// `invalid_thread`, `invalid_cwd`, `invalid_branch`, `invalid_prompt`,
+// `invalid_steer`, `invalid_resume`, `invalid_rewind`, `invalid_interrupt`,
+// `invalid_event_cursor` and `invalid_terminal` (`INVALID_ARGUMENT`),
+// `thread_not_found`, `prompt_not_found`, `unknown_prompt` and `missing`
+// (`NOT_FOUND`), `thread_<status>` of a refused change, `thread_busy`,
+// `branch_refused`, `compaction_refused`, `conflict`, `not_editable` and
+// `terminal_unavailable` (`FAILED_PRECONDITION`), the execution refusals of
+// `runtime`'s REST errors with their own codes, and `compaction_failed`
+// (today's 502). No response carries an error.
+syntax = "proto3";
+
+package doric.api.threads.v1;
+
+import "buf/validate/validate.proto";
+import "doric/git/commands/v1/commands.proto";
+import "doric/platform/v1/options.proto";
+import "doric/runtime/threads/v1/threads.proto";
+import "doric/runtime/v2/runtime.proto";
+import "doric/terminal/v1/terminal.proto";
+
+option (doric.platform.v1.contract) = {
+  id: "api.threads/v1"
+  cardinality: CARDINALITY_ONE
+  environment: ENVIRONMENT_HOST
+};
+
+// Threads, their prompts, their queue, their Git and their live events.
+service ThreadsService {
+  // One Thread (`GET /threads/:id`).
+  rpc GetThread(GetThreadRequest) returns (GetThreadResponse);
+  // Changes a Thread's name, working directory or execution, or a
+  // combination (`PATCH /threads/:id`); the changes apply in that order and
+  // the first refusal ends the call.
+  rpc UpdateThread(UpdateThreadRequest) returns (UpdateThreadResponse);
+  // A Thread's Git summary, or why it has none (`GET /threads/:id/git`).
+  rpc GetGit(GetGitRequest) returns (GetGitResponse);
+  // A Thread directory's local branches, or why there are none
+  // (`GET /threads/:id/branches`).
+  rpc ListBranches(ListBranchesRequest) returns (ListBranchesResponse);
+  // Switches a Thread's repository to an existing local branch
+  // (`POST /threads/:id/branches`).
+  rpc CreateBranch(CreateBranchRequest) returns (CreateBranchResponse);
+  // Queues a prompt (`POST /threads/:id/prompt`).
+  rpc Prompt(PromptRequest) returns (PromptResponse);
+  // Steers the running prompt with new input, or queues it when that prompt
+  // no longer runs (`POST /threads/:id/steer`).
+  rpc Steer(SteerRequest) returns (SteerResponse);
+  // Resumes a stopped prompt (`POST /threads/:id/resume`).
+  rpc Resume(ResumeRequest) returns (ResumeResponse);
+  // Removes a prompt and every later one and sends new text in its place
+  // (`POST /threads/:id/rewind`); `thread_busy` while the Thread runs or has
+  // queued input.
+  rpc Rewind(RewindRequest) returns (RewindResponse);
+  // Condenses the Thread's history (`POST /threads/:id/compact`).
+  rpc Compact(CompactRequest) returns (CompactResponse);
+  // Stops the running prompt and pauses the queue until it is resumed
+  // (`POST /threads/:id/interrupt`).
+  rpc Interrupt(InterruptRequest) returns (InterruptResponse);
+  // The Thread's stored events after an exclusive cursor
+  // (`GET /threads/:id/events`); the page ends before 3 MiB and then sets its
+  // next cursor.
+  rpc ListEvents(ListEventsRequest) returns (ListEventsResponse);
+  // The Thread's usage (`GET /threads/:id/usage`).
+  rpc GetUsage(GetUsageRequest) returns (GetUsageResponse);
+  // The Thread's queue (`GET /threads/:id/queue`).
+  rpc GetQueue(GetQueueRequest) returns (GetQueueResponse);
+  // Resumes a paused queue (`POST /threads/:id/queue/resume`).
+  rpc ResumeQueue(ResumeQueueRequest) returns (ResumeQueueResponse);
+  // One queued prompt with its text (`GET /threads/:id/queue/:promptId`).
+  rpc GetQueuedPrompt(GetQueuedPromptRequest) returns (GetQueuedPromptResponse);
+  // Edits a queued prompt that has not started, at the revision the caller
+  // read (`PATCH /threads/:id/queue/:promptId`).
+  rpc UpdateQueuedPrompt(UpdateQueuedPromptRequest) returns (UpdateQueuedPromptResponse);
+  // Removes a queued prompt (`DELETE /threads/:id/queue/:promptId`).
+  rpc DeleteQueuedPrompt(DeleteQueuedPromptRequest) returns (DeleteQueuedPromptResponse);
+  // Opens a manual shell in the Thread's working directory
+  // (`POST /threads/:id/terminals`); `terminal_unavailable` when the Thread
+  // has no active sandbox.
+  rpc CreateTerminal(CreateTerminalRequest) returns (CreateTerminalResponse);
+  // Terminates a Thread; an ended Thread is answered again
+  // (`POST /threads/:id/terminate`).
+  rpc TerminateThread(TerminateThreadRequest) returns (TerminateThreadResponse);
+  // Deletes an ended Thread and every descendant (`DELETE /threads/:id`);
+  // `thread_active` while it or a descendant has not ended. A Thread an agent
+  // opened is deleted only once it is archived; before that the call succeeds
+  // and deletes nothing.
+  rpc DeleteThread(DeleteThreadRequest) returns (DeleteThreadResponse);
+  // A Thread's live stream (Socket.IO `/threads`): `thread_snapshot` first,
+  // then each later event once and in sequence order, and the Thread's
+  // changes. A snapshot that cannot be read ends the stream with `INTERNAL`,
+  // reason `replay_failed`. The caller ends it by cancelling, and opens it
+  // again with the last sequence it received as `afterSequence`.
+  rpc Watch(WatchRequest) returns (stream WatchResponse);
+}
+
+// Asks one Thread.
+message GetThreadRequest {
+  // The Thread, a UUID.
+  string thread_id = 1 [(buf.validate.field).string.uuid = true];
+}
+
+// One Thread.
+message GetThreadResponse {
+  // The Thread.
+  doric.runtime.v2.Thread thread = 1 [(buf.validate.field).required = true];
+}
+
+// Changes a Thread: a name, a working directory, an execution, or a
+// combination. `providerId` and `model` come together, and `effort` only
+// with them.
+message UpdateThreadRequest {
+  option (buf.validate.message).cel = {
+    id: "update_thread_request.execution"
+    message: "providerId and model come together, and effort only with them"
+    expression: "has(this.provider_id) == has(this.model) && (!has(this.effort) || has(this.provider_id))"
+  };
+  option (buf.validate.message).cel = {
+    id: "update_thread_request.change"
+    message: "a name, a working directory or an execution is required"
+    expression: "has(this.name) || has(this.cwd) || has(this.provider_id)"
+  };
+  // The Thread, a UUID.
+  string thread_id = 1 [(buf.validate.field).string.uuid = true];
+  // The new name: 1 to 80 characters once trimmed, no NUL.
+  optional string name = 2 [(buf.validate.field).string.pattern = "^\\s*[^\\s\\x00]([^\\x00]{0,78}[^\\s\\x00])?\\s*$"];
+  // The new working directory, absolute in the sandbox or relative to the
+  // current one: not blank, at most 4096 characters, no NUL.
+  optional string cwd = 3 [(buf.validate.field).string = {
+    max_len: 4096
+    pattern: "^[^\\x00]*\\S[^\\x00]*$"
+  }];
+  // The provider: 1 to 128 characters once trimmed.
+  optional string provider_id = 4 [(buf.validate.field).string.pattern = "^\\s*\\S([\\s\\S]{0,126}\\S)?\\s*$"];
+  // The model: 1 to 512 characters once trimmed.
+  optional string model = 5 [(buf.validate.field).string.pattern = "^\\s*\\S([\\s\\S]{0,510}\\S)?\\s*$"];
+  // The reasoning effort.
+  optional string effort = 6 [(buf.validate.field).string = {
+    in: [
+      "none",
+      "minimal",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ]
+  }];
+}
+
+// The changed Thread.
+message UpdateThreadResponse {
+  // The Thread.
+  doric.runtime.v2.Thread thread = 1 [(buf.validate.field).required = true];
+}
+
+// Asks a Thread's Git summary.
+message GetGitRequest {
+  // The Thread, a UUID.
+  string thread_id = 1 [(buf.validate.field).string.uuid = true];
+}
+
+// The Thread's Git summary, or why it has none.
+message GetGitResponse {
+  option (buf.validate.message).cel = {
+    id: "get_git_response.value"
+    message: "value is set exactly when status is ready"
+    expression: "(this.status == 'ready') == has(this.value)"
+  };
+  // "ready", or why not: "pending" (no lease yet) or "unavailable".
+  string status = 1 [(buf.validate.field).string = {
+    in: [
+      "ready",
+      "pending",
+      "unavailable"
+    ]
+  }];
+  // The summary; set when ready.
+  optional doric.git.commands.v1.ThreadGit value = 2;
+}
+
+// Asks a Thread directory's local branches.
+message ListBranchesRequest {
+  // The Thread, a UUID.
+  string thread_id = 1 [(buf.validate.field).string.uuid = true];
+}
+
+// The branches, or why there are none.
+message ListBranchesResponse {
+  option (buf.validate.message).cel = {
+    id: "list_branches_response.value"
+    message: "value is set exactly when status is ready"
+    expression: "(this.status == 'ready') == has(this.value)"
+  };
+  // "ready", or why not: "pending" (no lease yet) or "unavailable".
+  string status = 1 [(buf.validate.field).string = {
+    in: [
+      "ready",
+      "pending",
+      "unavailable"
+    ]
+  }];
+  // The branches and why switching is blocked; set when ready.
+  optional doric.git.commands.v1.Branches value = 2;
+}
+
+// Switches a Thread's repository to a local branch.
+message CreateBranchRequest {
+  // The Thread, a UUID.
+  string thread_id = 1 [(buf.validate.field).string.uuid = true];
+  // An existing local branch: 1 to 1024 characters, no NUL, not starting
+  // with `-`.
+  string branch = 2 [(buf.validate.field).string = {
+    max_len: 1024
+    pattern: "^[^-\\x00][^\\x00]*$"
+  }];
+  // The working directory the caller read the branches with; a stale one is
+  // `branch_refused`. Not blank, at most 4096 characters, no NUL.
+  string cwd = 3 [(buf.validate.field).string = {
+    max_len: 4096
+    pattern: "^[^\\x00]*\\S[^\\x00]*$"
+  }];
+}
+
+// The branches after the switch.
+message CreateBranchResponse {
+  // The branches and why switching is blocked.
+  doric.git.commands.v1.Branches branches = 1 [(buf.validate.field).required = true];
+}
+
+// Queues a prompt.
+message PromptRequest {
+  // The Thread, a UUID.
+  string thread_id = 1 [(buf.validate.field).string.uuid = true];
+  // The prompt, not blank.
+  string prompt = 2 [(buf.validate.field).string.pattern = "\\S"];
+}
+
+// The queued prompt.
+message PromptResponse {
+  // The prompt's id.
+  string prompt_id = 1;
+}
+
+// Steers the running prompt.
+message SteerRequest {
+  // The Thread, a UUID.
+  string thread_id = 1 [(buf.validate.field).string.uuid = true];
+  // The input, not blank.
+  string prompt = 2 [(buf.validate.field).string.pattern = "\\S"];
+  // The running prompt the caller saw, a UUID.
+  string prompt_id = 3 [(buf.validate.field).string.uuid = true];
+  // True to abort the current step so the prompt takes the input at once.
+  optional bool interrupt = 4;
+}
+
+// What the steer became.
+message SteerResponse {
+  // "steered" (the running prompt took it) or "queued" (it no longer ran).
+  string status = 1 [(buf.validate.field).string = {
+    in: [
+      "steered",
+      "queued"
+    ]
+  }];
+  // The prompt that carries the input.
+  string prompt_id = 2;
+}
+
+// Resumes a stopped prompt.
+message ResumeRequest {
+  // The Thread, a UUID.
+  string thread_id = 1 [(buf.validate.field).string.uuid = true];
+  // The prompt to resume, a UUID.
+  string prompt_id = 2 [(buf.validate.field).string.uuid = true];
+}
+
+// The resumed Thread.
+message ResumeResponse {
+  // The Thread.
+  doric.runtime.v2.Thread thread = 1 [(buf.validate.field).required = true];
+}
+
+// Rewinds a Thread to before a prompt.
+message RewindRequest {
+  // The Thread, a UUID.
+  string thread_id = 1 [(buf.validate.field).string.uuid = true];
+  // The prompt to rewind to before, a UUID.
+  string prompt_id = 2 [(buf.validate.field).string.uuid = true];
+  // The text sent in its place, not blank.
+  string prompt = 3 [(buf.validate.field).string.pattern = "\\S"];
+}
+
+// The prompt queued in place of the removed ones.
+message RewindResponse {
+  // The new prompt's id.
+  string prompt_id = 1;
+}
+
+// Condenses a Thread's history.
+message CompactRequest {
+  // The Thread, a UUID.
+  string thread_id = 1 [(buf.validate.field).string.uuid = true];
+}
+
+// The compaction's counts.
+message CompactResponse {
+  // Always "compacted".
+  string status = 1 [(buf.validate.field).string.const = "compacted"];
+  // The messages condensed, a whole number.
+  double condensed_messages = 2 [
+    (buf.validate.field).double.gte = 0,
+    (buf.validate.field).cel = {
+      id: "condensed_messages.integer"
+      message: "condensedMessages must be a whole number"
+      expression: "this == double(int(this))"
+    }
+  ];
+  // The messages kept, a whole number.
+  double retained_messages = 3 [
+    (buf.validate.field).double.gte = 0,
+    (buf.validate.field).cel = {
+      id: "retained_messages.integer"
+      message: "retainedMessages must be a whole number"
+      expression: "this == double(int(this))"
+    }
+  ];
+  // The tokens freed, an estimate, a whole number.
+  double tokens_freed = 4 [
+    (buf.validate.field).double.gte = 0,
+    (buf.validate.field).cel = {
+      id: "tokens_freed.integer"
+      message: "tokensFreed must be a whole number"
+      expression: "this == double(int(this))"
+    }
+  ];
+}
+
+// Stops the running prompt and pauses the queue.
+message InterruptRequest {
+  // The Thread, a UUID.
+  string thread_id = 1 [(buf.validate.field).string.uuid = true];
+  // The running prompt, a UUID.
+  string prompt_id = 2 [(buf.validate.field).string.uuid = true];
+}
+
+// The prompt is stopped.
+message InterruptResponse {
+  // Always "interrupted".
+  string status = 1 [(buf.validate.field).string.const = "interrupted"];
+}
+
+// Asks a Thread's stored events after a cursor.
+message ListEventsRequest {
+  // The Thread, a UUID.
+  string thread_id = 1 [(buf.validate.field).string.uuid = true];
+  // The exclusive cursor, a whole number; 0 reads the whole log.
+  double after_sequence = 2 [
+    (buf.validate.field).double = {
+      gte: 0
+      lte: 9007199254740991
+    },
+    (buf.validate.field).cel = {
+      id: "after_sequence.integer"
+      message: "afterSequence must be a whole number"
+      expression: "this == double(int(this))"
+    }
+  ];
+}
+
+// The events after the cursor, with the Thread's last sequence.
+message ListEventsResponse {
+  // The events, in order, and the Thread's last sequence.
+  doric.runtime.threads.v1.ThreadEventLog thread_event_log = 1 [(buf.validate.field).required = true];
+  // The `afterSequence` that reads the next page, a whole number; absent
+  // when the page reaches the last sequence.
+  optional double next_after_sequence = 2 [(buf.validate.field).cel = {
+    id: "next_after_sequence.integer"
+    message: "nextAfterSequence must be a whole number"
+    expression: "this == double(int(this))"
+  }];
+}
+
+// Asks a Thread's usage.
+message GetUsageRequest {
+  // The Thread, a UUID.
+  string thread_id = 1 [(buf.validate.field).string.uuid = true];
+}
+
+// The Thread's usage.
+message GetUsageResponse {
+  // The usage with its context capacity.
+  doric.runtime.v2.ThreadUsage thread_usage = 1 [(buf.validate.field).required = true];
+}
+
+// Asks a Thread's queue.
+message GetQueueRequest {
+  // The Thread, a UUID.
+  string thread_id = 1 [(buf.validate.field).string.uuid = true];
+}
+
+// The Thread's queue.
+message GetQueueResponse {
+  // The queue.
+  doric.runtime.threads.v1.ThreadQueue thread_queue = 1 [(buf.validate.field).required = true];
+}
+
+// Resumes a Thread's queue.
+message ResumeQueueRequest {
+  // The Thread, a UUID.
+  string thread_id = 1 [(buf.validate.field).string.uuid = true];
+}
+
+// The Thread with its queue resumed.
+message ResumeQueueResponse {
+  // The Thread.
+  doric.runtime.v2.Thread thread = 1 [(buf.validate.field).required = true];
+}
+
+// Asks one queued prompt.
+message GetQueuedPromptRequest {
+  // The Thread, a UUID.
+  string thread_id = 1 [(buf.validate.field).string.uuid = true];
+  // The prompt, a UUID.
+  string prompt_id = 2 [(buf.validate.field).string.uuid = true];
+}
+
+// The queued prompt.
+message GetQueuedPromptResponse {
+  // The prompt with its text and revision.
+  doric.runtime.threads.v1.QueuedPrompt queued_prompt = 1 [(buf.validate.field).required = true];
+}
+
+// Edits a queued prompt.
+message UpdateQueuedPromptRequest {
+  // The Thread, a UUID.
+  string thread_id = 1 [(buf.validate.field).string.uuid = true];
+  // The prompt, a UUID.
+  string prompt_id = 2 [(buf.validate.field).string.uuid = true];
+  // The new text, not blank.
+  string text = 3 [(buf.validate.field).string.pattern = "\\S"];
+  // The revision the caller read, a whole number; another one is `conflict`.
+  double revision = 4 [
+    (buf.validate.field).double = {
+      gte: 0
+      lte: 9007199254740991
+    },
+    (buf.validate.field).cel = {
+      id: "revision.integer"
+      message: "revision must be a whole number"
+      expression: "this == double(int(this))"
+    }
+  ];
+}
+
+// The edited prompt.
+message UpdateQueuedPromptResponse {
+  // The prompt with its text and new revision.
+  doric.runtime.threads.v1.QueuedPrompt queued_prompt = 1 [(buf.validate.field).required = true];
+}
+
+// Removes a queued prompt.
+message DeleteQueuedPromptRequest {
+  // The Thread, a UUID.
+  string thread_id = 1 [(buf.validate.field).string.uuid = true];
+  // The prompt, a UUID.
+  string prompt_id = 2 [(buf.validate.field).string.uuid = true];
+}
+
+// The prompt is removed.
+message DeleteQueuedPromptResponse {}
+
+// Opens a manual shell.
+message CreateTerminalRequest {
+  // The Thread; its form is not checked, as today.
+  string thread_id = 1;
+  // The terminal's columns, 1 to 1000; the provider's default when absent.
+  optional int32 cols = 2 [(buf.validate.field).int32 = {
+    gte: 1
+    lte: 1000
+  }];
+  // The terminal's rows, 1 to 1000; the provider's default when absent.
+  optional int32 rows = 3 [(buf.validate.field).int32 = {
+    gte: 1
+    lte: 1000
+  }];
+}
+
+// The new terminal session.
+message CreateTerminalResponse {
+  // The session.
+  doric.terminal.v1.TerminalSession terminal_session = 1 [(buf.validate.field).required = true];
+}
+
+// Terminates a Thread.
+message TerminateThreadRequest {
+  // The Thread, a UUID.
+  string thread_id = 1 [(buf.validate.field).string.uuid = true];
+}
+
+// The terminated Thread.
+message TerminateThreadResponse {
+  // The Thread.
+  doric.runtime.v2.Thread thread = 1 [(buf.validate.field).required = true];
+}
+
+// Deletes a Thread.
+message DeleteThreadRequest {
+  // The Thread, a UUID.
+  string thread_id = 1 [(buf.validate.field).string.uuid = true];
+}
+
+// The Thread and its descendants are deleted, or an unarchived agent Thread
+// is kept.
+message DeleteThreadResponse {}
+
+// Watches a Thread: today's handshake `auth`.
+message WatchRequest {
+  // The Thread, a UUID.
+  string thread_id = 1 [(buf.validate.field).string.uuid = true];
+  // Replay starts after this sequence, a whole number; 0 replays the whole
+  // log.
+  double after_sequence = 2 [
+    (buf.validate.field).double = {
+      gte: 0
+      lte: 9007199254740991
+    },
+    (buf.validate.field).cel = {
+      id: "after_sequence.integer"
+      message: "afterSequence must be a whole number"
+      expression: "this == double(int(this))"
+    }
+  ];
+}
+
+// One item of a Thread watch: one Socket.IO event of `/threads`, named as
+// the event with `:` replaced by `_`.
+message WatchResponse {
+  // The event.
+  oneof event {
+    option (buf.validate.oneof).required = true;
+    // `thread:snapshot`: the first item; its events stop before 3 MiB and
+    // the rest follow as `agent_event` items.
+    doric.runtime.threads.v1.ThreadSnapshot thread_snapshot = 1;
+    // `agent:event`: the next event, each sequence once and in order.
+    doric.runtime.v2.ThreadEvent agent_event = 2;
+    // `thread:updated`.
+    doric.runtime.v2.Thread thread_updated = 3;
+    // `thread:deleted`.
+    doric.runtime.v2.ThreadDeleted thread_deleted = 4;
+  }
+}

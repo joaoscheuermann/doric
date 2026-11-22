@@ -1,0 +1,126 @@
+// `doric.diagnostics/v1` (platform 2.0.0): the state of the bundles and the
+// recent errors the platform keeps, and the errors a bundle reports to it.
+//
+// 2.0.0: `get` and `report` are asynchronous; the SDK sends `Report` without
+// waiting for its answer.
+syntax = "proto3";
+
+package doric.platform.diagnostics.v1;
+
+import "buf/validate/validate.proto";
+import "doric/platform/catalog/v1/catalog.proto";
+import "doric/platform/v1/options.proto";
+import "google/protobuf/struct.proto";
+
+option (doric.platform.v1.contract) = {
+  id: "doric.diagnostics/v1"
+  cardinality: CARDINALITY_ONE
+};
+
+// The platform's diagnostics.
+service DiagnosticsService {
+  // The present diagnostics.
+  rpc Get(GetRequest) returns (GetResponse);
+  // Records one error of a bundle among the recent errors `Get` answers.
+  rpc Report(ReportRequest) returns (ReportResponse) {
+    option (doric.platform.v1.method).expose = EXPOSE_DESKTOP;
+  }
+}
+
+// Why the platform runs in recovery mode.
+message DiagnosticRecovery {
+  // The reason, for a person.
+  string reason = 1;
+}
+
+// One bundle as the diagnostics show it.
+message DiagnosticBundle {
+  // The bundle's id.
+  string id = 1;
+  // The bundle's version.
+  string version = 2;
+  // "active", "quarantined", "disabled" or "inactive".
+  string state = 3 [(buf.validate.field).string = {
+    in: [
+      "active",
+      "quarantined",
+      "disabled",
+      "inactive"
+    ]
+  }];
+  // "foundation", "core" or "others"; absent for a bundle that was not
+  // scheduled.
+  optional string phase = 4 [(buf.validate.field).string = {
+    in: [
+      "foundation",
+      "core",
+      "others"
+    ]
+  }];
+  // Why the bundle is quarantined; empty unless it is.
+  repeated doric.platform.catalog.v1.QuarantineReason reasons = 5;
+  // How long the bundle's activation took, in milliseconds; absent before it
+  // activated.
+  optional double activation_ms = 6 [(buf.validate.field).double.gte = 0];
+}
+
+// One error the platform recorded for a bundle.
+message DiagnosticError {
+  // When it was recorded, an ISO 8601 date and time.
+  string at = 1;
+  // The bundle the error is about.
+  string bundle_id = 2;
+  // The error's kind.
+  string kind = 3;
+  // What went wrong, for a person.
+  string message = 4;
+  // The error's details, JSON.
+  optional google.protobuf.Value details = 5;
+}
+
+// The bundles whose manifest requires one contract.
+message DiagnosticConsumers {
+  // The bundles' ids.
+  repeated string bundle_ids = 1;
+}
+
+// Asks the present diagnostics.
+message GetRequest {}
+
+// The present diagnostics.
+message GetResponse {
+  // The generation they describe.
+  uint32 generation = 1;
+  // "normal" or "recovery".
+  string mode = 2 [(buf.validate.field).string = {
+    in: [
+      "normal",
+      "recovery"
+    ]
+  }];
+  // Why the platform runs in recovery mode; set exactly in that mode.
+  optional DiagnosticRecovery recovery = 3;
+  // The issues of the composition, for a person.
+  repeated string issues = 4;
+  // Every bundle of the composition.
+  repeated DiagnosticBundle bundles = 5;
+  // The most recent errors, bounded per bundle.
+  repeated DiagnosticError errors = 6;
+  // The bundles whose manifest requires each contract, by contract id.
+  map<string, DiagnosticConsumers> consumers = 7;
+}
+
+// Reports one error of a bundle.
+message ReportRequest {
+  // The bundle the error is about.
+  string bundle_id = 1;
+  // The error's kind (for example "storage_retry").
+  string kind = 2;
+  // What went wrong, for a person.
+  string message = 3;
+  // The error's details, JSON.
+  optional google.protobuf.Value details = 4;
+}
+
+// The error is recorded.
+message ReportResponse {}

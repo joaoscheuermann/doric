@@ -1,0 +1,38 @@
+// `api.status/v1` (host, 1.0.0): the public API's liveness signal, which
+// replaces the Socket.IO namespace `/status`. The `transport` bundle
+// provides it.
+syntax = "proto3";
+
+package doric.api.status.v1;
+
+import "buf/validate/validate.proto";
+import "doric/platform/v1/options.proto";
+
+option (doric.platform.v1.contract) = {
+  id: "api.status/v1"
+  cardinality: CARDINALITY_ONE
+  environment: ENVIRONMENT_HOST
+};
+
+// Whether the host is reachable.
+service StatusService {
+  // Sends one `ready` item and stays open until the caller cancels it or the
+  // host goes away (Socket.IO `/status`).
+  rpc Watch(WatchRequest) returns (stream WatchResponse);
+}
+
+// The host is reachable.
+message Ready {}
+
+// Watches the host; takes no input.
+message WatchRequest {}
+
+// One item of a status watch.
+message WatchResponse {
+  // The event.
+  oneof event {
+    option (buf.validate.oneof).required = true;
+    // The first and only item: the host is reachable.
+    Ready ready = 1;
+  }
+}

@@ -1,0 +1,126 @@
+// `skills/v1` (host, 1.2.0): the skills bundles offer a model. A bundle
+// registers a skill as data; `core` keeps it with the registering instance
+// and lists it. The SDK registers its skills again when the provider changes.
+//
+// 1.2.0: `register` answers a `registrationId`; `Unregister` replaces the
+// `Disposable`.
+syntax = "proto3";
+
+package doric.skills.v1;
+
+import "buf/validate/validate.proto";
+import "doric/platform/v1/options.proto";
+
+option (doric.platform.v1.contract) = {
+  id: "skills/v1"
+  cardinality: CARDINALITY_ONE
+  environment: ENVIRONMENT_HOST
+};
+
+// The skill registry.
+service SkillsService {
+  // Registers a skill for the calling instance and answers a
+  // `registrationId`. A name another bundle holds is `duplicate_skill`; an
+  // `allowedTools` entry that is not a tool the caller's `tools/v1` list
+  // holds is `unavailable_tool`.
+  rpc Register(RegisterRequest) returns (RegisterResponse);
+  // Removes a registration; an unknown id is a no-op.
+  rpc Unregister(UnregisterRequest) returns (UnregisterResponse);
+  // The registered skills, sorted by `order` (unordered last), then bundle
+  // order, then registration order.
+  rpc List(ListRequest) returns (ListResponse);
+}
+
+// A skill as a bundle declares it.
+message SkillSchemaInput {
+  // The skill's name, not blank.
+  string name = 1 [(buf.validate.field).string.pattern = "\\S"];
+  // What the skill is for, not blank.
+  string description = 2 [(buf.validate.field).string.pattern = "\\S"];
+  // The skill's instructions, not blank.
+  string body = 3 [(buf.validate.field).string.pattern = "\\S"];
+  // The tools the skill may use, each not blank.
+  repeated string allowed_tools = 4 [(buf.validate.field).repeated.items.string.pattern = "\\S"];
+  // The text the skill is found by; absent, the provider builds it from the
+  // name, description, tools and body.
+  optional string index_text = 5;
+}
+
+// A skill as the provider holds it, decoded: tools without duplicates and
+// its index text built.
+message SkillRecord {
+  // The skill's name.
+  string name = 1 [(buf.validate.field).string.pattern = "\\S"];
+  // What the skill is for.
+  string description = 2 [(buf.validate.field).string.pattern = "\\S"];
+  // The skill's instructions.
+  string body = 3 [(buf.validate.field).string.pattern = "\\S"];
+  // The tools the skill may use, without duplicates.
+  repeated string allowed_tools = 4 [(buf.validate.field).repeated.items.string.pattern = "\\S"];
+  // The text the skill is found by.
+  string index_text = 5;
+}
+
+// How a skill is registered.
+message SkillRegistrationOptions {
+  // Whether the skill is offered on every turn; absent is false.
+  optional bool always_available = 1;
+  // The global position in `List`, ascending, a positive whole number;
+  // unordered skills follow every ordered one.
+  optional double order = 2 [
+    (buf.validate.field).double = {
+      gte: 1
+      lte: 9007199254740991
+    },
+    (buf.validate.field).cel = {
+      id: "order.integer"
+      message: "order must be a whole number"
+      expression: "this == double(int(this))"
+    }
+  ];
+}
+
+// A skill as `List` answers it: with the bundle that registered it.
+message RegisteredSkill {
+  // The registering bundle's id.
+  string bundle_id = 1;
+  // Whether the skill is offered on every turn.
+  bool always_available = 2;
+  // The global position the skill declared; absent when unordered.
+  optional double order = 3;
+  // The skill.
+  SkillRecord skill = 4;
+}
+
+// Registers a skill.
+message RegisterRequest {
+  // The skill.
+  SkillSchemaInput skill = 1 [(buf.validate.field).required = true];
+  // How it is registered; absent registers it unordered and not always
+  // available.
+  optional SkillRegistrationOptions options = 2;
+}
+
+// The skill's registration.
+message RegisterResponse {
+  // The id `Unregister` takes.
+  string registration_id = 1;
+}
+
+// Removes a registration.
+message UnregisterRequest {
+  // The id `Register` answered.
+  string registration_id = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+// The registration is gone.
+message UnregisterResponse {}
+
+// Asks the registered skills.
+message ListRequest {}
+
+// The registered skills, in `List` order.
+message ListResponse {
+  // The skills.
+  repeated RegisteredSkill skills = 1;
+}

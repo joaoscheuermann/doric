@@ -1,0 +1,1404 @@
+// `runtime.threads/v1` (host, 1.9.0): the Threads of the workspace, served by
+// `runtime`. Two groups of methods share the service:
+//
+// - The controls a running parent prompt has over its direct children
+//   (`Spawn` to `Terminate`). Each binds to the call's scope (the calling
+//   prompt) and to direct children of its Thread in the same Project; once
+//   the prompt's binding ended, each fails with `FAILED_PRECONDITION` and the
+//   message "Thread control is no longer active.".
+// - The workspace operations on any Thread (`CreateThread` to `ViewThread`),
+//   which ignore the call's scope.
+//
+// Every refusal of a Thread operation is an answer, never an error, unless
+// a method says otherwise.
+//
+// 1.9.0: `watchThread` and `viewThread` become server streams; a snapshot's
+// events stop before 3 MiB and the rest follow as `event` items.
+syntax = "proto3";
+
+package doric.runtime.threads.v1;
+
+import "buf/validate/validate.proto";
+import "doric/platform/v1/options.proto";
+import "doric/runtime/v2/runtime.proto";
+import "google/protobuf/struct.proto";
+
+option (doric.platform.v1.contract) = {
+  id: "runtime.threads/v1"
+  cardinality: CARDINALITY_ONE
+  environment: ENVIRONMENT_HOST
+};
+
+// The Threads of the workspace.
+service ThreadsService {
+  // Spawns a direct child of the calling prompt's Thread, named `title` or
+  // the start of `prompt`, and answers it with its first prompt. The child
+  // runs on its parent's provider, and on its parent's model and effort
+  // unless `options` names its own. Fails, creating nothing, with
+  // `INVALID_ARGUMENT` on an empty prompt or title, with
+  // `FAILED_PRECONDITION` on a closed binding or a Project that cannot take
+  // a Thread, with reason `invalid_execution` (detail `issue`) when the
+  // configuration refuses the model or effort, and with `models/v1`'s own
+  // error when it cannot resolve the provider.
+  rpc Spawn(SpawnRequest) returns (SpawnResponse);
+  // A page of the calling prompt's direct children.
+  rpc List(ListRequest) returns (ListResponse);
+  // A child's state and, when a prompt of it has finished, its result.
+  rpc Get(GetRequest) returns (GetResponse);
+  // A bounded, forward page of a child's events after a cursor.
+  rpc Events(EventsRequest) returns (EventsResponse);
+  // Queues a prompt for a child.
+  rpc Send(SendRequest) returns (SendResponse);
+  // Reopens a child whose record is `failed` and queues a prompt: the one
+  // given, or the child's own last accepted prompt. Never revives a
+  // `cancelled` child.
+  rpc Restart(RestartRequest) returns (RestartResponse);
+  // Interrupts a child's running prompt.
+  rpc Interrupt(InterruptRequest) returns (InterruptResponse);
+  // Terminates a child and answers its record.
+  rpc Terminate(TerminateRequest) returns (TerminateResponse);
+  // Creates a Thread, under `parentThreadId` when given.
+  rpc CreateThread(CreateThreadRequest) returns (CreateThreadResponse) {
+    option (doric.platform.v1.method).expose = EXPOSE_DESKTOP;
+  }
+  // One Thread, with the in-memory storage-pause overlay; absent when there
+  // is none by that id.
+  rpc Thread(ThreadRequest) returns (ThreadResponse) {
+    option (doric.platform.v1.method).expose = EXPOSE_DESKTOP;
+  }
+  // One Thread as stored, without the overlay; absent when there is none by
+  // that id.
+  rpc StoredThread(StoredThreadRequest) returns (StoredThreadResponse);
+  // A page of a Project's Threads, or of one parent's children; absent when
+  // the Project does not exist.
+  rpc Threads(ThreadsRequest) returns (ThreadsResponse) {
+    option (doric.platform.v1.method).expose = EXPOSE_DESKTOP;
+  }
+  // Every Thread of a Project, `createdAt` then id ascending.
+  rpc ProjectThreads(ProjectThreadsRequest) returns (ProjectThreadsResponse);
+  // Renames a Thread; absent when there is none by that id.
+  rpc RenameThread(RenameThreadRequest) returns (RenameThreadResponse) {
+    option (doric.platform.v1.method).expose = EXPOSE_DESKTOP;
+  }
+  // Moves a Thread's working directory.
+  rpc SetThreadCwd(SetThreadCwdRequest) returns (SetThreadCwdResponse) {
+    option (doric.platform.v1.method).expose = EXPOSE_DESKTOP;
+  }
+  // Sets a Thread's provider, model and effort together, validated against
+  // the configuration in force and `models/v1`, in one write that applies
+  // from the Thread's next run; an absent `effort` removes the stored one.
+  // Fails only when the configuration cannot be read.
+  rpc SetThreadExecution(SetThreadExecutionRequest) returns (SetThreadExecutionResponse) {
+    option (doric.platform.v1.method).expose = EXPOSE_DESKTOP;
+  }
+  // Archives a Thread and its idle, unpinned descendants as one batch; busy
+  // and pinned descendants stay as they are. Keeps each `updatedAt`. Fails
+  // when the store refuses the write, and then writes nothing.
+  rpc ArchiveThread(ArchiveThreadRequest) returns (ArchiveThreadResponse) {
+    option (doric.platform.v1.method).expose = EXPOSE_DESKTOP;
+  }
+  // Un-archives a Thread and its descendants of one batch: `batch`, else the
+  // Thread's own. Ancestors are never restored. Fails as `ArchiveThread`
+  // does.
+  rpc RestoreThread(RestoreThreadRequest) returns (RestoreThreadResponse) {
+    option (doric.platform.v1.method).expose = EXPOSE_DESKTOP;
+  }
+  // Pins or unpins a Thread; absent when there is none by that id.
+  rpc SetThreadPinned(SetThreadPinnedRequest) returns (SetThreadPinnedResponse) {
+    option (doric.platform.v1.method).expose = EXPOSE_DESKTOP;
+  }
+  // Queues the reader's prompt.
+  rpc Prompt(PromptRequest) returns (PromptResponse) {
+    option (doric.platform.v1.method).expose = EXPOSE_DESKTOP;
+  }
+  // Sends the Thread's last prompt again, from its own log.
+  rpc Retry(RetryRequest) returns (RetryResponse) {
+    option (doric.platform.v1.method).expose = EXPOSE_DESKTOP;
+  }
+  // Sends the reader's input into the running prompt `promptId`, taken in at
+  // its next safe point; queued when that prompt no longer runs or the
+  // Thread is stopping.
+  rpc Steer(SteerRequest) returns (SteerResponse) {
+    option (doric.platform.v1.method).expose = EXPOSE_DESKTOP;
+  }
+  // Gives the Thread an instruction from the calling bundle, as a steer of
+  // `promptId` (or of the prompt running now), queued when nothing runs. It
+  // reaches agent Threads too; its source names the calling bundle.
+  rpc Instruct(InstructRequest) returns (InstructResponse);
+  // Resumes a stopped prompt.
+  rpc Resume(ResumeRequest) returns (ResumeResponse) {
+    option (doric.platform.v1.method).expose = EXPOSE_DESKTOP;
+  }
+  // Rewinds the Thread to before `promptId` and queues `prompt` in its
+  // place.
+  rpc Rewind(RewindRequest) returns (RewindResponse) {
+    option (doric.platform.v1.method).expose = EXPOSE_DESKTOP;
+  }
+  // Compacts an idle Thread's context on demand.
+  rpc Compact(CompactRequest) returns (CompactResponse) {
+    option (doric.platform.v1.method).expose = EXPOSE_DESKTOP;
+  }
+  // The whole log after a cursor, with the Thread's last sequence; absent
+  // when there is no Thread by that id.
+  rpc ThreadEvents(ThreadEventsRequest) returns (ThreadEventsResponse);
+  // The stored events after a cursor, with no record check (replay).
+  rpc StoredEventsAfter(StoredEventsAfterRequest) returns (StoredEventsAfterResponse);
+  // The reader's stop of the running prompt.
+  rpc Pause(PauseRequest) returns (PauseResponse) {
+    option (doric.platform.v1.method).expose = EXPOSE_DESKTOP;
+  }
+  // Terminates a Thread; absent when there is none by that id.
+  rpc TerminateThread(TerminateThreadRequest) returns (TerminateThreadResponse) {
+    option (doric.platform.v1.method).expose = EXPOSE_DESKTOP;
+  }
+  // Deletes a Thread, or says why it did not.
+  rpc DeleteThread(DeleteThreadRequest) returns (DeleteThreadResponse) {
+    option (doric.platform.v1.method).expose = EXPOSE_DESKTOP;
+  }
+  // A Thread's queue; absent when there is no Thread by that id.
+  rpc Queue(QueueRequest) returns (QueueResponse) {
+    option (doric.platform.v1.method).expose = EXPOSE_DESKTOP;
+  }
+  // Resumes a paused queue.
+  rpc ResumeQueue(ResumeQueueRequest) returns (ResumeQueueResponse) {
+    option (doric.platform.v1.method).expose = EXPOSE_DESKTOP;
+  }
+  // One queued prompt; absent when the queue holds none by that id.
+  rpc QueuedPrompt(QueuedPromptRequest) returns (QueuedPromptResponse) {
+    option (doric.platform.v1.method).expose = EXPOSE_DESKTOP;
+  }
+  // Edits a queued prompt at the revision the reader saw.
+  rpc EditQueued(EditQueuedRequest) returns (EditQueuedResponse) {
+    option (doric.platform.v1.method).expose = EXPOSE_DESKTOP;
+  }
+  // Removes a queued prompt.
+  rpc RemoveQueued(RemoveQueuedRequest) returns (RemoveQueuedResponse) {
+    option (doric.platform.v1.method).expose = EXPOSE_DESKTOP;
+  }
+  // A Thread's usage with its context fill; absent when there is no Thread
+  // by that id.
+  rpc Usage(UsageRequest) returns (UsageResponse) {
+    option (doric.platform.v1.method).expose = EXPOSE_DESKTOP;
+  }
+  // Delivers a background terminal's result to its Thread as a
+  // terminal-sourced prompt. Under the Project lock it does nothing for a
+  // closing Project or Thread; a failed enqueue closes the Thread with
+  // `terminal_result_failed`.
+  rpc EnqueueTerminalResult(EnqueueTerminalResultRequest) returns (EnqueueTerminalResultResponse);
+  // Closes a Thread whose terminal result never arrived, as a failed
+  // enqueue does.
+  rpc FailTerminalResult(FailTerminalResultRequest) returns (FailTerminalResultResponse);
+  // One snapshot with the events after `afterSequence`, then gap-free live
+  // events and the Thread's lifecycle notices. A snapshot that cannot be
+  // read ends the stream with `INTERNAL`, reason `replay_failed`.
+  rpc WatchThread(WatchThreadRequest) returns (stream WatchThreadResponse) {
+    option (doric.platform.v1.method).expose = EXPOSE_DESKTOP;
+    option (doric.platform.v1.method).resumable = true;
+  }
+  // Holds a view of the Thread while the stream is open; a viewed Thread is
+  // never archived on its own. Once the view is held the stream sends one
+  // item and nothing else. Ends with `NOT_FOUND` for a missing Thread and
+  // `INTERNAL` when reading it fails, holding no view.
+  rpc ViewThread(ViewThreadRequest) returns (stream ViewThreadResponse) {
+    option (doric.platform.v1.method).expose = EXPOSE_DESKTOP;
+    option (doric.platform.v1.method).resumable = true;
+  }
+}
+
+// A child Thread's record as the controls answer it.
+message ThreadView {
+  // The Thread's id.
+  string id = 1;
+  // The Project.
+  string project_id = 2;
+  // The parent Thread.
+  optional string parent_thread_id = 3;
+  // The display name.
+  string name = 4;
+  // The Thread's state, as `Thread.state`.
+  string state = 5;
+  // The sequence of its last event, a whole number.
+  double last_sequence = 6 [(buf.validate.field).cel = {
+    id: "last_sequence.integer"
+    message: "lastSequence must be a whole number"
+    expression: "this == double(int(this))"
+  }];
+  // The prompt that runs now.
+  optional string active_prompt_id = 7;
+  // Why it failed; absent unless it failed.
+  optional string error_code = 8;
+  // When it was created (ISO-8601).
+  string created_at = 9;
+  // When it last changed (ISO-8601).
+  string updated_at = 10;
+  // When it started (ISO-8601).
+  optional string started_at = 11;
+  // When it finished (ISO-8601).
+  optional string finished_at = 12;
+}
+
+// A child's persisted event as the controls answer it.
+message ThreadEventView {
+  // The Project.
+  string project_id = 1;
+  // The Thread.
+  string thread_id = 2;
+  // The prompt the event belongs to.
+  string prompt_id = 3;
+  // The event's position in the log, a whole number.
+  double sequence = 4 [(buf.validate.field).cel = {
+    id: "sequence.integer"
+    message: "sequence must be a whole number"
+    expression: "this == double(int(this))"
+  }];
+  // The event's durable type.
+  string type = 5;
+  // The event's body, JSON.
+  google.protobuf.Value event = 6;
+  // When it was stored (ISO-8601).
+  string created_at = 7;
+}
+
+// The final result of a child's most recent finished prompt.
+message ThreadResult {
+  // How the prompt ended.
+  string status = 1;
+  // Its final text.
+  string text = 2;
+  // The prompt.
+  string prompt_id = 3;
+  // When it finished (ISO-8601).
+  string at = 4;
+}
+
+// The agent a child is spawned as: its public identity plus the
+// instructions only the executor reads.
+message SpawnAgent {
+  // The agent's name.
+  string name = 1;
+  // Where the agent is defined: "built-in" or "workspace".
+  string source = 2 [(buf.validate.field).string = {
+    in: [
+      "built-in",
+      "workspace"
+    ]
+  }];
+  // The agent's instructions, at most 64,000 characters. Stored with the
+  // Thread, never in its public record or in an event.
+  string instructions = 3 [(buf.validate.field).string.max_len = 64000];
+}
+
+// How a child is spawned; every field is optional.
+message SpawnOptions {
+  // The agent; none when absent, never inherited from the parent.
+  optional SpawnAgent agent = 1;
+  // The model; the parent's when absent.
+  optional string model = 2;
+  // The reasoning effort, as `Thread.effort`; the parent's when absent.
+  optional string effort = 3 [(buf.validate.field).string = {
+    in: [
+      "none",
+      "minimal",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ]
+  }];
+}
+
+// What queuing a prompt became.
+message PromptResult {
+  option (buf.validate.message).cel = {
+    id: "prompt_result.prompt_id"
+    message: "promptId is set exactly when the prompt is accepted"
+    expression: "(this.status == 'accepted') == has(this.prompt_id)"
+  };
+  // "accepted", or why not: "missing", "inactive" or "forbidden" (an agent
+  // Thread takes only pause, continue and retry).
+  string status = 1 [(buf.validate.field).string = {
+    in: [
+      "accepted",
+      "missing",
+      "inactive",
+      "forbidden"
+    ]
+  }];
+  // The accepted prompt; set when accepted.
+  optional string prompt_id = 2;
+}
+
+// What one steer became.
+message SteerResult {
+  option (buf.validate.message).cel = {
+    id: "steer_result.prompt_id"
+    message: "promptId is set exactly when the input is steered or queued"
+    expression: "(this.status == 'steered' || this.status == 'queued') == has(this.prompt_id)"
+  };
+  // "steered" (waits for the running prompt to take it in), "queued" (became
+  // an ordinary queued input), or why neither: "missing", "inactive" or
+  // "forbidden".
+  string status = 1 [(buf.validate.field).string = {
+    in: [
+      "steered",
+      "queued",
+      "missing",
+      "inactive",
+      "forbidden"
+    ]
+  }];
+  // The prompt the input became or joined; set when steered or queued.
+  optional string prompt_id = 2;
+}
+
+// What a resume became.
+message ResumeResult {
+  option (buf.validate.message).cel = {
+    id: "resume_result.thread"
+    message: "thread is set exactly when resumed"
+    expression: "(this.status == 'resumed') == has(this.thread)"
+  };
+  // "resumed", or why not: "missing", "inactive", "busy", "unknown_prompt"
+  // or "storage_low".
+  string status = 1 [(buf.validate.field).string = {
+    in: [
+      "resumed",
+      "missing",
+      "inactive",
+      "busy",
+      "unknown_prompt",
+      "storage_low"
+    ]
+  }];
+  // The resumed Thread; set when resumed.
+  optional doric.runtime.v2.Thread thread = 2;
+}
+
+// Why a working-directory move was refused.
+message CwdRefusal {
+  // "outside" (the path leaves the workspace root), "missing" (no such
+  // path) or "not-directory".
+  string status = 1 [(buf.validate.field).string = {
+    in: [
+      "outside",
+      "missing",
+      "not-directory"
+    ]
+  }];
+}
+
+// The error a Thread's queue reports.
+message QueueError {
+  // The error's code.
+  string code = 1;
+  // The error's message.
+  string message = 2;
+}
+
+// One input of a Thread's queue.
+message QueueItem {
+  // The prompt.
+  string prompt_id = 1;
+  // Where it came from.
+  doric.runtime.v2.InputSource source = 2 [(buf.validate.field).required = true];
+  // Its label.
+  string label = 3;
+  // The start of its text.
+  string preview = 4;
+  // When it was accepted (ISO-8601).
+  string accepted_at = 5;
+  // Whether the reader may edit it.
+  bool editable = 6;
+  // Its revision, a whole number.
+  double revision = 7 [(buf.validate.field).cel = {
+    id: "revision.integer"
+    message: "revision must be a whole number"
+    expression: "this == double(int(this))"
+  }];
+}
+
+// A Thread's queue.
+message ThreadQueue {
+  // The error the queue stopped on.
+  optional QueueError error = 1;
+  // The queue's revision, a whole number.
+  double revision = 2 [(buf.validate.field).cel = {
+    id: "revision.integer"
+    message: "revision must be a whole number"
+    expression: "this == double(int(this))"
+  }];
+  // Whether the queue is paused.
+  bool paused = 3;
+  // Whether the Thread is stopping.
+  bool stopping = 4;
+  // The input that runs now.
+  optional QueueItem current = 5;
+  // The stopped input a resume would continue.
+  optional QueueItem resumable = 6;
+  // The queued inputs, in order.
+  repeated QueueItem items = 7;
+}
+
+// One queued prompt with its text.
+message QueuedPrompt {
+  // The prompt.
+  string prompt_id = 1;
+  // Its text.
+  string text = 2;
+  // Its revision, a whole number.
+  double revision = 3 [(buf.validate.field).cel = {
+    id: "revision.integer"
+    message: "revision must be a whole number"
+    expression: "this == double(int(this))"
+  }];
+  // Whether the reader may edit it.
+  bool editable = 4;
+}
+
+// The whole log after a cursor, with the Thread's last sequence.
+message ThreadEventLog {
+  // The events after the cursor, in order.
+  repeated doric.runtime.v2.ThreadEvent events = 1;
+  // The sequence of the Thread's last event, a whole number.
+  double last_sequence = 2 [(buf.validate.field).cel = {
+    id: "last_sequence.integer"
+    message: "lastSequence must be a whole number"
+    expression: "this == double(int(this))"
+  }];
+}
+
+// The first item of a Thread watch (`thread:snapshot`). An unknown Thread
+// answers no Project, no Thread and no events.
+message ThreadSnapshot {
+  // The watched Thread.
+  string thread_id = 1;
+  // The Thread's Project, when the Thread exists.
+  optional string project_id = 2;
+  // The Project's record, when the Thread exists.
+  optional doric.runtime.v2.Project project = 3;
+  // The Thread's record, when it exists.
+  optional doric.runtime.v2.Thread thread = 4;
+  // The events after `afterSequence`, in order, until the item would pass
+  // 3 MiB; the rest follow as `event` items.
+  repeated doric.runtime.v2.ThreadEvent events = 5;
+}
+
+// Spawns a child of the calling prompt's Thread.
+message SpawnRequest {
+  // The child's first prompt; not empty.
+  string prompt = 1 [(buf.validate.field).string.min_len = 1];
+  // The child's name; the start of `prompt` when absent. Not empty when set.
+  optional string title = 2 [(buf.validate.field).string.min_len = 1];
+  // How the child is spawned.
+  optional SpawnOptions options = 3;
+}
+
+// The spawned child; today's `SpawnedThread`.
+message SpawnResponse {
+  // The child Thread.
+  string thread_id = 1;
+  // Its first prompt.
+  string prompt_id = 2;
+}
+
+// Asks a page of the calling prompt's children.
+message ListRequest {
+  // The most children to answer, a positive whole number.
+  int32 limit = 1 [(buf.validate.field).int32.gt = 0];
+  // Where the page starts; the first page when absent.
+  optional string cursor = 2;
+}
+
+// A page of children; today's `ThreadPage`.
+message ListResponse {
+  // The children of the page.
+  repeated ThreadView items = 1;
+  // The cursor of the next page; absent on the last page.
+  optional string next_cursor = 2;
+}
+
+// Asks one child.
+message GetRequest {
+  // The child Thread.
+  string thread_id = 1;
+}
+
+// A child's state and result; today's `ThreadSummary`.
+message GetResponse {
+  // The child's record.
+  ThreadView thread = 1 [(buf.validate.field).required = true];
+  // The result of its most recent finished prompt, when one finished.
+  optional ThreadResult result = 2;
+}
+
+// Asks a page of a child's events.
+message EventsRequest {
+  // The child Thread.
+  string thread_id = 1;
+  // The exclusive cursor: events after this sequence, a whole number.
+  double after_sequence = 2 [
+    (buf.validate.field).double.gte = 0,
+    (buf.validate.field).cel = {
+      id: "after_sequence.integer"
+      message: "afterSequence must be a whole number"
+      expression: "this == double(int(this))"
+    }
+  ];
+  // The most events to answer, a positive whole number.
+  int32 limit = 3 [(buf.validate.field).int32.gt = 0];
+}
+
+// A page of a child's events; today's `ThreadEventsPage`.
+message EventsResponse {
+  // The events, in order.
+  repeated ThreadEventView events = 1;
+  // The exclusive cursor of the next page; absent when no event follows.
+  optional double next_sequence = 2 [(buf.validate.field).cel = {
+    id: "next_sequence.integer"
+    message: "nextSequence must be a whole number"
+    expression: "this == double(int(this))"
+  }];
+}
+
+// Queues a prompt for a child.
+message SendRequest {
+  // The child Thread.
+  string thread_id = 1;
+  // The prompt.
+  string prompt = 2;
+}
+
+// What queuing the prompt became.
+message SendResponse {
+  // The outcome.
+  PromptResult prompt_result = 1 [(buf.validate.field).required = true];
+}
+
+// Restarts a failed child.
+message RestartRequest {
+  // The child Thread.
+  string thread_id = 1;
+  // The prompt to queue; the child's own last accepted prompt when absent.
+  optional string prompt = 2;
+}
+
+// What the restart became; today's `RestartResult`.
+message RestartResponse {
+  option (buf.validate.message).cel = {
+    id: "restart_response.prompt_id"
+    message: "promptId is set exactly when the restart is accepted"
+    expression: "(this.status == 'accepted') == has(this.prompt_id)"
+  };
+  // "accepted", or why not: "missing", "inactive", "not_failed" (healthy),
+  // "terminated" (a cancelled Thread is irreversible) or "no_prompt"
+  // (nothing in the log to resend).
+  string status = 1 [(buf.validate.field).string = {
+    in: [
+      "accepted",
+      "missing",
+      "inactive",
+      "not_failed",
+      "terminated",
+      "no_prompt"
+    ]
+  }];
+  // The queued prompt; set when accepted.
+  optional string prompt_id = 2;
+}
+
+// Interrupts a child's running prompt.
+message InterruptRequest {
+  // The child Thread.
+  string thread_id = 1;
+  // The prompt to interrupt.
+  string prompt_id = 2;
+}
+
+// What the interrupt became.
+message InterruptResponse {
+  // "interrupted", or why not: "missing", "inactive" or "not_running".
+  string interrupt_result = 1 [(buf.validate.field).string = {
+    in: [
+      "interrupted",
+      "missing",
+      "inactive",
+      "not_running"
+    ]
+  }];
+}
+
+// Terminates a child.
+message TerminateRequest {
+  // The child Thread.
+  string thread_id = 1;
+}
+
+// The terminated child.
+message TerminateResponse {
+  // The child's record.
+  ThreadView thread_view = 1 [(buf.validate.field).required = true];
+}
+
+// Creates a Thread.
+message CreateThreadRequest {
+  // The Project.
+  string project_id = 1;
+  // The display name.
+  string name = 2;
+  // The parent Thread; a top-level Thread when absent.
+  optional string parent_thread_id = 3;
+}
+
+// What the creation became; today's `ThreadCreateResult`.
+message CreateThreadResponse {
+  option (buf.validate.message).cel = {
+    id: "create_thread_response.thread"
+    message: "thread is set exactly when created"
+    expression: "(this.status == 'created') == has(this.thread)"
+  };
+  // "created", or why not: "missing", "inactive" or "invalid_parent".
+  string status = 1 [(buf.validate.field).string = {
+    in: [
+      "created",
+      "missing",
+      "inactive",
+      "invalid_parent"
+    ]
+  }];
+  // The new Thread; set when created.
+  optional doric.runtime.v2.Thread thread = 2;
+}
+
+// Asks one Thread.
+message ThreadRequest {
+  // The Thread's id.
+  string id = 1;
+}
+
+// One Thread, when it exists.
+message ThreadResponse {
+  // The Thread; absent when there is none by that id.
+  optional doric.runtime.v2.Thread thread = 1;
+}
+
+// Asks one stored Thread.
+message StoredThreadRequest {
+  // The Thread's id.
+  string id = 1;
+}
+
+// One stored Thread, when it exists.
+message StoredThreadResponse {
+  // The Thread as stored; absent when there is none by that id.
+  optional doric.runtime.v2.Thread thread = 1;
+}
+
+// Asks a page of a Project's Threads.
+message ThreadsRequest {
+  // The Project.
+  string project_id = 1;
+  // The most Threads to answer, a positive whole number.
+  int32 limit = 2 [(buf.validate.field).int32.gt = 0];
+  // Where the page starts; the first page when absent.
+  optional string cursor = 3;
+  // Only the children of this Thread; every Thread of the Project when
+  // absent.
+  optional string parent_thread_id = 4;
+}
+
+// A page of Threads, when the Project exists.
+message ThreadsResponse {
+  // The page; absent when the Project does not exist.
+  optional ThreadPage thread_page = 1;
+}
+
+// A page of Threads; today's `Page<Thread>`.
+message ThreadPage {
+  // The Threads of the page.
+  repeated doric.runtime.v2.Thread items = 1;
+  // The cursor of the next page; absent on the last page.
+  optional string next_cursor = 2;
+}
+
+// Asks every Thread of a Project.
+message ProjectThreadsRequest {
+  // The Project.
+  string project_id = 1;
+}
+
+// Every Thread of the Project, `createdAt` then id ascending.
+message ProjectThreadsResponse {
+  // The Threads.
+  repeated doric.runtime.v2.Thread threads = 1;
+}
+
+// Renames a Thread.
+message RenameThreadRequest {
+  // The Thread's id.
+  string id = 1;
+  // The new name.
+  string name = 2;
+}
+
+// The renamed Thread, when it exists.
+message RenameThreadResponse {
+  // The Thread; absent when there is none by that id.
+  optional doric.runtime.v2.Thread thread = 1;
+}
+
+// Moves a Thread's working directory.
+message SetThreadCwdRequest {
+  // The Thread's id.
+  string id = 1;
+  // The new directory; a relative path resolves against the current one.
+  string cwd = 2;
+}
+
+// What the move became; today's `CwdResult`.
+message SetThreadCwdResponse {
+  option (buf.validate.message).cel = {
+    id: "set_thread_cwd_response.thread"
+    message: "thread is set exactly when updated"
+    expression: "(this.status == 'updated') == has(this.thread)"
+  };
+  option (buf.validate.message).cel = {
+    id: "set_thread_cwd_response.change"
+    message: "change is set exactly when refused"
+    expression: "(this.status == 'refused') == has(this.change)"
+  };
+  // "updated", or why not: "missing", "inactive" or "refused".
+  string status = 1 [(buf.validate.field).string = {
+    in: [
+      "updated",
+      "missing",
+      "inactive",
+      "refused"
+    ]
+  }];
+  // The Thread; set when updated.
+  optional doric.runtime.v2.Thread thread = 2;
+  // Why the move was refused; set when refused.
+  optional CwdRefusal change = 3;
+}
+
+// Sets a Thread's execution.
+message SetThreadExecutionRequest {
+  // The Thread's id.
+  string id = 1;
+  // The provider: 1 to 128 characters, not blank.
+  string provider_id = 2 [
+    (buf.validate.field).string.max_len = 128,
+    (buf.validate.field).string.pattern = "\\S"
+  ];
+  // The model: 1 to 512 characters, not blank.
+  string model = 3 [
+    (buf.validate.field).string.max_len = 512,
+    (buf.validate.field).string.pattern = "\\S"
+  ];
+  // The reasoning effort, as `Thread.effort`; absent removes the stored one.
+  optional string effort = 4 [(buf.validate.field).string = {
+    in: [
+      "none",
+      "minimal",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ]
+  }];
+}
+
+// What setting the execution became; today's `ThreadExecutionResult`.
+message SetThreadExecutionResponse {
+  option (buf.validate.message).cel = {
+    id: "set_thread_execution_response.thread"
+    message: "thread is set exactly when updated"
+    expression: "(this.status == 'updated') == has(this.thread)"
+  };
+  option (buf.validate.message).cel = {
+    id: "set_thread_execution_response.reason"
+    message: "reason is set exactly when invalid"
+    expression: "(this.status == 'invalid') == has(this.reason)"
+  };
+  option (buf.validate.message).cel = {
+    id: "set_thread_execution_response.message"
+    message: "message is set exactly when unresolvable"
+    expression: "(this.status == 'unresolvable') == has(this.message)"
+  };
+  // "updated", or why not: "missing", "invalid" (the configuration in force
+  // refuses it) or "unresolvable" (`models/v1` refused the provider).
+  string status = 1 [(buf.validate.field).string = {
+    in: [
+      "updated",
+      "missing",
+      "invalid",
+      "unresolvable"
+    ]
+  }];
+  // The Thread; set when updated.
+  optional doric.runtime.v2.Thread thread = 2;
+  // Which part the configuration refuses: "provider", "model" or "effort";
+  // set when invalid.
+  optional string reason = 3 [(buf.validate.field).string = {
+    in: [
+      "provider",
+      "model",
+      "effort"
+    ]
+  }];
+  // The message of `models/v1`'s error; set when unresolvable.
+  optional string message = 4;
+}
+
+// Archives a Thread.
+message ArchiveThreadRequest {
+  // The Thread's id, a UUID.
+  string id = 1 [(buf.validate.field).string.uuid = true];
+}
+
+// What the archive became; today's `ArchiveThreadResult`. Every refusal
+// writes nothing.
+message ArchiveThreadResponse {
+  option (buf.validate.message).cel = {
+    id: "archive_thread_response.archived"
+    message: "batch is set and threads are not empty exactly when archived"
+    expression: "this.status == 'archived' ? (has(this.batch) && size(this.threads) > 0) : (!has(this.batch) && size(this.threads) == 0)"
+  };
+  // "archived", or why not: "missing", "busy" (queued, running, cancelling
+  // or holding work) or "already_archived".
+  string status = 1 [(buf.validate.field).string = {
+    in: [
+      "archived",
+      "missing",
+      "busy",
+      "already_archived"
+    ]
+  }];
+  // The archive batch, which `RestoreThread` takes to undo; set when
+  // archived.
+  optional string batch = 2;
+  // Every Thread the archive marked, the target first; empty unless
+  // archived.
+  repeated doric.runtime.v2.Thread threads = 3;
+}
+
+// Restores an archived Thread.
+message RestoreThreadRequest {
+  // The Thread's id, a UUID.
+  string id = 1 [(buf.validate.field).string.uuid = true];
+  // The batch to restore, a UUID; the Thread's own when absent.
+  optional string batch = 2 [(buf.validate.field).string.uuid = true];
+}
+
+// What the restore became; today's `RestoreThreadResult`. Every refusal
+// writes nothing.
+message RestoreThreadResponse {
+  option (buf.validate.message).cel = {
+    id: "restore_thread_response.threads"
+    message: "threads are not empty exactly when restored"
+    expression: "(this.status == 'restored') == (size(this.threads) > 0)"
+  };
+  // "restored", or why not: "missing" or "not_archived" (neither the Thread
+  // nor a descendant carries the batch).
+  string status = 1 [(buf.validate.field).string = {
+    in: [
+      "restored",
+      "missing",
+      "not_archived"
+    ]
+  }];
+  // Every restored Thread; empty unless restored.
+  repeated doric.runtime.v2.Thread threads = 2;
+}
+
+// Pins or unpins a Thread.
+message SetThreadPinnedRequest {
+  // The Thread's id, a UUID.
+  string id = 1 [(buf.validate.field).string.uuid = true];
+  // True to pin, false to unpin.
+  bool pinned = 2;
+}
+
+// The Thread, when it exists.
+message SetThreadPinnedResponse {
+  // The Thread; absent when there is none by that id.
+  optional doric.runtime.v2.Thread thread = 1;
+}
+
+// Queues the reader's prompt.
+message PromptRequest {
+  // The Thread's id.
+  string id = 1;
+  // The prompt.
+  string prompt = 2;
+}
+
+// What queuing the prompt became.
+message PromptResponse {
+  // The outcome.
+  PromptResult prompt_result = 1 [(buf.validate.field).required = true];
+}
+
+// Sends the Thread's last prompt again.
+message RetryRequest {
+  // The Thread's id.
+  string id = 1;
+}
+
+// What queuing the prompt became.
+message RetryResponse {
+  // The outcome.
+  PromptResult prompt_result = 1 [(buf.validate.field).required = true];
+}
+
+// Steers a running prompt with the reader's input.
+message SteerRequest {
+  // The Thread's id.
+  string id = 1;
+  // The input.
+  string prompt = 2;
+  // The running prompt the reader saw.
+  string prompt_id = 3;
+  // True to abort the current step so the prompt takes the steer at once.
+  optional bool interrupt = 4;
+}
+
+// What the steer became.
+message SteerResponse {
+  // The outcome.
+  SteerResult steer_result = 1 [(buf.validate.field).required = true];
+}
+
+// Gives the Thread an instruction from the calling bundle.
+message InstructRequest {
+  // The Thread's id.
+  string id = 1;
+  // The instruction; not empty.
+  string prompt = 2 [(buf.validate.field).string.min_len = 1];
+  // Why the bundle speaks, 1 to 64 characters.
+  string reason = 3 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 64
+  }];
+  // The prompt to steer; the prompt running now when absent.
+  optional string prompt_id = 4;
+  // True to abort the current step so the prompt takes it at once.
+  optional bool interrupt = 5;
+  // True for a standing instruction the executor keeps through every
+  // compaction.
+  optional bool retain = 6;
+}
+
+// What the instruction became.
+message InstructResponse {
+  // The outcome.
+  SteerResult steer_result = 1 [(buf.validate.field).required = true];
+}
+
+// Resumes a stopped prompt.
+message ResumeRequest {
+  // The Thread's id.
+  string id = 1;
+  // The prompt to resume.
+  string prompt_id = 2;
+}
+
+// What the resume became.
+message ResumeResponse {
+  // The outcome.
+  ResumeResult resume_result = 1 [(buf.validate.field).required = true];
+}
+
+// Rewinds the Thread to before a prompt.
+message RewindRequest {
+  // The Thread's id.
+  string id = 1;
+  // The prompt to rewind to before.
+  string prompt_id = 2;
+  // The prompt queued in its place.
+  string prompt = 3;
+}
+
+// What the rewind became; today's `RewindResult`.
+message RewindResponse {
+  option (buf.validate.message).cel = {
+    id: "rewind_response.prompt_id"
+    message: "promptId is set exactly when accepted"
+    expression: "(this.status == 'accepted') == has(this.prompt_id)"
+  };
+  // "accepted", or why not: "missing", "inactive", "busy", "unknown_prompt"
+  // or "forbidden".
+  string status = 1 [(buf.validate.field).string = {
+    in: [
+      "accepted",
+      "missing",
+      "inactive",
+      "busy",
+      "unknown_prompt",
+      "forbidden"
+    ]
+  }];
+  // The queued prompt; set when accepted.
+  optional string prompt_id = 2;
+}
+
+// Compacts an idle Thread's context.
+message CompactRequest {
+  // The Thread's id.
+  string id = 1;
+}
+
+// What the compaction became; today's `CompactResult`.
+message CompactResponse {
+  option (buf.validate.message).cel = {
+    id: "compact_response.compacted"
+    message: "the counts are set exactly when compacted"
+    expression: "this.status == 'compacted' ? (has(this.condensed_messages) && has(this.retained_messages) && has(this.tokens_freed)) : !(has(this.condensed_messages) || has(this.retained_messages) || has(this.tokens_freed))"
+  };
+  option (buf.validate.message).cel = {
+    id: "compact_response.reason"
+    message: "reason is set exactly when refused"
+    expression: "(this.status == 'refused') == has(this.reason)"
+  };
+  option (buf.validate.message).cel = {
+    id: "compact_response.code"
+    message: "code is set exactly when failed"
+    expression: "(this.status == 'failed') == has(this.code)"
+  };
+  // "compacted", "refused", "failed" (a failure the log already carries),
+  // or why it did not run: "missing", "inactive", "busy" or
+  // "not_supported".
+  string status = 1 [(buf.validate.field).string = {
+    in: [
+      "compacted",
+      "refused",
+      "failed",
+      "missing",
+      "inactive",
+      "busy",
+      "not_supported"
+    ]
+  }];
+  // The messages condensed, a whole number; set when compacted.
+  optional double condensed_messages = 2 [(buf.validate.field).cel = {
+    id: "condensed_messages.integer"
+    message: "condensedMessages must be a whole number"
+    expression: "this == double(int(this))"
+  }];
+  // The messages kept, a whole number; set when compacted.
+  optional double retained_messages = 3 [(buf.validate.field).cel = {
+    id: "retained_messages.integer"
+    message: "retainedMessages must be a whole number"
+    expression: "this == double(int(this))"
+  }];
+  // The tokens freed, an estimate, a whole number; set when compacted.
+  optional double tokens_freed = 4 [(buf.validate.field).cel = {
+    id: "tokens_freed.integer"
+    message: "tokensFreed must be a whole number"
+    expression: "this == double(int(this))"
+  }];
+  // Why it was refused: "disabled", "missing_history" or
+  // "nothing_to_compact"; set when refused.
+  optional string reason = 5 [(buf.validate.field).string = {
+    in: [
+      "disabled",
+      "missing_history",
+      "nothing_to_compact"
+    ]
+  }];
+  // Why it failed: "summarizer_failed" or "unsafe_boundary"; set when
+  // failed.
+  optional string code = 6 [(buf.validate.field).string = {
+    in: [
+      "summarizer_failed",
+      "unsafe_boundary"
+    ]
+  }];
+}
+
+// Asks the whole log after a cursor.
+message ThreadEventsRequest {
+  // The Thread's id.
+  string id = 1;
+  // The exclusive cursor, a whole number.
+  double after_sequence = 2 [
+    (buf.validate.field).double.gte = 0,
+    (buf.validate.field).cel = {
+      id: "after_sequence.integer"
+      message: "afterSequence must be a whole number"
+      expression: "this == double(int(this))"
+    }
+  ];
+}
+
+// The log after the cursor, when the Thread exists.
+message ThreadEventsResponse {
+  // The log; absent when there is no Thread by that id.
+  optional ThreadEventLog thread_event_log = 1;
+}
+
+// Asks the stored events after a cursor.
+message StoredEventsAfterRequest {
+  // The Thread's id.
+  string id = 1;
+  // The exclusive cursor, a whole number.
+  double after_sequence = 2 [
+    (buf.validate.field).double.gte = 0,
+    (buf.validate.field).cel = {
+      id: "after_sequence.integer"
+      message: "afterSequence must be a whole number"
+      expression: "this == double(int(this))"
+    }
+  ];
+}
+
+// The stored events after the cursor.
+message StoredEventsAfterResponse {
+  // The events, in order.
+  repeated doric.runtime.v2.ThreadEvent events = 1;
+}
+
+// The reader's stop.
+message PauseRequest {
+  // The Thread's id.
+  string id = 1;
+  // The prompt the reader saw; accepted and ignored.
+  string prompt_id = 2;
+}
+
+// What the stop became.
+message PauseResponse {
+  // "interrupted", or why not: "missing", "inactive" or "not_running".
+  string interrupt_result = 1 [(buf.validate.field).string = {
+    in: [
+      "interrupted",
+      "missing",
+      "inactive",
+      "not_running"
+    ]
+  }];
+}
+
+// Terminates a Thread.
+message TerminateThreadRequest {
+  // The Thread's id.
+  string id = 1;
+}
+
+// The terminated Thread, when it exists.
+message TerminateThreadResponse {
+  // The Thread; absent when there is none by that id.
+  optional doric.runtime.v2.Thread thread = 1;
+}
+
+// Deletes a Thread.
+message DeleteThreadRequest {
+  // The Thread's id.
+  string id = 1;
+}
+
+// What the delete became.
+message DeleteThreadResponse {
+  // "deleted", or why not: "active", "missing" or "forbidden" (an agent
+  // Thread is never deleted by the reader).
+  string delete_result = 1 [(buf.validate.field).string = {
+    in: [
+      "deleted",
+      "active",
+      "missing",
+      "forbidden"
+    ]
+  }];
+}
+
+// Asks a Thread's queue.
+message QueueRequest {
+  // The Thread's id.
+  string id = 1;
+}
+
+// The queue, when the Thread exists.
+message QueueResponse {
+  // The queue; absent when there is no Thread by that id.
+  optional ThreadQueue thread_queue = 1;
+}
+
+// Resumes a paused queue.
+message ResumeQueueRequest {
+  // The Thread's id.
+  string id = 1;
+}
+
+// What the resume became.
+message ResumeQueueResponse {
+  // The outcome.
+  ResumeResult resume_result = 1 [(buf.validate.field).required = true];
+}
+
+// Asks one queued prompt.
+message QueuedPromptRequest {
+  // The Thread's id.
+  string id = 1;
+  // The queued prompt.
+  string prompt_id = 2;
+}
+
+// The queued prompt, when the queue holds it.
+message QueuedPromptResponse {
+  // The prompt; absent when the queue holds none by that id.
+  optional QueuedPrompt queued_prompt = 1;
+}
+
+// Edits a queued prompt.
+message EditQueuedRequest {
+  // The Thread's id.
+  string id = 1;
+  // The queued prompt.
+  string prompt_id = 2;
+  // The new text.
+  string text = 3;
+  // The revision the reader saw, a whole number.
+  double revision = 4 [(buf.validate.field).cel = {
+    id: "revision.integer"
+    message: "revision must be a whole number"
+    expression: "this == double(int(this))"
+  }];
+}
+
+// What the edit became; today's `EditQueueResult`.
+message EditQueuedResponse {
+  option (buf.validate.message).cel = {
+    id: "edit_queued_response.prompt"
+    message: "prompt is set exactly when updated"
+    expression: "(this.status == 'updated') == has(this.prompt)"
+  };
+  // "updated", or why not: "missing", "inactive", "unknown_prompt",
+  // "not_editable", "conflict", "forbidden" or "invalid_prompt".
+  string status = 1 [(buf.validate.field).string = {
+    in: [
+      "updated",
+      "missing",
+      "inactive",
+      "unknown_prompt",
+      "not_editable",
+      "conflict",
+      "forbidden",
+      "invalid_prompt"
+    ]
+  }];
+  // The edited prompt; set when updated.
+  optional QueuedPrompt prompt = 2;
+}
+
+// Removes a queued prompt.
+message RemoveQueuedRequest {
+  // The Thread's id.
+  string id = 1;
+  // The queued prompt.
+  string prompt_id = 2;
+}
+
+// What the removal became.
+message RemoveQueuedResponse {
+  // "removed", or why not: "missing", "inactive", "busy", "unknown_prompt"
+  // or "forbidden".
+  string remove_queued_result = 1 [(buf.validate.field).string = {
+    in: [
+      "removed",
+      "missing",
+      "inactive",
+      "busy",
+      "unknown_prompt",
+      "forbidden"
+    ]
+  }];
+}
+
+// Asks a Thread's usage.
+message UsageRequest {
+  // The Thread's id.
+  string id = 1;
+}
+
+// The usage, when the Thread exists.
+message UsageResponse {
+  // The usage with its context fill; absent when there is no Thread by that
+  // id.
+  optional doric.runtime.v2.ThreadUsage thread_usage = 1;
+}
+
+// Delivers a background terminal's result; today's `TerminalResultInput`.
+message EnqueueTerminalResultRequest {
+  // The Thread.
+  string thread_id = 1;
+  // The prompt that started the terminal.
+  string prompt_id = 2;
+  // The terminal.
+  string terminal_id = 3;
+  // The result text.
+  string text = 4;
+}
+
+// The result is delivered, or the Thread is closed.
+message EnqueueTerminalResultResponse {}
+
+// Closes a Thread whose terminal result never arrived.
+message FailTerminalResultRequest {
+  // The Thread.
+  string thread_id = 1;
+}
+
+// The Thread is closed.
+message FailTerminalResultResponse {}
+
+// Watches one Thread.
+message WatchThreadRequest {
+  // The Thread, a UUID.
+  string thread_id = 1 [(buf.validate.field).string.uuid = true];
+  // Replay starts after this sequence, a whole number; 0 replays the whole
+  // log. A caller that opens the stream again sets it to the last sequence
+  // it received.
+  double after_sequence = 2 [
+    (buf.validate.field).double.gte = 0,
+    (buf.validate.field).cel = {
+      id: "after_sequence.integer"
+      message: "afterSequence must be a whole number"
+      expression: "this == double(int(this))"
+    }
+  ];
+}
+
+// One item of a Thread watch: the snapshot first, and only first, then live
+// events (each sequence once) and the Thread's notices; today's
+// `ThreadWatchItem`, named by its `kind`.
+message WatchThreadResponse {
+  // The item.
+  oneof item {
+    option (doric.platform.v1.oneof).discriminator = "kind";
+    option (buf.validate.oneof).required = true;
+    // `thread:snapshot`.
+    ThreadSnapshot snapshot = 1;
+    // `agent:event`: an event after the snapshot's last.
+    doric.runtime.v2.ThreadEvent event = 2;
+    // `thread:updated`.
+    doric.runtime.v2.Thread updated = 3;
+    // `thread:deleted`.
+    doric.runtime.v2.ThreadDeleted deleted = 4;
+  }
+}
+
+// Holds a view of one Thread.
+message ViewThreadRequest {
+  // The Thread, a UUID.
+  string thread_id = 1 [(buf.validate.field).string.uuid = true];
+}
+
+// The view is held; the only item of the stream. Today's `ThreadViewItem`.
+message ViewThreadResponse {
+  // Always "viewing".
+  string kind = 1 [(buf.validate.field).string.const = "viewing"];
+  // The viewed Thread, a UUID.
+  string thread_id = 2 [(buf.validate.field).string.uuid = true];
+}

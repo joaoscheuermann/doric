@@ -1,0 +1,66 @@
+// `log/v1` (host, 1.1.0): the structured log of the calling bundle. The
+// provider fills the bundle, version, generation and scope from the call; a
+// record carries only its level, message and fields. The SDK keeps a
+// synchronous facade that queues records and sends them with `WriteBatch`.
+//
+// 1.1.0: `debug`, `info`, `warn` and `error` are removed; `Write` and
+// `WriteBatch` replace them. It is a host contract only: a client part's
+// facade writes to `doric.log/v1`.
+syntax = "proto3";
+
+package doric.log.v1;
+
+import "buf/validate/validate.proto";
+import "doric/platform/v1/options.proto";
+import "google/protobuf/struct.proto";
+
+option (doric.platform.v1.contract) = {
+  id: "log/v1"
+  cardinality: CARDINALITY_ONE
+  environment: ENVIRONMENT_HOST
+};
+
+// The log of the calling bundle. A write never fails for the record's
+// content once it passes validation.
+service LogService {
+  // Writes one record.
+  rpc Write(WriteRequest) returns (WriteResponse);
+  // Writes the records of the stream, one per item, in order; answers when
+  // every record is written.
+  rpc WriteBatch(stream WriteBatchRequest) returns (WriteBatchResponse);
+}
+
+// One log record of the calling bundle.
+message LogRecord {
+  // "debug", "info", "warn" or "error".
+  string level = 1 [(buf.validate.field).string = {
+    in: [
+      "debug",
+      "info",
+      "warn",
+      "error"
+    ]
+  }];
+  // The message.
+  string message = 2;
+  // The record's structured fields; absent when it has none.
+  optional google.protobuf.Struct fields = 3;
+}
+
+// Writes one record.
+message WriteRequest {
+  // The record.
+  LogRecord record = 1 [(buf.validate.field).required = true];
+}
+
+// The record is written.
+message WriteResponse {}
+
+// One record of a batch.
+message WriteBatchRequest {
+  // The record.
+  LogRecord record = 1 [(buf.validate.field).required = true];
+}
+
+// Every record of the batch is written.
+message WriteBatchResponse {}

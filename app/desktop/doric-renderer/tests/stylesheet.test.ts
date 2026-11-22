@@ -95,6 +95,9 @@ describe('window stylesheets', () => {
   let shell: Root;
   let chat: Root;
   let layout: Root;
+  let files: Root;
+  let git: Root;
+  let terminal: Root;
 
   before(async () => {
     const themeSheet = join(
@@ -113,6 +116,17 @@ describe('window stylesheets', () => {
     );
     chat = await compile(chatSheet, dirname(chatSheet));
     layout = await compile(layoutSheet, dirname(layoutSheet));
+    const featureSheet = (name: string) =>
+      join(repository, `bundles/features/${name}/src/client/styles.css`);
+    files = await compile(
+      featureSheet('files'),
+      dirname(featureSheet('files')),
+    );
+    git = await compile(featureSheet('git'), dirname(featureSheet('git')));
+    terminal = await compile(
+      featureSheet('terminal'),
+      dirname(featureSheet('terminal')),
+    );
   });
 
   test('every utility the theme emits comes again, in the same order, in the shell sheet', () => {
@@ -299,8 +313,9 @@ describe('window stylesheets', () => {
         ".conversation-scroll [data-trail-highlight='strong']",
       ),
     );
-    assert.ok(unlayered(layout, monacoSlider));
-    assert.ok(allSelectors(layout).has(xtermSlider));
+    assert.ok(unlayered(files, monacoSlider));
+    assert.ok(unlayered(git, monacoSlider));
+    assert.ok(allSelectors(terminal).has(xtermSlider));
   });
 
   test('the layout sheet adds no utilities of its own', () => {

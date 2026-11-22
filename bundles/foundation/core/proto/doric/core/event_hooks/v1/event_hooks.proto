@@ -1,0 +1,31 @@
+// `core.event-hooks/v1` (host, 1.1.0): the hooks `core` defines in the host's
+// `hooks/v1` while it writes the streams of event sinks. It is a host hooks
+// contract that crosses gRPC until phase 4 removes it, when
+// `events/v1`'s handler service `EventSinkService` replaces it and `runtime`
+// writes its own stream. Each message of this file is
+// the input of one hook; a bundle registers a handler with
+// `hooks/v1.Register` and `core` runs it with `hooks/v1.Run`.
+//
+// 1.1.0: the schema moves from zod to `.proto` with the same fields.
+syntax = "proto3";
+
+package doric.core.event_hooks.v1;
+
+import "doric/platform/v1/options.proto";
+
+option (doric.platform.v1.hooks) = {id: "core.event-hooks/v1"};
+
+// `events/v1.Append` committed a row to the stream of an event sink. Fired
+// without waiting. It names the stream and the event type only, since `core`
+// knows no scope key of any sink; the sink's owner reads what it needs from
+// the stream itself.
+message OnEventAppendedHookInput {
+  option (doric.platform.v1.hook) = {
+    name: "onEventAppendedHook"
+    kind: HOOK_KIND_OBSERVE
+  };
+  // The stream the row was committed to.
+  string stream = 1;
+  // The row's event type.
+  string type = 2;
+}

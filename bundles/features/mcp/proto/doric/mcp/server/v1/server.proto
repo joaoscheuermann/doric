@@ -1,0 +1,91 @@
+// `mcp.server/v1` (host, 1.2.0): the storage type of one MCP server of a
+// Project, owned by `mcp`, listed per Project in creation order.
+// `createdKey` is `createdAt + '|' + id`. No secret is ever stored here: a
+// token or a client secret is an MCP_TOKEN credential of `secrets/v1`, and
+// the document holds its id.
+//
+// 1.2.0: the schema moves from zod to `.proto` with the same fields.
+syntax = "proto3";
+
+package doric.mcp.server.v1;
+
+import "buf/validate/validate.proto";
+import "doric/mcp/v1/mcp.proto";
+import "doric/platform/v1/options.proto";
+import "google/protobuf/struct.proto";
+
+option (doric.platform.v1.contract) = {
+  id: "mcp.server/v1"
+  cardinality: CARDINALITY_ONE
+  environment: ENVIRONMENT_HOST
+};
+
+// The non-secret part of a server's OAuth state, with its credentials' ids.
+message StoredOAuth {
+  // The client the OAuth registration answered, as the authorization server
+  // gave it, with a non-empty string `client_id` and never a
+  // `client_secret`; absent before a registration.
+  optional google.protobuf.Struct client_information = 1 [(buf.validate.field).cel = {
+    id: "client_information.shape"
+    message: "client information needs a non-empty string client_id and no client_secret"
+    expression: "'client_id' in this && type(this['client_id']) == string && this['client_id'] != '' && !('client_secret' in this)"
+  }];
+  // What discovery found, with a string `authorizationServerUrl`; absent
+  // before a discovery.
+  optional google.protobuf.Struct discovery_state = 2 [(buf.validate.field).cel = {
+    id: "discovery_state.shape"
+    message: "discovery state needs a string authorizationServerUrl"
+    expression: "'authorizationServerUrl' in this && type(this['authorizationServerUrl']) == string"
+  }];
+  // The token type the token exchange answered; absent before one.
+  optional string token_type = 3;
+  // The scope the token exchange answered; absent when it named none.
+  optional string scope = 4;
+  // The credential holding the access token; absent when none is stored.
+  optional string access_credential_id = 5;
+  // The credential holding the refresh token; absent when none is stored.
+  optional string refresh_credential_id = 6;
+  // The credential holding the client secret; absent when none is stored.
+  optional string client_secret_credential_id = 7;
+}
+
+// One MCP server, as stored.
+message ServerDocument {
+  option (doric.platform.v1.storage_type) = {
+    type: "mcp.server/v1"
+    indexes: [
+      {
+        name: "byProject"
+        fields: [
+          "projectId",
+          "createdKey"
+        ]
+      }
+    ]
+  };
+  // The server name, as `mcp/v1` takes it.
+  string name = 1 [
+    (buf.validate.field).string.pattern = "^\\s*(\\S|\\S[\\s\\S]{0,62}\\S)\\s*$",
+    (buf.validate.field).cel = {
+      id: "name.slug"
+      message: "A server name needs a letter, a digit or \"-\"."
+      expression: "this.matches('[A-Za-z0-9-]')"
+    }
+  ];
+  // Whether the server runs.
+  bool enabled = 2;
+  // How to reach it.
+  doric.mcp.v1.McpTransport transport = 3 [(buf.validate.field).required = true];
+  // The server's id, a UUID.
+  string id = 4 [(buf.validate.field).string.uuid = true];
+  // The server's Project, a UUID.
+  string project_id = 5 [(buf.validate.field).string.uuid = true];
+  // `createdAt + '|' + id`, the sortable field of the `byProject` index.
+  string created_key = 6;
+  // When it was created (ISO-8601).
+  string created_at = 7;
+  // When it last changed (ISO-8601).
+  string updated_at = 8;
+  // Its OAuth state; absent before a sign-in or after a transport change.
+  optional StoredOAuth oauth = 9;
+}

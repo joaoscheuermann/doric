@@ -1,0 +1,109 @@
+// `regions/v1` (client, 1.1.0): the named regions of one window, each a list
+// of elements that client parts add. An item names the tag of its element;
+// its owner is the bundle that added it.
+//
+// 1.1.0: `items` is asynchronous; `Remove` replaces the `Disposable`;
+// `subscribe` becomes the stream `Watch`.
+syntax = "proto3";
+
+package doric.regions.v1;
+
+import "buf/validate/validate.proto";
+import "doric/platform/v1/options.proto";
+import "google/protobuf/struct.proto";
+
+option (doric.platform.v1.contract) = {
+  id: "regions/v1"
+  cardinality: CARDINALITY_ONE
+  environment: ENVIRONMENT_CLIENT
+};
+
+// The window's regions.
+service RegionsService {
+  // Adds an item to a region for the calling client part and answers a
+  // `registrationId`; a duplicate `(region, id)` is `registration_conflict`.
+  rpc Add(AddRequest) returns (AddResponse);
+  // Removes an item `Add` answered; an unknown id is a no-op.
+  rpc Remove(RemoveRequest) returns (RemoveResponse);
+  // A region's entries sorted by `order` ascending (absent order last), then
+  // by add order; the first item of `Watch` is the same value.
+  rpc Items(ItemsRequest) returns (ItemsResponse);
+  // Streams a region's entries: the present entries first, then the entries
+  // after every change of the region.
+  rpc Watch(WatchRequest) returns (stream WatchResponse) {
+    option (doric.platform.v1.method).resumable = true;
+  }
+}
+
+// An item of a region.
+message RegionItem {
+  // The item's id, unique within its region.
+  string id = 1;
+  // The tag of the item's element.
+  string tag = 2;
+  // The element's properties.
+  optional google.protobuf.Struct props = 3;
+  // The item's position, ascending; absent sorts last.
+  optional double order = 4;
+}
+
+// A region item with the bundle that added it.
+message RegionEntry {
+  // The item's id, unique within its region.
+  string id = 1;
+  // The tag of the item's element.
+  string tag = 2;
+  // The element's properties.
+  optional google.protobuf.Struct props = 3;
+  // The item's position, ascending; absent sorts last.
+  optional double order = 4;
+  // The id of the bundle that added the item.
+  string owner = 5;
+}
+
+// Adds an item to a region.
+message AddRequest {
+  // The region's name.
+  string region = 1;
+  // The item.
+  RegionItem item = 2 [(buf.validate.field).required = true];
+}
+
+// The item's registration.
+message AddResponse {
+  // The id `Remove` takes.
+  string registration_id = 1;
+}
+
+// Removes an item.
+message RemoveRequest {
+  // The id `Add` answered.
+  string registration_id = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+// The item is gone.
+message RemoveResponse {}
+
+// Asks a region's entries.
+message ItemsRequest {
+  // The region's name.
+  string region = 1;
+}
+
+// A region's entries.
+message ItemsResponse {
+  // The entries, in region order.
+  repeated RegionEntry items = 1;
+}
+
+// Asks a region's entries as they change.
+message WatchRequest {
+  // The region's name.
+  string region = 1;
+}
+
+// A region's entries after a change.
+message WatchResponse {
+  // The entries, in region order.
+  repeated RegionEntry items = 1;
+}

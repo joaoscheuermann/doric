@@ -1,0 +1,177 @@
+// `openui.questions/v1` (host, 1.1.0): the question form's service, provided
+// by the `openui` host part; both methods are exposed to the desktop with the
+// call scope `projectId`, `threadId`. A question is its `promptId` and the
+// SHA-256 of its parsed `questions`; the same questions of another prompt are
+// another question.
+//
+// Errors: `invalid_scope` when the call scope lacks the Project or the
+// Thread; `invalid_input` for a request that fails its rules, or answers that
+// do not fit the questions; `unavailable` ("The Thread did not take the
+// answers.") when the answers were not sent, with the detail `status` or
+// `reason`. A failed log read or append fails the call with that error.
+//
+// What stays true: the first answer is final; answers are sent to the Thread
+// at most once per accepted call, and recorded only after they were sent.
+//
+// 1.1.0: the schemas move from zod to `.proto` with the same fields; a
+// question's state is the case of a oneof; keys the messages do not declare
+// are dropped.
+syntax = "proto3";
+
+package doric.openui.questions.v1;
+
+import "buf/validate/validate.proto";
+import "doric/platform/v1/options.proto";
+
+option (doric.platform.v1.contract) = {
+  id: "openui.questions/v1"
+  cardinality: CARDINALITY_ONE
+  environment: ENVIRONMENT_HOST
+};
+
+// The question service.
+service QuestionsService {
+  // `answered` with the answers of the first matching `openui.answered/v1`
+  // row of the Thread's log, else `pending`.
+  rpc Status(StatusRequest) returns (StatusResponse) {
+    option (doric.platform.v1.method).expose = EXPOSE_DESKTOP;
+  }
+  // Answers a pending question: sends the formatted answers as the reader's
+  // next message by the composer's route, then appends `openui.answered/v1`
+  // under the prompt that took them, and answers `answered`. An already
+  // answered question is answered unchanged, without sending. An agent's
+  // Thread, an unknown one or one of another Project is `unavailable` with
+  // nothing sent. Calls for one question run one at a time.
+  rpc Answer(AnswerRequest) returns (AnswerResponse) {
+    option (doric.platform.v1.method).expose = EXPOSE_DESKTOP;
+  }
+}
+
+// One choice of a question; its `label` is unique within its question.
+message AskOption {
+  // The choice's text: 1 to 120 characters, not blank.
+  string label = 1 [
+    (buf.validate.field).string.max_len = 120,
+    (buf.validate.field).string.pattern = "\\S"
+  ];
+  // What the choice means: 1 to 300 characters, not blank; absent for none.
+  optional string description = 2 [
+    (buf.validate.field).string.max_len = 300,
+    (buf.validate.field).string.pattern = "\\S"
+  ];
+  // True when the form recommends the choice; absent is false.
+  optional bool recommended = 3;
+}
+
+// One multiple-choice question: 2 to 6 options with distinct labels.
+message AskQuestion {
+  option (buf.validate.message).cel = {
+    id: "ask_question.unique_labels"
+    message: "Option labels must be unique within a question."
+    expression: "this.options.map(o, o.label).unique()"
+  };
+  // The question's id, unique within its form: 1 to 64 characters, not blank.
+  string id = 1 [
+    (buf.validate.field).string.max_len = 64,
+    (buf.validate.field).string.pattern = "\\S"
+  ];
+  // The question's text: 1 to 500 characters, not blank.
+  string question = 2 [
+    (buf.validate.field).string.max_len = 500,
+    (buf.validate.field).string.pattern = "\\S"
+  ];
+  // The choices, 2 to 6.
+  repeated AskOption options = 3 [(buf.validate.field).repeated = {
+    min_items: 2
+    max_items: 6
+  }];
+  // True when the reader may pick several choices; absent is false.
+  optional bool multi_select = 4;
+  // True when the reader may write a free answer; absent is false.
+  optional bool allow_other = 5;
+}
+
+// A question form: 1 to 5 questions with distinct ids, and an optional
+// context.
+message AskInput {
+  option (buf.validate.message).cel = {
+    id: "ask_input.unique_ids"
+    message: "Question ids must be unique within an ask."
+    expression: "this.questions.map(q, q.id).unique()"
+  };
+  // The text shown above the questions: 1 to 1000 characters, not blank;
+  // absent for none.
+  optional string context = 1 [
+    (buf.validate.field).string.max_len = 1000,
+    (buf.validate.field).string.pattern = "\\S"
+  ];
+  // The questions, 1 to 5.
+  repeated AskQuestion questions = 2 [(buf.validate.field).repeated = {
+    min_items: 1
+    max_items: 5
+  }];
+}
+
+// The reader's answer to one question: the labels picked and the free
+// answer.
+message AskAnswer {
+  // The question's id.
+  string id = 1 [(buf.validate.field).string.min_len = 1];
+  // The labels of the choices picked; empty for none.
+  repeated string options = 2;
+  // The free answer; absent for none.
+  optional string other = 3;
+}
+
+// A question that has no answer yet.
+message QuestionPending {}
+
+// A question's final answers.
+message QuestionAnswered {
+  // The answers, as first recorded; empty for none.
+  repeated AskAnswer answers = 1;
+}
+
+// Whether a question is answered.
+message QuestionState {
+  // The state.
+  oneof state {
+    option (doric.platform.v1.oneof).discriminator = "state";
+    option (buf.validate.oneof).required = true;
+    // No answer was recorded.
+    QuestionPending pending = 1;
+    // The first recorded answer.
+    QuestionAnswered answered = 2;
+  }
+}
+
+// Asks one question's state.
+message StatusRequest {
+  // The prompt that wrote the question fence: the first part of its key.
+  string prompt_id = 1 [(buf.validate.field).string.min_len = 1];
+  // The questions as the app parsed them from the closed fence.
+  AskInput questions = 2 [(buf.validate.field).required = true];
+}
+
+// The question's state.
+message StatusResponse {
+  // The state.
+  QuestionState question_state = 1 [(buf.validate.field).required = true];
+}
+
+// Answers one question.
+message AnswerRequest {
+  // The prompt that wrote the question fence: the first part of its key.
+  string prompt_id = 1 [(buf.validate.field).string.min_len = 1];
+  // The questions as the app parsed them from the closed fence.
+  AskInput questions = 2 [(buf.validate.field).required = true];
+  // The reader's answers; they must fit the questions (`invalid_input`
+  // otherwise).
+  repeated AskAnswer answers = 3;
+}
+
+// The question's state after the call: `answered`.
+message AnswerResponse {
+  // The state.
+  QuestionState question_state = 1 [(buf.validate.field).required = true];
+}

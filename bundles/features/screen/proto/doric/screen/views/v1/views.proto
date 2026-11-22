@@ -1,0 +1,161 @@
+// `screen.views/v1` (client, 1.1.0): the reader's own views of Project
+// screens, provided by the `screen` bundle's client part, one list per
+// desktop; only client parts of the same window reach it. A view is what the
+// reader spawns from the window's sidebar: an id, a label and the Project it
+// watches. The provider calls `screen.sessions/v2.Attach` itself and maps each
+// answer to the view's status. A read never fails because a view could not
+// be resolved: every failure is a status.
+//
+// 1.1.0: `watch` becomes the server stream `Watch`; the state's `dials` and
+// the method `deliver` are removed, since the provider calls
+// `screen.sessions/v2` itself; a status's `kind` is the case of a oneof.
+syntax = "proto3";
+
+package doric.screen.views.v1;
+
+import "buf/validate/validate.proto";
+import "doric/platform/v1/options.proto";
+import "doric/screen/sessions/v2/sessions.proto";
+
+option (doric.platform.v1.contract) = {
+  id: "screen.views/v1"
+  cardinality: CARDINALITY_ONE
+  environment: ENVIRONMENT_CLIENT
+};
+
+// The reader's screen views.
+service ViewsService {
+  // The views, in the order they were added.
+  rpc List(ListRequest) returns (ListResponse);
+  // Spawns a view for a Project; a Project already watched answers that view.
+  rpc Add(AddRequest) returns (AddResponse);
+  // Removes a view; an unknown id is a no-op.
+  rpc Remove(RemoveRequest) returns (RemoveResponse);
+  // Opens the view's window, or focuses it when it is already open; an
+  // unknown id is a no-op.
+  rpc Open(OpenRequest) returns (OpenResponse);
+  // Asks a fresh attach for the view; the retry control and the heal loop
+  // use it.
+  rpc Retry(RetryRequest) returns (RetryResponse);
+  // Streams the views: the present state first, unless the caller already
+  // holds its revision, then one item after every change. Each item is a
+  // whole state. The caller ends it by cancelling.
+  rpc Watch(WatchRequest) returns (stream WatchResponse) {
+    option (doric.platform.v1.method).resumable = true;
+  }
+}
+
+// The view's screen is not resolved yet.
+message ScreenViewWaiting {}
+
+// The view's screen could not be reached.
+message ScreenViewFailed {}
+
+// What one view reads as: the four states a sidebar row shows.
+message ScreenViewStatus {
+  // The state.
+  oneof kind {
+    option (doric.platform.v1.oneof).discriminator = "kind";
+    option (buf.validate.oneof).required = true;
+    // Not resolved yet.
+    ScreenViewWaiting waiting = 1;
+    // The screen is served.
+    doric.screen.sessions.v2.ScreenReady ready = 2;
+    // The host answered that the screen cannot be served.
+    doric.screen.sessions.v2.ScreenUnavailable unavailable = 3;
+    // The host could not be reached.
+    ScreenViewFailed failed = 4;
+  }
+}
+
+// One view.
+message ScreenView {
+  // The view's id.
+  string id = 1 [(buf.validate.field).string.min_len = 1];
+  // The view's label.
+  string label = 2 [(buf.validate.field).string.min_len = 1];
+  // The Project whose screen the view watches.
+  string project_id = 3 [(buf.validate.field).string.min_len = 1];
+  // The view's status.
+  ScreenViewStatus status = 4 [(buf.validate.field).required = true];
+}
+
+// Asks the views.
+message ListRequest {}
+
+// The views.
+message ListResponse {
+  // The views, in the order they were added; empty for none.
+  repeated ScreenView views = 1;
+}
+
+// Spawns a view.
+message AddRequest {
+  // The Project whose screen the view watches.
+  string project_id = 1 [(buf.validate.field).string.min_len = 1];
+  // The view's label; absent, the view is named after its Project id.
+  optional string label = 2 [(buf.validate.field).string.min_len = 1];
+}
+
+// The view spawned, or the one already watching the Project.
+message AddResponse {
+  // The view.
+  ScreenView screen_view = 1 [(buf.validate.field).required = true];
+}
+
+// Removes a view.
+message RemoveRequest {
+  // The view's id.
+  string view_id = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+// The view is gone.
+message RemoveResponse {}
+
+// Opens a view's window.
+message OpenRequest {
+  // The view's id.
+  string view_id = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+// The view's window is open and focused.
+message OpenResponse {}
+
+// Asks a fresh attach for a view.
+message RetryRequest {
+  // The view's id.
+  string view_id = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+// The attach is asked.
+message RetryResponse {}
+
+// Opens the stream of the views.
+message WatchRequest {
+  // The revision the caller already holds, a whole number; 0 when it holds
+  // none.
+  double revision = 1 [
+    (buf.validate.field).double.gte = 0,
+    (buf.validate.field).cel = {
+      id: "revision.integer"
+      message: "revision must be a whole number"
+      expression: "this == double(int(this))"
+    }
+  ];
+}
+
+// The views at one revision.
+message WatchResponse {
+  // The state's revision, a whole number from 1; it grows on every change.
+  double revision = 1 [
+    (buf.validate.field).double.gte = 1,
+    (buf.validate.field).cel = {
+      id: "revision.integer"
+      message: "revision must be a whole number"
+      expression: "this == double(int(this))"
+    }
+  ];
+  // Every view with its status, in the order they were added; empty for
+  // none.
+  repeated ScreenView views = 2;
+}

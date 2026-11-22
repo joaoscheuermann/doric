@@ -1,0 +1,59 @@
+# Runs from the repository root, once per owning project, with
+# `-o <projectRoot>`: `npx buf generate --template buf.gen.yaml --path
+# <projectRoot>/proto/doric -o <projectRoot>` writes into <projectRoot>/src/contracts/gen/
+# (spec, section 8, "Generated code across packages"). Each `map_imports`
+# names the project that owns the `.proto` files of a directory, so a
+# generated file imports another project's generated file through that
+# project's export `./contracts/gen/*`; `buf/validate` and `google/rpc` are
+# generated in `packages/bundle` only.
+version: v2
+plugins:
+  - local: protoc-gen-es
+    out: src/contracts/gen
+    opt:
+      - target=ts
+      - import_extension=js
+      - map_imports=doric/platform/:bundle/contracts/gen
+      - map_imports=doric/hooks/v1/:bundle/contracts/gen
+      - map_imports=doric/log/v1/:bundle/contracts/gen
+      - map_imports=doric/tools/v1/:bundle/contracts/gen
+      - map_imports=doric/skills/v1/:bundle/contracts/gen
+      - map_imports=doric/settings/v1/:bundle/contracts/gen
+      - map_imports=doric/secrets/:bundle/contracts/gen
+      - map_imports=doric/storage/:bundle/contracts/gen
+      - map_imports=doric/events/v1/:bundle/contracts/gen
+      - map_imports=doric/models/:bundle/contracts/gen
+      - map_imports=doric/commands/v1/:bundle/contracts/gen
+      - map_imports=doric/ui/v1/:bundle/contracts/gen
+      - map_imports=doric/navigation/v1/:bundle/contracts/gen
+      - map_imports=doric/regions/v1/:bundle/contracts/gen
+      - map_imports=doric/windows/v1/:bundle/contracts/gen
+      - map_imports=doric/menus/v1/:bundle/contracts/gen
+      - map_imports=doric/files/:files/contracts/gen
+      - map_imports=doric/host_config/:host-config/contracts/gen
+      - map_imports=doric/runtime/:runtime/contracts/gen
+      - map_imports=doric/sandbox/:runtime/contracts/gen
+      - map_imports=doric/executor/:runtime/contracts/gen
+      - map_imports=doric/default/:default/contracts/gen
+      - map_imports=doric/terminal/:terminal/contracts/gen
+      - map_imports=doric/git/:git/contracts/gen
+      - map_imports=doric/usage/:usage/contracts/gen
+      - map_imports=doric/resources/:resources/contracts/gen
+      - map_imports=doric/core/:core/contracts/gen
+      - map_imports=doric/comments/:comments/contracts/gen
+      - map_imports=doric/history/:history/contracts/gen
+      - map_imports=doric/layout/:layout/contracts/gen
+      - map_imports=doric/claude/:claude-login/contracts/gen
+      - map_imports=doric/screen/relay/:screen-relay/contracts/gen
+      - map_imports=doric/screen/sessions/:screen/contracts/gen
+      - map_imports=doric/screen/views/:screen/contracts/gen
+      - map_imports=doric/workspace/:workspace/contracts/gen
+      - map_imports=doric/mcp/:mcp/contracts/gen
+      - map_imports=doric/openui/:openui/contracts/gen
+      - map_imports=doric/settings/config/:settings/contracts/gen
+      - map_imports=doric/settings/models/:settings/contracts/gen
+      - map_imports=doric/chat/:chat/contracts/gen
+      - map_imports=doric/papercraft/:papercraft/contracts/gen
+      - map_imports=doric/api/:transport/contracts/gen
+      - map_imports=buf/validate/:bundle/contracts/gen
+      - map_imports=google/rpc/:bundle/contracts/gen

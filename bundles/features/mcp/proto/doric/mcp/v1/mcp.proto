@@ -1,0 +1,376 @@
+// `mcp/v1` (host, 1.3.0): the MCP (Model Context Protocol) servers a Project
+// connects to, and the tools they give its prompts. A server is either
+// remote (`http`: Streamable HTTP, optionally behind OAuth) or a command the
+// Project's sandbox runs (`stdio`). A connected server's tools are
+// registered with `tools/v1` under its Project, so only that Project's
+// prompts see them, named `mcp__<server slug>__<tool>`.
+//
+// Every method is Project-scoped: it reads the call scope's `projectId`, and
+// a call without it fails with `INVALID_ARGUMENT`, reason `invalid_input`,
+// message "mcp/v1 needs a Project scope.". The bundle's own refusals fail
+// with `FAILED_PRECONDITION` and the code as the reason:
+//
+// - `mcp_server_missing` (`Update`, `Remove`, `SignIn`, `FinishSignIn`,
+//   `ReadSkill`): the Project holds no server with that id.
+// - `mcp_server_name_taken` (`Create`, `Update`): another server of the
+//   Project has a name with the same slug.
+// - `mcp_signin_unsupported` (`SignIn`): the server is a `stdio` one.
+// - `mcp_signin_not_started` (`FinishSignIn`): no sign-in of that server
+//   waits.
+// - `mcp_signin_busy` (`FinishSignIn`): another `FinishSignIn` waits on it.
+// - `mcp_signin_aborted` (`SignIn`, `FinishSignIn`): the caller cancelled, a
+//   newer `SignIn` of the same server replaced it, or the server changed its
+//   transport or URL, or was removed.
+// - `mcp_signin_failed` (`SignIn`, `FinishSignIn`): discovery, registration,
+//   the authorization or the token exchange failed; the message says which.
+// - `mcp_skill_unavailable` (`ReadSkill`): the server is not connected, does
+//   not list that skill now, or its read failed, timed out or answered no
+//   text.
+//
+// Messages never hold a credential's secret.
+//
+// 1.3.0: the schema moves from zod to `.proto` with the same fields; `watch`
+// becomes the stream `Watch`; an empty `scopes` is the server's own choice,
+// as an absent one was (an empty list was refused).
+syntax = "proto3";
+
+package doric.mcp.v1;
+
+import "buf/validate/validate.proto";
+import "doric/platform/v1/options.proto";
+
+option (doric.platform.v1.contract) = {
+  id: "mcp/v1"
+  cardinality: CARDINALITY_ONE
+  environment: ENVIRONMENT_HOST
+};
+
+// The MCP servers of the Project of the call's scope.
+service McpService {
+  // The Project's servers in creation order, with their live state. A read:
+  // it never starts a connection.
+  rpc List(ListRequest) returns (ListResponse) {
+    option (doric.platform.v1.method).expose = EXPOSE_DESKTOP;
+  }
+  // Stores a new server and answers it; an enabled one connects when its
+  // Project is watched. `mcp_server_name_taken`; `invalid_input` when an
+  // entry names an MCP_TOKEN credential (the sign-in of a server).
+  rpc Create(CreateRequest) returns (CreateResponse) {
+    option (doric.platform.v1.method).expose = EXPOSE_DESKTOP;
+  }
+  // Replaces the server's name, `enabled` and transport and reconnects it
+  // (or stops it when disabled), answering the stored view. An update that
+  // changes the transport kind or the http URL drops the stored OAuth state,
+  // deletes its MCP_TOKEN credentials and cancels its waiting sign-in. One
+  // that changes only the client name or the scopes keeps the tokens: the
+  // next sign-in registers a client under the new name and asks for the new
+  // scopes. One that changes the client info reconnects the server.
+  // `mcp_server_missing`, `mcp_server_name_taken`, `invalid_input` (as
+  // `Create`).
+  rpc Update(UpdateRequest) returns (UpdateResponse) {
+    option (doric.platform.v1.method).expose = EXPOSE_DESKTOP;
+  }
+  // Stops the server, unregisters its tools, deletes the MCP_TOKEN
+  // credentials its sign-in stored, then the server, and cancels its waiting
+  // sign-in. `mcp_server_missing`.
+  rpc Remove(RemoveRequest) returns (RemoveResponse) {
+    option (doric.platform.v1.method).expose = EXPOSE_DESKTOP;
+  }
+  // Streams the Project's servers (as `List`): the present list first, then
+  // the whole list after every change of a server or of its state. Watching
+  // connects every enabled server of the Project that is not connected yet;
+  // ending the last watch keeps the connections.
+  rpc Watch(WatchRequest) returns (stream WatchResponse) {
+    option (doric.platform.v1.method).expose = EXPOSE_DESKTOP;
+    option (doric.platform.v1.method).resumable = true;
+  }
+  // Prepares a browser OAuth sign-in of an `http` server and answers the
+  // authorization URL to open; a sign-in of the same server already waiting
+  // is replaced, another server's is left alone. The client registers under
+  // the transport's `clientName`, replacing one stored under another name or
+  // redirect, and the registration and the URL ask for the transport's
+  // `scopes` when it sets them. `mcp_server_missing`,
+  // `mcp_signin_unsupported`, `mcp_signin_aborted`, `mcp_signin_failed`
+  // (discovery or client registration failed).
+  rpc SignIn(SignInRequest) returns (SignInResponse) {
+    option (doric.platform.v1.method).expose = EXPOSE_DESKTOP;
+  }
+  // Waits for the browser to answer the started sign-in, stores the tokens
+  // as MCP_TOKEN credentials, reconnects the server and answers its view.
+  // `mcp_server_missing`, `mcp_signin_not_started`, `mcp_signin_busy`,
+  // `mcp_signin_aborted`, `mcp_signin_failed`.
+  rpc FinishSignIn(FinishSignInRequest) returns (FinishSignInResponse) {
+    option (doric.platform.v1.method).expose = EXPOSE_DESKTOP;
+  }
+  // Host only: reads one skill a connected server lists now (its `skills`)
+  // with `resources/read`, once per call, never cached.
+  // `mcp_server_missing` when the Project holds no server with that id
+  // (another Project's included); `mcp_skill_unavailable`.
+  rpc ReadSkill(ReadSkillRequest) returns (ReadSkillResponse);
+}
+
+// One header or environment variable: a literal value, or the secret of a
+// stored credential, read when the server connects and never shown back.
+message McpEntry {
+  // The header or variable name; the transport sets its form.
+  string name = 1;
+  // Where the value comes from.
+  oneof source {
+    option (buf.validate.oneof).required = true;
+    // The literal value.
+    string value = 2;
+    // The id of the `secrets/v1` credential whose `secret` is the value.
+    string credential_id = 3 [(buf.validate.field).string.min_len = 1];
+  }
+}
+
+// Who Doric says it is in the MCP `initialize` request (its `clientInfo`);
+// an absent field is "doric" for the name and "1.0.0" for the version.
+message McpClientInfo {
+  // The client name; trimmed by the provider, 1 to 128 characters once
+  // trimmed.
+  optional string name = 1 [(buf.validate.field).string.pattern = "^\\s*(\\S|\\S[\\s\\S]{0,126}\\S)\\s*$"];
+  // The client version; trimmed by the provider, 1 to 64 characters once
+  // trimmed.
+  optional string version = 2 [(buf.validate.field).string.pattern = "^\\s*(\\S|\\S[\\s\\S]{0,62}\\S)\\s*$"];
+}
+
+// The Streamable HTTP transport.
+message McpHttpTransport {
+  // The server's `http:` or `https:` URL.
+  string url = 1 [
+    (buf.validate.field).string.uri = true,
+    (buf.validate.field).cel = {
+      id: "url.http"
+      message: "url must be an http or https URL"
+      expression: "this.startsWith('http://') || this.startsWith('https://')"
+    }
+  ];
+  // Extra request headers; empty for none. Each name is an RFC 7230 token.
+  repeated McpEntry headers = 2 [(buf.validate.field).repeated.items.cel = {
+    id: "headers.name"
+    message: "a header name must be an RFC 7230 token"
+    expression: "this.name.matches('^[!#$%&\\'*+\\\\-.^_`|~0-9A-Za-z]+$')"
+  }];
+  // The `client_name` the sign-in's dynamic client registration sends;
+  // trimmed by the provider, 1 to 128 characters once trimmed. Absent is
+  // "Doric".
+  optional string client_name = 3 [(buf.validate.field).string.pattern = "^\\s*(\\S|\\S[\\s\\S]{0,126}\\S)\\s*$"];
+  // The OAuth scopes a sign-in asks for, in place of the ones the server's
+  // 401 or protected-resource metadata names; empty is the server's own
+  // choice. Each is an RFC 6749 scope token.
+  repeated string scopes = 4 [(buf.validate.field).repeated.items.string.pattern = "^[\\x21\\x23-\\x5B\\x5D-\\x7E]+$"];
+  // How the connection introduces itself.
+  optional McpClientInfo client_info = 5;
+}
+
+// A command the Project's sandbox runs, spoken to over stdio.
+message McpStdioTransport {
+  // The program.
+  string command = 1 [(buf.validate.field).string.min_len = 1];
+  // Its arguments; empty for none.
+  repeated string args = 2;
+  // The working directory; absent is the sandbox's default.
+  optional string cwd = 3 [(buf.validate.field).string.min_len = 1];
+  // Variables added to its environment; empty for none. Each name is one a
+  // POSIX shell accepts.
+  repeated McpEntry env = 4 [(buf.validate.field).repeated.items.cel = {
+    id: "env.name"
+    message: "an environment variable name must match [A-Za-z_][A-Za-z0-9_]*"
+    expression: "this.name.matches('^[A-Za-z_][A-Za-z0-9_]*$')"
+  }];
+  // How the connection introduces itself.
+  optional McpClientInfo client_info = 5;
+}
+
+// How Doric reaches the server, named as today's `kind`.
+message McpTransport {
+  // The transport.
+  oneof kind {
+    option (doric.platform.v1.oneof).discriminator = "kind";
+    option (buf.validate.oneof).required = true;
+    // Streamable HTTP, optionally behind OAuth.
+    McpHttpTransport http = 1;
+    // A command in the Project's sandbox.
+    McpStdioTransport stdio = 2;
+  }
+}
+
+// What the reader edits: the server's name, whether it runs, and how to
+// reach it.
+message McpServerInput {
+  // The server name; trimmed by the provider, 1 to 64 characters once
+  // trimmed, with at least one ASCII letter, digit or `-`, so its slug (the
+  // tool-name prefix) is never empty.
+  string name = 1 [
+    (buf.validate.field).string.pattern = "^\\s*(\\S|\\S[\\s\\S]{0,62}\\S)\\s*$",
+    (buf.validate.field).cel = {
+      id: "name.slug"
+      message: "A server name needs a letter, a digit or \"-\"."
+      expression: "this.matches('[A-Za-z0-9-]')"
+    }
+  ];
+  // False stops the server: nothing runs and no tool is registered.
+  bool enabled = 2;
+  // How to reach it.
+  McpTransport transport = 3 [(buf.validate.field).required = true];
+}
+
+// Where a server's connection stands.
+message McpServerStatus {
+  // "disabled" (`enabled` is false), "idle" (no watch of its Project has
+  // connected it yet), "connecting", "connected" (its tools are
+  // registered), "needs-sign-in" (OAuth is asked and no stored token works),
+  // "waiting-for-sandbox" (a `stdio` server whose Project holds no sandbox
+  // lease yet) or "error" (the last attempt failed).
+  string state = 1 [(buf.validate.field).string = {
+    in: [
+      "disabled",
+      "idle",
+      "connecting",
+      "connected",
+      "needs-sign-in",
+      "waiting-for-sandbox",
+      "error"
+    ]
+  }];
+  // Why, for "error", with every credential secret masked; absent
+  // otherwise.
+  optional string message = 2;
+}
+
+// One tool a connected server gives, as the Project's prompts see it.
+message McpToolView {
+  // The tool's name as the server gives it; the Doric tool name is
+  // `mcp__<server slug>__<this, sanitized>`.
+  string name = 1;
+  // Its title; absent when the server gives none.
+  optional string title = 2;
+  // Its description; absent when the server gives none.
+  optional string description = 3;
+}
+
+// One skill a connected server serves through the MCP Skills extension
+// (`io.modelcontextprotocol/skills`).
+message McpSkillView {
+  // The URI of its SKILL.md, unique within the server.
+  string uri = 1;
+  // Its frontmatter `name`.
+  string name = 2;
+  // Its frontmatter `description`.
+  string description = 3;
+}
+
+// One stored server of the Project, with its live state.
+message McpServerView {
+  // The server name.
+  string name = 1;
+  // Whether the server runs.
+  bool enabled = 2;
+  // How to reach it.
+  McpTransport transport = 3 [(buf.validate.field).required = true];
+  // The server's id.
+  string id = 4;
+  // The server's Project.
+  string project_id = 5;
+  // Where its connection stands.
+  McpServerStatus status = 6 [(buf.validate.field).required = true];
+  // Whether OAuth tokens are stored for it; always false for `stdio`.
+  bool signed_in = 7;
+  // Its registered tools; empty unless `status.state` is "connected".
+  repeated McpToolView tools = 8;
+  // The skills it lists (`skills/list`), in its order; empty unless it is
+  // connected, declared the Skills extension and its listing succeeded.
+  repeated McpSkillView skills = 9;
+}
+
+// Asks the Project's servers.
+message ListRequest {}
+
+// The Project's servers.
+message ListResponse {
+  // In creation order; empty for none.
+  repeated McpServerView servers = 1;
+}
+
+// Stores a new server.
+message CreateRequest {
+  // The server.
+  McpServerInput mcp_server_input = 1 [(buf.validate.field).required = true];
+}
+
+// The stored server.
+message CreateResponse {
+  // Its view.
+  McpServerView mcp_server_view = 1;
+}
+
+// Replaces a server.
+message UpdateRequest {
+  // The server's id.
+  string id = 1 [(buf.validate.field).string.min_len = 1];
+  // What replaces its name, `enabled` and transport.
+  McpServerInput mcp_server_input = 2 [(buf.validate.field).required = true];
+}
+
+// The stored server.
+message UpdateResponse {
+  // Its view.
+  McpServerView mcp_server_view = 1;
+}
+
+// Removes a server.
+message RemoveRequest {
+  // The server's id.
+  string id = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+// The server is gone.
+message RemoveResponse {}
+
+// Watches the Project's servers.
+message WatchRequest {}
+
+// The Project's servers after a change, or the present ones first.
+message WatchResponse {
+  // In creation order; empty for none.
+  repeated McpServerView servers = 1;
+}
+
+// Starts a sign-in.
+message SignInRequest {
+  // The server's id.
+  string id = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+// The sign-in to open.
+message SignInResponse {
+  // The authorization URL to open in the browser.
+  string url = 1;
+}
+
+// Finishes the started sign-in.
+message FinishSignInRequest {
+  // The server's id.
+  string id = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+// The signed-in server.
+message FinishSignInResponse {
+  // Its view.
+  McpServerView mcp_server_view = 1;
+}
+
+// Reads one skill of one of the Project's servers.
+message ReadSkillRequest {
+  // The server's id, as `List` gives it.
+  string id = 1 [(buf.validate.field).string.min_len = 1];
+  // The skill's `uri`, as `List` gives it.
+  string uri = 2 [(buf.validate.field).string.min_len = 1];
+}
+
+// The skill's text.
+message ReadSkillResponse {
+  // The whole SKILL.md text, frontmatter included.
+  string text = 1;
+}

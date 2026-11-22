@@ -1,0 +1,45 @@
+// `doric.migrations/v1` (platform 2.0.0): one-time copies of a window's
+// storage from the packaged origin, run by the platform. The caller chooses
+// only the key and the marker; the origins and the pages involved belong to
+// the platform. Electron main serves it to client parts.
+//
+// 2.0.0: served to client parts. No member changes.
+syntax = "proto3";
+
+package doric.platform.migrations.v1;
+
+import "buf/validate/validate.proto";
+import "doric/platform/v1/options.proto";
+
+option (doric.platform.v1.contract) = {
+  id: "doric.migrations/v1"
+  cardinality: CARDINALITY_ONE
+};
+
+// The window storage migrations.
+service MigrationsService {
+  // Copies one localStorage key from the packaged origin, once per marker,
+  // and answers the outcome.
+  rpc Storage(StorageRequest) returns (StorageResponse);
+}
+
+// One storage migration.
+message StorageRequest {
+  // The localStorage key to copy from the packaged origin.
+  string key = 1 [(buf.validate.field).string.pattern = "^[A-Za-z][A-Za-z0-9_.:-]{0,127}$"];
+  // The name of the desktop state record that marks the copy done.
+  string marker = 2 [(buf.validate.field).string.pattern = "^[A-Za-z][A-Za-z0-9_.-]{0,63}$"];
+}
+
+// The migration's outcome.
+message StorageResponse {
+  // "migrated", "none", "skipped" or "failed".
+  string result = 1 [(buf.validate.field).string = {
+    in: [
+      "migrated",
+      "none",
+      "skipped",
+      "failed"
+    ]
+  }];
+}

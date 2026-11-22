@@ -1,0 +1,138 @@
+// `default.agents/v1` (host, 1.1.0): the agents a Thread can be spawned as.
+// The built-in agents ship with the `default` bundle. The workspace agents are
+// the `<name>.md` files of `.agents/agents` in the working directory of the
+// call's Thread (`runtime.workspace/v1` `cwd` under the call's scope); a file
+// whose base name is not a valid agent name defines no agent. No method is
+// exposed beyond the bundles.
+//
+// An agent's name is 1 to 64 characters of lowercase ASCII letters, digits,
+// `_` and `-`, starting with a letter or a digit.
+//
+// 1.1.0: the schema moves from zod to `.proto` with the same fields.
+syntax = "proto3";
+
+package doric.default.agents.v1;
+
+import "buf/validate/validate.proto";
+import "doric/platform/v1/options.proto";
+
+option (doric.platform.v1.contract) = {
+  id: "default.agents/v1"
+  cardinality: CARDINALITY_ONE
+  environment: ENVIRONMENT_HOST
+};
+
+// The agents a Thread can be spawned as.
+service AgentsService {
+  // The agents defined now. A valid workspace agent replaces the built-in of
+  // the same name. An invalid workspace file is left out, and it still hides
+  // the built-in of the same name. Order: the built-ins that are not hidden,
+  // in shipped order, then the valid workspace agents in sorted file-name
+  // order. With no known working directory, the built-ins only. A sandbox
+  // that cannot be scanned counts as having no workspace agents. Never fails
+  // because of the workspace.
+  rpc List(ListRequest) returns (ListResponse);
+  // The full definition of one agent, chosen by the same rule as `List`; the
+  // file is read whole and checked again. Fails with:
+  // - `INVALID_ARGUMENT`, reason `invalid_input`: `name` is not a valid agent
+  //   name, before any read;
+  // - `NOT_FOUND`, reason `not_found`: no agent of that name is defined, with
+  //   the message `Agent "<name>" is not defined. Defined agents: <a>, <b>.`,
+  //   or `… No agent is defined.`, and details `{ name, agents }`;
+  // - `FAILED_PRECONDITION`, reason `invalid_definition`: the workspace file
+  //   exists but is invalid or cannot be read, with the message
+  //   `Agent "<name>" is invalid: <reason>.` and details
+  //   `{ name, path, reason }`.
+  // For an unchanged workspace it succeeds for exactly the names `List`
+  // answers, except a file longer than 4096 bytes whose instructions cite a
+  // name that is not a prompt variable: listed, then `invalid_definition`.
+  rpc Resolve(ResolveRequest) returns (ResolveResponse);
+}
+
+// One agent a Thread can be spawned as, without its instructions.
+message AgentSummary {
+  // The agent's name; unique among the agents `List` answers.
+  string name = 1 [(buf.validate.field).string.pattern = "^[a-z0-9][a-z0-9_-]{0,63}$"];
+  // When to use the agent, from its frontmatter; never empty.
+  string description = 2 [(buf.validate.field).string.min_len = 1];
+  // Where the agent is defined: "built-in" when it ships with the `default`
+  // bundle, "workspace" when it comes from `<cwd>/.agents/agents/<name>.md`.
+  string source = 3 [(buf.validate.field).string = {
+    in: [
+      "built-in",
+      "workspace"
+    ]
+  }];
+  // The frontmatter's model; absent when missing or blank.
+  optional string model = 4 [(buf.validate.field).string.min_len = 1];
+  // The frontmatter's reasoning effort: "none", "minimal", "low", "medium",
+  // "high", "xhigh" or "max"; absent when missing or blank. Whether the model
+  // accepts it is the executor's concern.
+  optional string effort = 5 [(buf.validate.field).string = {
+    in: [
+      "none",
+      "minimal",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ]
+  }];
+}
+
+// An agent with its instructions; the fields of `AgentSummary`, with the
+// same meaning and rules, and `instructions`.
+message AgentDefinition {
+  // The agent's name, as `AgentSummary.name`.
+  string name = 1 [(buf.validate.field).string.pattern = "^[a-z0-9][a-z0-9_-]{0,63}$"];
+  // When to use the agent, as `AgentSummary.description`.
+  string description = 2 [(buf.validate.field).string.min_len = 1];
+  // Where the agent is defined, as `AgentSummary.source`.
+  string source = 3 [(buf.validate.field).string = {
+    in: [
+      "built-in",
+      "workspace"
+    ]
+  }];
+  // The frontmatter's model, as `AgentSummary.model`.
+  optional string model = 4 [(buf.validate.field).string.min_len = 1];
+  // The frontmatter's reasoning effort, as `AgentSummary.effort`.
+  optional string effort = 5 [(buf.validate.field).string = {
+    in: [
+      "none",
+      "minimal",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ]
+  }];
+  // The text after the frontmatter, trimmed: a raw mustache template that
+  // may cite only the prompt variables (`os`, `date`, `timezone`, `user`,
+  // `user.name`), not rendered yet. At most 64,000 characters, so it always
+  // fits a spawn (`runtime.threads/v1` `SpawnAgent.instructions`).
+  string instructions = 6 [(buf.validate.field).string.max_len = 64000];
+}
+
+// Asks for the agents defined now.
+message ListRequest {}
+
+// The agents defined now.
+message ListResponse {
+  // The agents, in the order `List` states; empty when none is defined.
+  repeated AgentSummary agents = 1;
+}
+
+// Asks for one agent's definition.
+message ResolveRequest {
+  // The agent's name.
+  string name = 1 [(buf.validate.field).string.pattern = "^[a-z0-9][a-z0-9_-]{0,63}$"];
+}
+
+// One agent's definition.
+message ResolveResponse {
+  // The agent, with its instructions.
+  AgentDefinition agent_definition = 1 [(buf.validate.field).required = true];
+}

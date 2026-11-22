@@ -1,0 +1,38 @@
+// `papercraft.pan/v1` (client command, 1.1.0): arms the canvas's pan (hand)
+// tool (keybinding `H`). One of the commands of the canvas window's command
+// bar: the bar's control and the keybinding both run it. The `papercraft`
+// client part registers it with `commands/v1`; a caller runs it with
+// `commands/v1.Execute`, the input below carried as its
+// `google.protobuf.Any`. The contract has no service. With no canvas to act
+// on, it does nothing.
+//
+// 1.1.0: the input moves from zod to `.proto` with the same fields.
+syntax = "proto3";
+
+package doric.papercraft.pan.v1;
+
+import "buf/validate/validate.proto";
+import "doric/platform/v1/options.proto";
+
+option (doric.platform.v1.contract) = {
+  id: "papercraft.pan/v1"
+  cardinality: CARDINALITY_ONE
+  environment: ENVIRONMENT_CLIENT
+};
+
+// The command's input: which canvas it acts on.
+message PanInput {
+  option (doric.platform.v1.command).id = "papercraft.pan/v1";
+
+  // The canvas; absent acts on the canvas last touched.
+  optional string canvas_id = 1 [(buf.validate.field).string.min_len = 1];
+  // A revision, a whole number from 1; this command ignores it.
+  optional double revision = 2 [
+    (buf.validate.field).double.gte = 1,
+    (buf.validate.field).cel = {
+      id: "revision.integer"
+      message: "revision must be a whole number"
+      expression: "this == double(int(this))"
+    }
+  ];
+}
