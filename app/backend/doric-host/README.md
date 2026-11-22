@@ -76,8 +76,9 @@ that file, so it is never committed. Compose reads it only to fill in the
 receives only the keys listed under its service's `environment:`. A
 `DORIC_PORT`, `DORIC_LOG_FILE`, `DORIC_COMPOSITION`, `DORIC_BUNDLES_PATH` or
 `DOCKER_HOST` set in `.env` therefore has no effect under Compose, and
-`DORIC_SANDBOX_IMAGE`, `DORIC_SANDBOX_DOCKER_SOCKET`, `DORIC_SANDBOX_CPUS` and
-`DORIC_SANDBOX_MEMORY_MIB` reach only the `docker` service. The image build
+`DORIC_SANDBOX_IMAGE`, `DORIC_SANDBOX_DOCKER_SOCKET`, `DORIC_SANDBOX_GPU`,
+`DORIC_SANDBOX_CPUS` and `DORIC_SANDBOX_MEMORY_MIB` reach only the `docker`
+service. The image build
 does not exclude the file:
 [`.dockerignore`](../../../.dockerignore) excludes `.env` and `.env.*` only at
 the repository root, and [`.Dockerfile`](.Dockerfile) copies `app/` whole, so an
@@ -94,6 +95,9 @@ image built while the file exists contains it.
   secrets, from `openssl rand -base64 32`; keep it across restarts.
 - `DORIC_SANDBOX_DOCKER_SOCKET=true`: shares the host's Docker socket with
   every Project sandbox; see [the sandbox image](#the-sandbox-image).
+- `# DORIC_SANDBOX_GPU=true`, commented out: uncommented, hands every GPU of
+  the daemon to each Project sandbox; see
+  [With GPU sandboxes on Windows](#with-gpu-sandboxes-on-windows).
 
 Build the sandbox image first (see [The sandbox image](#the-sandbox-image)),
 then:
@@ -140,7 +144,8 @@ completed successfully. Both reach PostgreSQL at
 set `DORIC_STORAGE_PATH` to it, default `DORIC_SANDBOX_SSH` to `true`, and pass
 `DORIC_CREDENTIAL_KEY` on. The `docker` service also passes
 `DORIC_SANDBOX_IMAGE` (default `doric-sandbox:local`),
-`DORIC_SANDBOX_DOCKER_SOCKET` (default `false`), `DORIC_SANDBOX_CPUS` and
+`DORIC_SANDBOX_DOCKER_SOCKET` and `DORIC_SANDBOX_GPU` (default `false`),
+`DORIC_SANDBOX_CPUS` and
 `DORIC_SANDBOX_MEMORY_MIB` (empty keeps the provider's defaults); the
 `firecracker` service sets none of them, so it runs `node:22-bookworm`
 ([Configuration](#configuration)).
@@ -224,6 +229,126 @@ acquisition fail and the Project end `failed` with `sandbox_acquisition_failed`
   directory `/var/lib/doric/firecracker` and the cache directory
   `/var/cache/doric/firecracker`. The `firecracker` Compose profile packages
   all of these.
+
+### With GPU sandboxes on Windows
+
+A Windows machine with an NVIDIA GPU can run the host under Docker Desktop and
+give every Project sandbox the GPU, for instance to train a model with CUDA.
+Docker Desktop runs Linux containers in a WSL2 virtual machine and hands them
+the GPU through the Windows NVIDIA driver, so no Linux GPU driver is
+installed. The host then runs as in [With Docker Compose](#with-docker-compose),
+with `DORIC_SANDBOX_GPU=true`
+([Sandboxes](../../../docs/features/sandboxes.md#docker)). The Docker Desktop
+specifics below, host networking and the egress firewall inside its virtual
+machine, are not covered by the repository's tests.
+
+1. **Prepare Windows.** Use Windows 11, or Windows 10 21H2 or later, with a
+   current NVIDIA driver for the GPU. In PowerShell as an administrator,
+   install or update WSL2 and an Ubuntu distribution:
+
+   ```powershell
+   wsl --install -d Ubuntu
+   wsl --update
+   ```
+
+2. **Size the virtual machine.** Docker Desktop's WSL2 backend gets the CPUs
+   and memory `%UserProfile%\.wslconfig` allows, by default half of the
+   memory. To give it more, write the file, for instance as below, then run
+   `wsl --shutdown`:
+
+   ```ini
+   [wsl2]
+   processors=16
+   memory=48GB
+   ```
+
+3. **Install Docker Desktop** with the WSL 2 based engine. In its settings,
+   turn on the integration with the Ubuntu distribution under
+   _Resources → WSL integration_, and turn on _Enable host networking_ under
+   _Resources → Network_: the `docker` service of
+   [`compose.yaml`](compose.yaml) runs with `network_mode: host`.
+
+4. **Check the GPU in a container**, from the Ubuntu shell:
+
+   ```sh
+   docker run --rm --gpus=all nvcr.io/nvidia/k8s/cuda-sample:nbody nbody -gpu -benchmark
+   ```
+
+   The benchmark names the GPU. If it fails, fix the driver, WSL or Docker
+   Desktop first: Doric cannot hand sandboxes a GPU this command does not get.
+
+5. **Clone inside the distribution**, for instance in `~/doric`, not under
+   `/mnt/c`: Linux line endings and file permissions are kept, and file access
+   from the containers stays fast.
+
+6. **Configure the deploy.** Copy [`.env.example`](.env.example) to `.env` and
+   fill it in as for [With Docker Compose](#with-docker-compose). Then
+   uncomment `DORIC_SANDBOX_GPU=true`, and size each sandbox to the virtual
+   machine of step 2, for instance:
+
+   ```sh
+   DORIC_SANDBOX_GPU=true
+   DORIC_SANDBOX_CPUS=16
+   DORIC_SANDBOX_MEMORY_MIB=49152
+   ```
+
+7. **Build and start**, from the repository root in the Ubuntu shell:
+
+   ```sh
+   docker build -f app/backend/doric-host/.sandbox.Dockerfile -t doric-sandbox:local app/backend/doric-host
+   cd app/backend/doric-host
+   docker compose --profile docker build
+   docker compose --profile docker up -d
+   docker compose --profile docker logs -f docker
+   ```
+
+   Wait for `Doric listening`. The line `Sandbox pool configured` reports
+   `gpusShared: true`.
+
+8. **Reach the host from another machine.** The host has no authentication of
+   its own, so never open its port to the network. Install the OpenSSH server
+   on Windows, in PowerShell as an administrator:
+
+   ```powershell
+   Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0
+   Start-Service sshd
+   Set-Service -Name sshd -StartupType Automatic
+   ```
+
+   Then, on the machine that runs the desktop app, forward the port and keep
+   the command running:
+
+   ```sh
+   ssh -N -L 3000:127.0.0.1:3000 <windows-user>@<windows-machine>
+   ```
+
+   The desktop app connects to `http://127.0.0.1:3000` by default
+   ([`DORIC_HOST_URL`](../../desktop/doric/README.md#configuration)), so it
+   reaches the Windows host through the tunnel.
+
+9. **Check the GPU in a Project.** Open a Project and run `nvidia-smi` in its
+   terminal: the device driver mounts the tool and the CUDA driver libraries
+   into the sandbox. The sandbox image ships `python3` but no machine learning
+   library; install the Project's own dependencies in the sandbox, for
+   instance PyTorch with CUDA, then check with
+   `python3 -c 'import torch; print(torch.cuda.is_available())'`.
+
+When a step fails:
+
+- `Docker cannot give the sandbox GPUs; the daemon needs a GPU device driver
+such as the NVIDIA Container Toolkit`: Docker Desktop does not see the GPU;
+  step 4 fails too.
+- `Docker egress requires access to the host network namespace` or
+  `Docker egress requires nftables CAP_NET_ADMIN access`: the `docker` service
+  did not get host networking (step 3) or the `NET_ADMIN` capability that
+  [`compose.yaml`](compose.yaml) grants
+  ([`host.ts`](../../../packages/docker-sandbox/src/lib/host.ts)).
+- The desktop app shows the host as unreachable: check that the tunnel of step
+  8 runs, and that `curl http://127.0.0.1:3000/projects` answers inside the
+  Ubuntu shell.
+- Projects that were created before the change keep their files: turning
+  `DORIC_SANDBOX_GPU` on or off replaces each Project's container at its next
+  acquisition, never its workspace volume.
 
 ## Configuration
 
@@ -310,6 +435,12 @@ generation process that inherits the host's environment and read the
   [`docker.ts`](../../../packages/docker-sandbox/src/lib/docker.ts),
   [`provider.ts`](../../../packages/docker-sandbox/src/lib/provider.ts)). See
   [the sandbox image](#the-sandbox-image).
+- `DORIC_SANDBOX_GPU` (default off): exactly `true` hands every Docker sandbox
+  every GPU of the daemon, as `docker run --gpus all` does. The daemon needs a
+  GPU device driver, such as the NVIDIA Container Toolkit, or Docker Desktop on
+  Windows with WSL2; without one, every acquisition fails
+  ([`docker/src/host/sandbox.ts`](../../../bundles/sandboxes/docker/src/host/sandbox.ts),
+  [`provider.ts`](../../../packages/docker-sandbox/src/lib/provider.ts)).
 - `DORIC_SANDBOX_CPUS` (default `4`): CPUs each Docker sandbox may use. Unset
   or empty keeps the default. Any value that is not a whole positive number
   makes the activation of the `docker` bundle fail with
@@ -663,7 +794,8 @@ In order:
      `sandboxProviderName`, then `Sandbox pool configured` with
      `sandboxProviderName`, `sandboxImage`, `sandboxResources`, `minIdle`,
      `maxSandboxes`, `maxCreateAttempts`, `networkMode: 'egress'`,
-     `sshEnabled` and, for `docker` only, `dockerSocketShared`. The pool itself
+     `sshEnabled` and, for `docker` only, `dockerSocketShared` and
+     `gpusShared`. The pool itself
      is built at activation
      ([`docker/src/host/start.ts`](../../../bundles/sandboxes/docker/src/host/start.ts),
      [`docker/src/host/sandbox.ts`](../../../bundles/sandboxes/docker/src/host/sandbox.ts),

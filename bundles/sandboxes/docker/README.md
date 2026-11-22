@@ -150,6 +150,7 @@ The host part reads these variables at activation
 | `DORIC_SANDBOX_IMAGE`         | `node:22-bookworm` | The image each sandbox runs                                  |
 | `DORIC_SANDBOX_SSH`           | off                | Exactly `true` enables SSH into each sandbox                 |
 | `DORIC_SANDBOX_DOCKER_SOCKET` | off                | Exactly `true` mounts the daemon's Unix socket into each one |
+| `DORIC_SANDBOX_GPU`           | off                | Exactly `true` hands each one every GPU of the daemon        |
 | `DORIC_SANDBOX_CPUS`          | `4`                | The CPUs each sandbox may use                                |
 | `DORIC_SANDBOX_MEMORY_MIB`    | `2048`             | The memory each sandbox may use, in MiB                      |
 
@@ -157,8 +158,8 @@ The host part reads these variables at activation
   present nor pullable fails the acquisition, and nothing falls back to the
   default. An empty value is used as the image too, unlike the CPU and memory
   settings.
-- `DORIC_SANDBOX_SSH` and `DORIC_SANDBOX_DOCKER_SOCKET` are on only for the
-  exact value `true`; any other value is off.
+- `DORIC_SANDBOX_SSH`, `DORIC_SANDBOX_DOCKER_SOCKET` and `DORIC_SANDBOX_GPU`
+  are on only for the exact value `true`; any other value is off.
 - `DORIC_SANDBOX_CPUS` and `DORIC_SANDBOX_MEMORY_MIB` take a whole positive
   number (`/^[1-9]\d*$/`). An unset or empty value keeps the default; any other
   value throws `<NAME> must be a whole positive number, got "<value>"`, which
@@ -172,8 +173,16 @@ The host part reads these variables at activation
   setting has no effect, although the start step still logs
   `dockerSocketShared: true`
   ([`docker.ts`](../../../packages/docker-sandbox/src/lib/docker.ts)).
+- Sharing the GPUs needs a GPU device driver on the daemon's machine, such as
+  the NVIDIA Container Toolkit, or Docker Desktop on Windows with WSL2 and an
+  NVIDIA driver. Without one, every acquisition fails with
+  `Docker cannot give the sandbox GPUs; …`
+  ([`docker-sandbox`](../../../packages/docker-sandbox/README.md#sharing-the-gpus)).
+  The host README walks through
+  [a GPU deploy on Windows](../../../app/backend/doric-host/README.md#with-gpu-sandboxes-on-windows).
 
-The Docker client is created with only `exposeDockerSocket` set, so it uses
+The Docker client is created with only `exposeDockerSocket` and `exposeGpus`
+set, so it uses
 the defaults of [`docker-sandbox`](../../../packages/docker-sandbox/README.md#options):
 the daemon at `/var/run/docker.sock` (or `DOCKER_HOST=unix://…`) on Unix and
 Docker's named pipe on Windows, the Dropbear binary for SSH at
@@ -194,7 +203,7 @@ The bundle itself does not read `DORIC_SANDBOX_PROVIDER`.
 From the settings, the host part builds
 ([`src/host/sandbox.ts`](src/host/sandbox.ts)):
 
-1. the Docker client, `createDockerClient({ exposeDockerSocket })`;
+1. the Docker client, `createDockerClient({ exposeDockerSocket, exposeGpus })`;
 2. the machine registry, `createVmRegistry('docker', client)`, which wraps the
    client's `provision` and records each provisioned runtime as
    `{ id, provider: 'docker' }` until its disposal completes; a runtime whose
@@ -282,10 +291,10 @@ when the host starts ([`src/host/start.ts`](src/host/start.ts)). It names the
 stage `sandbox_pool` through `doric.startup/v1.stage` and writes two `info`
 lines through `doric.startup/v1.log`, with the call the hook received:
 
-| Message                    | Fields                                                                                                                                                                                                                |
-| -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Configuring sandbox pool` | `sandboxProviderName: 'docker'`                                                                                                                                                                                       |
-| `Sandbox pool configured`  | `sandboxProviderName: 'docker'`, `sandboxImage`, `sandboxResources` (`{ cpuCount, memoryMiB, diskMiB }`), `minIdle`, `maxSandboxes`, `maxCreateAttempts`, `networkMode: 'egress'`, `sshEnabled`, `dockerSocketShared` |
+| Message                    | Fields                                                                                                                                                                                                                              |
+| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Configuring sandbox pool` | `sandboxProviderName: 'docker'`                                                                                                                                                                                                     |
+| `Sandbox pool configured`  | `sandboxProviderName: 'docker'`, `sandboxImage`, `sandboxResources` (`{ cpuCount, memoryMiB, diskMiB }`), `minIdle`, `maxSandboxes`, `maxCreateAttempts`, `networkMode: 'egress'`, `sshEnabled`, `dockerSocketShared`, `gpusShared` |
 
 The step only reports the settings: the pool is built at activation.
 
@@ -324,6 +333,9 @@ Deactivation keeps every workspace volume.
   quotas; elsewhere the container is created without it. It never bounds the
   workspace volume
   ([`docker-sandbox`](../../../packages/docker-sandbox/README.md#writable-layer-disk-limits)).
+- With `DORIC_SANDBOX_GPU=true`, every sandbox gets every GPU of the daemon:
+  the sandboxes share them, and nothing divides their memory or compute
+  between Projects.
 - An identity must match `/^[A-Za-z0-9][A-Za-z0-9_.-]*$/`
   ([`workspace.ts`](../../../packages/docker-sandbox/src/lib/workspace.ts)).
 

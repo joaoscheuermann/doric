@@ -99,6 +99,7 @@ export const createDockerClient = (
         statePath: options.statePath ?? '/var/lib/doric/docker',
         platform: process.platform,
         ...(dockerSocketPath === undefined ? {} : { dockerSocketPath }),
+        ...(options.exposeGpus === true ? { exposeGpus: true } : {}),
       }),
     async ping(control = {}) {
       await send({ method: 'GET', path: '/_ping', ...control }, 200);

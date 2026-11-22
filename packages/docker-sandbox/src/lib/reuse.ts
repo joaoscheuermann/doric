@@ -52,8 +52,28 @@ const settingsOf = (raw: Record<string, unknown>) => {
     dns: textList(host.Dns),
     binds: textList(host.Binds),
     portBindings: portBindingsOf(host.PortBindings),
+    deviceRequests: deviceRequestsOf(host.DeviceRequests),
   };
 };
+
+/**
+ * The devices a container asks for, as count and capabilities: Docker reports
+ * a request with an empty driver, null device ids and empty options, which the
+ * create body leaves out, so those fields do not decide reuse.
+ */
+const deviceRequestsOf = (value: unknown) =>
+  Array.isArray(value)
+    ? value.map((request) => {
+        const record = recordValue(request);
+
+        return {
+          count: numberValue(record.Count),
+          capabilities: Array.isArray(record.Capabilities)
+            ? record.Capabilities.map(textList)
+            : [],
+        };
+      })
+    : [];
 
 const textRecord = (value: unknown): Record<string, string> =>
   Object.fromEntries(

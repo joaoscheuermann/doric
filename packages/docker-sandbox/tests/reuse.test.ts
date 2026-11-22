@@ -157,3 +157,37 @@ void test('does not reuse a container that binds a different Docker socket', () 
 void test('does not reuse a container whose metadata omits its memory limit', () => {
   assert.equal(reusable(request(), reported({}, { Memory: undefined })), false);
 });
+
+/** A GPU request as the create body names it and as Docker reports it back. */
+const requestedGpus = {
+  DeviceRequests: [{ Count: -1, Capabilities: [['gpu']] }],
+};
+const reportedGpus = {
+  DeviceRequests: [
+    {
+      Driver: '',
+      Count: -1,
+      DeviceIDs: null,
+      Capabilities: [['gpu']],
+      Options: {},
+    },
+  ],
+};
+
+void test('reuses a container that has the GPUs the request asks for', () => {
+  assert.equal(
+    reusable(request(requestedGpus), reported({}, reportedGpus)),
+    true,
+  );
+});
+
+void test('does not reuse a container without GPUs when the request asks for them', () => {
+  assert.equal(
+    reusable(request(requestedGpus), reported({}, { DeviceRequests: null })),
+    false,
+  );
+});
+
+void test('does not reuse a container with GPUs when the request no longer asks for them', () => {
+  assert.equal(reusable(request(), reported({}, reportedGpus)), false);
+});

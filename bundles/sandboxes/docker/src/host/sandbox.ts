@@ -22,8 +22,8 @@ export type Environment = Readonly<Record<string, string | undefined>>;
 export interface DockerSandboxOptions {
   /**
    * Where `DORIC_SANDBOX_IMAGE`, `DORIC_SANDBOX_SSH`,
-   * `DORIC_SANDBOX_DOCKER_SOCKET`, `DORIC_SANDBOX_CPUS` and
-   * `DORIC_SANDBOX_MEMORY_MIB` are read. Defaults to `process.env`, which the
+   * `DORIC_SANDBOX_DOCKER_SOCKET`, `DORIC_SANDBOX_GPU`, `DORIC_SANDBOX_CPUS`
+   * and `DORIC_SANDBOX_MEMORY_MIB` are read. Defaults to `process.env`, which the
    * generation process inherits from the kernel.
    */
   readonly environment?: Environment;
@@ -71,6 +71,10 @@ export const dockerSandboxSettings = (environment: Environment) =>
     // sandbox the daemon's authority on the host, so only an exact `true` asks
     // for it.
     dockerSocket: environment.DORIC_SANDBOX_DOCKER_SOCKET === 'true',
+    // GPUs need a device driver on the daemon's machine, such as the NVIDIA
+    // Container Toolkit, which a deployment has to install, so only an exact
+    // `true` asks for them.
+    gpus: environment.DORIC_SANDBOX_GPU === 'true',
     // CPU and memory are daemon ceilings rather than reservations, so an idle
     // sandbox holds neither; the deployment sizes them to its machine.
     resources: {
@@ -101,6 +105,7 @@ export const activateDockerSandbox =
     const settings = dockerSandboxSettings(options.environment ?? process.env);
     const client = (options.client ?? createDockerClient)({
       exposeDockerSocket: settings.dockerSocket,
+      exposeGpus: settings.gpus,
     });
     const vms = createVmRegistry('docker', client);
     const pool = createSandpool({

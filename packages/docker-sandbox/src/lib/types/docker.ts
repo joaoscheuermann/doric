@@ -23,6 +23,13 @@ export interface CreateDockerClientOptions {
    * has no socket to share and is left alone.
    */
   readonly exposeDockerSocket?: boolean;
+  /**
+   * Requests every GPU the daemon can hand out for each sandbox this client
+   * provisions, as `docker run --gpus all` does. The daemon needs a GPU device
+   * driver, such as the NVIDIA Container Toolkit, or creating the container
+   * fails. Off by default.
+   */
+  readonly exposeGpus?: boolean;
 }
 
 export type DockerRequestQuery = Readonly<

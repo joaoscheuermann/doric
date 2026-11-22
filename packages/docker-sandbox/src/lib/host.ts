@@ -33,6 +33,11 @@ export interface DockerHostConfig {
    * daemon of their own, which is the default.
    */
   readonly dockerSocketPath?: string;
+  /**
+   * Whether every sandbox this host serves requests all of the daemon's GPUs.
+   * Undefined or false leaves sandboxes without GPUs, which is the default.
+   */
+  readonly exposeGpus?: boolean;
 }
 
 export interface DockerHostResources {

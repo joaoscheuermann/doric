@@ -201,7 +201,8 @@ desktop UI.
   its bundles read the rest:
   `DORIC_DATABASE_URL` (required, no default), `DORIC_CREDENTIAL_KEY`,
   `DORIC_STORAGE_PATH`, `DORIC_SANDBOX_IMAGE`,
-  `DORIC_SANDBOX_SSH`, `DORIC_SANDBOX_DOCKER_SOCKET`, `DORIC_SANDBOX_CPUS`
+  `DORIC_SANDBOX_SSH`, `DORIC_SANDBOX_DOCKER_SOCKET`, `DORIC_SANDBOX_GPU`,
+  `DORIC_SANDBOX_CPUS`
   (default 4), `DORIC_SANDBOX_MEMORY_MIB` (default 2048) and `DOCKER_HOST`; a
   `DORIC_SANDBOX_CPUS` or `DORIC_SANDBOX_MEMORY_MIB` that is not a whole
   positive number fails the activation of the `docker` bundle
@@ -507,7 +508,11 @@ On macOS, stop the native host with Ctrl+C and PostgreSQL with the same
   10 sandboxes at once, and a further Project waits for capacity; each
   sandbox may use 4 CPUs and 2048 MiB of memory unless `DORIC_SANDBOX_CPUS`
   and `DORIC_SANDBOX_MEMORY_MIB` say otherwise, and has a 4096 MiB writable
-  layer where the daemon supports the quota. After 3 failed creations the
+  layer where the daemon supports the quota. It gets no GPU unless
+  `DORIC_SANDBOX_GPU=true`, which hands every sandbox all of the daemon's
+  GPUs and needs a GPU device driver such as the NVIDIA Container Toolkit
+  ([GPUs](docs/features/sandboxes.md#docker),
+  [on Windows](app/backend/doric-host/README.md#with-gpu-sandboxes-on-windows)). After 3 failed creations the
   waiting acquisitions fail
   ([`sandbox.ts`](bundles/sandboxes/docker/src/host/sandbox.ts),
   [`sandpool.ts`](packages/sandpool/src/lib/sandpool.ts),

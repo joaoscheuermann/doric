@@ -96,6 +96,7 @@ interface CreateDockerClientOptions {
   readonly dropbearPath?: string;
   readonly statePath?: string;
   readonly exposeDockerSocket?: boolean;
+  readonly exposeGpus?: boolean;
 }
 
 type DockerConnection =
@@ -111,6 +112,7 @@ type DockerConnection =
 | `dropbearPath`       | `/opt/doric/firecracker/dropbearmulti`                           | The pinned Dropbear multi-call binary copied into a sandbox for SSH.                                                                                    |
 | `statePath`          | `/var/lib/doric/docker`                                          | The host directory under which each container's SSH keys are written.                                                                                   |
 | `exposeDockerSocket` | `false`                                                          | Mounts the daemon's Unix socket into every sandbox this client provisions. See [Sharing the Docker socket](#sharing-the-docker-socket).                 |
+| `exposeGpus`         | `false`                                                          | Requests every GPU the daemon can hand out for each sandbox this client provisions. See [Sharing the GPUs](#sharing-the-gpus).                          |
 
 Defaults are applied in [`src/lib/docker.ts`](src/lib/docker.ts) and
 [`src/lib/mapping.ts`](src/lib/mapping.ts).
@@ -307,6 +309,7 @@ also compares against ([`src/lib/provider.ts`](src/lib/provider.ts)):
 | `NetworkMode`     | `none` (and `NetworkDisabled: true`) for mode `disabled`; `bridge` for `egress`                                               |
 | `Memory`          | `memoryMiB × 1024 × 1024` bytes                                                                                               |
 | `NanoCpus`        | `cpuCount × 10⁹`                                                                                                              |
+| `DeviceRequests`  | `[{ Count: -1, Capabilities: [['gpu']] }]` when the GPUs are shared; absent otherwise                                         |
 | `StorageOpt.size` | `<diskMiB>M`, unless the daemon rejects it (see [Writable-layer disk limits](#writable-layer-disk-limits))                    |
 | `Dns`             | `network.dnsServers`, when given                                                                                              |
 | Ports             | With SSH: `22/tcp` exposed and published on `ssh.bindAddress`, at `ssh.port` or a port the daemon picks                       |
@@ -356,7 +359,8 @@ volume `doric-workspace-<identity>`, bound at the sandbox root
   newest, inspects each, and keeps the first whose settings match the request
   ([`src/lib/reuse.ts`](src/lib/reuse.ts)). The compared settings are the
   image, working directory, labels, exposed ports, network mode, memory,
-  CPUs, writable-layer size, DNS servers, binds and port bindings, all read
+  CPUs, writable-layer size, DNS servers, binds, port bindings and the count
+  and capabilities of each device request, all read
   from the container's inspect answer; a setting the container does not report
   counts as different, so a container created without the disk limit is never
   kept. Every other container is force-removed, without its volumes, along with
@@ -397,6 +401,20 @@ client provisions binds the daemon's socket (the resolved connection socket) at
 sandbox can build and run images on the same daemon. A sandbox holding the
 socket has the daemon's authority on the host, so the option is off by
 default. A `namedPipe` connection has no socket to share and binds nothing
+([`src/lib/docker.ts`](src/lib/docker.ts),
+[`src/lib/provider.ts`](src/lib/provider.ts)).
+
+### Sharing the GPUs
+
+With `exposeGpus: true`, every container the client provisions asks the daemon
+for every GPU it can hand out, the device request `docker run --gpus all`
+sends. The daemon needs a GPU device driver for it, such as the NVIDIA
+Container Toolkit on Linux or Docker Desktop's GPU support on Windows with
+WSL2. When the daemon refuses the request with `could not select device
+driver`, the client throws
+`Error('Docker cannot give the sandbox GPUs; the daemon needs a GPU device driver such as the NVIDIA Container Toolkit', { cause })`
+and does not retry without the GPUs. The image needs no GPU driver of its own:
+the device driver mounts the driver's libraries and tools into the container
 ([`src/lib/docker.ts`](src/lib/docker.ts),
 [`src/lib/provider.ts`](src/lib/provider.ts)).
 
