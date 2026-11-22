@@ -45,6 +45,7 @@ export const logSandboxPool = (
             networkMode: 'egress',
             sshEnabled: settings.ssh,
             dockerSocketShared: settings.dockerSocket,
+            gpusShared: settings.gpus,
           },
           message: 'Sandbox pool configured',
         },

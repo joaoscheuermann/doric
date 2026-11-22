@@ -61,7 +61,7 @@ export const provisionDocker = async (
       client,
       input,
       undefined,
-      config.dockerSocketPath,
+      config,
     );
     const host = await bringUp(client, input, config, container, false);
 
@@ -107,18 +107,13 @@ const attach = async (
   const kept = await keepOneContainer(
     client,
     config,
-    containerInput(input, workspace, true, config.dockerSocketPath),
+    containerInput(input, workspace, true, config),
     identity,
     input.timeoutMs,
   );
   const container: ContainerRef =
     kept === undefined
-      ? await createSandboxContainer(
-          client,
-          input,
-          workspace,
-          config.dockerSocketPath,
-        )
+      ? await createSandboxContainer(client, input, workspace, config)
       : { id: kept.id, warnings: [] };
   const host = await bringUp(
     client,
@@ -302,6 +297,12 @@ const containerBinds = (
 ];
 
 /**
+ * The device request of `docker run --gpus all`: every GPU the daemon's device
+ * driver can hand out.
+ */
+const allGpus = { Count: -1, Capabilities: [['gpu']] } as const;
+
+/**
  * The create body of a sandbox container. Reuse compares a container against
  * this same body, so the settings it names are defined in one place.
  */
@@ -309,7 +310,7 @@ const containerInput = (
   input: SandboxProvisionInput,
   workspace: Workspace | undefined,
   diskQuota: boolean,
-  dockerSocket: string | undefined,
+  config: Pick<DockerHostConfig, 'dockerSocketPath' | 'exposeGpus'>,
 ): CreateContainerInput => {
   const ssh = input.network.ssh;
 
@@ -327,10 +328,11 @@ const containerInput = (
     },
     hostConfig: {
       AutoRemove: false,
-      Binds: containerBinds(input, workspace, dockerSocket),
+      Binds: containerBinds(input, workspace, config.dockerSocketPath),
       NetworkMode: input.network.mode === 'disabled' ? 'none' : 'bridge',
       Memory: input.resources.memoryMiB * 1024 * 1024,
       NanoCpus: input.resources.cpuCount * 1_000_000_000,
+      ...(config.exposeGpus === true ? { DeviceRequests: [allGpus] } : {}),
       ...(diskQuota
         ? { StorageOpt: { size: `${input.resources.diskMiB}M` } }
         : {}),
@@ -359,11 +361,11 @@ const createSandboxContainer = async (
   client: DockerClient,
   input: SandboxProvisionInput,
   workspace: Workspace | undefined,
-  dockerSocket: string | undefined,
+  config: Pick<DockerHostConfig, 'dockerSocketPath' | 'exposeGpus'>,
 ): Promise<ContainerRef> => {
   const create = (diskQuota: boolean): Promise<ContainerRef> =>
     client.createContainer(
-      containerInput(input, workspace, diskQuota, dockerSocket),
+      containerInput(input, workspace, diskQuota, config),
       {
         timeoutMs: input.timeoutMs,
       },
@@ -372,12 +374,18 @@ const createSandboxContainer = async (
   try {
     return await create(true);
   } catch (cause) {
+    if (missingGpuDriver(cause)) {
+      throw gpuError(cause);
+    }
+
     if (!unsupportedDiskQuota(cause)) {
       throw diskQuotaError(cause, input.resources.diskMiB);
     }
 
     return create(false).catch((retryCause) => {
-      throw diskQuotaError(retryCause, input.resources.diskMiB);
+      throw missingGpuDriver(retryCause)
+        ? gpuError(retryCause)
+        : diskQuotaError(retryCause, input.resources.diskMiB);
     });
   }
 };
@@ -541,6 +549,16 @@ const diskQuotaError = (cause: unknown, diskMiB: number): unknown => {
 
 const unsupportedDiskQuota = (cause: unknown): boolean =>
   /storage-opt|quota|size/u.test(errorMessage(cause).toLowerCase());
+
+/** Whether the daemon refused a GPU request because it has no device driver for it. */
+const missingGpuDriver = (cause: unknown): boolean =>
+  /could not select device driver/u.test(errorMessage(cause).toLowerCase());
+
+const gpuError = (cause: unknown): Error =>
+  new Error(
+    'Docker cannot give the sandbox GPUs; the daemon needs a GPU device driver such as the NVIDIA Container Toolkit',
+    { cause },
+  );
 
 const errorMessage = (cause: unknown): string =>
   cause instanceof DockerHttpError

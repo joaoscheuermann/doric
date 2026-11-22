@@ -222,6 +222,17 @@ void test('only an exact "true" shares the Docker socket', () => {
   );
 });
 
+void test('only an exact "true" hands sandboxes the GPUs', () => {
+  assert.equal(dockerSandboxSettings({}).gpus, false);
+
+  assert.equal(
+    dockerSandboxSettings({ DORIC_SANDBOX_GPU: 'TRUE' }).gpus,
+    false,
+  );
+
+  assert.equal(dockerSandboxSettings({ DORIC_SANDBOX_GPU: 'true' }).gpus, true);
+});
+
 void test('sizes sandboxes from the deployment CPUs and memory', () => {
   assert.deepEqual(
     dockerSandboxSettings({
@@ -269,7 +280,26 @@ void test('hands the deployment socket sharing to the Docker client', async () =
   try {
     await bundle.sandbox.describe();
 
-    assert.deepEqual(seen, [{ exposeDockerSocket: true }]);
+    assert.equal(seen.length, 1);
+    assert.equal(seen[0]?.exposeDockerSocket, true);
+  } finally {
+    await bundle.stop();
+  }
+});
+
+void test('hands the deployment GPU sharing to the Docker client', async () => {
+  const seen: CreateDockerClientOptions[] = [];
+  const bundle = await start({
+    environment: { DORIC_SANDBOX_GPU: 'true' },
+    provider: fakeProvider().provider,
+    client: (options) => seen.push(options),
+  });
+
+  try {
+    await bundle.sandbox.describe();
+
+    assert.equal(seen.length, 1);
+    assert.equal(seen[0]?.exposeGpus, true);
   } finally {
     await bundle.stop();
   }

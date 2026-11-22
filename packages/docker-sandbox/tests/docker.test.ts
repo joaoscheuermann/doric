@@ -397,13 +397,21 @@ void test('mounts a durable workspace volume and labels the container', async ()
   assert.deepEqual(requests.at(-1)?.path, '/volumes/doric-workspace-project-a');
 });
 
+interface ProvisionedHostConfig {
+  readonly Binds: readonly string[];
+  readonly DeviceRequests?: readonly {
+    readonly Count?: number;
+    readonly Capabilities?: readonly (readonly string[])[];
+  }[];
+}
+
 /**
- * The binds a client with these options asks the daemon for, read from the
- * create body of one durable workspace.
+ * The host config a client with these options asks the daemon for, read from
+ * the create body of one durable workspace.
  */
-const provisionedBinds = async (
+const provisionedHostConfig = async (
   options: CreateDockerClientOptions,
-): Promise<readonly string[]> => {
+): Promise<ProvisionedHostConfig> => {
   const requests: DockerTransportRequest[] = [];
 
   const client = createDockerClient({
@@ -445,12 +453,14 @@ const provisionedBinds = async (
 
   assert.ok(create);
 
-  const body = create.body as {
-    readonly HostConfig: { readonly Binds: readonly string[] };
-  };
-
-  return body.HostConfig.Binds;
+  return (create.body as { readonly HostConfig: ProvisionedHostConfig })
+    .HostConfig;
 };
+
+/** The binds a client with these options asks the daemon for. */
+const provisionedBinds = async (
+  options: CreateDockerClientOptions,
+): Promise<readonly string[]> => (await provisionedHostConfig(options)).Binds;
 
 void test('shares the daemon socket with a sandbox when the deployment asks', async () => {
   const binds = await provisionedBinds({
@@ -472,6 +482,55 @@ void test('leaves a sandbox without a daemon when the connection cannot carry on
   });
 
   assert.deepEqual(binds, ['doric-workspace-project-a:/workspace']);
+});
+
+void test('requests every GPU for a sandbox when the deployment asks', async () => {
+  const host = await provisionedHostConfig({ exposeGpus: true });
+
+  // What `docker run --gpus all` asks the daemon for.
+  assert.deepEqual(
+    host.DeviceRequests?.map(({ Count, Capabilities }) => ({
+      Count,
+      Capabilities,
+    })),
+    [{ Count: -1, Capabilities: [['gpu']] }],
+  );
+});
+
+void test('requests no devices for a sandbox by default', async () => {
+  const host = await provisionedHostConfig({});
+
+  assert.equal(host.DeviceRequests, undefined);
+});
+
+void test('explains a GPU request the daemon has no driver for', async () => {
+  const client = createDockerClient({
+    exposeGpus: true,
+    request: async (request) => {
+      if (request.path === '/containers/create') {
+        return textResponse(
+          500,
+          'could not select device driver "" with capabilities: [[gpu]]',
+        );
+      }
+
+      return {
+        status: request.path === '/images/create' ? 200 : 204,
+        headers: {},
+        body: new Uint8Array(),
+      };
+    },
+  });
+
+  await assert.rejects(
+    client.provision({
+      image: 'node:22-slim',
+      root: '/workspace',
+      resources: { cpuCount: 1, memoryMiB: 512, diskMiB: 4096 },
+      network: { mode: 'disabled', ssh: false },
+    }),
+    /GPU device driver/u,
+  );
 });
 
 void test('leaves a sandbox without a workspace unbound', async () => {
