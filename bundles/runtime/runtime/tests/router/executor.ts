@@ -1,15 +1,14 @@
 // The fake `executor/v1` provider of runtime's router tests (phase 3, slice
 // S48b, contract §5 "Harness"). It serves `ExecutorService` over the domain
 // tests' `scriptedExecutor` (`../support/executor.ts`): each request becomes
-// the domain input, whose `PromptSession` calls back through
-// `executor.session/v1` as the executor's provider would (caller
-// `executorCaller`). A `HistoryPatch` answer travels as `format`/`part`/
-// `chunk` items. It records every call it receives and every session call
-// it makes.
+// the domain input, whose `PromptSession` is `runtime/executor`'s
+// `remotePromptSession` (S51b), calling back through `executor.session/v1` as
+// the executor's provider would (caller `executorCaller`). A `HistoryPatch`
+// answer travels as `historyPatchItems`. It records every call it receives
+// and every session call it makes.
 
 import type {
   DescMessage,
-  JsonObject,
   JsonValue,
   MessageInitShape,
   MessageShape,
@@ -17,23 +16,16 @@ import type {
 import type { Client, HandlerContext, ServiceImpl } from '@connectrpc/connect';
 import { type Caller, type CallScope, callOf } from 'bundle/contracts';
 import type { ServiceEntry } from 'bundle/host';
-import { decodeJson, encodeJson } from 'storage/rpc';
 
-import type { AttachmentContent } from '../../src/contracts/attachments.js';
 import type {
   CompactionPolicyValue,
   Executor,
   ExecutorThread,
-  HistoryPatch,
-  HistoryReader,
   PromptJob,
-  PromptSession,
-  SteerInput,
 } from '../../src/contracts/executor.js';
-import {
-  type RecordRequestSchema,
-  type SessionService,
-  SteerInputSchema,
+import type {
+  RecordRequestSchema,
+  SessionService,
 } from '../../src/contracts/gen/doric/executor/session/v1/session_pb.js';
 import {
   CheckpointRequestSchema,
@@ -46,6 +38,11 @@ import {
   RewindRequestSchema,
   RunRequestSchema,
 } from '../../src/contracts/gen/doric/executor/v1/executor_pb.js';
+import {
+  historyPatchItems,
+  type RemotePromptSession,
+  remotePromptSession,
+} from '../../src/executor.js';
 import { decode, encode, runtimeOneofs } from '../../src/host/rpc/codec.js';
 import {
   type Script,
@@ -118,26 +115,48 @@ const decodedOf = <D extends DescMessage>(
 ): unknown =>
   message === undefined ? {} : decode(schema, message, runtimeOneofs);
 
-/** One `Checkpoint` or `Rewind` item. */
-interface PatchItem {
-  readonly item:
-    | { readonly case: 'format' | 'part'; readonly value: string }
-    | { readonly case: 'chunk'; readonly value: Uint8Array };
-}
-
-/** A `HistoryPatch` as the items `Checkpoint` and `Rewind` stream. */
-export const patchItems = (patch: HistoryPatch | undefined): PatchItem[] =>
-  patch === undefined
-    ? []
-    : [
-        { item: { case: 'format', value: patch.format } },
-        ...Object.entries(patch.parts).flatMap(([part, value]): PatchItem[] => [
-          { item: { case: 'part', value: part } },
-          ...encodeJson(value).map(
-            (chunk): PatchItem => ({ item: { case: 'chunk', value: chunk } }),
-          ),
-        ]),
-      ];
+/**
+ * `client`, recording each `ReadHistory` (once answered) and `Record` (before
+ * it is sent) in `traffic`; every call goes through unchanged.
+ */
+const traced = (
+  client: Client<typeof SessionService>,
+  traffic: SessionTraffic[],
+): Client<typeof SessionService> => ({
+  readHistory: async function* (request, options) {
+    const chunks: number[] = [];
+    let format: string | undefined;
+    for await (const response of client.readHistory(request, options)) {
+      const { item } = response;
+      if (item.case === 'head') format = item.value.format;
+      if (item.case === 'chunk') chunks.push(item.value.length);
+      yield response;
+    }
+    traffic.push({
+      method: 'readHistory',
+      sessionId: request.sessionId ?? '',
+      part: request.part ?? '',
+      ...(format === undefined ? {} : { format }),
+      chunks,
+    });
+  },
+  record: async (requests, options) => {
+    const items: MessageInitShape<typeof RecordRequestSchema>[] = [];
+    for await (const request of requests) items.push(request);
+    const head = items[0]?.item;
+    traffic.push({
+      method: 'record',
+      sessionId: head?.case === 'head' ? (head.value.sessionId ?? '') : '',
+      chunks: items.flatMap(({ item }) =>
+        item?.case === 'chunk' ? [item.value.length] : [],
+      ),
+    });
+    return await client.record(streamOf(items), options);
+  },
+  takeSteers: (request, options) => client.takeSteers(request, options),
+  describeAttachment: (request, options) =>
+    client.describeAttachment(request, options),
+});
 
 /**
  * The fake `[ExecutorService, impl]` and what it recorded. `session` answers
@@ -153,92 +172,9 @@ export const fakeExecutor = (
   /** One-shot failures, by method. */
   const failures = new Map<string, unknown[]>();
 
-  /** The `PromptSession` of `sessionId`, every callback through `executor.session/v1`. */
-  const remote = (sessionId: string): PromptSession => {
-    const history: { format: string | undefined } & HistoryReader = {
-      format: undefined,
-      read: async (part) => {
-        const chunks: Uint8Array[] = [];
-        let format: string | undefined;
-        for await (const { item } of session().readHistory({
-          sessionId,
-          part,
-        })) {
-          if (item.case === 'head') format = item.value.format;
-          if (item.case === 'chunk') chunks.push(item.value);
-        }
-        history.format = format;
-        traffic.push({
-          method: 'readHistory',
-          sessionId,
-          part,
-          ...(format === undefined ? {} : { format }),
-          chunks: chunks.map(({ length }) => length),
-        });
-        return chunks.length === 0
-          ? undefined
-          : decodeJson(chunks, 'invalid_output');
-      },
-    };
-    return {
-      history,
-      record: async ({ history: patch, event }) => {
-        type Item = MessageInitShape<typeof RecordRequestSchema>;
-        const items: Item[] = [
-          {
-            item: {
-              case: 'head',
-              value: {
-                sessionId,
-                ...(patch === undefined ? {} : { format: patch.format }),
-              },
-            },
-          },
-        ];
-        const sizes: number[] = [];
-        for (const [part, value] of Object.entries(patch?.parts ?? {})) {
-          items.push({ item: { case: 'part', value: part } });
-          for (const chunk of encodeJson(value)) {
-            sizes.push(chunk.length);
-            items.push({ item: { case: 'chunk', value: chunk } });
-          }
-        }
-        if (event !== undefined)
-          items.push({
-            item: {
-              case: 'event',
-              value: event as JsonObject,
-            },
-          });
-        traffic.push({ method: 'record', sessionId, chunks: sizes });
-        await session().record(streamOf(items));
-      },
-      steers: async () =>
-        (await session().takeSteers({ sessionId })).steers.map(
-          (steer) =>
-            decode(
-              SteerInputSchema,
-              steer,
-              runtimeOneofs,
-            ) as unknown as SteerInput,
-        ),
-      attachment: async (id) => {
-        const { attachment } = await session().describeAttachment({
-          sessionId,
-          id,
-        });
-        return attachment === undefined
-          ? undefined
-          : ({
-              id: attachment.id,
-              name: attachment.name,
-              mediaType: attachment.mediaType,
-              size: attachment.size,
-              bytes: new Uint8Array(),
-            } as unknown as AttachmentContent);
-      },
-    };
-  };
+  /** `remotePromptSession` of `sessionId`, its calls recorded in `traffic`. */
+  const remote = (sessionId: string): RemotePromptSession =>
+    remotePromptSession(traced(session(), traffic), sessionId);
 
   const received = (
     method: ExecutorMethod,
@@ -289,7 +225,7 @@ export const fakeExecutor = (
         yield* overrides.checkpoint(request, context);
         return;
       }
-      yield* patchItems(
+      yield* historyPatchItems(
         await executorOf(context).checkpoint({
           history: remote(request.sessionId).history,
           promptId: request.promptId,
@@ -302,13 +238,12 @@ export const fakeExecutor = (
         yield* overrides.rewind(request, context);
         return;
       }
-      yield* patchItems(
-        await executorOf(context).rewind({
-          history: remote(request.sessionId).history,
-          promptId: request.promptId,
-          removedPromptIds: request.removedPromptIds,
-        }),
-      );
+      const patch = await executorOf(context).rewind({
+        history: remote(request.sessionId).history,
+        promptId: request.promptId,
+        removedPromptIds: request.removedPromptIds,
+      });
+      for (const { item } of historyPatchItems(patch)) yield { item };
     },
     compact: async (request, context) => {
       received(

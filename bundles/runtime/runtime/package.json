@@ -17,6 +17,12 @@
       "import": "./dist/contracts/gen/*",
       "default": "./dist/contracts/gen/*"
     },
+    "./executor": {
+      "@org/source": "./src/executor.ts",
+      "types": "./dist/executor.d.ts",
+      "import": "./dist/executor.js",
+      "default": "./dist/executor.js"
+    },
     "./testing": {
       "@org/source": "./src/testing.ts",
       "types": "./dist/testing.d.ts",

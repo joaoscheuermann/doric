@@ -70,6 +70,19 @@ host process:
   the caller to rebuild; any other error is `internal`;
 - a tool without `outputSchema` reaches the provider with `outputSchema: {}`.
 
+The caller side is `modelsLanguageModel(models, providerId)`
+([`src/rpc/client.ts`](./src/rpc/client.ts)), an `LlmProvider` that calls
+`models/v1` through the router:
+
+- an image whose `imageUrl` is `https:` is sent as a URL; one built by
+  `attachmentImageUrl({ id, mediaType, name? })`
+  (`doric-attachment:<id>?mediaType=…[&name=…]`) is sent as an attachment;
+  any other image URL is `invalid_input` before any call;
+- `provider_error` with a well-formed `details.providerError` is rebuilt as a
+  `ProviderErrorObject` with every field kept; `unavailable` and
+  `generation_lost` become a retryable `network_error`; any other failure,
+  malformed details included, stays a `ContractError`.
+
 ## Quick start
 
 ```ts

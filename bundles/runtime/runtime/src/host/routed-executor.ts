@@ -1,7 +1,7 @@
 // The executor port over `executor/v1` (phase 3, slice S48b): each call opens
 // an executor session the provider calls back through `executor.session/v1`.
 
-import { type CallArg, ContractError } from 'bundle/contracts';
+import { type CallArg, ContractError, isContractError } from 'bundle/contracts';
 import { CatalogService } from 'bundle/contracts/gen/doric/platform/catalog/v1/catalog_pb.js';
 import type { HostContext } from 'bundle/host';
 
@@ -67,6 +67,11 @@ const EXECUTOR_CONTRACT = 'executor/v1';
  *   again).
  * - Every routed failure rejects as `routedError` reads it (executor codes
  *   pass through unchanged).
+ *
+ * (Addition to S48's contract.) A `run` or `compact` failing `provider_error` whose `details.providerError` is an
+ * object with string `provider`, `code` and `message` rejects with an `Error` whose `name` is `'ProviderError'`,
+ * `message` the data's message and own `data` the details' object — the shape of llms' `ProviderErrorObject`, so the
+ * prompt's `agent.failed` event reads (`errorInfo`) as it did in process. Every other failure as before.
  */
 export const routedExecutor = (
   context: Pick<HostContext, 'services' | 'registrations'>,
@@ -128,33 +133,37 @@ export const routedExecutor = (
 
     return {
       run: ({ thread, job, session }, call) =>
-        withSession(session, async (sessionId) => {
-          const { text } = await client().run(
-            {
-              sessionId,
-              thread: threadOf(thread),
-              job: encode(PromptJobSchema, job, runtimeOneofs),
-            },
-            optionsOf(call),
-          );
-          return { text };
-        }),
-      compact: ({ thread, session, policy }, call) =>
-        withSession(session, async (sessionId) => {
-          const response = await client().compact(
-            { sessionId, thread: threadOf(thread), policy },
-            optionsOf(call),
-          );
-          const parsed = executorMethods.compact.output.safeParse(
-            decode(CompactResponseSchema, response, runtimeOneofs),
-          );
-          if (!parsed.success)
-            throw new ContractError(
-              'invalid_output',
-              `executor/v1.Compact answered outside its schema: ${parsed.error.message}`,
+        withProviderErrors(
+          withSession(session, async (sessionId) => {
+            const { text } = await client().run(
+              {
+                sessionId,
+                thread: threadOf(thread),
+                job: encode(PromptJobSchema, job, runtimeOneofs),
+              },
+              optionsOf(call),
             );
-          return parsed.data as ExecutorCompactionResult;
-        }),
+            return { text };
+          }),
+        ),
+      compact: ({ thread, session, policy }, call) =>
+        withProviderErrors(
+          withSession(session, async (sessionId) => {
+            const response = await client().compact(
+              { sessionId, thread: threadOf(thread), policy },
+              optionsOf(call),
+            );
+            const parsed = executorMethods.compact.output.safeParse(
+              decode(CompactResponseSchema, response, runtimeOneofs),
+            );
+            if (!parsed.success)
+              throw new ContractError(
+                'invalid_output',
+                `executor/v1.Compact answered outside its schema: ${parsed.error.message}`,
+              );
+            return parsed.data as ExecutorCompactionResult;
+          }),
+        ),
       checkpoint: ({ history, promptId }, call) =>
         withSession({ history }, async (sessionId) => {
           const patch = await historyPatchOf(
@@ -179,6 +188,40 @@ export const routedExecutor = (
       formats: () => formats.get(),
     };
   };
+};
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
+/**
+ * `error` as llms' `ProviderErrorObject` is shaped when it is `provider_error`
+ * with valid `details.providerError`; any other failure unchanged.
+ */
+const providerErrorOf = (error: unknown): unknown => {
+  if (!isContractError(error) || error.code !== 'provider_error') return error;
+  const data = isRecord(error.details)
+    ? error.details.providerError
+    : undefined;
+  if (
+    !isRecord(data) ||
+    typeof data.provider !== 'string' ||
+    typeof data.code !== 'string' ||
+    typeof data.message !== 'string'
+  )
+    return error;
+  return Object.assign(new Error(data.message), {
+    name: 'ProviderError',
+    data,
+  });
+};
+
+/** `work`, its failure rebuilt as {@link providerErrorOf} does. */
+const withProviderErrors = async <T>(work: Promise<T>): Promise<T> => {
+  try {
+    return await work;
+  } catch (error) {
+    throw providerErrorOf(error);
+  }
 };
 
 /**

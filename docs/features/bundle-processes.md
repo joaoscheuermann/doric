@@ -941,3 +941,13 @@ to every host part.
   `useAssetTexts`, `assetText`, `loadAssetTexts`; `lazyTemplate`), so no
   module reads a file at import. `thread_execution_unavailable` is now a
   `ContractError` with the same code and message. No other behavior change.
+- 2026-11-23: phase 3, slice S51b, of
+  [`docs/designs/grpc-processes.md`](../designs/grpc-processes.md): `llms/rpc`
+  adds `modelsLanguageModel`, an `LlmProvider` over `models/v1` that rebuilds
+  `ProviderErrorObject` from `provider_error` details (malformed details and
+  other codes stay `ContractError`; `unavailable` and `generation_lost` become
+  a retryable `network_error`) and sends `https:` images as URLs and
+  `attachmentImageUrl` images as attachments. `runtime` exports
+  `runtime/executor` (`remotePromptSession`, `historyPatchItems`,
+  `serveExecutor`) for executor bundles, and `routedExecutor` rebuilds a
+  ProviderError-shaped error from `provider_error`.

@@ -8,8 +8,6 @@ import { createHash } from 'node:crypto';
 import {
   fromJson,
   type MessageInitShape,
-  type JsonObject as WireJsonObject,
-  type JsonValue as WireJsonValue,
 } from '@bufbuild/protobuf';
 import { type Value, ValueSchema } from '@bufbuild/protobuf/wkt';
 import { ConnectError, type ServiceImpl } from '@connectrpc/connect';
@@ -32,7 +30,6 @@ import type {
   ProviderService,
   ProviderStreamEventSchema,
   ProviderTarget,
-  ProviderToolCall as WireToolCall,
   ToolDefinition as WireToolDefinition,
   UsageMetadataSchema,
 } from 'bundle/contracts/gen/doric/models/provider/v1/provider_pb.js';
@@ -51,12 +48,18 @@ import {
   type ProviderMessage,
   type ProviderRequest,
   type ProviderStreamEvent,
-  type ProviderToolCall,
   type ReasoningRequest,
   reasoningEfforts,
   type StructuredOutputSchema,
   type UsageMetadata,
 } from '../lib/types/provider.js';
+
+export {
+  type AttachmentImage,
+  attachmentImageUrl,
+  modelsLanguageModel,
+} from './client.js';
+import { jsonObjectOf, jsonOf, toolCallOf, wireToolCall } from './wire.js';
 
 /**
  * One provider kind as the service serves it. Each operation already holds
@@ -176,13 +179,6 @@ const toolChoiceModes = ['auto', 'required', 'none'] as const;
 const reasoningSummaries = ['auto', 'concise', 'detailed'] as const;
 const serviceTiers = ['auto', 'default', 'priority'] as const;
 
-const toolCallOf = (call: WireToolCall): ProviderToolCall => ({
-  id: call.id,
-  name: call.name,
-  arguments: call.arguments,
-  index: call.index,
-});
-
 const toolOf = (tool: WireToolDefinition): ToolDefinition => ({
   name: tool.name,
   description: tool.description,
@@ -272,42 +268,6 @@ const schemaOf = (
 // Values to the wire.
 // ---------------------------------------------------------------------------
 
-/** A value as JSON carries it; what JSON cannot carry is left out. */
-const jsonOf = (value: unknown): WireJsonValue | undefined => {
-  if (
-    value === null ||
-    typeof value === 'string' ||
-    typeof value === 'number' ||
-    typeof value === 'boolean'
-  ) {
-    return value;
-  }
-
-  if (Array.isArray(value)) {
-    return value.map((item: unknown) => jsonOf(item) ?? null);
-  }
-
-  if (typeof value === 'object') {
-    return jsonObjectOf(value);
-  }
-
-  return undefined;
-};
-
-const jsonObjectOf = (value: object): WireJsonObject => {
-  const object: WireJsonObject = {};
-
-  for (const [key, member] of Object.entries(value)) {
-    const json = jsonOf(member);
-
-    if (json !== undefined) {
-      object[key] = json;
-    }
-  }
-
-  return object;
-};
-
 /** A value as a `google.protobuf.Value`; absent when JSON cannot carry it. */
 const wireValue = (value: unknown): Value | undefined => {
   const json = jsonOf(value);
@@ -333,13 +293,6 @@ const wireUsage = (
           unit: usage.cost.unit,
           upstreamAmount: usage.cost.upstreamAmount,
         },
-});
-
-const wireToolCall = (call: ProviderToolCall) => ({
-  id: call.id,
-  name: call.name,
-  arguments: call.arguments,
-  index: call.index,
 });
 
 const wireFinished = (

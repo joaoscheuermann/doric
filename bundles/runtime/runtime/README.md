@@ -74,7 +74,10 @@ never used ([`services/lease.ts`](src/host/services/lease.ts)).
 
 The package is `runtime` ([`package.json`](package.json)). It exports
 `runtime/contracts` ([`src/contracts/index.ts`](src/contracts/index.ts)) and
-`runtime/testing` ([`src/testing.ts`](src/testing.ts)), and `runtime/contracts/gen/*`, the
+`runtime/testing` ([`src/testing.ts`](src/testing.ts)), `runtime/executor`
+([`src/executor.ts`](src/executor.ts): `remotePromptSession`,
+`historyPatchItems` and `serveExecutor`, the helpers an executor bundle uses to
+serve `executor/v1` over `executor.session/v1`), and `runtime/contracts/gen/*`, the
 protobuf-es code `generate-proto` writes from `proto/`. `runtime/contracts` is
 browser-safe: it holds contract refs, zod schemas, types and pure functions,
 and imports only `zod` and `bundle/contracts` at run time; its imports from
@@ -189,7 +192,9 @@ first item. `Formats` is cached per executor instance through a tracked
 registration, so a replay refreshes it. Cycle rule: `executor/v1` must be
 optional for `runtime` (S62 manifest), and `default` (S51) may call
 `executor.session/v1` only from its `executor/v1` handlers, never at activate.
-Open finding: `DescribeAttachment` reads the whole blob.
+A `provider_error` from the executor is rebuilt as a ProviderError-shaped error
+(`name` `'ProviderError'`, `data` the details), so the chat shows the
+provider's error. Open finding: `DescribeAttachment` reads the whole blob.
 
 ### Process entry (S48c)
 

@@ -27,6 +27,7 @@ import {
 } from '../../src/contracts/gen/doric/executor/session/v1/session_pb.js';
 import { ExecutorService } from '../../src/contracts/gen/doric/executor/v1/executor_pb.js';
 import type { AttachRequestSchema } from '../../src/contracts/gen/doric/runtime/attachments/v1/attachments_pb.js';
+import { type RemotePromptSession, serveExecutor } from '../../src/executor.js';
 import { createExecutorSessions } from '../../src/host/executor-sessions.js';
 import { routedExecutor } from '../../src/host/routed-executor.js';
 import { decode, runtimeOneofs } from '../../src/host/rpc/codec.js';
@@ -607,10 +608,11 @@ describe('S48b: executor/v1 through the router', () => {
     await threadState(h, thread.id, 'failed');
 
     assert.equal(recordFailures.length, 1);
+    // The fake's session is `remotePromptSession` (S51b), which rejects with
+    // the Doric error `fromConnectError` reads from the UNAVAILABLE answer.
     const [rejected] = recordFailures;
-    assert.ok(rejected instanceof ConnectError, String(rejected));
-    assert.equal(rejected.code, Code.Unavailable);
-    assert.equal(contractErrorOf(rejected).code, 'unavailable');
+    assert.ok(isContractError(rejected), String(rejected));
+    assert.equal(rejected.code, 'unavailable');
     assert.equal(
       (await threadOf(h, thread.id)).errorCode,
       'persistence_failed',
@@ -810,10 +812,11 @@ describe('S48b: executor/v1 through the router', () => {
 
     assert.equal(seen.length, 1);
     assert.deepEqual(seen[0]?.messages, ['before']);
+    // The fake's session is `remotePromptSession` (S51b), which rejects with
+    // the Doric error `fromConnectError` reads from the UNIMPLEMENTED answer.
     const rejected = seen[0]?.failure;
-    assert.ok(rejected instanceof ConnectError, String(rejected));
-    assert.equal(rejected.code, Code.Unimplemented);
-    assert.equal(contractErrorOf(rejected).code, 'unsupported_operation');
+    assert.ok(isContractError(rejected), String(rejected));
+    assert.equal(rejected.code, 'unsupported_operation');
     assert.deepEqual(await storedMessages(h, thread.id), ['before']);
   });
 
@@ -1102,6 +1105,118 @@ describe('S48b: executor/v1 through the router', () => {
         ?.code,
       'model_unavailable',
     );
+  });
+});
+
+describe('S51b: runtime/executor and the routed executor', () => {
+  test("B12: serveExecutor's Run receives the thread and job runtime's routed executor encoded, and a session whose callbacks reach runtime's executor.session/v1; the prompt finishes with its text", async (t) => {
+    const received: { thread: unknown; job: unknown; seen: unknown[] }[] = [];
+    let h: Harness | undefined;
+    const served = serveExecutor(
+      {
+        run: async ({ thread, job, session }) => {
+          const remote = session as RemotePromptSession;
+          const seen: unknown[] = [remote.history.format];
+          seen.push(await remote.history.read('messages'));
+          seen.push(await remote.steers());
+          seen.push(
+            await remote.describeAttachment(`sha256-${'0'.repeat(64)}`),
+          );
+          await remote.record({
+            history: { format: testHistoryFormat, parts: { messages: ['m1'] } },
+            event: { type: 'text.delta', text: 'served' },
+          });
+          received.push({ thread, job, seen });
+
+          return { text: `served ${job.prompt}` };
+        },
+        checkpoint: async () => ({ format: testHistoryFormat, parts: {} }),
+        rewind: async () => undefined,
+        formats: () => [testHistoryFormat],
+        compact: async () => ({ status: 'refused', reason: 'disabled' }),
+      },
+      () => {
+        assert.ok(h !== undefined, 'a session before the harness');
+
+        return h.session();
+      },
+    );
+    h = await routed(t, {
+      executorOverrides: {
+        run: (request, context) => served.run(request, context),
+      },
+    });
+    const { thread } = await readyThread(h);
+
+    const promptId = await prompted(h, thread.id, 'go');
+    const outcome = await finished(h, thread.id, promptId);
+
+    assert.deepEqual(
+      { status: outcome.status, text: outcome.text },
+      { status: 'completed', text: 'served go' },
+    );
+    const [call] = callsFor(h, 'run', thread.id);
+    const request = call?.request as { thread?: unknown; job?: unknown };
+    assert.equal(received.length, 1);
+    assert.deepEqual(
+      JSON.parse(JSON.stringify(received[0]?.thread)),
+      request.thread,
+    );
+    assert.deepEqual(JSON.parse(JSON.stringify(received[0]?.job)), request.job);
+    assert.deepEqual(received[0]?.seen, [undefined, undefined, [], undefined]);
+    assert.deepEqual(await storedMessages(h, thread.id), ['m1']);
+    const logged = (await eventsOf(h, thread.id)).find(
+      ({ type }) => type === 'text.delta',
+    )?.event as { text?: unknown } | undefined;
+    assert.equal(logged?.text, 'served');
+  });
+
+  test("B19: an executor Run failing provider_error with valid details ends the prompt with agent.failed carrying the provider error's shape; malformed details keep the ContractError", async (t) => {
+    const data = {
+      provider: 'openrouter',
+      code: 'rate_limit_error',
+      message: 'Slow down.',
+      status: 429,
+      retryable: true,
+    };
+    let details: unknown = { providerError: data };
+    const h = await routed(t, {
+      execute: async () => {
+        throw new ContractError('provider_error', 'Slow down.', details);
+      },
+    });
+    const { thread } = await readyThread(h);
+    const failedError = async () => {
+      const promptId = await prompted(h, thread.id, 'go');
+      assert.equal((await finished(h, thread.id, promptId)).status, 'failed');
+      const failed = (await eventsOf(h, thread.id))
+        .filter(({ type }) => type === 'agent.failed')
+        .at(-1);
+
+      return (failed?.event as { error?: Record<string, unknown> } | undefined)
+        ?.error;
+    };
+
+    const rebuilt = await failedError();
+
+    // What the chat's `errorInfo` reads of an in-process `ProviderErrorObject`:
+    // `name` and `message` at the top, `code`, `provider`, `status` and
+    // `retryable` under `data`, and no `code` of its own.
+    assert.deepEqual(
+      {
+        name: rebuilt?.name,
+        message: rebuilt?.message,
+        code: rebuilt?.code,
+        data: rebuilt?.data,
+      },
+      { name: 'ProviderError', message: 'Slow down.', code: undefined, data },
+    );
+
+    details = { providerError: { provider: 'openrouter', message: 'Bad.' } };
+    const kept = await failedError();
+
+    assert.equal(kept?.code, 'provider_error');
+    assert.notEqual(kept?.name, 'ProviderError');
   });
 });
 
