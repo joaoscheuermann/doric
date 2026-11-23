@@ -107,8 +107,8 @@ The process entry is being added (phase 3 of
 [`docs/designs/grpc-processes.md`](../../../docs/designs/grpc-processes.md)).
 `createRuntimeCore` holds the domain wiring the kernel entry uses.
 `createRuntimeServices` ([`service.ts`](src/host/service.ts)) serves
-`runtime/v2`, `runtime.attachments/v1` and `runtime.usage/v1` over the router
-(`runtime.threads/v1` and `main.ts` follow); every RPC answers `unavailable`
+`runtime/v2`, `runtime.threads/v1`, `runtime.attachments/v1` and
+`runtime.usage/v1` over the router (`main.ts` follows); every RPC answers `unavailable`
 before activate, and stop answers `shutting_down`. Activation registers the
 storage types, defines `runtime.hooks/v1`, folds events and runs the start
 step. Its ports (`storage/v1`, `host-config`, secrets, models catalog) go
@@ -119,6 +119,20 @@ drop undeclared keys and an unknown oneof discriminator is `invalid_output`.
 The runtime-only codes `shutting_down` and `thread_control_inactive` travel
 as `FAILED_PRECONDITION`. Domain work runs detached from the incoming call:
 its port calls carry no request trace, deadline or scope.
+
+`runtime.threads/v1` ([`threads.ts`](src/host/rpc/threads.ts)) serves all 43
+RPCs. Prompt controls (spawn, list, get, events, send, restart, interrupt,
+terminate) find their prompt through the call's scope; a control without a
+prompt scope fails `thread_control_inactive`. `Instruct` takes the bundle id
+from the caller. `Spawn` with a refused execution fails `invalid_execution`
+(detail `issue`); `SetThreadExecution` answers `{ status: 'invalid', reason }`.
+`WatchThread` splits an oversized snapshot: the snapshot item stays under 3
+MiB and the remaining events go out as `event` items before any live item.
+`ViewThread` holds a `viewing` item until cancelled. Generation handover
+([`handover.ts`](src/host/rpc/handover.ts)) is installed at activate as step 7
+and removed at deactivate; `context.generations` `onChanged`/`onSignal` drive
+it, and the drain takes a `doric.generation/v1` Hold, sends its signals, then
+releases. `replay_failed` travels as `INTERNAL`.
 
 ## Records: Projects and Threads
 

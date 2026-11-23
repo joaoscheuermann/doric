@@ -753,3 +753,19 @@ to every host part.
   no 3 MiB split for `WatchProject` snapshots or single Watch events. New
   dependencies `@connectrpc/connect` and `core`; `storage` moves to
   dependencies.
+- 2026-11-23: phase 3, slice S46b, of
+  [`docs/designs/grpc-processes.md`](../designs/grpc-processes.md):
+  `createRuntimeServices` also serves `runtime.threads/v1` (all 43 RPCs,
+  `src/host/rpc/threads.ts`). Prompt controls (spawn, list, get, events, send,
+  restart, interrupt, terminate) find their prompt through the call's scope; a
+  control without a prompt scope fails `thread_control_inactive`. `Instruct`
+  takes the bundle id from the caller. `Spawn` with a refused execution fails
+  `invalid_execution` (detail `issue`); `SetThreadExecution` answers
+  `{ status: 'invalid', reason }`. `WatchThread` splits an oversized snapshot:
+  the snapshot item stays under 3 MiB and the remaining events go out as
+  `event` items before any live item; `ViewThread` holds a `viewing` item until
+  cancelled. Generation handover (`src/host/rpc/handover.ts`) is installed at
+  activate as step 7 and removed at deactivate; it is driven by
+  `context.generations` `onChanged`/`onSignal`, and the drain takes a
+  `doric.generation/v1` Hold, sends its signals, then releases.
+  `replay_failed` now travels as `INTERNAL`.

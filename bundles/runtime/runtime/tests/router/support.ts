@@ -22,7 +22,7 @@ import {
   type JsonValue,
   toJson,
 } from '@bufbuild/protobuf';
-import { type Any, anyPack } from '@bufbuild/protobuf/wkt';
+import { type Any, anyPack, ValueSchema } from '@bufbuild/protobuf/wkt';
 import { ConnectError, type ServiceImpl } from '@connectrpc/connect';
 import {
   type Caller,
@@ -72,6 +72,7 @@ import type { DoricConfiguration } from '../../src/contracts/configuration.js';
 import { ExecutorV1 } from '../../src/contracts/executor.js';
 import { ExecutorService } from '../../src/contracts/gen/doric/executor/v1/executor_pb.js';
 import { AttachmentsService } from '../../src/contracts/gen/doric/runtime/attachments/v1/attachments_pb.js';
+import { ThreadsService } from '../../src/contracts/gen/doric/runtime/threads/v1/threads_pb.js';
 import { UsageService } from '../../src/contracts/gen/doric/runtime/usage/v1/usage_pb.js';
 import { RuntimeService } from '../../src/contracts/gen/doric/runtime/v2/runtime_pb.js';
 import { SandboxService } from '../../src/contracts/gen/doric/sandbox/v1/sandbox_pb.js';
@@ -81,7 +82,7 @@ import { createRuntimeServices } from '../../src/host/service.js';
 import { defaultConfiguration, epoch } from '../domain/support/harness.js';
 import { type Backend, memoryBackend, snapshot, stores } from '../store/support.js';
 import { testExecution } from '../support/execution.js';
-import { executorProvider } from '../support/executor.js';
+import { executorProvider, type Script } from '../support/executor.js';
 import {
   type SandboxProviderOptions,
   sandboxProvider,
@@ -273,6 +274,8 @@ export interface HarnessOptions {
   /** `models/v1.Models`'s models (as JSON) by provider id. */
   readonly models?: Readonly<Record<string, readonly JsonValue[]>>;
   readonly sandbox?: SandboxProviderOptions;
+  /** One prompt run of the external executor; finishes with 'done' by default. */
+  readonly execute?: Script;
 }
 
 /** Every llms kind names its credential in a `secret` field called `token`. */
@@ -302,7 +305,10 @@ const externalPorts = (options: HarnessOptions) => {
   const sandbox = sandboxProvider(options.sandbox);
   const side = createTestServices({
     bundle: { id: 'runtime' },
-    provide: [sandbox.definition, executorProvider(async () => 'done')],
+    provide: [
+      sandbox.definition,
+      executorProvider(options.execute ?? (async () => 'done')),
+    ],
   });
   const external: ExternalPorts = {
     sandbox: {
@@ -340,6 +346,15 @@ const fakesOf = (options: HarnessOptions, backend: Backend) => {
   const fakes: ServiceEntry[] = [
     partial(StorageService, {
         ...storage,
+        // A measured disk with room to spare, as the kernel harness answers:
+        // the memory backend measures none, which reads as storage low.
+        health: () => ({
+          storageHealth: {
+            status: 'ok',
+            writable: true,
+            disk: { blocks: 100, availableBlocks: 50 },
+          },
+        }),
         defineType: async (request, context) => {
           record('storage.defineType', { type: request.type });
           await options.defineTypeGate;
@@ -466,9 +481,32 @@ const fakesOf = (options: HarnessOptions, backend: Backend) => {
 
         return { generation: 1, incarnation: 1, state: 'active' };
       },
-      hold: () => ({}),
-      release: () => ({}),
-      signal: () => ({}),
+      hold: (request) => {
+        const holdId = `hold-${calls.length}`;
+        record('generation.hold', {
+          key: request.key,
+          ...(request.label === undefined ? {} : { label: request.label }),
+          holdId,
+        });
+
+        return { holdId };
+      },
+      release: (request) => {
+        record('generation.release', { holdId: request.holdId });
+
+        return {};
+      },
+      signal: (request) => {
+        record('generation.signal', {
+          topic: request.topic,
+          payload:
+            request.payload === undefined
+              ? null
+              : toJson(ValueSchema, request.payload),
+        });
+
+        return {};
+      },
     }),
   ];
 
@@ -501,6 +539,7 @@ export const harness = (options: HarnessOptions = {}) => {
       [RuntimeService, runtime.implementations.runtime],
       [AttachmentsService, runtime.implementations.attachments],
       [UsageService, runtime.implementations.usage],
+      [ThreadsService, runtime.implementations.threads],
       [HookHandlerService, hooks.implementation],
     ] as ServiceEntry[],
     activate: (activated: HostContext) => {
@@ -531,6 +570,13 @@ export const harness = (options: HarnessOptions = {}) => {
     attachments: (scope?: CallScope) =>
       router.client(AttachmentsService, scope === undefined ? {} : { scope }),
     usage: () => router.client(UsageService),
+    threads: (scope?: CallScope, caller?: Caller) =>
+      router.client(ThreadsService, {
+        ...(scope === undefined ? {} : { scope }),
+        ...(caller === undefined ? {} : { caller }),
+      }),
+    /** The control frames the router sends (generation events, signals). */
+    control: router.control,
     hookHandler: () => router.client(HookHandlerService, { caller: core }),
     logs: router.logs,
     stop: async () => {
@@ -569,7 +615,13 @@ export const contextHarness = async (
     'activate',
   );
 
-  return { calls, context, external: external.external };
+  return {
+    calls,
+    context,
+    external: external.external,
+    control: router.control,
+    logs: router.logs,
+  };
 };
 
 /** A started harness, stopped when the test ends. */

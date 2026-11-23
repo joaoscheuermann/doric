@@ -80,6 +80,7 @@ const errorTable: Readonly<Record<string, Code>> = {
   internal: Code.Internal,
   invalid_output: Code.Internal,
   protocol_error: Code.Internal,
+  replay_failed: Code.Internal,
 };
 
 const errorInfoTypeUrl = 'type.googleapis.com/google.rpc.ErrorInfo';
@@ -144,6 +145,19 @@ void test('one code of each family of the error table maps to its gRPC code', ()
   for (const [code, grpc] of families) {
     assert.equal(grpcCodeOf(code), grpc, code);
   }
+});
+
+void test('replay_failed (a WatchThread snapshot that cannot be read) is in the Internal row', () => {
+  assert.equal(grpcCodeOf('replay_failed'), Code.Internal);
+
+  const sent = toConnectError(
+    new ContractError('replay_failed', 'The snapshot could not be read.'),
+  );
+  const rebuilt = fromConnectError(sent);
+
+  assert.equal(sent.code, Code.Internal);
+  assert.equal(rebuilt.code, 'replay_failed');
+  assert.equal(rebuilt.message, 'The snapshot could not be read.');
 });
 
 void test('an unknown code maps to FAILED_PRECONDITION', () => {

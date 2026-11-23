@@ -98,7 +98,10 @@ const errorTable: ReadonlyArray<readonly [Code, readonly string[]]> = [
       'storage_not_migrated',
     ],
   ],
-  [Code.Internal, ['internal', 'invalid_output', 'protocol_error']],
+  [
+    Code.Internal,
+    ['internal', 'invalid_output', 'protocol_error', 'replay_failed'],
+  ],
 ];
 
 const grpcCodes: ReadonlyMap<string, Code> = new Map(

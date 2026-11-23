@@ -9,6 +9,7 @@ import { type HookHandlers, type HostContext, onHostStart } from 'bundle/host';
 import { OnEventAppendedHookInputSchema } from 'core/contracts/gen/doric/core/event_hooks/v1/event_hooks_pb.js';
 
 import type { AttachmentsService } from '../contracts/gen/doric/runtime/attachments/v1/attachments_pb.js';
+import type { ThreadsService } from '../contracts/gen/doric/runtime/threads/v1/threads_pb.js';
 import type { UsageService } from '../contracts/gen/doric/runtime/usage/v1/usage_pb.js';
 import type { RuntimeService } from '../contracts/gen/doric/runtime/v2/runtime_pb.js';
 import type { ArchiveSchedule } from './domain/archiver.js';
@@ -25,6 +26,8 @@ import {
 import { routedAttachmentsService } from './rpc/attachments.js';
 import { routedRuntimeService } from './rpc/runtime.js';
 import { detached } from './rpc/errors.js';
+import { installRoutedHandover } from './rpc/handover.js';
+import { routedThreadsService } from './rpc/threads.js';
 import { routedUsageService } from './rpc/usage.js';
 
 /**
@@ -35,6 +38,8 @@ export interface RuntimeImplementations {
   readonly runtime: ServiceImpl<typeof RuntimeService>;
   readonly attachments: ServiceImpl<typeof AttachmentsService>;
   readonly usage: ServiceImpl<typeof UsageService>;
+  /** `runtime.threads/v1`. */
+  readonly threads: ServiceImpl<typeof ThreadsService>;
 }
 
 export interface RuntimeServicesOptions {
@@ -77,6 +82,7 @@ export interface RuntimeServices {
    *    interruptedProjects})`. A failure fails the start (sequence hook).
    * 6. `hooks.register(context, OnHostStopHookInputSchema, () =>
    *    lifecycle.dispose())`.
+   * 7. `installRoutedHandover(context, lifecycle)` (S46b).
    * The RPCs are served once steps 1–3 are done. Steps 4–6 are awaited too;
    * a refusal rejects `activate`. Throws a `TypeError` on a second call.
    */
@@ -97,6 +103,8 @@ export const createRuntimeServices = (
   let bound: RuntimeCore | undefined;
   /** The activated instance's log, for what `deactivate` cannot report. */
   let log: HostContext['log'] | undefined;
+  /** Removes the generation handover's handlers (step 7). */
+  let removeHandover: (() => void) | undefined;
   const core = (): RuntimeCore => {
     if (bound === undefined)
       throw new ContractError('unavailable', 'runtime is not activated.');
@@ -108,6 +116,7 @@ export const createRuntimeServices = (
       runtime: routedRuntimeService(core),
       attachments: routedAttachmentsService(core),
       usage: routedUsageService(core),
+      threads: routedThreadsService(core),
     },
     activate: async (context, hooks) => {
       if (activated) throw new TypeError('runtime is already activated.');
@@ -164,9 +173,12 @@ export const createRuntimeServices = (
         // Running prompts are suspended while their tool bundles are active.
         await detached(() => runtime.lifecycle.dispose());
       });
+      removeHandover = installRoutedHandover(context, runtime.lifecycle);
     },
     deactivate: async () => {
       if (bound === undefined) return;
+      removeHandover?.();
+      removeHandover = undefined;
       try {
         await bound.lifecycle.dispose();
         await bound.service.dispose();
