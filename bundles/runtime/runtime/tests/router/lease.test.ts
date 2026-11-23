@@ -613,7 +613,7 @@ describe('runtime.lease/v1', () => {
     assert.equal(sshed.response?.username, 'root');
   });
 
-  test('17: Start runs the head on the lease, forwards writes and resizes in order, answers every output in order, then exit, then ends; a first item that is not a head fails INVALID_ARGUMENT and starts nothing', async (t) => {
+  test('17: Start runs the head on the lease, forwards writes and resizes in order, answers started, then every output in order, then exit, then ends; a first item that is not a head fails INVALID_ARGUMENT and starts nothing', async (t) => {
     const { h, processes } = await leased(t, { startable: true });
     const project = await readyProject(h);
     const [leaseId] = h.sandboxProvider.leases();
@@ -643,7 +643,7 @@ describe('runtime.lease/v1', () => {
 
     running.input.onOutput?.({ stream: 'stdout', data: 'one' });
     running.input.onOutput?.({ stream: 'stderr', data: 'two' });
-    await items.waitFor(2, 'the outputs');
+    await items.waitFor(3, 'started and the outputs');
     running.finish({
       exitCode: 0,
       stdout: 'one',
@@ -659,13 +659,11 @@ describe('runtime.lease/v1', () => {
       items.items.map(({ item }) =>
         item.case === 'output'
           ? [item.value.stream, item.value.data]
-          : [item.case, item.value?.exitCode],
+          : item.case === 'exit'
+            ? [item.case, item.value.exitCode]
+            : [item.case],
       ),
-      [
-        ['stdout', 'one'],
-        ['stderr', 'two'],
-        ['exit', 0],
-      ],
+      [['started'], ['stdout', 'one'], ['stderr', 'two'], ['exit', 0]],
     );
 
     const refused = await failure(
@@ -704,7 +702,7 @@ describe('runtime.lease/v1', () => {
     await settle();
     assert.equal(h.sandboxProvider.starts[0]?.signal.aborted, false);
     processes[0]?.input.onOutput?.({ stream: 'stdout', data: 'still here' });
-    await kept.waitFor(1, 'the output after the half-close');
+    await kept.waitFor(2, 'started and the output after the half-close');
     processes[0]?.finish({
       exitCode: 0,
       stdout: 'still here',
@@ -714,6 +712,10 @@ describe('runtime.lease/v1', () => {
     });
     await within(kept.done, 'the end of the first Start');
     assert.equal(kept.error(), undefined);
+    assert.deepEqual(
+      kept.items.map(({ item }) => item.case),
+      ['started', 'output', 'exit'],
+    );
 
     const controller = new AbortController();
     const cancelled = pushable<StartItem>();

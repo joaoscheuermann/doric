@@ -13,7 +13,10 @@ import type { BundleInstance } from 'bundle/host';
 import type { Sandbox, SandboxExecInput } from 'sandbox';
 import type { SandboxLease } from 'sandpool';
 
-import type { StartRequestSchema } from '../../src/contracts/gen/doric/runtime/lease/v1/lease_pb.js';
+import type {
+  StartRequestSchema,
+  StartResponse,
+} from '../../src/contracts/gen/doric/runtime/lease/v1/lease_pb.js';
 import { LeaseService } from '../../src/contracts/gen/doric/runtime/lease/v1/lease_pb.js';
 import {
   type OpenThreadRequestSchema,
@@ -71,6 +74,27 @@ const successor = { bundleId: 'runtime', generation: 2, incarnation: 1 };
 
 type OpenRequest = MessageInitShape<typeof OpenThreadRequestSchema>;
 type StartItem = MessageInitShape<typeof StartRequestSchema>;
+
+/** A `Start` head on the sandbox of Thread session `threadSessionId`. */
+const sessionHead = (
+  threadSessionId: string,
+  cmd: readonly string[],
+): StartItem => ({
+  item: {
+    case: 'head',
+    value: { target: { threadSessionId }, request: { cmd: [...cmd] } },
+  },
+});
+
+/** `Start` answers as `[case]`, `[output, stream, data]` or `[exit, code]`. */
+const startItems = (items: readonly StartResponse[]) =>
+  items.map(({ item }) => {
+    if (item.case === 'output')
+      return [item.case, item.value.stream, item.value.data];
+    if (item.case === 'exit') return [item.case, item.value.exitCode];
+
+    return [item.case];
+  });
 
 /** Resolves when `held` opens or the run is stopped. */
 const holdUntil = (held: Gate, signal: AbortSignal | undefined) =>
@@ -513,7 +537,7 @@ describe('runtime.workspace/v1', () => {
     );
   });
 
-  test("30: a Start on the session's sandbox keeps running after the session's stream is cancelled: the fake's Start is not aborted and its output still arrives", async (t) => {
+  test("30: a Start on the session's sandbox keeps running after the session's stream is cancelled once it answered started: the fake's Start is not aborted and its output still arrives (S54a L3)", async (t) => {
     const recording = recordingSandbox({
       id: 'vm-5',
       root: '/srv',
@@ -535,10 +559,8 @@ describe('runtime.workspace/v1', () => {
         },
       },
     });
-    await eventually(
-      () => recording.processes.length === 1,
-      'the started process',
-    );
+    await output.waitFor(1, 'the started item');
+    assert.equal(output.items[0]?.item.case, 'started');
 
     opened.cancel();
     await within(opened.items.done, 'the cancelled OpenThread');
@@ -549,7 +571,7 @@ describe('runtime.workspace/v1', () => {
       stream: 'stdout',
       data: 'still here',
     });
-    await output.waitFor(1, 'the output after the session ended');
+    await output.waitFor(2, 'the output after the session ended');
     recording.processes[0]?.finish({
       exitCode: 0,
       stdout: 'still here',
@@ -560,6 +582,79 @@ describe('runtime.workspace/v1', () => {
     requests.end();
     await within(output.done, 'the end of Start');
     assert.equal(output.error(), undefined);
+    assert.deepEqual(startItems(output.items), [
+      ['started'],
+      ['output', 'stdout', 'still here'],
+      ['exit', 0],
+    ]);
+  });
+
+  test('S54a L1: Start on a session answers started first, then the output the process produced before start resolved, in order, then later output, then exit', async (t) => {
+    const recording = recordingSandbox({
+      id: 'vm-5',
+      root: '/srv',
+      startable: true,
+      startOutput: [
+        { stream: 'stdout', data: 'early one' },
+        { stream: 'stderr', data: 'early two' },
+      ],
+    });
+    const h = await started(t, { sandbox: { sandbox: recording.sandbox } });
+    const project = await readyProject(h);
+    const thread = await newThread(h, project.id);
+    const opened = await session(h, { threadId: thread.id, exclusive: false });
+    t.after(() => opened.cancel());
+    const requests = pushable<StartItem>();
+
+    const output = collect(h.lease().start(requests));
+    requests.push(sessionHead(opened.ready.threadSessionId, ['bash']));
+    await output.waitFor(3, 'started and the early output');
+    recording.processes[0]?.input.onOutput?.({
+      stream: 'stdout',
+      data: 'late',
+    });
+    await output.waitFor(4, 'the later output');
+    recording.processes[0]?.finish({
+      exitCode: 0,
+      stdout: 'early onelate',
+      stderr: 'early two',
+      stdoutBytes: new TextEncoder().encode('early onelate'),
+      stderrBytes: new TextEncoder().encode('early two'),
+    });
+    requests.end();
+    await within(output.done, 'the end of Start');
+
+    assert.equal(output.error(), undefined);
+    assert.deepEqual(startItems(output.items), [
+      ['started'],
+      ['output', 'stdout', 'early one'],
+      ['output', 'stderr', 'early two'],
+      ['output', 'stdout', 'late'],
+      ['exit', 0],
+    ]);
+  });
+
+  test('S54a L2: a head refused (a sandbox without start: unsupported_operation; an unknown session: unknown_session) fails the call with no started item', async (t) => {
+    const recording = recordingSandbox({ id: 'vm-5', root: '/srv' });
+    const h = await started(t, { sandbox: { sandbox: recording.sandbox } });
+    const project = await readyProject(h);
+    const thread = await newThread(h, project.id);
+    const opened = await session(h, { threadId: thread.id, exclusive: false });
+    t.after(() => opened.cancel());
+
+    for (const [threadSessionId, code] of [
+      [opened.ready.threadSessionId, 'unsupported_operation'],
+      [unknownId, 'unknown_session'],
+    ] as const) {
+      const requests = pushable<StartItem>();
+      const output = collect(h.lease().start(requests));
+      requests.push(sessionHead(threadSessionId, ['bash']));
+      await within(output.done, `the refused Start (${code})`);
+      requests.end();
+
+      assert.equal(contractErrorOf(output.error()).code, code);
+      assert.deepEqual(startItems(output.items), [], `no item (${code})`);
+    }
   });
 
   test('31: with refreshHint, the end of the session probes the hint on the sandbox and a changed hint fires onThreadCwdChangedHook; without it, no probe', async (t) => {

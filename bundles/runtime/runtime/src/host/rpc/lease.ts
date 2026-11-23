@@ -118,11 +118,13 @@ type StartItem = MessageInitShape<typeof StartResponseSchema>;
  *   half-close, with `putFile`.
  * - `Start`: the first item must be `head` (else `invalid_input`, nothing
  *   starts). A sandbox without `start` fails `unsupported_operation`
- *   (UNIMPLEMENTED); so does the provider's. Then every later
- *   `write`/`resize` is forwarded in order (a `head` after the first is
- *   `invalid_input` and terminates the process). Answers one `output` item
- *   per chunk in order, then one `exit`, then ends. The client's half-close
- *   does not stop the process; cancelling the call terminates it
+ *   (UNIMPLEMENTED); so does the provider's. Once `start` resolved, answers
+ *   one `started` item; output the process produced before that is answered
+ *   after it, in order. Then every later `write`/`resize` is forwarded in
+ *   order (a `head` after the first is `invalid_input` and terminates the
+ *   process). Answers one `output` item per chunk in order, then one `exit`,
+ *   then ends. A failure before `started` means nothing runs. The client's
+ *   half-close does not stop the process; cancelling the call terminates it
  *   (`terminate()`); a process started on a session's sandbox keeps running
  *   after the session ends.
  * - Unary operations on a Project target (step 3) run inside `withLease`, so
@@ -341,11 +343,21 @@ export const routedLeaseService = (
             }
           };
           void (async () => {
+            /** Output produced before `start` resolved, answered after `started`. */
+            let early: StartItem[] | undefined = [];
             process = await start({
               ...input,
-              onOutput: (output) =>
-                sink.next({ item: { case: 'output', value: output } }),
+              onOutput: (output) => {
+                const item: StartItem = {
+                  item: { case: 'output', value: output },
+                };
+                if (early === undefined) sink.next(item);
+                else early.push(item);
+              },
             });
+            sink.next({ item: { case: 'started', value: {} } });
+            for (const item of early) sink.next(item);
+            early = undefined;
             forward(process).catch((error: unknown) => sink.end(error));
             const result = await process.result;
             exited = true;

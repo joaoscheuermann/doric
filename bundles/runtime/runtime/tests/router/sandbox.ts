@@ -490,6 +490,8 @@ export interface RecordingSandboxOptions {
   readonly ssh?: SandboxSshAccess;
   /** Gives the sandbox a `start` whose processes the case drives. */
   readonly startable?: boolean;
+  /** Output every started process produces before `start` resolves. */
+  readonly startOutput?: readonly SandboxProcessOutput[];
 }
 
 /**
@@ -523,6 +525,7 @@ export const recordingSandbox = (options: RecordingSandboxOptions = {}) => {
       finish,
     };
     processes.push(started);
+    for (const output of options.startOutput ?? []) input.onOutput?.(output);
 
     return {
       result,

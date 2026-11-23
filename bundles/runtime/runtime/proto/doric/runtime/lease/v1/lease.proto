@@ -1,4 +1,4 @@
-// `runtime.lease/v1` (host, 1.4.0): the sandbox operations bundles run on a
+// `runtime.lease/v1` (host, 1.5.0): the sandbox operations bundles run on a
 // Project's current sandbox, served by `runtime`, which never acquires a
 // sandbox for them. Each operation holds a `LeaseTarget` and the content
 // messages `sandbox/v1` declares for the same operation.
@@ -18,6 +18,7 @@
 // `Stats` are added; every operation takes a `LeaseTarget`; `readFileBytes`
 // streams its bytes; an operation without a ready lease fails with
 // `unavailable` and a `leaseStatus` detail instead of answering the state.
+// 1.5.0: `Start` answers `started` first, once the process started.
 syntax = "proto3";
 
 package doric.runtime.lease.v1;
@@ -212,7 +213,8 @@ message StartRequest {
   }
 }
 
-// One item of a live process: its output, then its exit.
+// One item of a live process: `started` first, then its output, then its
+// exit.
 message StartResponse {
   // The item.
   oneof item {
@@ -221,8 +223,15 @@ message StartResponse {
     doric.sandbox.v1.SandboxProcessOutput output = 1;
     // The process ended; the last item.
     doric.sandbox.v1.SandboxExecResult exit = 2;
+    // The process started on the resolved sandbox; the first item, sent
+    // once. A Thread session the head named may end after it: the process
+    // keeps running.
+    StartedProcess started = 3;
   }
 }
+
+// A live process started.
+message StartedProcess {}
 
 // The first item of a `PutFile` stream.
 message PutFileHead {
