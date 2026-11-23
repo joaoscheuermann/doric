@@ -1055,6 +1055,24 @@ after a 5 s grace; a failure after the cancel answers `run_cancelled` or
   `expectSandboxId` on every step, the first `leaseStatus` failure is the
   `{ status }` answer, other failures keep code, message and details). `files`
   uses them; `screen` and `resources` keep their own.
+- 2026-11-23: phase 3, slice S55b, of
+  [`docs/designs/grpc-processes.md`](../designs/grpc-processes.md): `git`'s
+  host part builds as a process (`src/host/main.ts`, `createGitProcessHost`).
+  `activate` tracks `secrets/v1.RegisterKind` for `GIT` through
+  `context.registrations.track`, then registers the tool `git`
+  (`alwaysAvailable: false`, `order: 900`); after a kind refusal no tool is
+  registered. The tool's routed ports run on `runOnProjectLease`, with a
+  `Describe` wrapper that keeps the provider's error.
+- 2026-11-23: phase 3, slice S55c, of
+  [`docs/designs/grpc-processes.md`](../designs/grpc-processes.md): the
+  process also serves `git.commands/v1`; `main.ts` serves `CommandsService`
+  and `ToolHandlerService`. `createGitCommands` holds the operations for the
+  kernel and the process; routed Thread methods use `withThreadSession`
+  (`exclusive`) and `ThreadState` for busy working directories, Project
+  methods `runOnProjectLease` scoped to `{projectId}`; a `terminal/v1` `List`
+  answering `unavailable` counts as no sessions. Methods fail `unavailable`
+  "git is not activated." before activation. The kernel entry stays until
+  S62.
 - 2026-11-23: phase 3, slice S56, of
   [`docs/designs/grpc-processes.md`](../designs/grpc-processes.md): `openui`
   runs as its own process (`src/host/main.ts`, `createOpenuiHost`) serving

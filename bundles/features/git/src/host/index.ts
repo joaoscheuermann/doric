@@ -2,6 +2,7 @@ import { type HostContext, SecretsV1, ToolsV1 } from 'bundle/contracts';
 import { type TerminalService, TerminalServiceV1 } from 'terminal/contracts';
 
 import { gitCredentialKind } from './credentials.js';
+import { kernelRegistrable } from './ports.js';
 import { createGitService } from './service.js';
 import { createTool } from './tools/git.js';
 
@@ -26,7 +27,7 @@ export const activate = ({ services }: HostContext): void => {
 
   services.provide(createGitService(() => terminals));
 
-  services.use(ToolsV1).register(createTool(), {
+  services.use(ToolsV1).register(kernelRegistrable(createTool()), {
     alwaysAvailable: false,
     // Global model-visible position (D10-5).
     order: 900,

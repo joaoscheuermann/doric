@@ -2,9 +2,8 @@
 // provisional `git-status.ts` (`PROBE_SCRIPT`, `threadGit`, `statusOf`). The
 // repository hint and its origin parsing stay with the runtime.
 
-import type { Sandbox } from 'sandbox';
-
 import type { GitOperation, ThreadGit } from '../contracts/index.js';
+import type { GitSandbox } from './sandbox.js';
 
 /**
  * The whole Git summary in one sandbox round trip: the labeled facts below, then
@@ -62,7 +61,7 @@ const NOT_A_REPO: ThreadGit = { repo: false };
 
 /** The Git summary of one working directory, answering `repo: false` when there is none. */
 export const threadGit = async (
-  sandbox: Sandbox,
+  sandbox: GitSandbox,
   cwd: string,
 ): Promise<ThreadGit> => {
   const result = await sandbox.exec({

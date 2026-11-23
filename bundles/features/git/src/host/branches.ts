@@ -3,9 +3,8 @@
 // physical-path check of `domain/cwd.ts` copied (a helper both sides need is
 // copied, not imported across bundles).
 
-import type { Sandbox } from 'sandbox';
-
 import type { Branch, Branches, BranchSwitch } from '../contracts/index.js';
+import type { GitSandbox } from './sandbox.js';
 import { threadGit } from './status.js';
 
 /**
@@ -30,7 +29,7 @@ esac
  * claims to be in.
  */
 export const physicallyInside = async (
-  sandbox: Sandbox,
+  sandbox: GitSandbox,
   root: string,
   path: string,
 ): Promise<boolean> => {
@@ -43,7 +42,7 @@ export const physicallyInside = async (
 
 /** Local branches only; remote fetching and branch creation are separate actions. */
 export async function readBranches(
-  sandbox: Sandbox,
+  sandbox: GitSandbox,
   cwd: string,
 ): Promise<Branches> {
   if (!(await physicallyInside(sandbox, sandbox.root, cwd)))
@@ -96,7 +95,7 @@ export async function readBranches(
 
 /** Switches an existing local branch without discarding changes or creating a stash. */
 export async function switchBranch(
-  sandbox: Sandbox,
+  sandbox: GitSandbox,
   cwd: string,
   branch: string,
 ): Promise<BranchSwitch> {

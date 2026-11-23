@@ -6,7 +6,7 @@
 import { Buffer } from 'node:buffer';
 import { posix } from 'node:path';
 
-import { listSandboxRepos, type Sandbox, workspacePathKind } from 'sandbox';
+import { listSandboxRepos, workspacePathKind } from 'sandbox';
 
 import type {
   ChangeSetEntry,
@@ -16,6 +16,7 @@ import type {
   ProjectChangeStatus,
   RepositoryChanges,
 } from '../contracts/index.js';
+import type { GitSandbox } from './sandbox.js';
 
 /** The largest text payload the content route returns. */
 export const CONTENT_LIMIT_BYTES = 262_144;
@@ -31,7 +32,7 @@ export type ProjectFileRead =
 
 /** Reads one workspace file as bounded UTF-8 text, never a mangled binary. */
 export const readProjectFile = async (
-  sandbox: Sandbox,
+  sandbox: GitSandbox,
   path: string,
 ): Promise<ProjectFileRead> => {
   const kind = await workspacePathKind(sandbox, path);
@@ -73,7 +74,7 @@ const fileText = (bytes: Uint8Array) => {
  * is left to the outer one, exactly as Git reports it.
  */
 export const projectChanges = async (
-  sandbox: Sandbox,
+  sandbox: GitSandbox,
   path = '',
 ): Promise<readonly ProjectChangeSet[]> => {
   const repos = await listSandboxRepos(sandbox);
@@ -180,7 +181,7 @@ const parseChanges = (text: string): readonly FileChange[] => {
   return changes;
 };
 
-const readChanges = async (sandbox: Sandbox, repository: string) => {
+const readChanges = async (sandbox: GitSandbox, repository: string) => {
   const result = await sandbox.exec({
     cmd: [
       'git',
@@ -199,7 +200,7 @@ const readChanges = async (sandbox: Sandbox, repository: string) => {
 };
 
 const readHead = async (
-  sandbox: Sandbox,
+  sandbox: GitSandbox,
   cwd: string,
 ): Promise<string | undefined> => {
   const head = await sandbox.exec({
@@ -258,7 +259,7 @@ const ORIGINAL_SCRIPT = [
 
 /** Reads HEAD's bytes of one path, bounded; empty when HEAD has none. */
 const readOriginal = async (
-  sandbox: Sandbox,
+  sandbox: GitSandbox,
   cwd: string,
   path: string,
 ): Promise<Uint8Array> => {
@@ -362,7 +363,7 @@ const batches = (paths: readonly string[]): readonly string[][] => {
 
 /** Lines each path adds compared with empty, a constant number of execs. */
 const readAddedTotals = async (
-  sandbox: Sandbox,
+  sandbox: GitSandbox,
   cwd: string,
   paths: readonly string[],
 ) => {
@@ -382,7 +383,7 @@ const readAddedTotals = async (
 };
 
 const readLineTotals = async (
-  sandbox: Sandbox,
+  sandbox: GitSandbox,
   repository: string,
   changes: readonly FileChange[],
 ) => {
@@ -426,7 +427,7 @@ const readLineTotals = async (
 
 /** Reads status and line counts; no file bodies or patches cross the boundary. */
 export const readProjectChanges = async (
-  sandbox: Sandbox,
+  sandbox: GitSandbox,
   scope = '',
 ): Promise<readonly RepositoryChanges[]> => {
   const repos = await listSandboxRepos(sandbox);
@@ -486,7 +487,7 @@ const repositoryPath = (repository: string): boolean =>
 
 /** The repository's status records, or `undefined` when it is no repository. */
 const readStatus = async (
-  sandbox: Sandbox,
+  sandbox: GitSandbox,
   repository: string,
   args: readonly string[],
 ): Promise<readonly FileChange[] | undefined> => {
@@ -524,7 +525,7 @@ const pairable = (change: FileChange): boolean =>
  * whole status, which pairs renames without walking untracked files.
  */
 const readChange = async (
-  sandbox: Sandbox,
+  sandbox: GitSandbox,
   repository: string,
   path: string,
 ): Promise<FileChange | undefined> => {
@@ -556,7 +557,7 @@ const WORKING_SCRIPT = [
 
 /** The working file's bytes; `undefined` when it is missing. */
 const readWorking = async (
-  sandbox: Sandbox,
+  sandbox: GitSandbox,
   path: string,
 ): Promise<Uint8Array | undefined> => {
   const result = await sandbox.exec({
@@ -591,7 +592,7 @@ const settle = <T>(read: Promise<T>) =>
  * only a rename reads HEAD again, at the path it came from.
  */
 export const readProjectFileDiff = async (
-  sandbox: Sandbox,
+  sandbox: GitSandbox,
   repository: string,
   path: string,
 ): Promise<FileDiff | undefined> => {

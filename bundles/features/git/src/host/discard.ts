@@ -9,10 +9,11 @@
 
 import { posix } from 'node:path';
 
-import { type Sandbox, workspacePathKind } from 'sandbox';
+import { workspacePathKind } from 'sandbox';
 
 import type { Discard, FileChange } from '../contracts/index.js';
 import { readProjectChanges, under } from './changes.js';
+import type { GitSandbox } from './sandbox.js';
 
 /** What one Discard asks for, with the Thread it runs on. */
 export interface DiscardRequest {
@@ -73,7 +74,7 @@ const validRepository = (repository: string): boolean =>
 
 /** A change Discard must not touch: a nested repository or a submodule. */
 const separateRepository = async (
-  sandbox: Sandbox,
+  sandbox: GitSandbox,
   repository: string,
   path: string,
 ): Promise<boolean> =>
@@ -82,7 +83,7 @@ const separateRepository = async (
 
 /** The changes the read lists for `repository` in the Thread's scope. */
 const listedChanges = async (
-  sandbox: Sandbox,
+  sandbox: GitSandbox,
   scope: string,
   repository: string,
 ): Promise<readonly FileChange[] | undefined> =>
@@ -92,7 +93,7 @@ const listedChanges = async (
 
 /** Step 4: every listed change but other repositories, or exactly `paths`. */
 const targetsOf = async (
-  sandbox: Sandbox,
+  sandbox: GitSandbox,
   repository: string,
   changes: readonly FileChange[],
   paths: readonly string[] | undefined,
@@ -154,7 +155,7 @@ const firstLine = (text: string): string | undefined =>
 
 /** Step 6: one command per target; the first failure stops the loop. */
 const runDiscard = async (
-  sandbox: Sandbox,
+  sandbox: GitSandbox,
   repository: string,
   targets: readonly FileChange[],
 ): Promise<string | undefined> => {
@@ -183,7 +184,7 @@ const runDiscard = async (
 
 /** Steps 1–6 of a Discard on the Thread's sandbox. */
 export const discardChanges = async (
-  sandbox: Sandbox,
+  sandbox: GitSandbox,
   request: DiscardRequest,
 ): Promise<Discard> => {
   const { repository } = request;

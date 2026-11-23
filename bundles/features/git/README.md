@@ -825,6 +825,38 @@ Monaco's unlayered sheet, the rule
 `.monaco-editor .monaco-scrollable-element > .scrollbar > .slider` that draws
 Monaco's scrollbar slider as the window's 7 px pill.
 
+## The host process
+
+The host part also builds as a process (phase 3 of
+[`docs/designs/grpc-processes.md`](../../../docs/designs/grpc-processes.md)),
+into `dist/host/main.mjs`; the running host keeps the kernel entry
+([`src/host/index.ts`](src/host/index.ts)) until slice S62.
+
+- [`src/host/main.ts`](src/host/main.ts) runs `createGitProcessHost`
+  ([`src/host/part.ts`](src/host/part.ts)) with `runBundle`, serving
+  `CommandsService` (`git.commands/v1`) and `ToolHandlerService` (the tool).
+- `activate` first tracks `SecretsService.registerKind` for the `GIT` kind
+  through `context.registrations.track`, so the kind is replayed after a
+  `core` restart, then registers the tool `git` with
+  `{alwaysAvailable: false, order: 900}`, then binds `git.commands/v1`. It
+  rejects with the first refusal; after a kind refusal no tool is
+  registered. Before `activate` resolved, or after a refusal, every
+  `git.commands/v1` method fails `unavailable` "git is not activated.".
+- The operations of `git.commands/v1` live once in `createGitCommands`
+  ([`src/host/commands.ts`](src/host/commands.ts)), used by the kernel
+  through `kernelGitCommandPorts` ([`src/host/ports.ts`](src/host/ports.ts))
+  and by the process through `routedGitCommandPorts`
+  ([`src/host/routed.ts`](src/host/routed.ts)); the tool's ports are
+  `kernelGitToolPorts` and `routedGitToolPorts`. Responses are encoded by
+  [`src/host/codec.ts`](src/host/codec.ts).
+- Routed, Thread methods open a session with `withThreadSession` (passing
+  `exclusive`) and read the busy working directories from `ThreadState`;
+  Project methods and the tool's sandbox run through `runOnProjectLease`,
+  scoped to `{projectId}`. The tool wraps `Describe` so a lease failure keeps
+  the provider's error instead of becoming a status answer. The busy check
+  lists `terminal/v1` sessions with `List`; an `unavailable` answer counts as
+  no sessions.
+
 ## Build and test
 
 ```console

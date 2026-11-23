@@ -5,11 +5,7 @@ import type { LeaseExecResult } from 'runtime/contracts';
 import { defineTool, type ToolDefinitionObject } from 'tool';
 import { z } from 'zod';
 
-import {
-  currentDirectory,
-  type LeaseSandbox,
-  leaseSandbox,
-} from '../sandbox.js';
+import type { GitToolPorts } from '../ports.js';
 
 const DEFAULT_TIMEOUT_MS = 120_000;
 const MAX_TIMEOUT_MS = 600_000;
@@ -57,25 +53,32 @@ const environment = [
   'GCM_INTERACTIVE=Never',
 ] as const;
 
-/** Creates the provider-neutral, non-interactive Git command tool. */
+/**
+ * The provider-neutral, non-interactive Git command tool over `GitToolPorts`.
+ * `execute(input, call, ports)` reads `ports.cwd(call)` then
+ * `ports.sandbox(call)` (each failure rejects the call) and runs one `exec`;
+ * an `exec` failure is the output (`exit_code: -1`, stderr "Failed to
+ * execute Git in sandbox: …").
+ */
 export const createTool = (): ToolDefinitionObject<
   typeof input,
-  typeof output
+  typeof output,
+  GitToolPorts
 > =>
   defineTool({
     name: 'git',
     description,
     input,
     output,
-    execute: async (input, call, services): Promise<GitOutput> => {
-      const cwd = await currentDirectory(services, call);
+    execute: async (input, call, ports: GitToolPorts): Promise<GitOutput> => {
+      const cwd = await ports.cwd(call);
 
-      return execute(await leaseSandbox(services, call), cwd, input);
+      return execute(await ports.sandbox(call), cwd, input);
     },
   });
 
 const execute = async (
-  sandbox: LeaseSandbox,
+  sandbox: Awaited<ReturnType<GitToolPorts['sandbox']>>,
   cwd: string,
   input: Input,
 ): Promise<GitOutput> => {

@@ -8,7 +8,9 @@ import {
   runtimeWorkspaceMethods,
 } from 'runtime/contracts';
 import type { Sandbox } from 'sandbox';
-import type { Tool, ToolDefinitionObject, ToolInput, ToolOutput } from 'tool';
+import type { Tool, ToolInput, ToolOutput, UnboundTool } from 'tool';
+
+import { type GitToolPorts, kernelGitToolPorts } from '../../src/host/ports.js';
 
 /** The sandbox operations the fake lease forwards. */
 export type LeasedSandbox = Pick<
@@ -70,9 +72,12 @@ const providers = (sandbox: LeasedSandbox, host: Host) => [
   }),
 ];
 
-/** The agent-loop tool of `definition` for one prompt over a fake lease and Thread. */
+/**
+ * The agent-loop tool of `definition` for one prompt over a fake lease and
+ * Thread, bound to `kernelGitToolPorts` of the kernel `Services` (S55b F0).
+ */
 export const bindTool = <I extends ToolInput, O extends ToolOutput>(
-  definition: ToolDefinitionObject<I, O>,
+  definition: UnboundTool<I, O, GitToolPorts>,
   sandbox: LeasedSandbox,
   host: Host,
 ): Tool<I, O> => {
@@ -81,7 +86,7 @@ export const bindTool = <I extends ToolInput, O extends ToolOutput>(
     provide: providers(sandbox, host),
   });
 
-  return definition.bind(harness.services).toTool(
+  return definition.bind(kernelGitToolPorts(harness.services)).toTool(
     harness.call({
       projectId: 'project-1',
       threadId: 'thread-1',
