@@ -43,6 +43,7 @@ import { callContextKey, callerIncarnationKey } from '../contracts/metadata.js';
 import { toConnectError } from '../contracts/status.js';
 import { abortAtDeadline, anySignal } from '../runtime/call.js';
 import { childTrace, newTrace } from '../runtime/trace.js';
+import { createHostAssets } from '../sdk/host/assets.js';
 import type { BundleInstance, HostContext } from '../sdk/host/context.js';
 import { createGenerations } from '../sdk/host/generations.js';
 import { createReplays } from '../sdk/host/replay.js';
@@ -108,6 +109,14 @@ export interface TestRouterOptions {
    * Fields left out take their default.
    */
   readonly instance?: Partial<BundleInstance>;
+  /**
+   * The bundle directory of the bundle under test, as
+   * `StartBundleOptions.bundleDir` gives it: `context.assets` reads its
+   * `manifest.json`'s `host.assets` and its files, and `require` resolves
+   * from it, as in development. Absent: `context.assets` rejects (`require`
+   * throws) with an `Error` naming the bundle.
+   */
+  readonly bundleDir?: string;
 }
 
 /** How one {@link TestRouter.client} calls the bundle under test. */
@@ -336,6 +345,10 @@ export const createTestRouter = (
     registrations: replays.registrations,
     instances: replays.instances,
     generations: generations.api,
+    assets: createHostAssets({
+      bundleDir: options.bundleDir,
+      bundleId: instance.bundleId,
+    }),
     log,
     signal: stopped.signal,
   };

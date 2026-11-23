@@ -31,6 +31,7 @@ import { fromConnectError } from '../../src/contracts/status.js';
 import type { HostContext, ServiceEntry } from '../../src/sdk/host/index.js';
 import { currentCall } from '../../src/sdk/host/serve.js';
 import { createTestRouter } from '../../src/testing/index.js';
+import { manifest, withRoot, writeBundle } from '../support/fixtures.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -964,5 +965,81 @@ describe('bundle/testing at import', () => {
     };
     assert.equal(output.text, 'ok');
     assert.deepEqual(output.http2, []);
+  });
+});
+
+describe('createTestRouter: context.assets', () => {
+  /** A bundle directory whose manifest lists `src/host/skills/*.md`. */
+  const writeAssetsBundle = (root: string): Promise<string> =>
+    writeBundle(root, 'assets-demo', {
+      manifest: {
+        ...manifest('assets-demo'),
+        host: { assets: ['src/host/skills/*.md'] },
+      },
+      files: {
+        'src/host/skills/a.md': 'hello',
+        'src/host/other.md': 'not an asset',
+      },
+    });
+
+  /** The message of the `Error` `promise` rejects with. */
+  const rejectionOf = async (promise: Promise<unknown>): Promise<string> => {
+    try {
+      await within(promise, 'the read');
+    } catch (error) {
+      assert.ok(error instanceof Error, `expected an Error: ${error}`);
+
+      return error.message;
+    }
+
+    return assert.fail('the read resolved');
+  };
+
+  test('with bundleDir, read answers a listed file and refuses an unlisted one, without a build', async () => {
+    await withRoot(async (root) => {
+      const bundleDir = await writeAssetsBundle(root);
+      const router = createTestRouter({
+        bundleDir,
+        instance: { bundleId: 'assets-demo' },
+      });
+      const context = await router.activate({ activate: () => {} });
+
+      const bytes = await within(
+        context.assets.read('src/host/skills/a.md'),
+        'the read',
+      );
+
+      assert.equal(new TextDecoder().decode(bytes), 'hello');
+
+      const message = await rejectionOf(
+        context.assets.read('src/host/other.md'),
+      );
+
+      assert.ok(message.includes('src/host/other.md'), message);
+      assert.ok(message.includes('assets-demo'), message);
+      assert.match(message, /not listed/i);
+      await router.control.stop();
+    });
+  });
+
+  test('without bundleDir, activation succeeds and read and require fail naming the bundle', async () => {
+    const router = createTestRouter({ instance: { bundleId: 'no-dir-bundle' } });
+    const context = await router.activate({ activate: () => {} });
+
+    const message = await rejectionOf(
+      context.assets.read('src/host/skills/a.md'),
+    );
+
+    assert.ok(message.includes('no-dir-bundle'), message);
+    assert.throws(
+      () => context.assets.require('native-ish'),
+      (error: unknown) => {
+        assert.ok(error instanceof Error, `expected an Error: ${error}`);
+        assert.ok(error.message.includes('no-dir-bundle'), error.message);
+
+        return true;
+      },
+    );
+    await router.control.stop();
   });
 });

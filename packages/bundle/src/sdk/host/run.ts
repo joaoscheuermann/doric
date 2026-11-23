@@ -4,6 +4,7 @@
 
 import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
+import { dirname, resolve } from 'node:path';
 
 import {
   create,
@@ -33,6 +34,7 @@ import {
 import { StatusSchema } from '../../contracts/gen/google/rpc/status_pb.js';
 import { toStatus } from '../../contracts/status.js';
 import { timings } from '../../platform/supervisor/timings.js';
+import { createHostAssets } from './assets.js';
 import { createRouterTransport } from './client.js';
 import type { BundleInstance, HostContext } from './context.js';
 import {
@@ -126,6 +128,16 @@ export interface StartBundleOptions {
    * (`timings.helloTimeoutMs`, 10 s). Tests pass shorter values.
    */
   readonly helloTimeoutMs?: number;
+  /**
+   * The bundle directory, absolute: the directory with `manifest.json`, the
+   * root of the asset paths of `context.assets` and of its `require`'s
+   * resolution. Absent: `context.assets` rejects (`require` throws) with an
+   * `Error` naming the bundle; the rest of the bundle runs. `runBundle`
+   * passes two directories above `process.argv[1]`
+   * (`<bundle dir>/dist/host/main.mjs`), or nothing when `process.argv[1]`
+   * is undefined.
+   */
+  readonly bundleDir?: string;
 }
 
 /** A bundle whose Hello was accepted. */
@@ -177,7 +189,7 @@ export const startBundle = async <const T extends readonly DescService[] = []>(
     throw new TypeError('The httpServer of a bundle must not be listening.');
   }
 
-  const host = new HostLink(options.exit);
+  const host = new HostLink(options.exit, options.bundleDir);
   let spawn: SpawnEnvironment;
 
   try {
@@ -207,7 +219,8 @@ export const startBundle = async <const T extends readonly DescService[] = []>(
 
 /**
  * The program of a host part's `src/host/main.ts`: `startBundle` over
- * `process.env` and `process.exit`. Returns at once; the process lives until
+ * `process.env`, `process.exit` and the bundle directory two above
+ * `process.argv[1]`. Returns at once; the process lives until
  * the SDK exits it (code 0 after `Stop`, 70 when the host is gone). A
  * definition `startBundle` rejects with a `TypeError` ends the process as an
  * unhandled rejection (code 1).
@@ -215,9 +228,14 @@ export const startBundle = async <const T extends readonly DescService[] = []>(
 export const runBundle = <const T extends readonly DescService[] = []>(
   definition: BundleDefinition<T>,
 ): void => {
+  const main = process.argv[1];
+
   startBundle(definition, {
     env: process.env,
     exit: (code) => process.exit(code),
+    ...(main === undefined
+      ? {}
+      : { bundleDir: resolve(dirname(main), '..', '..') }),
   }).catch((error: unknown) => {
     if (error instanceof HostGoneError) {
       return;
@@ -429,7 +447,10 @@ class HostLink {
     | undefined;
   private helloTimer: NodeJS.Timeout | undefined;
 
-  constructor(private readonly exitProcess: (code: number) => void) {
+  constructor(
+    private readonly exitProcess: (code: number) => void,
+    private readonly bundleDir: string | undefined,
+  ) {
     this.exited = new Promise((resolve) => {
       this.markExited = resolve;
     });
@@ -486,6 +507,10 @@ class HostLink {
       registrations: replays.registrations,
       instances: replays.instances,
       generations: generations.api,
+      assets: createHostAssets({
+        bundleDir: this.bundleDir,
+        bundleId: spawn.instance.bundleId,
+      }),
       log,
       signal: this.stopped.signal,
     };

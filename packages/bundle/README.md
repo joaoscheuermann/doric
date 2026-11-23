@@ -1723,6 +1723,10 @@ interface ManifestV1 {
   readonly optional?: readonly string[]; // contract ids
   readonly desktopScope?: Readonly<Record<string, readonly string[]>>; // contract id → ≤ SCOPE_MAX_KEYS keys
   readonly description?: string; // trimmed, non-empty
+  readonly host?: {
+    readonly httpPrefix?: string;
+    readonly assets?: readonly string[];
+  }; // strict; v2 has the same assets
 } // ManifestV1Input: the same with provides and requires optional
 const manifestV0Schema: z.ZodType<ManifestV0>; // strict
 interface ManifestV0 {
@@ -2761,7 +2765,7 @@ function runBundle<const T extends readonly DescService[] = []>(
 ): void;
 function startBundle<const T extends readonly DescService[] = []>(
   definition: BundleDefinition<T>,
-  options: StartBundleOptions, // { env, exit, helloTimeoutMs? }
+  options: StartBundleOptions, // { env, exit, helloTimeoutMs?, bundleDir? }
 ): Promise<RunningBundle>; // { instance, exited }
 
 interface BundleDefinition<
@@ -2781,6 +2785,7 @@ interface HostContext {
   readonly generations: HostGenerations; // onChanged, onSignal
   readonly log: Log;
   readonly signal: AbortSignal; // aborted on Stop
+  readonly assets: HostAssets; // read(path), extract(prefix?), require(specifier)
 }
 
 interface UseOptions<S extends DescService = DescService> {
@@ -2816,6 +2821,20 @@ with `generation_lost` is opened again (`reopenResumable`, after
 with `options.resume`'s request for the method built from the last item, or
 the original request. While the SDK replays the registrations of `ref`'s
 contract to a new provider instance, new calls to it wait.
+
+`context.assets` ([`assets.ts`](src/sdk/host/assets.ts)) answers the files the
+manifest's `host.assets` globs match. The globs are relative to the bundle
+directory (`StartBundleOptions.bundleDir`; `runBundle` takes the directory two
+above `process.argv[1]`) and are read from `<bundle dir>/manifest.json` once;
+a glob that is empty, absolute, has a `.`, `..` or empty segment, or a `\` is
+refused by the manifest schema, and `hostAssetsOf(manifest)` answers them in
+order. `read(path)` answers the bytes (`Uint8Array`) of a listed file; a path
+no glob lists, or one that is not normal, rejects with "not listed", also in
+development, and a listed file that is missing rejects with "missing" (both
+name the path and the bundle). `extract(prefix?)` answers the bundle directory
+in development. `require(specifier)` loads a package, such as one with native
+code, with `createRequire` from the bundle directory. Phase 3 copies no asset
+into `dist/`; the single executable application comes in phase 7.
 
 `RegistrationTable<V>` ([`registrations.ts`](src/sdk/host/registrations.ts))
 applies the spec's key rule for registrations (A66): `new
@@ -3359,6 +3378,7 @@ interface TestRouterOptions {
   readonly caller?: Caller; // default { bundleId: 'test', version: '0.0.0', generation: 1 }
   readonly scope?: CallScope;
   readonly instance?: Partial<BundleInstance>; // default test-bundle/1/1
+  readonly bundleDir?: string; // where context.assets reads
 }
 interface TestRouter {
   activate(definition: BundleDefinition): Promise<HostContext>; // as runBundle would, in process

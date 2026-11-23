@@ -33,6 +33,14 @@ export interface AgentOptions {
   readonly temperature?: number;
   readonly maxOutputTokens?: number;
   /**
+   * The most characters of a tool's output a stored `ToolCallRecord` keeps.
+   * Over it, the record's `output` keeps its first `maxRecordOutputChars`
+   * characters and then `\n… [truncated <omitted> of <total> characters]`,
+   * and the model reads that cut output. Absent, the record keeps the whole
+   * output.
+   */
+  readonly maxRecordOutputChars?: number;
+  /**
    * How a provider turn that failed before it produced anything is asked
    * again: only a failure the provider marks `retryable` (rate limits,
    * overload, a dropped connection). Each kind has its own budget: a
@@ -104,7 +112,7 @@ export interface AgentRunOptions<
    * Absent, or `undefined` from the function, means no cap for that call.
    * Over the cap, the text keeps its first `cap` characters and then
    * `\n… [truncated <omitted> of <total> characters]`.
-   * The full output is always kept on the record, so this only limits what the next turn reads.
+   * The record keeps the output up to `AgentOptions.maxRecordOutputChars`, so this only limits what the next turn reads.
    * A function that throws ends the run with its error.
    */
   readonly maxToolResultChars?:

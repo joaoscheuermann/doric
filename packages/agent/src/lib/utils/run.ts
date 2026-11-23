@@ -290,10 +290,11 @@ export const notifyToolEvent = async <Output>(
 };
 
 /**
- * Trims a tool result to the model-facing cap. The full output is still stored
- * on the record, so this only limits what reaches the next turn.
+ * Trims a tool output to `maxChars`, ending it with the truncation marker:
+ * the model-facing cap of an answer, and the record's cap of
+ * `AgentOptions.maxRecordOutputChars`.
  */
-const capOutput = (value: string, maxChars?: number): string => {
+export const capOutput = (value: string, maxChars?: number): string => {
   if (maxChars === undefined || value.length <= maxChars) return value;
 
   const omitted = value.length - maxChars;

@@ -10,6 +10,7 @@ import {
   readManifest,
 } from '../src/index.js';
 import {
+  hostAssetsOf,
   httpPrefixOf,
   httpPrefixPattern,
   manifestV2Schema,
@@ -322,6 +323,70 @@ void test('httpPrefixOf answers host.httpPrefix of either version, or undefined'
     undefined,
   );
   assert.equal(httpPrefixOf(parseManifest(filesV2).manifest), undefined);
+});
+
+void test('accepts host.assets in v1 and v2 and hostAssetsOf answers them in order', () => {
+  const assets = ['src/host/skills/*.md', 'dist/sandbox/runner.mjs'];
+
+  assert.deepEqual(
+    hostAssetsOf(parseManifest({ ...valid, host: { assets } }).manifest),
+    assets,
+  );
+  assert.deepEqual(
+    hostAssetsOf(parseManifest({ ...minimalV2, host: { assets } }).manifest),
+    assets,
+  );
+});
+
+void test('hostAssetsOf answers [] when the manifest sets no host.assets', () => {
+  assert.deepEqual(hostAssetsOf(parseManifest(valid).manifest), []);
+  assert.deepEqual(
+    hostAssetsOf(parseManifest({ ...valid, host: {} }).manifest),
+    [],
+  );
+  assert.deepEqual(hostAssetsOf(parseManifest(minimalV2).manifest), []);
+});
+
+void test('refuses host.assets globs that are not relative, normal and "/"-separated', () => {
+  const refused = [
+    '',
+    '/abs/*.md',
+    '../x',
+    'src/../x',
+    './src/x',
+    'src//x',
+    'src\\x',
+  ];
+
+  for (const glob of refused) {
+    for (const [version, schema, base] of [
+      ['v1', manifestV1Schema, valid],
+      ['v2', manifestV2Schema, minimalV2],
+    ] as const) {
+      const result = schema.safeParse({ ...base, host: { assets: [glob] } });
+
+      assert.equal(result.success, false, `${version} ${JSON.stringify(glob)}`);
+      assert.deepEqual(
+        [
+          ...new Set(
+            result.error?.issues.map((issue) => JSON.stringify(issue.path)),
+          ),
+        ],
+        [JSON.stringify(['host', 'assets', 0])],
+        `${version} ${JSON.stringify(glob)}`,
+      );
+    }
+  }
+});
+
+void test('v2 refuses client.assets', () => {
+  assert.equal(
+    manifestV2Schema.safeParse({
+      ...minimalV2,
+      client: { assets: ['src/client/*.css'] },
+    }).success,
+    false,
+  );
 });
 
 void test('a v1 manifest answers its bundle-wide lists for both parts', () => {

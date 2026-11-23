@@ -6,6 +6,7 @@ export {
   reopenResumable,
   resumableDelays,
 } from '../../runtime/resumable.js';
+export type { HostAssets } from './assets.js';
 export type {
   BundleInstance,
   GenerationChangedEvent,

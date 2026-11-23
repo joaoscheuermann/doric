@@ -7,6 +7,7 @@ import type { Client } from '@connectrpc/connect';
 import type { Log } from '../../contracts/basic/log.js';
 import type { GenerationEvent } from '../../platform/router/control.js';
 import type { ResumeRequests } from '../../runtime/resumable.js';
+import type { HostAssets } from './assets.js';
 
 /**
  * The instance a bundle process is, read from `DORIC_BUNDLE_ID`,
@@ -233,8 +234,6 @@ export interface HostGenerations {
 /**
  * The context of a host part, one per process, given to `activate` and to
  * `deactivate` (the same object both times).
- *
- * `context.assets` lands with section 14.
  */
 export interface HostContext {
   /** The instance this process is. */
@@ -246,6 +245,12 @@ export interface HostContext {
   readonly instances: HostInstances;
   /** The bundle's generation events and peer signals. */
   readonly generations: HostGenerations;
+  /**
+   * The files the manifest's `host.assets` lists and the packages with native
+   * code the part loads (section 14, "Assets"); usable from `activate` until
+   * the process exits, `deactivate` included.
+   */
+  readonly assets: HostAssets;
   /**
    * The log facade: synchronous, never throws, never awaited. The record
    * carries the instance.

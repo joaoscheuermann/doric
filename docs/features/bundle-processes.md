@@ -395,6 +395,36 @@ re-read per spawn; a malformed file quarantines the bundle as
 `invalid_bundle`) and `readStagedCatalogIndex` (a missing `descriptors.binpb`
 is an error).
 
+S31 has `startPlatform` serve, in process and beside `doric.generation/v1`
+and `doric.log/v1`, `doric.catalog/v1` (`Get` only: the present resolution's
+snapshot, bundle states and reasons from the diagnostics by id, quarantined
+providers left out, and the storage identity; `Watch`, `Distribution`,
+`ReadArtifact`, `Disable` and `ResetComposition` answer `UNIMPLEMENTED`
+`unknown_contract` until later slices), `doric.diagnostics/v1` (`Get`,
+`Report`) and `doric.bundle/v1` (`Describe`: the caller as the router stamped
+it, environment `host`). After boot, when an active bundle provides
+`storage.backend/v1`, `startPlatform` reads its `Identity` once as caller
+`doric`; a failing `Identity` rejects `startPlatform`, and a publish does not
+read it again. The `DiagnosticsStore` is still not reloaded on publish, so a
+bundle a publish adds shows inactive in `catalog.Get` (revisited at S62); the
+gateway does not yet expose these methods to the desktop (S63–S66).
+
+S32 adds `host.assets` to manifests v1 and v2: globs relative to the bundle
+directory (refused: empty, absolute, a `.`, `..` or empty segment, a `\`),
+answered by `hostAssetsOf`. The host SDK's `context.assets` reads them:
+`read(path)` answers a listed file's bytes, refuses an unlisted or non-normal
+path ("not listed", also in development) and rejects a listed missing file
+("missing"); `extract(prefix?)` answers the bundle directory in development;
+`require(specifier)` loads a package with native code through `createRequire`
+from the bundle directory. `runBundle` takes the bundle directory two above
+`process.argv[1]`; `StartBundleOptions.bundleDir` and
+`TestRouterOptions.bundleDir` set it. Phase 3 copies no asset into `dist/`;
+the SEA mode comes in phase 7.
+
+S34 adds `AgentOptions.maxRecordOutputChars` to `packages/agent`: it caps the
+output a stored tool record keeps, with `capOutput`'s marker (unset: the whole
+output); `maxToolResultChars` still caps what the model sees.
+
 ## Evolution
 
 - 2026-11-22: phase 0 of
@@ -436,3 +466,15 @@ is an error).
   [`docs/designs/grpc-processes.md`](../designs/grpc-processes.md) (v6.12):
   `dist/descriptors.binpb`, version 2 manifests in `stage`, and the
   `bundle/platform` entry with the staged catalog index and command.
+- 2026-11-22: phase 3, slice S31, of
+  [`docs/designs/grpc-processes.md`](../designs/grpc-processes.md) (v6.12):
+  `startPlatform` serves `doric.catalog/v1` (`Get`), `doric.diagnostics/v1`
+  and `doric.bundle/v1` in process, and reads the storage `Identity` once
+  after boot.
+- 2026-11-22: phase 3, slice S32, of
+  [`docs/designs/grpc-processes.md`](../designs/grpc-processes.md) (v6.12):
+  manifests gain `host.assets`; the host SDK's `context.assets` reads them in
+  development.
+- 2026-11-22: phase 3, slice S34, of
+  [`docs/designs/grpc-processes.md`](../designs/grpc-processes.md) (v6.12):
+  `AgentOptions.maxRecordOutputChars` caps a stored tool record's output.

@@ -6,7 +6,7 @@ import type {
   AgentToolEvent,
 } from '../types/agent.js';
 import type { ToolCallRecord } from '../types/tool-call-storage.js';
-import { notifyToolEvent } from './run.js';
+import { capOutput, notifyToolEvent } from './run.js';
 import { serializeToolResult } from './serialize.js';
 
 type ToolFailedEvent = Extract<AgentToolEvent, { type: 'tool.failed' }>;
@@ -59,7 +59,10 @@ export async function* runTools<Output>(
 
     let finished: Extract<AgentToolEvent, { type: 'tool.finished' }>;
     try {
-      const output = serializeToolResult(result);
+      const output = capOutput(
+        serializeToolResult(result),
+        options.maxRecordOutputChars,
+      );
       const record = options.toolCalls.append(call, output);
       const content = pushResult(record);
       finished = { type: 'tool.finished', call, result, content, record };

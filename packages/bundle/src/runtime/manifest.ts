@@ -159,9 +159,29 @@ const httpPrefix = z
     'Expected one path segment between slashes, "/<segment>/".',
   );
 
+/** Relative, `/`-separated, no empty, `.` or `..` segment, no `\`. */
+export const isNormalForm = (path: string): boolean =>
+  !path.startsWith('/') &&
+  !path.includes('\\') &&
+  path.split('/').every((s) => s !== '' && s !== '.' && s !== '..');
+
+/**
+ * One glob of `host.assets` (section 14, "Assets"): paths relative to the
+ * bundle directory, `/`-separated, matched with `path.posix.matchesGlob`
+ * (`src/host/skills/*.md`, `dist/sandbox/runner.mjs`). Refused: empty,
+ * absolute (leading `/`), a `..` or `.` segment, an empty segment, a `\`.
+ */
+const assetGlob = z
+  .string()
+  .min(1)
+  .refine(
+    isNormalForm,
+    'Expected a glob relative to the bundle directory, "/"-separated, without "." or ".." segments.',
+  );
+
 /**
  * Manifest v1: identity, platform range, declared contracts and, from phase 2,
- * an optional strict `host: { httpPrefix? }` (G7). Any other `host` key is
+ * an optional strict `host` that holds `httpPrefix` and `assets`. Any other `host` key is
  * refused. Its `requires` and `optional` are bundle-wide: `partLists` answers
  * them for every part.
  */
@@ -180,8 +200,14 @@ export const manifestV1Schema = z
     optional: z.array(z.string().regex(contractIdPattern)).optional(),
     desktopScope: desktopScopeSchema.optional(),
     description: z.string().trim().min(1).optional(),
-    /** The host part's settings; v1 holds `httpPrefix` only (G7). */
-    host: z.object({ httpPrefix: httpPrefix.optional() }).strict().optional(),
+    /** The host part's settings: `httpPrefix` (G7) and `assets` (D35). */
+    host: z
+      .object({
+        httpPrefix: httpPrefix.optional(),
+        assets: z.array(assetGlob).optional(),
+      })
+      .strict()
+      .optional(),
   })
   .strict()
   .superRefine((manifest, context) => {
@@ -250,7 +276,7 @@ const checkPart = (
  * `desktopScope` and `description` with their v1 rules, and `requires` and
  * `optional` moved under each part. `host` and `client` are optional and parse
  * to `{ requires: [], optional: [] }` when absent; `host` also holds
- * `httpPrefix`. Unknown keys at any level are refused. Top-level `requires` or
+ * `httpPrefix` and `assets`. Unknown keys at any level are refused. Top-level `requires` or
  * `optional` is refused.
  */
 export const manifestV2Schema = z
@@ -264,7 +290,11 @@ export const manifestV2Schema = z
     engines: z.object({ doric: semverRange }).strict(),
     provides: z.array(contractRef).default([]),
     host: z
-      .object({ ...partListFields, httpPrefix: httpPrefix.optional() })
+      .object({
+        ...partListFields,
+        httpPrefix: httpPrefix.optional(),
+        assets: z.array(assetGlob).optional(),
+      })
       .strict()
       .prefault({}),
     client: z.object(partListFields).strict().prefault({}),
@@ -319,6 +349,14 @@ export const partLists = (manifest: Manifest, part: Part): PartLists => {
  */
 export const httpPrefixOf = (manifest: Manifest): string | undefined =>
   manifest.host?.httpPrefix;
+
+/**
+ * `host.assets` of either version, in manifest order; empty when the manifest
+ * sets none. Each entry passed `assetGlob`'s rule. Pure; never throws on a
+ * manifest produced by `parseManifest`.
+ */
+export const hostAssetsOf = (manifest: Manifest): readonly string[] =>
+  manifest.host?.assets ?? [];
 
 const nameSchema = z.string().trim().min(1);
 

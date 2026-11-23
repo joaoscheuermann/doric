@@ -123,6 +123,7 @@ export { LayeredDirectory } from './layered-directory.js';
 export {
   type ContractEntry,
   convertV0,
+  hostAssetsOf,
   httpPrefixOf,
   httpPrefixPattern,
   type LegacyResource,

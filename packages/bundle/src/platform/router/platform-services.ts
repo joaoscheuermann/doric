@@ -6,12 +6,17 @@
 
 import { randomUUID } from 'node:crypto';
 
-import type {
-  DescMessage,
-  DescService,
-  MessageShape,
+import {
+  type DescMessage,
+  type DescService,
+  fromJson,
+  type JsonObject,
+  type JsonValue,
+  type MessageInitShape,
+  type MessageShape,
+  toJson,
 } from '@bufbuild/protobuf';
-import type { Value } from '@bufbuild/protobuf/wkt';
+import { type Value, ValueSchema } from '@bufbuild/protobuf/wkt';
 import { createValidator } from '@bufbuild/protovalidate';
 import {
   ConnectError,
@@ -33,8 +38,14 @@ import type { StorageIdentity } from '../../contracts/basic/storage.js';
 import type { Call, CallScope } from '../../contracts/call.js';
 import { ContractError, toContractError } from '../../contracts/error.js';
 import { BundleService } from '../../contracts/gen/doric/platform/bundle/v1/bundle_pb.js';
-import { CatalogService } from '../../contracts/gen/doric/platform/catalog/v1/catalog_pb.js';
-import { DiagnosticsService } from '../../contracts/gen/doric/platform/diagnostics/v1/diagnostics_pb.js';
+import {
+  CatalogService,
+  type CatalogSnapshotSchema,
+} from '../../contracts/gen/doric/platform/catalog/v1/catalog_pb.js';
+import {
+  DiagnosticsService,
+  ReportRequestSchema,
+} from '../../contracts/gen/doric/platform/diagnostics/v1/diagnostics_pb.js';
 import {
   GenerationService,
   HoldRequestSchema,
@@ -47,10 +58,18 @@ import {
   WriteRequestSchema,
 } from '../../contracts/gen/doric/platform/log/v1/log_pb.js';
 import { callContextKey, callOf } from '../../contracts/metadata.js';
+import type {
+  CatalogSnapshot,
+  DiagnosticBundle,
+} from '../../contracts/platform.js';
 import { toConnectError } from '../../contracts/status.js';
 import type { ResolvedEnvironment } from '../../runtime/catalog.js';
 import type { DiagnosticsStore } from '../../runtime/diagnostics.js';
 import { restoreCall } from '../../runtime/envelope/call-meta.js';
+import {
+  type BundleStates,
+  catalogSnapshot,
+} from '../../runtime/platform-providers.js';
 import type { MethodInfo } from '../catalog-index.js';
 import { maxMessageBytes } from './control.js';
 import {
@@ -317,9 +336,127 @@ export interface CatalogServiceOptions {
  * serve them.
  */
 export const createCatalogService = (
-  _options: CatalogServiceOptions,
-): PlatformServiceImpl<typeof CatalogService> => {
-  throw new Error('not implemented');
+  options: CatalogServiceOptions,
+): PlatformServiceImpl<typeof CatalogService> => ({
+  service: CatalogService,
+  implementation: {
+    get: () => {
+      const resolved = options.resolved();
+      const snapshot = catalogSnapshot(
+        resolved,
+        statesById(resolved, options.diagnostics),
+        options.storage(),
+      );
+
+      return { catalogSnapshot: snapshotMessage(snapshot) };
+    },
+    distribution: () => notServed('Distribution'),
+    readArtifact: () => notServed('ReadArtifact'),
+    watch: () => notServed('Watch'),
+    disable: () => notServed('Disable'),
+    resetComposition: () => notServed('ResetComposition'),
+  },
+});
+
+/** `snapshot` as the `doric.catalog/v1.CatalogSnapshot` message. */
+const snapshotMessage = (
+  snapshot: CatalogSnapshot,
+): MessageInitShape<typeof CatalogSnapshotSchema> => ({
+  generation: snapshot.generation,
+  composition: {
+    core: snapshot.composition.core,
+    enabled: [...snapshot.composition.enabled],
+    providers: { ...snapshot.composition.providers },
+  },
+  bundles: snapshot.bundles.map(({ manifest, reasons, ...bundle }) => ({
+    ...bundle,
+    ...(manifest === undefined ? {} : { manifest: jsonObjectOf(manifest) }),
+    reasons: reasons.map((reason) => ({ ...reason })),
+  })),
+  order: [...snapshot.order],
+  contracts: snapshot.contracts.map(({ providers, ...contract }) => ({
+    ...contract,
+    providers: providers.map((provider) => ({ ...provider })),
+  })),
+  ...(snapshot.storage === undefined ? {} : { storage: snapshot.storage }),
+});
+
+/**
+ * `value` as JSON, as `JSON.stringify` would write it: object members whose
+ * value JSON cannot hold are left out, and so become array items `null`.
+ */
+const jsonOf = (value: unknown): JsonValue => {
+  if (
+    value === null ||
+    typeof value === 'string' ||
+    typeof value === 'boolean' ||
+    (typeof value === 'number' && Number.isFinite(value))
+  ) {
+    return value;
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((item) => jsonOf(item));
+  }
+
+  return typeof value === 'object' ? jsonObjectOf(value) : null;
+};
+
+/** The members of `value` JSON can hold, as a JSON object. */
+const jsonObjectOf = (value: object): JsonObject => {
+  const json: JsonObject = {};
+
+  for (const [key, member] of Object.entries(value)) {
+    if (member !== undefined && typeof member !== 'function') {
+      json[key] = jsonOf(member);
+    }
+  }
+
+  return json;
+};
+
+/**
+ * The diagnostics' states lined up with `resolved.entries` by bundle id, for
+ * `catalogSnapshot`, which reads them by position: a bundle the diagnostics
+ * do not hold is `inactive` with the resolution's reasons.
+ */
+const statesById = (
+  resolved: ResolvedEnvironment,
+  diagnostics: Pick<DiagnosticsStore, 'snapshot' | 'state'>,
+): BundleStates => {
+  const snapshot = diagnostics.snapshot();
+  const held = new Map<string, DiagnosticBundle>();
+
+  for (const bundle of snapshot.bundles) {
+    if (!held.has(bundle.id)) {
+      held.set(bundle.id, bundle);
+    }
+  }
+
+  const bundles = resolved.entries.map(
+    (entry): DiagnosticBundle =>
+      held.get(entry.id) ?? {
+        id: entry.id,
+        version: entry.version,
+        state: 'inactive',
+        reasons: [...entry.reasons],
+      },
+  );
+
+  return {
+    snapshot: () => ({ ...snapshot, bundles }),
+    state: (id) => diagnostics.state(id),
+  };
+};
+
+/** Ends a method no slice serves yet: `UNIMPLEMENTED`, `unknown_contract`. */
+const notServed = (method: string): never => {
+  throw toConnectError(
+    new ContractError(
+      'unknown_contract',
+      `doric.catalog/v1 does not serve ${method} yet.`,
+    ),
+  );
 };
 
 export interface DiagnosticsServiceOptions {
@@ -339,10 +476,57 @@ export interface DiagnosticsServiceOptions {
  * fails for the content of a valid request.
  */
 export const createDiagnosticsService = (
-  _options: DiagnosticsServiceOptions,
-): PlatformServiceImpl<typeof DiagnosticsService> => {
-  throw new Error('not implemented');
-};
+  options: DiagnosticsServiceOptions,
+): PlatformServiceImpl<typeof DiagnosticsService> => ({
+  service: DiagnosticsService,
+  implementation: {
+    get: () => {
+      const snapshot = options.diagnostics.snapshot();
+
+      return {
+        generation: snapshot.generation,
+        mode: snapshot.mode,
+        ...(snapshot.recovery === undefined
+          ? {}
+          : { recovery: { reason: snapshot.recovery.reason } }),
+        issues: [...snapshot.issues],
+        bundles: snapshot.bundles.map((bundle) => ({
+          ...bundle,
+          reasons: bundle.reasons.map((reason) => ({ ...reason })),
+        })),
+        errors: snapshot.errors.map(({ details, ...error }) => ({
+          ...error,
+          ...(details === undefined
+            ? {}
+            : { details: fromJson(ValueSchema, jsonOf(details)) }),
+        })),
+        consumers: Object.fromEntries(
+          Object.entries(snapshot.consumers).map(([contract, bundleIds]) => [
+            contract,
+            { bundleIds: [...bundleIds] },
+          ]),
+        ),
+      };
+    },
+    report: (request) => {
+      const { bundleId, kind, message, details } = validated(
+        ReportRequestSchema,
+        request,
+      );
+
+      options.diagnostics.report({
+        bundleId,
+        kind,
+        message,
+        ...(details === undefined
+          ? {}
+          : { details: toJson(ValueSchema, details) }),
+      });
+
+      return {};
+    },
+  },
+});
 
 /**
  * The in-process `doric.bundle/v1`. `Describe` answers the calling instance
@@ -352,9 +536,16 @@ export const createDiagnosticsService = (
  */
 export const createBundleService = (): PlatformServiceImpl<
   typeof BundleService
-> => {
-  throw new Error('not implemented');
-};
+> => ({
+  service: BundleService,
+  implementation: {
+    describe: (_request, context) => {
+      const { bundleId, version, generation } = callOf(context).caller;
+
+      return { bundleId, version, generation, environment: 'host' };
+    },
+  },
+});
 
 /** The in-process handlers of the platform services, by gRPC path. */
 export const platformHandlers = (

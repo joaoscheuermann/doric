@@ -3,9 +3,22 @@
 // and the gateway. Exported from the package as `bundle/platform` (phase 3);
 // Node only, not reachable from a window.
 
+import { ConnectError, createClient } from '@connectrpc/connect';
+import { createAsyncIterable } from '@connectrpc/connect/protocol';
+import { createTransport } from '@connectrpc/connect/protocol-grpc';
+
+import {
+  type StorageIdentity,
+  StorageBackendV1,
+} from '../contracts/basic/storage.js';
+import { ContractError } from '../contracts/error.js';
+import { file_doric_platform_bundle_v1_bundle } from '../contracts/gen/doric/platform/bundle/v1/bundle_pb.js';
+import { file_doric_platform_diagnostics_v1_diagnostics } from '../contracts/gen/doric/platform/diagnostics/v1/diagnostics_pb.js';
 import { file_doric_platform_generation_v1_generation } from '../contracts/gen/doric/platform/generation/v1/generation_pb.js';
 import { file_doric_platform_log_v1_log } from '../contracts/gen/doric/platform/log/v1/log_pb.js';
+import { BackendService } from '../contracts/gen/doric/storage/backend/v1/backend_pb.js';
 import type { QuarantineReason } from '../contracts/platform.js';
+import { fromConnectError } from '../contracts/status.js';
 import type { ResolvedEnvironment } from '../runtime/catalog.js';
 import type {
   DiagnosticsStore,
@@ -14,9 +27,13 @@ import type {
 } from '../runtime/diagnostics.js';
 import { type CatalogIndex, createCatalogIndex } from './catalog-index.js';
 import { type Gateway, startGateway } from './gateway/index.js';
+import { maxMessageBytes } from './router/control.js';
 import { InstanceTable } from './router/instances.js';
-import { startRouter } from './router/listener.js';
+import { type Router, startRouter } from './router/listener.js';
 import {
+  createBundleService,
+  createCatalogService,
+  createDiagnosticsService,
   createGenerationService,
   createLogService,
   type LogServiceOptions,
@@ -186,6 +203,9 @@ export const startPlatform = async (
   const instances = new InstanceTable();
   const relay = createRouterRelay();
   const digestOf = options.digestOf ?? (() => '');
+  // The resolution the host runs now, and the storage identity once read.
+  let current = resolved;
+  let storage: StorageIdentity | undefined;
   const generation = createGenerationService({
     instances,
     signal: (from, topic, payload) =>
@@ -200,6 +220,13 @@ export const startPlatform = async (
     platformServices: [
       generation,
       createLogService({ write: options.writeLog ?? writeLogLine }),
+      createCatalogService({
+        resolved: () => current,
+        diagnostics,
+        storage: () => storage,
+      }),
+      createDiagnosticsService({ diagnostics }),
+      createBundleService(),
     ],
     instances,
     ...(options.timings === undefined ? {} : { timings: options.timings }),
@@ -284,6 +311,22 @@ export const startPlatform = async (
   await supervisor.boot();
   booted = true;
 
+  const storageActive = resolved.contracts
+    .find((contract) => contract.id === StorageBackendV1.id)
+    ?.providers.some(
+      (provider) => diagnostics.state(provider.bundleId) === 'active',
+    );
+
+  if (storageActive === true) {
+    try {
+      storage = await readStorageIdentity(router);
+    } catch (error) {
+      await supervisor.shutdown();
+      await router.close();
+      throw error;
+    }
+  }
+
   let gateway: Gateway | undefined;
 
   if (options.publicAddress !== undefined) {
@@ -306,6 +349,7 @@ export const startPlatform = async (
     ...supervisor,
     adopt: (next) => {
       supervisor.adopt(next);
+      current = next;
       gateway?.setResolution(next);
     },
   };
@@ -344,13 +388,18 @@ export const startPlatform = async (
 
 /**
  * `index`, falling back to the platform contracts the router serves in
- * process (`doric.generation/v1`, `doric.log/v1`) for what it lacks, so a
- * bundle reaches them whatever files the host indexed.
+ * process (`doric.generation/v1`, `doric.log/v1`, `doric.catalog/v1`,
+ * `doric.diagnostics/v1`, `doric.bundle/v1`) for what it lacks, so a bundle
+ * reaches them whatever files the host indexed.
  */
 const withPlatformContracts = (index: CatalogIndex): CatalogIndex => {
   const platform = createCatalogIndex([
     file_doric_platform_generation_v1_generation,
     file_doric_platform_log_v1_log,
+    // Brings `doric.catalog/v1`, which it imports: naming that file here too
+    // could add a second file of the same name (`bundle/contracts`).
+    file_doric_platform_diagnostics_v1_diagnostics,
+    file_doric_platform_bundle_v1_bundle,
   ]);
 
   return {
@@ -361,6 +410,67 @@ const withPlatformContracts = (index: CatalogIndex): CatalogIndex => {
     desktopMethods: () => index.desktopMethods(),
     registry: index.registry,
   };
+};
+
+/**
+ * The host's storage identity: `storage.backend/v1.Identity` served by
+ * `router.serveGateway` with no client part, so under the caller `doric`.
+ * Rejects with the call's `ContractError` when it fails.
+ */
+const readStorageIdentity = async (
+  router: Pick<Router, 'serveGateway'>,
+): Promise<StorageIdentity> => {
+  const client = createClient(
+    BackendService,
+    createTransport({
+      httpClient: async (request) => {
+        const answer = await router.serveGateway(
+          {
+            httpVersion: '2.0',
+            method: request.method,
+            url: request.url,
+            header: request.header,
+            body: request.body ?? createAsyncIterable([]),
+            signal: request.signal ?? new AbortController().signal,
+          },
+          undefined,
+        );
+
+        return {
+          status: answer.status,
+          header: answer.header ?? new Headers(),
+          body: answer.body ?? createAsyncIterable([]),
+          trailer: answer.trailer ?? new Headers(),
+        };
+      },
+      baseUrl: 'http://doric',
+      useBinaryFormat: true,
+      interceptors: [],
+      acceptCompression: [],
+      sendCompression: null,
+      compressMinBytes: 0,
+      readMaxBytes: maxMessageBytes,
+      writeMaxBytes: maxMessageBytes,
+    }),
+  );
+
+  try {
+    const { storageIdentity } = await client.identity({});
+
+    if (storageIdentity === undefined) {
+      throw new ContractError(
+        'internal',
+        'storage.backend/v1.Identity answered no storage identity.',
+      );
+    }
+
+    return {
+      hostId: storageIdentity.hostId,
+      storageGeneration: storageIdentity.storageGeneration,
+    };
+  } catch (error) {
+    throw error instanceof ConnectError ? fromConnectError(error) : error;
+  }
 };
 
 /** The default `writeLog`: one JSON line per record on stdout. */
