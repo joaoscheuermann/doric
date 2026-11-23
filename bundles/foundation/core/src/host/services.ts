@@ -8,11 +8,13 @@
 
 import { create, type Registry } from '@bufbuild/protobuf';
 import { anyPack } from '@bufbuild/protobuf/wkt';
-import { ContractError } from 'bundle/contracts';
+import { ConnectError, type ServiceImpl } from '@connectrpc/connect';
+import { ContractError, fromConnectError } from 'bundle/contracts';
 import { EventsService } from 'bundle/contracts/gen/doric/events/v1/events_pb.js';
 import { HooksService } from 'bundle/contracts/gen/doric/hooks/v1/hooks_pb.js';
 import { LogService } from 'bundle/contracts/gen/doric/log/v1/log_pb.js';
 import { ModelsService } from 'bundle/contracts/gen/doric/models/v1/models_pb.js';
+import { StartupService } from 'bundle/contracts/gen/doric/platform/startup/v1/startup_pb.js';
 import { SecretsService } from 'bundle/contracts/gen/doric/secrets/v1/secrets_pb.js';
 import { SettingsService } from 'bundle/contracts/gen/doric/settings/v1/settings_pb.js';
 import { SkillsService } from 'bundle/contracts/gen/doric/skills/v1/skills_pb.js';
@@ -71,8 +73,12 @@ export interface CoreServicesOptions {
    * `(doric.platform.v1.hook)`, and its name, kind and order come from that
    * option. `core.event-hooks/v1` is always known, whether or not it is here.
    * Read at every call.
+   *
+   * A function is called at every call that reads types, so a registry
+   * loaded after `createCoreServices` (`loadCatalogTypes` in `activate`) is
+   * seen from then on; a `Registry` is read as before.
    */
-  readonly types: Registry;
+  readonly types: Registry | (() => Registry);
   /**
    * Compiles a `storage/v1.DefineType` JSON Schema into the rebuilt
    * definition's check, as `serveStorage` requires (`ajvValidators()` of
@@ -88,6 +94,19 @@ export interface CoreServicesOptions {
    * Sequence handlers never have one.
    */
   readonly hookDeadlineMs?: number;
+}
+
+/** Each service of `CoreDataServices` by name, for `main.ts`'s static list. */
+export interface CoreImplementations {
+  readonly storage: ServiceImpl<typeof StorageService>;
+  readonly settings: ServiceImpl<typeof SettingsService>;
+  readonly secrets: ServiceImpl<typeof SecretsService>;
+  readonly events: ServiceImpl<typeof EventsService>;
+  readonly tools: ServiceImpl<typeof ToolsService>;
+  readonly skills: ServiceImpl<typeof SkillsService>;
+  readonly hooks: ServiceImpl<typeof HooksService>;
+  readonly log: ServiceImpl<typeof LogService>;
+  readonly models: ServiceImpl<typeof ModelsService>;
 }
 
 /** `core`'s data services and the step that binds them to the instance. */
@@ -133,6 +152,13 @@ export interface CoreServices {
    */
   readonly services: ServiceEntries<CoreDataServices>;
   /**
+   * The same implementations as `services`, by name (identical objects),
+   * so `src/host/main.ts` writes its `services` as the array literal of
+   * `[Service, implementation]` literals the build requires (A61, A63;
+   * `readStaticServices`).
+   */
+  readonly implementations: CoreImplementations;
+  /**
    * Binds the services to `context`, from `BundleDefinition.activate`. From
    * then on they call `storage.backend/v1` through
    * `storageBackendClient(context.services.use(StorageBackendService))`,
@@ -153,6 +179,20 @@ export interface CoreServices {
    * `OnEventAppendedHookInput{stream, type}`, without awaiting it; its
    * failure never reaches the `Append`.
    *
+   * `core` registers, as its own instance and in process, a handler of
+   * `doric.app.hooks/v1` `onHostStartHook` (sequence). When the host's
+   * `hooks/v1.Run` of that hook reaches it, the handler, under the run's
+   * call:
+   * 1. `storage.backend/v1.Connect`;
+   * 2. `doric.startup/v1.Stage{name: 'credential_activation'}`;
+   * 3. `doric.startup/v1.Log{level: 'info', message: 'Activating stored
+   *    credentials', fields: {}}`;
+   * 4. loads the stored credentials into `secrets/v1`'s cache (one
+   *    `secrets.backend/v1.List`, none when already loaded).
+   * Any step's failure fails the handler with its `ContractError`, so the
+   * run (a sequence) and the host's start fail, as today. Registering does
+   * no I/O.
+   *
    * Does no I/O. No backend and no catalog is reached until the first RPC
    * that needs one, and `core`'s own storage types (`core.settings/v1`,
    * `core.settings-generation/v1`) are defined on the first settings call.
@@ -170,6 +210,8 @@ export interface CoreServices {
 export const createCoreServices = (
   options: CoreServicesOptions,
 ): CoreServices => {
+  const typesOf = (): Registry =>
+    typeof options.types === 'function' ? options.types() : options.types;
   const state = createCoreState(
     options.now === undefined ? {} : { now: options.now },
   );
@@ -199,18 +241,13 @@ export const createCoreServices = (
   };
 
   const storage = createStorageFacade(bind);
-  const settings = createSettingsService(
-    state,
-    bind,
-    storage,
-    () => options.types,
-  );
+  const settings = createSettingsService(state, bind, storage, typesOf);
   const secrets = createSecretsService(state, bind);
   const events = createEventsService(
     bind,
     storage,
     (call) => secrets.redactions(call),
-    () => options.types,
+    typesOf,
     async (input, call) => {
       // Detached from the Append call: its end must not cancel the hook.
       const detached = Object.create(bind().own(call), {
@@ -230,27 +267,39 @@ export const createCoreServices = (
   const skills = createSkillsService(bind, tools);
   const hooks = createHooksService(
     bind,
-    () => options.types,
+    typesOf,
     options.hookDeadlineMs ?? DEFAULT_HOOK_DEADLINE_MS,
   );
   const log = createLogService(bind, (call) => secrets.redactions(call));
   const models = createModelsService(bind, secrets);
+  const implementations: CoreImplementations = {
+    storage: serveStorage(storage, {
+      validators: options.validators,
+      instances,
+    }),
+    settings: settings.implementation,
+    secrets: secrets.implementation,
+    events: events.implementation,
+    tools: tools.implementation,
+    skills: skills.implementation,
+    hooks: hooks.implementation,
+    log: log.implementation,
+    models: models.implementation,
+  };
 
   return {
     services: [
-      [
-        StorageService,
-        serveStorage(storage, { validators: options.validators, instances }),
-      ],
-      [SettingsService, settings.implementation],
-      [SecretsService, secrets.implementation],
-      [EventsService, events.implementation],
-      [ToolsService, tools.implementation],
-      [SkillsService, skills.implementation],
-      [HooksService, hooks.implementation],
-      [LogService, log.implementation],
-      [ModelsService, models.implementation],
+      [StorageService, implementations.storage],
+      [SettingsService, implementations.settings],
+      [SecretsService, implementations.secrets],
+      [EventsService, implementations.events],
+      [ToolsService, implementations.tools],
+      [SkillsService, implementations.skills],
+      [HooksService, implementations.hooks],
+      [LogService, implementations.log],
+      [ModelsService, implementations.models],
     ],
+    implementations,
     activate: (context) => {
       if (binding !== undefined) {
         throw new TypeError("core's data services are already activated.");
@@ -258,6 +307,37 @@ export const createCoreServices = (
 
       binding = createBinding(context);
       hooks.defineOwn(context.instance, CORE_EVENT_HOOKS);
+
+      const startup = context.services.use(StartupService);
+
+      hooks.handleOwn(
+        context.instance,
+        { contract: 'doric.app.hooks/v1', hook: 'onHostStartHook' },
+        async (_input, call) => {
+          await bind().storageBackend.connect(call);
+          try {
+            await startup.stage(
+              { name: 'credential_activation' },
+              { signal: call.signal },
+            );
+            await startup.log(
+              {
+                level: 'info',
+                message: 'Activating stored credentials',
+                fields: {},
+              },
+              { signal: call.signal },
+            );
+          } catch (error) {
+            throw error instanceof ConnectError
+              ? fromConnectError(error)
+              : error;
+          }
+          await secrets.load(call);
+
+          return undefined;
+        },
+      );
       context.instances.onGone((instance) => {
         for (const handler of goneHandlers) {
           handler(instance);

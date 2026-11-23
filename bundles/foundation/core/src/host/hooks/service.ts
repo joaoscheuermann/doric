@@ -20,10 +20,13 @@ import {
 } from 'bundle/contracts';
 import {
   HookHandlerService,
+  type HookHandlerServiceHandleResponse,
+  HookHandlerServiceHandleResponseSchema,
   type HooksService,
   type RunResponse,
   RunResponseSchema,
 } from 'bundle/contracts/gen/doric/hooks/v1/hooks_pb.js';
+import { file_doric_platform_app_hooks_v1_hooks } from 'bundle/contracts/gen/doric/platform/app/hooks/v1/hooks_pb.js';
 import {
   HookKind,
   HookOrder,
@@ -72,6 +75,7 @@ export const hooksOf = (
 ): ReadonlyMap<string, HookShape> | undefined => {
   const messages: DescMessage[] = [
     ...file_doric_core_event_hooks_v1_event_hooks.messages,
+    ...file_doric_platform_app_hooks_v1_hooks.messages,
   ];
 
   for (const desc of types) {
@@ -219,12 +223,38 @@ export const createHooksService = (
       readonly input: Any;
     },
   ): Promise<RunResponse>;
+  /**
+   * Registers, as `core`'s own `instance`, a handler of `hook` of
+   * `contract` that `Run` calls in process instead of through
+   * `HookHandlerService`. It takes its place among the handlers as a
+   * `Register` from `instance` would (key, order, D4 rule). `handle`
+   * receives the run's input `Any` and the run's call; it answers an output
+   * `Any` for a transform, a decision for a decide, nothing otherwise, and
+   * its rejection counts as a handler failure of that kind (a sequence
+   * rejects the run). Answers the registration id. No I/O.
+   */
+  handleOwn(
+    instance: BundleInstance,
+    registration: { readonly contract: string; readonly hook: string },
+    handle: (
+      input: Any,
+      call: Call,
+    ) => Promise<HookHandlerServiceHandleResponse | undefined>,
+  ): string;
 } => {
   const table = new RegistrationTable<HookRegistration>({
     conflictCode: 'registration_conflict',
   });
   /** The bundle that made each registration still held, for `Unregister`. */
   const owners = new Map<string, string>();
+  /** The in-process handlers of `handleOwn`, by registration id. */
+  const ownHandlers = new Map<
+    string,
+    (
+      input: Any,
+      call: Call,
+    ) => Promise<HookHandlerServiceHandleResponse | undefined>
+  >();
   /** The open `WatchAvailability` streams: their contract and last item. */
   const watchers = new Set<{
     readonly contract: string;
@@ -332,18 +362,28 @@ export const createHooksService = (
       unordered.reverse();
     }
 
-    const handle = (
+    const handle = async (
       entry: RegistrationEntry<HookRegistration>,
       current: Any,
       bounded: boolean,
-    ) =>
-      binding.handler(HookHandlerService, entry.caller).handle(
+    ): Promise<HookHandlerServiceHandleResponse> => {
+      const own = ownHandlers.get(entry.registrationId);
+
+      if (own !== undefined) {
+        return (
+          (await own(current, call)) ??
+          create(HookHandlerServiceHandleResponseSchema)
+        );
+      }
+
+      return await binding.handler(HookHandlerService, entry.caller).handle(
         { contract, hook, input: current },
         {
           signal: call.signal,
           ...(bounded && deadlineMs > 0 ? { timeoutMs: deadlineMs } : {}),
         },
       );
+    };
     const report = (
       entry: RegistrationEntry<HookRegistration>,
       kind: 'hook_handler_failed' | 'hook_handler_timeout',
@@ -367,9 +407,7 @@ export const createHooksService = (
         try {
           await handle(entry, current, false);
         } catch (error) {
-          throw error instanceof ConnectError
-            ? fromConnectError(error)
-            : error;
+          throw error instanceof ConnectError ? fromConnectError(error) : error;
         }
 
         continue;
@@ -434,9 +472,7 @@ export const createHooksService = (
       const caller = stampedCallerOf(context);
       const owns = contract.startsWith('doric.')
         ? caller.bundleId === 'doric'
-        : (await binding.catalog(call))
-            .provides(caller.bundleId)
-            .has(contract);
+        : (await binding.catalog(call)).provides(caller.bundleId).has(contract);
 
       if (!owns) {
         throw new ContractError(
@@ -547,6 +583,19 @@ export const createHooksService = (
         ...(output === undefined ? {} : { output }),
         ...(decision === undefined ? {} : { decision }),
       });
+    },
+    handleOwn: (instance, { contract, hook }, handleInProcess) => {
+      const caller: StampedCaller = { ...instance, version: '' };
+      const { registrationId } = table.register(
+        caller,
+        `${contract}\u0000${hook}\u0000${caller.bundleId}`,
+        { kind: 'handler', contract, hook, order: undefined },
+      );
+
+      owners.set(registrationId, caller.bundleId);
+      ownHandlers.set(registrationId, handleInProcess);
+
+      return registrationId;
     },
   };
 };

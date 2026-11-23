@@ -45,9 +45,9 @@ import {
 import {
   DoubleRulesSchema,
   FieldRulesSchema,
-  field as validateField,
   file_buf_validate_validate,
   StringRulesSchema,
+  field as validateField,
 } from 'bundle/contracts/gen/buf/validate/validate_pb.js';
 import { HookHandlerService } from 'bundle/contracts/gen/doric/hooks/v1/hooks_pb.js';
 import { ProviderService } from 'bundle/contracts/gen/doric/models/provider/v1/provider_pb.js';
@@ -60,6 +60,10 @@ import {
   LogService as PlatformLogService,
   type WriteRequest as PlatformWriteRequest,
 } from 'bundle/contracts/gen/doric/platform/log/v1/log_pb.js';
+import {
+  type LogRequest as StartupLogRequest,
+  StartupService,
+} from 'bundle/contracts/gen/doric/platform/startup/v1/startup_pb.js';
 import {
   EventOptionSchema,
   event as eventOption,
@@ -204,6 +208,26 @@ export interface RoutedCore {
   /** The `doric.diagnostics/v1.Report` requests core made (fake), in order. */
   readonly reports: readonly ReportRequest[];
   /**
+   * The `doric.startup/v1` calls core made (fake), in order, as
+   * `Stage:<name>` and `Log:<message>`.
+   */
+  readonly startup: readonly string[];
+  /** The `doric.startup/v1.Log` requests core made (fake), in order. */
+  readonly startupLogs: readonly StartupLogRequest[];
+  /** When set, the `doric.startup/v1.Stage` fake throws it. */
+  failStage: ContractError | undefined;
+  /** The secrets-backend calls core made, in order (method names). */
+  readonly secretsBackendCalls: readonly string[];
+  /** When set, the secrets backend's `List` throws it (after being recorded). */
+  failSecretsList: ContractError | undefined;
+  /**
+   * The storage-backend, secrets-backend and `doric.startup/v1` calls core
+   * made, in one order: `storage.backend:<method>`,
+   * `secrets.backend:<method>`, `startup:Stage:<name>` and
+   * `startup:Log:<message>`.
+   */
+  readonly timeline: readonly string[];
+  /**
    * The provider bundles of `models.provider/v1`, live: the catalog fake
    * answers the entries present at each `Get` (a caller generation core has
    * not seen yet reads a fresh snapshot), and a call reaches the entry
@@ -236,7 +260,7 @@ export interface ServeCoreOptions {
   readonly secretsOptions?: MemorySecretsOptions;
   readonly now?: () => number;
   /** Default: {@link testMessages}. */
-  readonly types?: Registry;
+  readonly types?: CoreServicesOptions['types'];
   /** `CoreServicesOptions.hookDeadlineMs`; the default is 10,000. */
   readonly hookDeadlineMs?: CoreServicesOptions['hookDeadlineMs'];
   /**
@@ -258,16 +282,21 @@ const coreManifest = async (): Promise<Record<string, unknown>> =>
     await readFile('bundles/foundation/core/dist/manifest.json', 'utf8'),
   ) as Record<string, unknown>;
 
-/** Each method of `implementation`, recording its name in `calls` first. */
+/**
+ * Each method of `implementation`, recording its name in `calls` first (and
+ * `<prefix>:<name>` in `timeline`, when given).
+ */
 const recorded = <S extends DescService>(
   implementation: ServiceImpl<S>,
   calls: string[],
+  timeline?: { readonly prefix: string; readonly entries: string[] },
 ): ServiceImpl<S> =>
   Object.fromEntries(
     Object.entries(implementation).map(([name, method]) => [
       name,
       (...args: unknown[]) => {
         calls.push(name);
+        timeline?.entries.push(`${timeline.prefix}:${name}`);
 
         return (method as (...rest: unknown[]) => unknown)(...args);
       },
@@ -570,7 +599,52 @@ export const serveCore = async (
   const platformLogs: PlatformWriteRequest[] = [];
   const platformLogTraceIds: string[] = [];
   const reports: ReportRequest[] = [];
-  const sinks = { failLog: undefined as ContractError | undefined };
+  const sinks = {
+    failLog: undefined as ContractError | undefined,
+    failStage: undefined as ContractError | undefined,
+    failSecretsList: undefined as ContractError | undefined,
+  };
+  const timeline: string[] = [];
+  const startup: string[] = [];
+  const startupLogs: StartupLogRequest[] = [];
+  const startupService: ServiceImpl<typeof StartupService> = {
+    stage: ({ name }) => {
+      startup.push(`Stage:${name}`);
+      timeline.push(`startup:Stage:${name}`);
+
+      if (sinks.failStage !== undefined) {
+        throw sinks.failStage;
+      }
+
+      return {};
+    },
+    log: (request) => {
+      startup.push(`Log:${request.message}`);
+      timeline.push(`startup:Log:${request.message}`);
+      startupLogs.push(request);
+
+      return {};
+    },
+  };
+  const secretsBackendCalls: string[] = [];
+  const secretsBackendService = recorded(
+    serveSecretsBackend(backends.services.use(SecretsBackendV1)),
+    secretsBackendCalls,
+    { prefix: 'secrets.backend', entries: timeline },
+  );
+  const listSecrets = secretsBackendService.list.bind(secretsBackendService);
+  const secretsBackendFake: typeof secretsBackendService = {
+    ...secretsBackendService,
+    list: (...args: Parameters<typeof listSecrets>) => {
+      if (sinks.failSecretsList !== undefined) {
+        secretsBackendCalls.push('list');
+        timeline.push('secrets.backend:list');
+        throw sinks.failSecretsList;
+      }
+
+      return listSecrets(...args);
+    },
+  };
   const platformLog: ServiceImpl<typeof PlatformLogService> = {
     write: (request, context) => {
       if (sinks.failLog !== undefined) {
@@ -610,15 +684,14 @@ export const serveCore = async (
         recorded(
           serveStorageBackend(backends.services.use(StorageBackendV1)),
           backendCalls,
+          { prefix: 'storage.backend', entries: timeline },
         ),
       ],
-      [
-        SecretsBackendService,
-        serveSecretsBackend(backends.services.use(SecretsBackendV1)),
-      ],
+      [SecretsBackendService, secretsBackendFake],
       [CatalogService, catalog],
       [ReferenceSourceService, referenceSource],
       [PlatformLogService, platformLog],
+      [StartupService, startupService],
       [DiagnosticsService, diagnostics],
     ],
   });
@@ -677,6 +750,22 @@ export const serveCore = async (
       sinks.failLog = error;
     },
     reports,
+    startup,
+    startupLogs,
+    get failStage() {
+      return sinks.failStage;
+    },
+    set failStage(error: ContractError | undefined) {
+      sinks.failStage = error;
+    },
+    secretsBackendCalls,
+    timeline,
+    get failSecretsList() {
+      return sinks.failSecretsList;
+    },
+    set failSecretsList(error: ContractError | undefined) {
+      sinks.failSecretsList = error;
+    },
     modelProviders,
     providerCalls,
     storage: (bundleId, generation = bundleId === 'doric' ? 0 : 1) =>

@@ -553,6 +553,21 @@ configuration active at call time: a prompt spanning a configuration change no
 longer keeps its first provider (a release-notes item). An unknown provider or
 kind fails `unavailable`, a malformed configuration `invalid_input`.
 
+S41c gives core its process entry `src/host/main.ts`, which calls `runBundle`
+(`bundle/host`) with its nine services listed statically as `[Service,
+implementation]` pairs from `CoreServices.implementations`; it is built to
+`dist/host/main.mjs` (about 2 MB) beside the kernel entry.
+`CoreServicesOptions.types` may be a function: `main.ts` loads the registry at
+`activate` with `loadCatalogTypes` from `doric.catalog/v1.Descriptors`. A
+`Descriptors` failure fails `activate` with its code; a malformed set or a
+missing import fails `invalid_output`. At `activate` core registers its own
+`onHostStartHook` handler on `doric.app.hooks/v1` (always known to `hooks/v1`):
+it connects the storage backend, sets the stage `credential_activation`, logs
+`Activating stored credentials` and loads the credentials; `Stage` and `Log`
+are required. The platform running the host-start hook and serving
+`doric.startup/v1` comes with the boot slice S61; the manifest is unchanged
+until S62.
+
 ## Evolution
 
 - 2026-11-22: phase 0 of
@@ -652,3 +667,7 @@ kind fails `unavailable`, a malformed configuration `invalid_input`.
   core serves `models/v1` by relaying to provider bundles; `Prepare` only
   checks and activates a configuration, and each call uses the configuration
   active at call time.
+- 2026-11-23: phase 3, slice S41c, of
+  [`docs/designs/grpc-processes.md`](../designs/grpc-processes.md) (v6.12):
+  core's process entry `src/host/main.ts` (`dist/host/main.mjs`), its registry
+  loaded at `activate` from `Descriptors`, and its own host-start handler.

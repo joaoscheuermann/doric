@@ -32,8 +32,8 @@ import { type CoreState, once } from '../../shared/state.js';
 import type { CoreBinding } from '../binding.js';
 import { createInbox } from '../inbox.js';
 import { createRegistrations, type Registrations } from '../registrations.js';
-import { invalid, type KindEntry, missing, row } from './facade.js';
 import { createSecretsCache, describe, type SecretsCache } from './cache.js';
+import { invalid, type KindEntry, missing, row } from './facade.js';
 
 const unknownKind = (kind: string): ContractError =>
   new ContractError(
@@ -103,6 +103,12 @@ export const createSecretsService = (
    * the credential's kind against any caller's view.
    */
   secretOf(id: string, call: Call): Promise<string | undefined>;
+  /**
+   * Loads the cache when it is not loaded (one `secrets.backend/v1.List`).
+   * Rejects with the backend's `ContractError`; a failed load is retried
+   * by the next call that needs the cache.
+   */
+  load(call: Call): Promise<void>;
 } => {
   const registrations = createRegistrations('secrets-');
   const sources = new Map<string, SourceEntry>();
@@ -477,6 +483,9 @@ export const createSecretsService = (
         // A cache that cannot load is read as no stored secret.
         return undefined;
       }
+    },
+    load: async () => {
+      await loaded();
     },
   };
 };

@@ -93,7 +93,13 @@ feature docs, which state each contract at the level the feature needs:
 
 The parts are [`src/host/index.ts`](src/host/index.ts),
 [`src/desktop/index.ts`](src/desktop/index.ts) and
-[`src/client/index.ts`](src/client/index.ts). Code that two parts share is in
+[`src/client/index.ts`](src/client/index.ts). The host part also has a process
+entry, [`src/host/main.ts`](src/host/main.ts): it calls `runBundle`
+(`bundle/host`) with the nine services listed statically from
+`CoreServices.implementations`, loads its message registry at `activate` with
+`loadCatalogTypes` from `doric.catalog/v1.Descriptors` (a `Descriptors` failure
+keeps its code; a malformed set or missing import fails `invalid_output`), and
+is built to `dist/host/main.mjs` beside the kernel entry. Code that two parts share is in
 `src/shared/`, and the core's own contract declarations are in
 [`src/contracts/`](src/contracts/index.ts). Every basic contract (every id
 without a `core.` prefix above) has its specification, cardinality and
@@ -168,6 +174,8 @@ the core implements that specification.
   `Doric failed to start` at level `fatal` with `{ stage }` naming the last
   stage set, without the error, and exits with code 1
   ([host README](../../../app/backend/doric-host/README.md#startup-and-failures)).
+  In the process entry, core registers this handler itself at `activate`;
+  `Stage` and `Log` of `doric.startup/v1` are required.
 - On the host, the core defines `core.event-hooks/v1` during activation. If
   that `define` fails for any reason (a host with no catalog, such as a unit
   test, is one), the failure is ignored and appends fire no hook
