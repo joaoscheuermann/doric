@@ -7,7 +7,7 @@ import {
   deadlineOf,
   generationOf,
 } from '../../contracts/call.js';
-import { anySignal } from '../call.js';
+import { abortAtDeadline, anySignal } from '../call.js';
 import type { WireCall } from './messages.js';
 
 /** The metadata of a call as it crosses the envelope. */
@@ -61,24 +61,11 @@ export interface RestoreOptions {
 export const restoreCall = (meta: WireCall, options: RestoreOptions): Call => {
   const now = options.now ?? Date.now;
   const signals = [...options.signals];
-  let timer: ReturnType<typeof setTimeout> | undefined;
 
   if (meta.deadline > 0) {
     const controller = new AbortController();
-    const remaining = Math.max(0, meta.deadline - now());
 
-    if (remaining === 0) {
-      controller.abort(timeoutError());
-    } else {
-      timer = setTimeout(() => controller.abort(timeoutError()), remaining);
-
-      const unref = (timer as { unref?: () => void }).unref;
-
-      if (typeof unref === 'function') {
-        unref.call(timer);
-      }
-    }
-
+    abortAtDeadline(controller, meta.deadline, now);
     signals.push(controller.signal);
   }
 

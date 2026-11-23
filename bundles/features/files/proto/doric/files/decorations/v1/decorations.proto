@@ -1,0 +1,85 @@
+// `files.decorations/v1` (client, many, 1.1.0): the marks other bundles give
+// the rows of the Files tree. The `files` bundle declares it and its client
+// part observes every provider; each provider (today `git`'s client part)
+// marks the rows it knows about, stated by the bundle that knows what a mark
+// means. Only client parts of the same window reach it. Observing activates
+// the provider's read; it runs only while observed.
+//
+// 1.1.0: `observe` becomes a server stream.
+syntax = "proto3";
+
+package doric.files.decorations.v1;
+
+import "buf/validate/validate.proto";
+import "doric/platform/v1/options.proto";
+
+option (doric.platform.v1.contract) = {
+  id: "files.decorations/v1"
+  cardinality: CARDINALITY_MANY
+  environment: ENVIRONMENT_CLIENT
+};
+
+// One provider's marks of the Files tree.
+service DecorationsService {
+  // Observes what the provider marks in the tree of one Project, rooted at a
+  // working directory: the present state first, then one item per change.
+  // The caller ends it by cancelling.
+  rpc Observe(ObserveRequest) returns (stream ObserveResponse) {
+    option (doric.platform.v1.method).resumable = true;
+  }
+}
+
+// The mark a provider gives one tree row, as the tree draws it: the
+// description the row's label reads, the count a directory badge shows, and
+// a file badge's colour, letter and strike. The tree draws it without
+// knowing what it means.
+message FileMark {
+  // The row's accessible label and tooltip suffix.
+  string description = 1;
+  // The badge a directory row carries: how many marked entries lie below it,
+  // a whole number.
+  double count = 2 [
+    (buf.validate.field).double.gte = 0,
+    (buf.validate.field).cel = {
+      id: "count.integer"
+      message: "count must be a whole number"
+      expression: "this == double(int(this))"
+    }
+  ];
+  // Class names of the marked name and badge; absent for none.
+  optional string tone = 3;
+  // The letter a marked file's badge carries; absent for none.
+  optional string letter = 4;
+  // Whether a file's name is struck through; absent is not.
+  optional bool struck = 5;
+}
+
+// One marked row: its path and its mark.
+message PathMark {
+  // The marked entry, workspace-relative.
+  string path = 1;
+  // The entry's mark.
+  FileMark mark = 2 [(buf.validate.field).required = true];
+}
+
+// The tree of one Project, rooted at a working directory; today's
+// `TreeScope`.
+message ObserveRequest {
+  // The Project.
+  string project_id = 1 [(buf.validate.field).string.min_len = 1];
+  // The raw working directory the tree is rooted at; the workspace root when
+  // absent.
+  optional string cwd = 2;
+}
+
+// What one provider marks for one tree; today's `DecorationsObservation`.
+message ObserveResponse {
+  // The provider's marks, one per marked workspace-relative path; empty when
+  // none.
+  repeated PathMark marks = 1;
+  // Why the provider's marks could not be read, as the toast shows it;
+  // absent when the last read did not fail.
+  optional string error = 2;
+  // Whether a read is in flight.
+  bool fetching = 3;
+}

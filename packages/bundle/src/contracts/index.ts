@@ -83,6 +83,20 @@ export {
   majorOf,
 } from './ids.js';
 export {
+  authorizationHeader,
+  callContextKey,
+  callerHeaderPrefix,
+  callOf,
+  clientPartHeader,
+  providerHeader,
+  scopeFromHeader,
+  scopeHeader,
+  scopeHeaderValue,
+  targetHeader,
+  timeoutHeader,
+  traceparentHeader,
+} from './metadata.js';
+export {
   type DoricNetwork,
   DoricNetworkV1,
   type NetworkResources,
@@ -97,6 +111,9 @@ export {
   type CatalogComposition,
   type CatalogContract,
   type CatalogManifest,
+  type CatalogManifestV1,
+  type CatalogManifestV2,
+  type CatalogPartLists,
   type CatalogSnapshot,
   type ConnectionStatus,
   type ContractProvider,
@@ -187,6 +204,16 @@ export {
   type SkillSchemaInput,
   skillRecordSchema,
 } from './skill.js';
+export {
+  contractErrorDomain,
+  fromConnectError,
+  fromStatus,
+  grpcCodeOf,
+  type RetiredErrorCode,
+  retiredErrorCodes,
+  toConnectError,
+  toStatus,
+} from './status.js';
 export type {
   AnyServiceRef,
   ApiFrom,

@@ -1,0 +1,73 @@
+// `doric.log/v1` (platform 2.0.0): the sink through which a `log/v1` provider
+// and a client part's log facade reach the platform's log files. The host
+// process serves it to bundle processes, and Electron main to windows.
+//
+// 2.0.0: `write` is asynchronous; the SDK batches its records.
+syntax = "proto3";
+
+package doric.platform.log.v1;
+
+import "buf/validate/validate.proto";
+import "doric/platform/v1/options.proto";
+import "google/protobuf/struct.proto";
+
+option (doric.platform.v1.contract) = {
+  id: "doric.log/v1"
+  cardinality: CARDINALITY_ONE
+};
+
+// The platform's log.
+service LogService {
+  // Writes one record to the platform's log files. A record that passes
+  // validation is never refused for its content.
+  rpc Write(WriteRequest) returns (WriteResponse);
+}
+
+// One log record, with the identity of the bundle it is about.
+message WriteRequest {
+  // "debug", "info", "warn" or "error".
+  string level = 1 [(buf.validate.field).string = {
+    in: [
+      "debug",
+      "info",
+      "warn",
+      "error"
+    ]
+  }];
+  // The message.
+  string message = 2;
+  // The record's structured fields; absent when it has none.
+  optional google.protobuf.Struct fields = 3;
+  // The bundle's id.
+  string bundle_id = 4;
+  // The bundle's version.
+  string version = 5;
+  // The bundle instance's generation.
+  uint32 generation = 6;
+  // Where the bundle runs: "host", "desktopMain" or "client"; phase 5
+  // drops "desktopMain" with that environment.
+  string environment = 7 [(buf.validate.field).string = {
+    in: [
+      "host",
+      "desktopMain",
+      "client"
+    ]
+  }];
+  // The scope of the call the record belongs to: at most 16 keys, each a
+  // letter then up to 63 letters, digits, `_`, `.` or `-`, and values of at
+  // most 512 characters.
+  map<string, string> scope = 8 [(buf.validate.field).map = {
+    max_pairs: 16
+    keys: {
+      string: {pattern: "^[A-Za-z][A-Za-z0-9_.-]{0,63}$"}
+    }
+    values: {
+      string: {max_len: 512}
+    }
+  }];
+  // The trace the record belongs to.
+  optional string trace_id = 9;
+}
+
+// The record is written.
+message WriteResponse {}

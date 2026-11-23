@@ -1,0 +1,146 @@
+// `layout.stack/v2` (client, 2.1.0): the sidebar's stack of panes other
+// bundles own, only the registered panes (the layout's Thread region is not
+// one of them). The panes sit under the Thread region, pinned to the
+// column's bottom, one group each, with no dividers and no sizes: an open
+// pane is as tall as its content, at most 40% of the column, and a collapsed
+// one is its 28 px header. A pane never collapses past its header.
+//
+// 2.1.0: every method is asynchronous; `register` answers a
+// `registrationId` that `Unregister` takes; `subscribe` becomes the stream
+// `Watch`.
+syntax = "proto3";
+
+package doric.layout.stack.v2;
+
+import "buf/validate/validate.proto";
+import "doric/platform/v1/options.proto";
+import "google/protobuf/struct.proto";
+
+option (doric.platform.v1.contract) = {
+  id: "layout.stack/v2"
+  cardinality: CARDINALITY_ONE
+  environment: ENVIRONMENT_CLIENT
+};
+
+// The sidebar's stack.
+service StackService {
+  // Adds a pane for the calling client part and answers a `registrationId`;
+  // a pane id already in the stack is `registration_conflict`.
+  rpc Register(RegisterRequest) returns (RegisterResponse);
+  // Removes the pane `Register` added; an unknown id is a no-op.
+  rpc Unregister(UnregisterRequest) returns (UnregisterResponse);
+  // The panes top to bottom; each item of `Watch` holds the same list.
+  rpc Panes(PanesRequest) returns (PanesResponse);
+  // Whether the pane is expanded: a pane that cannot collapse always is, a
+  // pane not in the stack is not.
+  rpc IsOpen(IsOpenRequest) returns (IsOpenResponse);
+  // Opens or collapses the pane, as its header control does; a pane not in
+  // the stack or that cannot collapse is unchanged.
+  rpc SetOpen(SetOpenRequest) returns (SetOpenResponse);
+  // Flips the pane between open and collapsed, as its header control does;
+  // a pane not in the stack or that cannot collapse is unchanged.
+  rpc Toggle(ToggleRequest) returns (ToggleResponse);
+  // Streams the panes and each pane's open state: the present values first,
+  // then one item after every change of the panes or of one pane's state.
+  rpc Watch(WatchRequest) returns (stream WatchResponse) {
+    option (doric.platform.v1.method).resumable = true;
+  }
+}
+
+// A group of the sidebar's stack: the pane's 28 px header (its title, the
+// collapse control and the `header_tag` element, shown while the header is
+// hovered or holds focus) and, while the pane is open, the pane's own
+// element.
+message StackPane {
+  // Unique in the stack.
+  string id = 1 [(buf.validate.field).string.min_len = 1];
+  // Top to bottom: ascending, absent last, then registration order.
+  optional double order = 2;
+  // The header text the layout draws.
+  string title = 3;
+  // The custom element `ui/v1` creates for the group's content.
+  optional string tag = 4 [(buf.validate.field).string.min_len = 1];
+  // The props that element is created with.
+  optional google.protobuf.Struct props = 5;
+  // An element drawn inside the header, where the group's action belongs.
+  optional string header_tag = 6 [(buf.validate.field).string.min_len = 1];
+  // Whether the reader can collapse the pane; absent is true. A pane that
+  // cannot collapse draws no control and stays open.
+  optional bool collapsible = 7;
+  // Whether the pane starts expanded; absent is true. A collapsed pane
+  // starts at its header.
+  optional bool initially_open = 8;
+}
+
+// Adds a pane.
+message RegisterRequest {
+  // The pane.
+  StackPane stack_pane = 1 [(buf.validate.field).required = true];
+}
+
+// The pane's registration.
+message RegisterResponse {
+  // The id `Unregister` takes.
+  string registration_id = 1;
+}
+
+// Removes a pane.
+message UnregisterRequest {
+  // The id `Register` answered.
+  string registration_id = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+// The pane is gone.
+message UnregisterResponse {}
+
+// Asks the panes.
+message PanesRequest {}
+
+// The panes.
+message PanesResponse {
+  // The panes top to bottom; empty for none.
+  repeated StackPane panes = 1;
+}
+
+// Asks whether a pane is open.
+message IsOpenRequest {
+  // The pane's id.
+  string pane_id = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+// Whether the pane is open.
+message IsOpenResponse {
+  // True when the pane is expanded.
+  bool open = 1;
+}
+
+// Opens or collapses a pane.
+message SetOpenRequest {
+  // The pane's id.
+  string pane_id = 1 [(buf.validate.field).string.min_len = 1];
+  // True to open, false to collapse.
+  bool open = 2;
+}
+
+// The pane's state is set.
+message SetOpenResponse {}
+
+// Flips a pane.
+message ToggleRequest {
+  // The pane's id.
+  string pane_id = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+// The pane's state is flipped.
+message ToggleResponse {}
+
+// Asks the panes and their states as they change.
+message WatchRequest {}
+
+// The panes and their states after a change.
+message WatchResponse {
+  // The panes top to bottom; empty for none.
+  repeated StackPane panes = 1;
+  // Each pane's open state, by pane id, for every pane of `panes`.
+  map<string, bool> open = 2;
+}

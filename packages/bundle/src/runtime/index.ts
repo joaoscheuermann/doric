@@ -123,14 +123,23 @@ export { LayeredDirectory } from './layered-directory.js';
 export {
   type ContractEntry,
   convertV0,
+  httpPrefixOf,
+  httpPrefixPattern,
   type LegacyResource,
+  type Manifest,
   type ManifestV0,
   type ManifestV1,
   type ManifestV1Input,
+  type ManifestV2,
+  type ManifestV2Input,
   manifestV0Schema,
   manifestV1Schema,
+  manifestV2Schema,
+  type Part,
+  type PartLists,
   parseContractEntry,
   parseManifest,
+  partLists,
   type ReadManifest,
   semverRange,
   semverString,
@@ -153,6 +162,11 @@ export {
   type PrincipalOptions,
   type ServiceRuntime,
 } from './principal.js';
+export {
+  type ResumeRequests,
+  reopenResumable,
+  resumableDelays,
+} from './resumable.js';
 export {
   AnnouncingDirectory,
   type GenerationInit,

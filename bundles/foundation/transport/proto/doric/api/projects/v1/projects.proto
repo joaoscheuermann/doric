@@ -1,0 +1,517 @@
+// `api.projects/v1` (host, 1.0.0): the public API of Projects, the
+// environments, which replaces the `/projects` routes and the Socket.IO
+// namespace `/projects`. The `transport` bundle provides it over
+// `runtime/v2`, `runtime.threads/v1`, `runtime.lease/v1`, `files/v1`,
+// `git.commands/v1`, `resources/v1` and `terminal/v1`. A Project is created
+// with a name only; a conversation starts with a Thread created under it.
+// An SSH key is answered only by `GetProjectSsh`, never logged, streamed or
+// cached.
+//
+// The workspace reads (`GetProjectSsh`, `ListFiles`, `GetTree`, `ReadFile`,
+// `GetDiff`, `ListChanges`, `GetFileDiff`, `GetProjectResources`) answer the
+// Project's lease state and never acquire a sandbox: a Project whose sandbox
+// is still coming up answers `pending` instead of the value.
+//
+// A refusal is a gRPC status whose `google.rpc.ErrorInfo` has `domain`
+// "doric" and `reason` the REST error code of today: `invalid_project_id`,
+// `invalid_page`, `invalid_project`, `invalid_project_color`,
+// `invalid_thread` and `invalid_project_path` (`INVALID_ARGUMENT`),
+// `project_not_found` and `project_path_not_found` (`NOT_FOUND`),
+// `project_active`, `project_files_unavailable`,
+// `project_resources_unavailable`, `project_ssh_unavailable` and
+// `thread_<status>` of a refused Thread creation (`FAILED_PRECONDITION`), and
+// `project_files_expired` and `project_ssh_expired` (today's 410). No
+// response carries an error.
+syntax = "proto3";
+
+package doric.api.projects.v1;
+
+import "buf/validate/validate.proto";
+import "doric/files/v1/files.proto";
+import "doric/git/commands/v1/commands.proto";
+import "doric/platform/v1/options.proto";
+import "doric/resources/v1/resources.proto";
+import "doric/runtime/threads/v1/threads.proto";
+import "doric/runtime/v2/runtime.proto";
+import "doric/sandbox/v1/sandbox.proto";
+import "doric/terminal/v1/terminal.proto";
+
+option (doric.platform.v1.contract) = {
+  id: "api.projects/v1"
+  cardinality: CARDINALITY_ONE
+  environment: ENVIRONMENT_HOST
+};
+
+// Projects, their Threads, their workspace and their live changes.
+service ProjectsService {
+  // Reserves an environment for a new Project (`POST /projects`).
+  rpc CreateProject(CreateProjectRequest) returns (CreateProjectResponse);
+  // A page of Projects (`GET /projects`).
+  rpc ListProjects(ListProjectsRequest) returns (ListProjectsResponse);
+  // One Project (`GET /projects/:id`).
+  rpc GetProject(GetProjectRequest) returns (GetProjectResponse);
+  // Renames a Project (`PATCH /projects/:id`).
+  rpc UpdateProject(UpdateProjectRequest) returns (UpdateProjectResponse);
+  // Sets or clears a Project's color (`PATCH /projects/:id/color`).
+  rpc SetProjectColor(SetProjectColorRequest) returns (SetProjectColorResponse);
+  // Creates a Thread in a Project (`POST /projects/:id/threads`); a refused
+  // creation is `thread_<status>`.
+  rpc CreateThread(CreateThreadRequest) returns (CreateThreadResponse);
+  // A page of a Project's Threads (`GET /projects/:id/threads`); the page ends
+  // before 3 MiB and then sets its next cursor.
+  rpc ListThreads(ListThreadsRequest) returns (ListThreadsResponse);
+  // The SSH access of the Project's sandbox (`GET /projects/:id/ssh`).
+  rpc GetProjectSsh(GetProjectSshRequest) returns (GetProjectSshResponse);
+  // One directory level of the workspace (`GET /projects/:id/files`).
+  rpc ListFiles(ListFilesRequest) returns (ListFilesResponse);
+  // The visible workspace tree below a path (`GET /projects/:id/tree`).
+  rpc GetTree(GetTreeRequest) returns (GetTreeResponse);
+  // One file as bounded UTF-8 text (`GET /projects/:id/files/content`): a
+  // head first, then the text in chunks; a `pending` item alone while the
+  // sandbox comes up.
+  rpc ReadFile(ReadFileRequest) returns (stream ReadFileResponse);
+  // The tracked diff of the repositories a path reaches
+  // (`GET /projects/:id/diff`).
+  rpc GetDiff(GetDiffRequest) returns (GetDiffResponse);
+  // The changed files of the repositories a path reaches, untracked files
+  // included (`GET /projects/:id/changes`).
+  rpc ListChanges(ListChangesRequest) returns (ListChangesResponse);
+  // One changed file, HEAD against the working tree
+  // (`GET /projects/:id/files/diff`).
+  rpc GetFileDiff(GetFileDiffRequest) returns (GetFileDiffResponse);
+  // The Project sandbox's own CPU and memory (`GET /projects/:id/resources`).
+  rpc GetProjectResources(GetProjectResourcesRequest) returns (GetProjectResourcesResponse);
+  // The Project's terminal sessions, in start order
+  // (`GET /projects/:id/terminals`).
+  rpc ListTerminals(ListTerminalsRequest) returns (ListTerminalsResponse);
+  // Terminates a Project (`POST /projects/:id/terminate`).
+  rpc TerminateProject(TerminateProjectRequest) returns (TerminateProjectResponse);
+  // Deletes a Project none of whose Threads is active
+  // (`DELETE /projects/:id`); otherwise `project_active`.
+  rpc DeleteProject(DeleteProjectRequest) returns (DeleteProjectResponse);
+  // A Project's live stream (Socket.IO `/projects`): `project_snapshot` and
+  // `terminal_snapshot` first, then only the changes that name the Project.
+  // A snapshot that cannot be read ends the stream with `INTERNAL`, reason
+  // `replay_failed`. The caller ends it by cancelling; a stream opened again
+  // receives the whole snapshot again.
+  rpc Watch(WatchRequest) returns (stream WatchResponse);
+}
+
+// The answer of a workspace read while the Project's sandbox comes up:
+// today's 202 with `Retry-After`.
+message Pending {
+  // The seconds to wait before asking again, a whole number.
+  double retry_after_seconds = 1 [
+    (buf.validate.field).double.gte = 0,
+    (buf.validate.field).cel = {
+      id: "retry_after_seconds.integer"
+      message: "retryAfterSeconds must be a whole number"
+      expression: "this == double(int(this))"
+    }
+  ];
+}
+
+// Where a Project's SSH access is read.
+message SshLink {
+  // The path of the Project's SSH read, `/projects/<id>/ssh`.
+  string href = 1;
+}
+
+// A Project's SSH access.
+message ProjectSsh {
+  // The sandbox's machine.
+  string vm_id = 1;
+  // The access; its private key is a secret.
+  doric.sandbox.v1.SandboxSshAccess ssh = 2 [(buf.validate.field).required = true];
+  // The path of the machine's SSH read, `/vms/<vmId>/ssh`.
+  string href = 3;
+}
+
+// The first item of a Project watch (`project:snapshot`).
+message ProjectSnapshot {
+  // The watched Project.
+  string project_id = 1;
+  // The Project; absent when there is none by that id.
+  optional doric.runtime.v2.Project project = 2;
+  // The Project's Threads.
+  repeated doric.runtime.v2.Thread threads = 3;
+  // The Project's terminal sessions, in start order.
+  repeated doric.terminal.v1.TerminalSession terminals = 4;
+}
+
+// A new Project.
+message CreateProjectRequest {
+  // The display name: 1 to 80 characters once trimmed, no NUL.
+  string name = 1 [(buf.validate.field).string.pattern = "^\\s*[^\\s\\x00]([^\\x00]{0,78}[^\\s\\x00])?\\s*$"];
+}
+
+// The new Project.
+message CreateProjectResponse {
+  // The Project.
+  doric.runtime.v2.Project project = 1 [(buf.validate.field).required = true];
+  // Where its SSH access is read.
+  SshLink ssh = 2 [(buf.validate.field).required = true];
+}
+
+// Asks a page of Projects.
+message ListProjectsRequest {
+  // The most Projects to answer, 1 to 100; 50 when absent.
+  optional int32 limit = 1 [(buf.validate.field).int32 = {
+    gte: 1
+    lte: 100
+  }];
+  // The previous page's `nextCursor`, a UUID; the first page when absent.
+  optional string cursor = 2 [(buf.validate.field).string.uuid = true];
+}
+
+// A page of Projects; today's `Page<Project>`.
+message ListProjectsResponse {
+  // The Projects of the page.
+  repeated doric.runtime.v2.Project items = 1;
+  // The cursor of the next page; absent on the last page.
+  optional string next_cursor = 2;
+}
+
+// Asks one Project.
+message GetProjectRequest {
+  // The Project, a UUID.
+  string project_id = 1 [(buf.validate.field).string.uuid = true];
+}
+
+// One Project.
+message GetProjectResponse {
+  // The Project.
+  doric.runtime.v2.Project project = 1 [(buf.validate.field).required = true];
+}
+
+// Renames a Project.
+message UpdateProjectRequest {
+  // The Project, a UUID.
+  string project_id = 1 [(buf.validate.field).string.uuid = true];
+  // The new name: 1 to 80 characters once trimmed, no NUL.
+  string name = 2 [(buf.validate.field).string.pattern = "^\\s*[^\\s\\x00]([^\\x00]{0,78}[^\\s\\x00])?\\s*$"];
+}
+
+// The renamed Project.
+message UpdateProjectResponse {
+  // The Project.
+  doric.runtime.v2.Project project = 1 [(buf.validate.field).required = true];
+}
+
+// Sets or clears a Project's color.
+message SetProjectColorRequest {
+  // The Project, a UUID.
+  string project_id = 1 [(buf.validate.field).string.uuid = true];
+  // A color of the palette; absent (today's `null`) clears it.
+  optional string color = 2 [(buf.validate.field).string = {
+    in: [
+      "red",
+      "orange",
+      "amber",
+      "green",
+      "teal",
+      "blue",
+      "violet",
+      "pink"
+    ]
+  }];
+}
+
+// The recolored Project.
+message SetProjectColorResponse {
+  // The Project.
+  doric.runtime.v2.Project project = 1 [(buf.validate.field).required = true];
+}
+
+// A new Thread of a Project.
+message CreateThreadRequest {
+  // The Project, a UUID.
+  string project_id = 1 [(buf.validate.field).string.uuid = true];
+  // The display name: 1 to 80 characters once trimmed, no NUL.
+  string name = 2 [(buf.validate.field).string.pattern = "^\\s*[^\\s\\x00]([^\\x00]{0,78}[^\\s\\x00])?\\s*$"];
+  // The parent Thread, a UUID; a root Thread when absent.
+  optional string parent_thread_id = 3 [(buf.validate.field).string.uuid = true];
+}
+
+// The new Thread.
+message CreateThreadResponse {
+  // The Thread.
+  doric.runtime.v2.Thread thread = 1 [(buf.validate.field).required = true];
+}
+
+// Asks a page of a Project's Threads.
+message ListThreadsRequest {
+  // The Project, a UUID.
+  string project_id = 1 [(buf.validate.field).string.uuid = true];
+  // The most Threads to answer, 1 to 100; 50 when absent.
+  optional int32 limit = 2 [(buf.validate.field).int32 = {
+    gte: 1
+    lte: 100
+  }];
+  // The previous page's `nextCursor`, a UUID; the first page when absent.
+  optional string cursor = 3 [(buf.validate.field).string.uuid = true];
+  // Only the children of this Thread, a UUID; every Thread when absent.
+  optional string parent_thread_id = 4 [(buf.validate.field).string.uuid = true];
+}
+
+// A page of Threads.
+message ListThreadsResponse {
+  // The page.
+  doric.runtime.threads.v1.ThreadPage thread_page = 1 [(buf.validate.field).required = true];
+}
+
+// Asks a Project's SSH access.
+message GetProjectSshRequest {
+  // The Project, a UUID.
+  string project_id = 1 [(buf.validate.field).string.uuid = true];
+}
+
+// The Project's SSH access, or `pending`.
+message GetProjectSshResponse {
+  // The answer.
+  oneof result {
+    option (buf.validate.oneof).required = true;
+    // The sandbox is coming up.
+    Pending pending = 1;
+    // The access.
+    ProjectSsh value = 2;
+  }
+}
+
+// Asks one directory level.
+message ListFilesRequest {
+  // The Project, a UUID.
+  string project_id = 1 [(buf.validate.field).string.uuid = true];
+  // The directory: at most 4096 characters, no NUL; the workspace root when
+  // absent.
+  optional string path = 2 [(buf.validate.field).string = {
+    max_len: 4096
+    pattern: "^[^\\x00]*$"
+  }];
+}
+
+// The directory level, or `pending`.
+message ListFilesResponse {
+  // The answer.
+  oneof result {
+    option (buf.validate.oneof).required = true;
+    // The sandbox is coming up.
+    Pending pending = 1;
+    // The listing, whose status is always "listed".
+    doric.files.v1.DirectoryRead value = 2;
+  }
+}
+
+// Asks the tree below a path.
+message GetTreeRequest {
+  // The Project, a UUID.
+  string project_id = 1 [(buf.validate.field).string.uuid = true];
+  // The directory: at most 4096 characters, no NUL; the workspace root when
+  // absent.
+  optional string path = 2 [(buf.validate.field).string = {
+    max_len: 4096
+    pattern: "^[^\\x00]*$"
+  }];
+}
+
+// The tree, or `pending`.
+message GetTreeResponse {
+  // The answer.
+  oneof result {
+    option (buf.validate.oneof).required = true;
+    // The sandbox is coming up.
+    Pending pending = 1;
+    // The tree, whose status is always "listed".
+    doric.files.v1.TreeRead value = 2;
+  }
+}
+
+// Asks one file as text.
+message ReadFileRequest {
+  // The Project, a UUID.
+  string project_id = 1 [(buf.validate.field).string.uuid = true];
+  // The file: at most 4096 characters, no NUL.
+  string path = 2 [(buf.validate.field).string = {
+    max_len: 4096
+    pattern: "^[^\\x00]*$"
+  }];
+}
+
+// One item of a file read. The first item is `pending` alone, or a `head`
+// followed by `content` items whose concatenation is the file's text (at most
+// 262,144 bytes of UTF-8, none for a binary file).
+message ReadFileResponse {
+  // The item.
+  oneof item {
+    option (buf.validate.oneof).required = true;
+    // The sandbox is coming up; the only item.
+    Pending pending = 1;
+    // The first item: the path read and whether it was cut or is binary; its
+    // status is always "read".
+    doric.files.v1.BytesRead head = 2;
+    // The next part of the text.
+    string content = 3 [(buf.validate.field).string.min_len = 1];
+  }
+}
+
+// Asks the tracked diff below a path.
+message GetDiffRequest {
+  // The Project, a UUID.
+  string project_id = 1 [(buf.validate.field).string.uuid = true];
+  // The path: at most 4096 characters, no NUL; the workspace root when
+  // absent.
+  optional string path = 2 [(buf.validate.field).string = {
+    max_len: 4096
+    pattern: "^[^\\x00]*$"
+  }];
+}
+
+// The diff, or `pending`.
+message GetDiffResponse {
+  // The answer.
+  oneof result {
+    option (buf.validate.oneof).required = true;
+    // The sandbox is coming up.
+    Pending pending = 1;
+    // The diff, whose status is always "read".
+    doric.git.commands.v1.DiffRead value = 2;
+  }
+}
+
+// Asks the changed files below a path.
+message ListChangesRequest {
+  // The Project, a UUID.
+  string project_id = 1 [(buf.validate.field).string.uuid = true];
+  // The path: at most 4096 characters, no NUL; the workspace root when
+  // absent.
+  optional string path = 2 [(buf.validate.field).string = {
+    max_len: 4096
+    pattern: "^[^\\x00]*$"
+  }];
+}
+
+// The changes, or `pending`.
+message ListChangesResponse {
+  // The answer.
+  oneof result {
+    option (buf.validate.oneof).required = true;
+    // The sandbox is coming up.
+    Pending pending = 1;
+    // The changes, whose status is always "read".
+    doric.git.commands.v1.ChangesRead value = 2;
+  }
+}
+
+// Asks one changed file's comparison.
+message GetFileDiffRequest {
+  // The Project, a UUID.
+  string project_id = 1 [(buf.validate.field).string.uuid = true];
+  // The repository, sandbox-relative, `""` for the root: at most 4096
+  // characters, no NUL.
+  string repository = 2 [(buf.validate.field).string = {
+    max_len: 4096
+    pattern: "^[^\\x00]*$"
+  }];
+  // The repository-relative path: 1 to 4096 characters, no NUL.
+  string path = 3 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 4096
+    pattern: "^[^\\x00]*$"
+  }];
+}
+
+// The comparison, or `pending`.
+message GetFileDiffResponse {
+  // The answer.
+  oneof result {
+    option (buf.validate.oneof).required = true;
+    // The sandbox is coming up.
+    Pending pending = 1;
+    // The comparison.
+    doric.git.commands.v1.ProjectFileDiff value = 2;
+  }
+}
+
+// Asks the Project sandbox's resources.
+message GetProjectResourcesRequest {
+  // The Project, a UUID.
+  string project_id = 1 [(buf.validate.field).string.uuid = true];
+}
+
+// The sandbox's resources, or `pending`.
+message GetProjectResourcesResponse {
+  // The answer.
+  oneof result {
+    option (buf.validate.oneof).required = true;
+    // The sandbox is coming up.
+    Pending pending = 1;
+    // The reading, or why the provider has none.
+    doric.resources.v1.ContainerResources value = 2;
+  }
+}
+
+// Asks a Project's terminal sessions.
+message ListTerminalsRequest {
+  // The Project; its form is not checked, as today.
+  string project_id = 1;
+}
+
+// A Project's terminal sessions.
+message ListTerminalsResponse {
+  // The sessions, in start order; empty when it has none.
+  repeated doric.terminal.v1.TerminalSession items = 1;
+}
+
+// Terminates a Project.
+message TerminateProjectRequest {
+  // The Project, a UUID.
+  string project_id = 1 [(buf.validate.field).string.uuid = true];
+}
+
+// The terminated Project.
+message TerminateProjectResponse {
+  // The Project.
+  doric.runtime.v2.Project project = 1 [(buf.validate.field).required = true];
+}
+
+// Deletes a Project.
+message DeleteProjectRequest {
+  // The Project, a UUID.
+  string project_id = 1 [(buf.validate.field).string.uuid = true];
+}
+
+// The Project is deleted.
+message DeleteProjectResponse {}
+
+// Watches a Project.
+message WatchRequest {
+  // The Project, a UUID: today's handshake `auth.projectId`.
+  string project_id = 1 [(buf.validate.field).string.uuid = true];
+}
+
+// One item of a Project watch: one Socket.IO event of `/projects`, named as
+// the event with `:` replaced by `_`.
+message WatchResponse {
+  // The event.
+  oneof event {
+    option (buf.validate.oneof).required = true;
+    // `project:snapshot`: the first item.
+    ProjectSnapshot project_snapshot = 1;
+    // `terminal:snapshot`: the second item, the Project's sessions.
+    doric.terminal.v1.ProjectTerminals terminal_snapshot = 2;
+    // `project:updated`.
+    doric.runtime.v2.Project project_updated = 3;
+    // `project:deleted`.
+    doric.runtime.v2.ProjectDeleted project_deleted = 4;
+    // `thread:updated`: a Thread of the Project changed.
+    doric.runtime.v2.Thread thread_updated = 5;
+    // `thread:deleted`: a Thread of the Project was deleted.
+    doric.runtime.v2.ThreadDeleted thread_deleted = 6;
+    // `terminal:updated`: a session started or changed.
+    doric.terminal.v1.TerminalSession terminal_updated = 7;
+    // `terminal:output`: live output, only after the snapshot.
+    doric.runtime.v2.TerminalOutput terminal_output = 8;
+    // `terminal:removed`: a session is gone.
+    doric.runtime.v2.TerminalRemoved terminal_removed = 9;
+  }
+}

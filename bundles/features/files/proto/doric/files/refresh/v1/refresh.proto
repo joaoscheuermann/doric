@@ -1,0 +1,116 @@
+// `files.refresh/v1` (client, 1.1.0): the window's Project refresh
+// coordinator. Client parts that show reads of a Project's sandbox (the Files
+// panel, a file tab, other bundles' panels) register them; the
+// coordinator decides when to reread them: on sandbox activity, on a change
+// of the selected Project or Thread, on window focus, every 15 s as a
+// periodic refresh, and on `Request`. The `files` bundle's client part
+// provides it; only client parts of the same window reach it.
+//
+// 1.1.0: `register` takes the Project as data and answers a
+// `registrationId`; `active` and `refresh` are the handler service
+// `RefreshHandlerService` the registering client part implements, and
+// `Unregister` replaces `dispose`. `request` answers once the refresh is
+// started, before any reread ends.
+syntax = "proto3";
+
+package doric.files.refresh.v1;
+
+import "buf/validate/validate.proto";
+import "doric/platform/v1/options.proto";
+
+option (doric.platform.v1.contract) = {
+  id: "files.refresh/v1"
+  cardinality: CARDINALITY_ONE
+  environment: ENVIRONMENT_CLIENT
+};
+
+// The refresh coordinator. Every registration is kept with the client part
+// that made it and ends with `Unregister` or with that part's deactivation.
+service RefreshService {
+  // Registers the calling client part's `RefreshHandlerService` for the
+  // reads it shows of one Project, and answers a `registrationId`. One part
+  // may hold several registrations, for one Project or several; each is
+  // called with its own id.
+  rpc Register(RegisterRequest) returns (RegisterResponse);
+  // Ends a registration; an unknown or ended id is a no-op.
+  rpc Unregister(UnregisterRequest) returns (UnregisterResponse);
+  // Asks every registration of one Project to reread its active reads, and
+  // answers once that is asked, without waiting for a reread. A Project
+  // without a registration is a no-op; a registration's failed reread is
+  // its own and fails nothing here.
+  rpc Request(RequestRequest) returns (RequestResponse);
+}
+
+// One registrant's reads of a Project, implemented by the client part that
+// registered them and called by the coordinator through the in-window
+// directory.
+service RefreshHandlerService {
+  option (doric.platform.v1.service).role = SERVICE_ROLE_HANDLER;
+
+  // Answers whether the registration shows something now (a panel open, a
+  // tab mounted): only then do focus and the periodic refresh reread the
+  // Project.
+  rpc Active(RefreshHandlerServiceActiveRequest) returns (RefreshHandlerServiceActiveResponse);
+  // Rereads the registration's active reads, answering when they are read. A
+  // periodic refresh skips reads in error or not ready, which own their own
+  // retry. A failure is the registrant's own; the coordinator ignores it.
+  rpc Refresh(RefreshHandlerServiceRefreshRequest) returns (RefreshHandlerServiceRefreshResponse);
+}
+
+// Registers the caller's reads of one Project.
+message RegisterRequest {
+  // The Project whose reads the caller shows.
+  string project_id = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+// The reads' registration.
+message RegisterResponse {
+  // The id `Unregister` takes and the handler calls carry.
+  string registration_id = 1;
+}
+
+// Ends a registration.
+message UnregisterRequest {
+  // The id `Register` answered.
+  string registration_id = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+// The registration is gone.
+message UnregisterResponse {}
+
+// Asks one Project's registrations to reread.
+message RequestRequest {
+  // The Project.
+  string project_id = 1 [(buf.validate.field).string.min_len = 1];
+  // Whether the request is periodic, so reads in error or not ready are
+  // skipped; absent is not.
+  optional bool periodic = 2;
+}
+
+// The refresh is asked.
+message RequestResponse {}
+
+// Asks one registration whether it shows something.
+message RefreshHandlerServiceActiveRequest {
+  // The registration, as `Register` answered it.
+  string registration_id = 1;
+}
+
+// Whether the registration shows something.
+message RefreshHandlerServiceActiveResponse {
+  // True while the registrant shows something (a panel open, a tab
+  // mounted).
+  bool active = 1;
+}
+
+// Asks one registration to reread its active reads.
+message RefreshHandlerServiceRefreshRequest {
+  // The registration, as `Register` answered it.
+  string registration_id = 1;
+  // Whether the refresh is periodic: reads in error or not ready are
+  // skipped.
+  bool periodic = 2;
+}
+
+// The registration's active reads are read.
+message RefreshHandlerServiceRefreshResponse {}

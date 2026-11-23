@@ -1,0 +1,57 @@
+// `doric.startup/v1` (platform 2.0.0): the host's startup record, the stage a
+// startup failure is reported at and the flat log lines of the startup
+// sequence. The host process serves it.
+//
+// 2.0.0: the schema moves to `.proto` with the same fields.
+syntax = "proto3";
+
+package doric.platform.startup.v1;
+
+import "buf/validate/validate.proto";
+import "doric/platform/v1/options.proto";
+import "google/protobuf/struct.proto";
+
+option (doric.platform.v1.contract) = {
+  id: "doric.startup/v1"
+  cardinality: CARDINALITY_ONE
+};
+
+// The host's startup record.
+service StartupService {
+  // Records the stage the startup is at; a later failure is reported at it.
+  rpc Stage(StageRequest) returns (StageResponse);
+  // Writes one line of the startup log.
+  rpc Log(LogRequest) returns (LogResponse);
+}
+
+// Records a stage.
+message StageRequest {
+  // The stage's name.
+  string name = 1 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 64
+  }];
+}
+
+// The stage is recorded.
+message StageResponse {}
+
+// One line of the startup log.
+message LogRequest {
+  // "debug", "info", "warn" or "error".
+  string level = 1 [(buf.validate.field).string = {
+    in: [
+      "debug",
+      "info",
+      "warn",
+      "error"
+    ]
+  }];
+  // The line's structured fields.
+  google.protobuf.Struct fields = 2 [(buf.validate.field).required = true];
+  // The message.
+  string message = 3;
+}
+
+// The line is written.
+message LogResponse {}

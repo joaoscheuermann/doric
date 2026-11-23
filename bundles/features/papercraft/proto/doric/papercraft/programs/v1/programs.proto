@@ -1,0 +1,179 @@
+// `papercraft.programs/v1` (host, 1.1.0): the library a papercraft fence is
+// bound to (D10), one export or story of a workspace file (D16), and the bytes
+// of a module the host memo holds. The `papercraft` host part provides it; a
+// window reaches all three through the gateway (`EXPOSE_DESKTOP`), with the
+// call scope `projectId` and `threadId`. A papercraft fence's errors do not go
+// here: they go to `openui.programs/v1` with the tag `papercraft`.
+//
+// 1.1.0: the schemas move from zod to `.proto` with the same fields; an
+// answer's `status` is the case of a oneof; `Read` streams a module's bytes in
+// chunks instead of answering them as base64.
+syntax = "proto3";
+
+package doric.papercraft.programs.v1;
+
+import "buf/validate/validate.proto";
+import "doric/platform/v1/options.proto";
+
+option (doric.platform.v1.contract) = {
+  id: "papercraft.programs/v1"
+  cardinality: CARDINALITY_ONE
+  environment: ENVIRONMENT_HOST
+};
+
+// The fence libraries, the previews of workspace files and the module memo.
+// Every RPC fails `invalid_input` for a request that fails its rules and
+// `invalid_scope` without a `projectId` and a `threadId` in the call's scope.
+service ProgramsService {
+  // The library bound at `turn_sequence` (D10): the root found from the `cwd`
+  // of the Thread's last `papercraft.cwd/v1` event below `turn_sequence`,
+  // checked and built (D11–D14). Never fails for a library problem: those
+  // answer `failed`.
+  rpc Library(LibraryRequest) returns (LibraryResponse) {
+    option (doric.platform.v1.method).expose = EXPOSE_DESKTOP;
+  }
+  // One export or story of a workspace file (D16), built through the preview
+  // pipeline with the harness (D15). A path that leaves the Project, or a
+  // source that does not build, answers `failed`.
+  rpc Export(ExportRequest) returns (ExportResponse) {
+    option (doric.platform.v1.method).expose = EXPOSE_DESKTOP;
+  }
+  // The bytes of a module the memo holds, one file after another. Fails
+  // `not_found` when no memo key holds a module with that `dir`; the caller
+  // then asks `Library` or `Export` again, once.
+  rpc Read(ReadRequest) returns (stream ReadResponse) {
+    option (doric.platform.v1.method).expose = EXPOSE_DESKTOP;
+  }
+}
+
+// D14's `ModuleRef`: one built module, as its cache directory and its files.
+message ModuleRef {
+  // The cache directory: the SHA-256 of the files' `<path>:<sha256>` lines,
+  // sorted by path and joined by `\n`. Equal files always give the same
+  // `dir`.
+  string dir = 1;
+  // `index.js`; `index.css` when the module has a sheet; and
+  // `assets/<sha256>.<ext>` for each `url()` asset the sheet names.
+  repeated ModuleFile files = 2;
+}
+
+// One file of a module.
+message ModuleFile {
+  // The file's path in the module's directory.
+  string path = 1;
+  // The lowercase hex SHA-256 of the file's bytes.
+  string sha256 = 2;
+}
+
+// Asks the library bound at a fence's turn.
+message LibraryRequest {
+  // The fence's `turnSequence`, a whole number from 0.
+  double turn_sequence = 1 [
+    (buf.validate.field).double.gte = 0,
+    (buf.validate.field).cel = {
+      id: "turn_sequence.integer"
+      message: "turnSequence must be a whole number"
+      expression: "this == double(int(this))"
+    }
+  ];
+}
+
+// D14's answer to `Library`, named as today's `status`.
+message LibraryResponse {
+  // The answer.
+  oneof status {
+    option (doric.platform.v1.oneof).discriminator = "status";
+    option (buf.validate.oneof).required = true;
+    // The fence is bound to no working directory, or the walk from it found
+    // no library root.
+    LibraryNone none = 1;
+    // The library root and its built module.
+    LibraryReady ready = 2;
+    // Why the library did not build.
+    LibraryFailed failed = 3;
+  }
+}
+
+// No library: the fence is bound to no working directory, or no root was
+// found.
+message LibraryNone {}
+
+// The library built.
+message LibraryReady {
+  // The library root.
+  string root = 1;
+  // The library's module.
+  ModuleRef module = 2 [(buf.validate.field).required = true];
+}
+
+// The library did not build.
+message LibraryFailed {
+  // The library root; absent when none was found.
+  optional string root = 1;
+  // The reason, at most 4,096 characters.
+  string error = 2 [(buf.validate.field).string.max_len = 4096];
+}
+
+// Asks one export or story of a workspace file.
+message ExportRequest {
+  // The file, workspace-relative.
+  string path = 1 [(buf.validate.field).string.min_len = 1];
+  // The export's name; absent for the file's default export.
+  optional string name = 2 [(buf.validate.field).string.min_len = 1];
+}
+
+// D16's answer to `Export`, named as today's `status`.
+message ExportResponse {
+  // The answer.
+  oneof status {
+    option (doric.platform.v1.oneof).discriminator = "status";
+    option (buf.validate.oneof).required = true;
+    // The built module.
+    ExportReady ready = 1;
+    // Why it did not build.
+    ExportFailed failed = 2;
+  }
+}
+
+// The export built.
+message ExportReady {
+  // The export's module.
+  ModuleRef module = 1 [(buf.validate.field).required = true];
+}
+
+// The export did not build.
+message ExportFailed {
+  // The reason.
+  string error = 1;
+}
+
+// Asks the bytes of one module of the memo.
+message ReadRequest {
+  // The module's `ModuleRef.dir`.
+  string dir = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+// One chunk of one file of the module, in the shape of
+// `doric.cache/v1.EnsureRequest`, so a caller can hand each item to `Ensure`
+// unchanged. The items of a file are consecutive, carry the same `path` and
+// `sha256`, and have offsets that start at 0 and follow each other; an empty
+// file is one item with no bytes. Every file of the module's `ModuleRef.files`
+// is in the stream.
+message ReadResponse {
+  // `<dir>/<file>`: the module's `dir` and the file's path, as
+  // `doric.cache/v1.Ensure` takes it.
+  string path = 1;
+  // The lowercase hex SHA-256 of the whole file's bytes.
+  string sha256 = 2;
+  // The offset of the chunk in the file, in bytes, a whole number from 0.
+  double offset = 3 [
+    (buf.validate.field).double.gte = 0,
+    (buf.validate.field).cel = {
+      id: "offset.integer"
+      message: "offset must be a whole number"
+      expression: "this == double(int(this))"
+    }
+  ];
+  // The chunk, at most 1 MiB.
+  bytes bytes = 4 [(buf.validate.field).bytes.max_len = 1048576];
+}

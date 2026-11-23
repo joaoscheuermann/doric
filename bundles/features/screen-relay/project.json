@@ -4,9 +4,29 @@
   "projectType": "library",
   "sourceRoot": "bundles/features/screen-relay/src",
   "targets": {
+    "generate-proto": {
+      "executor": "nx:run-commands",
+      "cache": true,
+      "inputs": [
+        "{workspaceRoot}/buf.yaml",
+        "{workspaceRoot}/buf.lock",
+        "{workspaceRoot}/buf.gen.yaml",
+        "{projectRoot}/proto/**/*.proto",
+        {
+          "externalDependencies": ["@bufbuild/buf", "@bufbuild/protoc-gen-es"]
+        }
+      ],
+      "outputs": ["{projectRoot}/src/contracts/gen"],
+      "options": {
+        "commands": [
+          "npx buf generate --template buf.gen.yaml --path bundles/features/screen-relay/proto/doric -o bundles/features/screen-relay"
+        ],
+        "parallel": false
+      }
+    },
     "build": {
       "executor": "nx:run-commands",
-      "dependsOn": ["^build"],
+      "dependsOn": ["generate-proto", "^build"],
       "outputs": ["{projectRoot}/dist"],
       "options": {
         "commands": [
@@ -18,14 +38,14 @@
     },
     "typecheck": {
       "executor": "nx:run-commands",
-      "dependsOn": ["^build"],
+      "dependsOn": ["generate-proto", "^build"],
       "options": {
         "command": "tsc --build bundles/features/screen-relay/tsconfig.json --emitDeclarationOnly"
       }
     },
     "test": {
       "executor": "nx:run-commands",
-      "dependsOn": ["^build"],
+      "dependsOn": ["build", "^build"],
       "outputs": ["{projectRoot}/dist-tests"],
       "options": {
         "commands": [

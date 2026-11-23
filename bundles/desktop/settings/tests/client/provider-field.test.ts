@@ -15,7 +15,7 @@
 
 import assert from 'node:assert/strict';
 import { readdir, readFile } from 'node:fs/promises';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, join, resolve, sep } from 'node:path';
 import { afterEach, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
@@ -777,8 +777,12 @@ const files = async (dir: string): Promise<string[]> => {
 };
 
 test("AC6.2: no source of settings names the claude kind, imports the sign-in bundle's contracts or keeps sign_in_failed", async () => {
+  // `src/contracts/gen/` is generated code, not settings' own source: its
+  // header lists every protoc import mapping, the sign-in bundle's included.
+  const generated = join(settingsRoot, 'src', 'contracts', 'gen');
   const naming: string[] = [];
   for (const file of await files(join(settingsRoot, 'src'))) {
+    if (file.startsWith(generated + sep)) continue;
     const text = await readFile(file, 'utf8');
     if (
       text.includes("'claude'") ||

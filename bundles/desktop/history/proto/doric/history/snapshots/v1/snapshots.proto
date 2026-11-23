@@ -1,0 +1,153 @@
+// `history.snapshots/v1` (client, 1.1.0): the window's local per-Thread
+// history snapshots, a best-effort cache that lets a conversation render
+// before the host answers. `history` does not depend on the runtime's
+// contracts, so a Thread record and a Thread event are open JSON objects:
+// the rules below check only the fields the cache reads, and every other
+// field is kept.
+//
+// 1.1.0: the provider moves from desktopMain to the window; the schemas move
+// from zod to `.proto`; an update's kind is the case of a oneof; the methods
+// are no longer exposed to the desktop.
+syntax = "proto3";
+
+package doric.history.snapshots.v1;
+
+import "buf/validate/validate.proto";
+import "doric/platform/v1/options.proto";
+import "google/protobuf/struct.proto";
+
+option (doric.platform.v1.contract) = {
+  id: "history.snapshots/v1"
+  cardinality: CARDINALITY_ONE
+  environment: ENVIRONMENT_CLIENT
+};
+
+// The window's history cache.
+service SnapshotsService {
+  // One Thread's cached history; no snapshot for a Thread without a usable
+  // one.
+  rpc Read(ReadRequest) returns (ReadResponse);
+  // Absorbs a Thread's updates, in the order given, and saves them later
+  // (debounced); answers before they are saved.
+  rpc Write(WriteRequest) returns (WriteResponse);
+}
+
+// One Thread's cached history.
+message HistorySnapshot {
+  // The Thread record as the host sent it, a JSON object with a string
+  // `id`; absent when the cache holds none.
+  optional google.protobuf.Struct thread = 1 [(buf.validate.field).cel = {
+    id: "thread.id"
+    message: "a Thread record needs a string id"
+    expression: "'id' in this && type(this['id']) == string"
+  }];
+  // The highest cached sequence, a whole number of at least 0 (0 without
+  // events): where a watch resumes.
+  double last_sequence = 2 [
+    (buf.validate.field).double.gte = 0,
+    (buf.validate.field).cel = {
+      id: "last_sequence.integer"
+      message: "lastSequence must be a whole number"
+      expression: "this == double(int(this))"
+    }
+  ];
+  // The cached durable Thread events, in sequence order; empty when none.
+  // Each is a JSON object as the host sent it.
+  repeated google.protobuf.Struct events = 3 [(buf.validate.field).repeated.items.cel = {
+    id: "events.record"
+    message: "a Thread event needs string projectId, threadId, promptId, type and createdAt and a whole sequence of at least 0"
+    expression: "['projectId', 'threadId', 'promptId', 'type', 'createdAt'].all(k, k in this && type(this[k]) == string) && 'sequence' in this && type(this['sequence']) == double && this['sequence'] >= 0.0 && this['sequence'] == double(int(this['sequence']))"
+  }];
+}
+
+// One update the window received from the host.
+message HistoryUpdate {
+  // The update, named as today's `kind`.
+  oneof kind {
+    option (doric.platform.v1.oneof).discriminator = "kind";
+    option (buf.validate.oneof).required = true;
+    // The Thread's record and events, replacing the cached ones.
+    HistorySnapshotUpdate snapshot = 1;
+    // One event appended to the Thread.
+    HistoryEventUpdate event = 2;
+    // The Thread's record changed.
+    HistoryThreadUpdate updated = 3;
+    // The Thread was deleted.
+    HistoryDeletedUpdate deleted = 4;
+  }
+}
+
+// The Thread's record and events, replacing the cached ones.
+message HistorySnapshotUpdate {
+  // The Thread record, a JSON object with a string `id`; absent when the
+  // host holds none.
+  optional google.protobuf.Struct thread = 1 [(buf.validate.field).cel = {
+    id: "thread.id"
+    message: "a Thread record needs a string id"
+    expression: "'id' in this && type(this['id']) == string"
+  }];
+  // The Thread's durable events, in sequence order; empty when none.
+  repeated google.protobuf.Struct events = 2 [(buf.validate.field).repeated.items.cel = {
+    id: "events.record"
+    message: "a Thread event needs string projectId, threadId, promptId, type and createdAt and a whole sequence of at least 0"
+    expression: "['projectId', 'threadId', 'promptId', 'type', 'createdAt'].all(k, k in this && type(this[k]) == string) && 'sequence' in this && type(this['sequence']) == double && this['sequence'] >= 0.0 && this['sequence'] == double(int(this['sequence']))"
+  }];
+}
+
+// One event appended to the Thread.
+message HistoryEventUpdate {
+  // The event, a JSON object as the host sent it.
+  google.protobuf.Struct event = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).cel = {
+      id: "event.record"
+      message: "a Thread event needs string projectId, threadId, promptId, type and createdAt and a whole sequence of at least 0"
+      expression: "['projectId', 'threadId', 'promptId', 'type', 'createdAt'].all(k, k in this && type(this[k]) == string) && 'sequence' in this && type(this['sequence']) == double && this['sequence'] >= 0.0 && this['sequence'] == double(int(this['sequence']))"
+    }
+  ];
+}
+
+// The Thread's record changed.
+message HistoryThreadUpdate {
+  // The new record, a JSON object with a string `id`.
+  google.protobuf.Struct thread = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).cel = {
+      id: "thread.id"
+      message: "a Thread record needs a string id"
+      expression: "'id' in this && type(this['id']) == string"
+    }
+  ];
+}
+
+// The Thread was deleted.
+message HistoryDeletedUpdate {
+  // The Thread's Project.
+  string project_id = 1;
+  // The Thread.
+  string thread_id = 2;
+}
+
+// Asks one Thread's cached history.
+message ReadRequest {
+  // The Thread.
+  string thread_id = 1;
+}
+
+// One Thread's cached history.
+message ReadResponse {
+  // The snapshot; absent for a Thread without a usable one.
+  optional HistorySnapshot history_snapshot = 1;
+}
+
+// A Thread's updates to absorb.
+message WriteRequest {
+  // The Thread.
+  string thread_id = 1;
+  // The updates, in the order the window applied them; empty absorbs
+  // nothing.
+  repeated HistoryUpdate updates = 2;
+}
+
+// The updates were absorbed; they are saved later.
+message WriteResponse {}

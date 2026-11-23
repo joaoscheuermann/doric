@@ -102,6 +102,10 @@ export const createTestServices = (
 };
 
 export {
+  type ConformanceOptions,
+  runConformance,
+} from './conformance/index.js';
+export {
   createMinimalHooks,
   type MinimalHooksOptions,
 } from './minimal-hooks.js';
@@ -110,3 +114,11 @@ export {
   type MinimalUiCore,
   minimalUiCore,
 } from './minimal-ui-core.js';
+export {
+  createTestRouter,
+  type TestClientOptions,
+  type TestLogRecord,
+  type TestRouter,
+  type TestRouterControl,
+  type TestRouterOptions,
+} from './router.js';

@@ -8,7 +8,12 @@ import type {
 } from '../contracts/platform.js';
 import type { Composition } from './composition.js';
 import type { Descriptor, DescriptorEntry } from './descriptor.js';
-import { type ManifestV1, parseContractEntry } from './manifest.js';
+import {
+  httpPrefixOf,
+  type Manifest,
+  parseContractEntry,
+  partLists,
+} from './manifest.js';
 import { satisfies } from './semver.js';
 
 export type CatalogSource =
@@ -20,7 +25,7 @@ export interface CatalogCandidate {
   /** Manifest ID, or the directory name when the manifest could not be read. */
   readonly id: string;
   readonly source: CatalogSource;
-  readonly manifest?: ManifestV1;
+  readonly manifest?: Manifest;
   readonly descriptor?: Descriptor;
   /** Problems found while reading (invalid manifest or descriptor). */
   readonly errors: readonly QuarantineReason[];
@@ -33,7 +38,7 @@ export interface CatalogEntry {
   readonly version: string;
   readonly description?: string;
   readonly source: CatalogSource;
-  readonly manifest?: ManifestV1;
+  readonly manifest?: Manifest;
   readonly descriptor?: Descriptor;
   readonly phase?: Phase;
   readonly state: EntryState;
@@ -89,7 +94,7 @@ const FACADES = new Set(['events/v1', 'settings/v1', 'models/v1']);
 const reachable: Readonly<Record<Environment, readonly Environment[]>> = {
   host: ['host'],
   desktopMain: ['desktopMain'],
-  client: ['client', 'desktopMain', 'host'],
+  client: ['client', 'host'],
 };
 
 /** The bundle that owns a contract: `git` for `git.commands/v1` and `git/v1`. */
@@ -117,7 +122,7 @@ const reason = (
   contract === undefined ? { code, message } : { code, message, contract };
 
 const consistencyProblem = (
-  manifest: ManifestV1,
+  manifest: Manifest,
   descriptor: Descriptor,
 ): string | undefined => {
   if (
@@ -330,11 +335,12 @@ export const resolveEnvironment = (
       (declared) => parseContractEntry(declared)?.id === contract,
     ) ?? false;
   const requiresOf = (entry: Working) =>
-    (entry.candidate.manifest?.requires ?? []).flatMap((declared) => {
-      const parsed = parseContractEntry(declared);
-
-      return parsed === undefined ? [] : [parsed];
-    });
+    entry.candidate.manifest === undefined
+      ? []
+      : partLists(
+          entry.candidate.manifest,
+          environment === 'host' ? 'host' : 'client',
+        ).requires;
 
   let recovery = input.recovery;
   const recover = (why: string) => {
@@ -587,6 +593,27 @@ export const resolveEnvironment = (
     }
   }
 
+  /**
+   * `unreachable_dependency` of a v2 host part: a contract under its `list`
+   * that no host part provides and a client part does. A v1 manifest keeps
+   * the bundle-wide lists and is never checked.
+   */
+  const unreachableFromHost = (
+    entry: Working,
+    list: 'requires' | 'optional',
+    contract: string,
+  ): QuarantineReason | undefined =>
+    environment === 'host' &&
+    entry.candidate.manifest?.manifestVersion === 2 &&
+    providersOf(contract, 'host').length === 0 &&
+    providersOf(contract, 'client').length > 0
+      ? reason(
+          'unreachable_dependency',
+          `host.${list} ${contract}; only client parts provide it, and a host part cannot reach a client part`,
+          contract,
+        )
+      : undefined;
+
   // Requires per environment, iterated to a fixpoint so quarantine cascades.
   const checkRequires = (entry: Working): QuarantineReason | undefined => {
     const dependencies = new Set<string>();
@@ -639,6 +666,14 @@ export const resolveEnvironment = (
         continue;
       }
 
+      const unreachable = unreachableFromHost(entry, 'requires', required.id);
+
+      if (unreachable !== undefined) {
+        return unreachable;
+      }
+
+      // Until phase 5, a contract provided only by a desktopMain part still
+      // counts as reachable for a client part.
       const providedElsewhere = (
         ['host', 'desktopMain', 'client'] as const
       ).some((env) => providersOf(required.id, env).length > 0);
@@ -649,6 +684,16 @@ export const resolveEnvironment = (
           `requires ${required.id}@${required.spec}; no enabled bundle provides it`,
           required.id,
         );
+      }
+    }
+
+    if (environment === 'host' && entry.candidate.manifest !== undefined) {
+      for (const id of partLists(entry.candidate.manifest, 'host').optional) {
+        const unreachable = unreachableFromHost(entry, 'optional', id);
+
+        if (unreachable !== undefined) {
+          return unreachable;
+        }
       }
     }
 
@@ -810,6 +855,35 @@ export const resolveEnvironment = (
       ...(core !== undefined && live(core) ? [core] : []),
       ...topological(others),
     ];
+
+    // The second bundle in activation order that takes an HTTP prefix.
+    if (environment === 'host') {
+      const prefixes = new Map<string, string>();
+
+      for (const entry of sorted.filter(live)) {
+        const { manifest } = entry.candidate;
+        const prefix =
+          manifest === undefined ? undefined : httpPrefixOf(manifest);
+
+        if (prefix === undefined) {
+          continue;
+        }
+
+        const taken = prefixes.get(prefix);
+
+        if (taken === undefined) {
+          prefixes.set(prefix, entry.id);
+        } else {
+          quarantine(
+            entry,
+            reason(
+              'duplicate_http_prefix',
+              `HTTP prefix ${prefix} is already taken by ${taken}`,
+            ),
+          );
+        }
+      }
+    }
 
     if (working.filter(live).length === before) {
       order.push(...sorted.filter(live).map(({ id }) => id));

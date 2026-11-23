@@ -13,7 +13,11 @@ import {
 } from '../contracts/define.js';
 import { type Environment, isPlatformContract } from '../contracts/ids.js';
 import { misdeclaredExposure } from '../runtime/exposure.js';
-import { type ManifestV1, parseContractEntry } from '../runtime/manifest.js';
+import {
+  type Manifest,
+  parseContractEntry,
+  partLists,
+} from '../runtime/manifest.js';
 import type { RecordedContract } from './schemas.js';
 
 const inert: Disposable = Object.freeze({ dispose: () => undefined });
@@ -46,14 +50,18 @@ export class RecordingError extends Error {
  * every other call is an inert no-op and `whenAvailable` never fires.
  */
 export const recordActivation = async (options: {
-  readonly manifest: ManifestV1;
+  readonly manifest: Manifest;
   readonly environment: Environment;
   readonly activate: Activate;
 }): Promise<readonly RecordedContract[]> => {
   const { manifest, environment } = options;
+  const lists = partLists(
+    manifest,
+    environment === 'client' ? 'client' : 'host',
+  );
   const requires = new Set([
-    ...ids(manifest.requires),
-    ...(manifest.optional ?? []),
+    ...lists.requires.map((entry) => entry.id),
+    ...lists.optional,
   ]);
   const provides = ids(manifest.provides);
   const recorded: RecordedContract[] = [];
@@ -237,7 +245,7 @@ export const recordActivation = async (options: {
 
 /** Build-time checks of a recording against the manifest. */
 export const checkRecording = (
-  manifest: ManifestV1,
+  manifest: Manifest,
   recorded: readonly RecordedContract[],
 ): readonly string[] => {
   const errors: string[] = [];

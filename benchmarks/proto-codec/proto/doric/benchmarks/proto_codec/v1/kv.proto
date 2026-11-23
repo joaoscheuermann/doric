@@ -1,0 +1,91 @@
+// Draft of a `storage.kv/v1` commit stream and of the layout records it holds,
+// for the phase 0 codec benchmark (docs/designs/grpc-processes.md, section 8,
+// "The benchmark", and section 17, "The KV contract" and "The layout").
+syntax = "proto3";
+
+package doric.benchmarks.proto_codec.v1;
+
+import "buf/validate/validate.proto";
+
+// One item of a `Commit` stream.
+message CommitRequest {
+  // The item.
+  oneof item {
+    // The key's version must be `version`; 0 means the key must be absent.
+    Condition condition = 1;
+    // Writes a value.
+    Put put = 2;
+    // Deletes a key.
+    bytes delete = 3;
+    // Removes every key in [start, end).
+    KeyRange clear_range = 4;
+    // Writes key_prefix followed by the commit's position.
+    PositionedPut positioned_put = 5;
+  }
+}
+
+// A condition on a key's version.
+message Condition {
+  // The key.
+  bytes key = 1 [(buf.validate.field).bytes = {
+    min_len: 1
+    max_len: 4096
+  }];
+  // The version the key must have.
+  double version = 2 [(buf.validate.field).cel = {
+    id: "whole_number"
+    message: "must be a whole number"
+    expression: "this == double(int(this))"
+  }];
+}
+
+// A write of one key.
+message Put {
+  // The key.
+  bytes key = 1 [(buf.validate.field).bytes = {
+    min_len: 1
+    max_len: 4096
+  }];
+  // The value.
+  bytes value = 2 [(buf.validate.field).bytes.max_len = 1048576];
+}
+
+// A range of keys.
+message KeyRange {
+  // Inclusive.
+  bytes start = 1;
+  // Exclusive.
+  bytes end = 2;
+}
+
+// A write at the commit's position.
+message PositionedPut {
+  // The key's prefix.
+  bytes key_prefix = 1;
+  // The value.
+  bytes value = 2;
+}
+
+// The answer of a commit.
+message CommitResponse {
+  // The commit's position.
+  double position = 1;
+}
+
+// The record of `("stream.head", stream)`.
+message StreamHead {
+  // The sequence of the stream's last entry.
+  uint32 last_sequence = 1;
+}
+
+// The record of `("stream.entry", stream, sequence)`.
+message StreamEntryHeader {
+  // Epoch milliseconds.
+  double created_at = 1;
+  // The size of the entry's value.
+  uint32 value_size = 2;
+  // How many chunk records follow this one.
+  uint32 chunk_count = 3;
+  // The first 983,040 bytes of the value.
+  bytes chunk = 4 [(buf.validate.field).bytes.max_len = 983040];
+}

@@ -1,0 +1,241 @@
+// `chat.views/v1` (client, 1.3.0): how the window's conversations project
+// and draw what other bundles own: projectors of event types, renderers of
+// block types, of fences, of tool calls and of input sources, and the fences
+// of a Thread for a surface outside the conversation. `chat`'s client part
+// provides it; only client parts of the same window call it.
+//
+// Every registration answers a `registrationId` that `Unregister` takes; a
+// registration also ends with the registering part's deactivation. A
+// registration that is refused registers nothing. The elements a renderer
+// names are defined through `ui/v1` and receive their `view` property from
+// the chat, as today.
+//
+// 1.3.0: `registerProjector` names an export of the caller's client module
+// instead of passing functions; the renderers answer a `registrationId` and
+// `Unregister` replaces the `Disposable`; `watchFences` is a server stream;
+// `onBeforeRenderBlockHook`'s block shape leaves the contract.
+syntax = "proto3";
+
+package doric.chat.views.v1;
+
+import "buf/validate/validate.proto";
+import "doric/platform/v1/options.proto";
+
+option (doric.platform.v1.contract) = {
+  id: "chat.views/v1"
+  cardinality: CARDINALITY_ONE
+  environment: ENVIRONMENT_CLIENT
+};
+
+// The conversation's projectors and renderers.
+service ViewsService {
+  // Registers a projector: `export` names an export of the caller's client
+  // module whose value has the functions `initial()` and
+  // `reduce(state, event)`, which the chat runs in its one projection over
+  // the claimed event types, again on replay and rewind. Fails with
+  // `invalid_input` for a missing export or one without both functions, and
+  // `registration_conflict` when a type of `event_types` is already claimed,
+  // by another projector or by the built-in projection (checked on the
+  // request; the export's own `eventTypes` is not read).
+  rpc RegisterProjector(RegisterProjectorRequest) returns (RegisterProjectorResponse);
+  // Registers the element that draws one block type. Fails with
+  // `registration_conflict` when the type already has a renderer, and
+  // `invalid_input` when `ui/v1` has not defined `element_tag`.
+  rpc RegisterRenderer(RegisterRendererRequest) returns (RegisterRendererResponse);
+  // From now until the registration ends, the window's conversations draw
+  // every fence of `tag` in an agent turn as one `element_tag` element per
+  // fence key, with its `view` set and kept across streaming flushes; shown
+  // turns are rebuilt at once, and the reverse happens when it ends. Fails
+  // with `registration_conflict` when the tag already has a fence renderer,
+  // and `invalid_input` when `ui/v1` has not defined `element_tag`.
+  rpc RegisterFenceRenderer(RegisterFenceRendererRequest) returns (RegisterFenceRendererResponse);
+  // Streams the Thread's fences of `tag`, in transcript order, computed by
+  // the projection the conversation uses: the whole list first, then the
+  // whole list again after each flush that changes it (by key, state or
+  // body). It sends an empty list once for an unknown or deleted Thread or
+  // one of another Project, an empty list while no fence renderer of `tag`
+  // is registered in the window, and an empty list when the Thread is
+  // deleted. Watching never changes the conversation store's Threads or
+  // recency. The caller ends it by cancelling.
+  rpc WatchFences(WatchFencesRequest) returns (stream WatchFencesResponse) {
+    option (doric.platform.v1.method).resumable = true;
+  }
+  // While the registration lives, every call of `tool_name` in the window's
+  // conversations is drawn by one `element_tag` element per call, or by the
+  // chat's generic row when no element is given; it replaces every built-in
+  // fact the chat has for that name, and shown transcripts are redrawn at
+  // once. Fails with `registration_conflict` when the name already has a
+  // registration (the first wins), and `invalid_input` when `ui/v1` has not
+  // defined `element_tag`.
+  rpc RegisterToolRenderer(RegisterToolRendererRequest) returns (RegisterToolRendererResponse);
+  // While the registration lives, every prompt of `source` in the window's
+  // conversations is drawn by one `element_tag` element per prompt, ahead
+  // of a `chat.delegated-input/v1` block renderer for the same prompt.
+  // Fails with `registration_conflict` when the source already has a
+  // registration (the first wins), and `invalid_input` when `ui/v1` has not
+  // defined `element_tag`.
+  rpc RegisterInputRenderer(RegisterInputRendererRequest) returns (RegisterInputRendererResponse);
+  // Ends a registration of any kind above; the chat's own drawing comes
+  // back. An unknown or ended id is a no-op.
+  rpc Unregister(UnregisterRequest) returns (UnregisterResponse);
+}
+
+// Registers a projector.
+message RegisterProjectorRequest {
+  // The exact event types the projector owns; a repeated type counts once;
+  // empty for none.
+  repeated string event_types = 1 [(buf.validate.field).repeated.items.string.min_len = 1];
+  // The name of the export of the caller's client module that holds the
+  // projector.
+  string export = 2 [(buf.validate.field).string.min_len = 1];
+}
+
+// The projector's registration.
+message RegisterProjectorResponse {
+  // The id `Unregister` takes.
+  string registration_id = 1;
+}
+
+// Registers the element that draws one block type.
+message RegisterRendererRequest {
+  // The block type.
+  string block_type = 1 [(buf.validate.field).string.min_len = 1];
+  // The custom element that draws it.
+  string element_tag = 2 [(buf.validate.field).string.min_len = 1];
+}
+
+// The renderer's registration.
+message RegisterRendererResponse {
+  // The id `Unregister` takes.
+  string registration_id = 1;
+}
+
+// Registers the element that draws the fences of one tag.
+message RegisterFenceRendererRequest {
+  // The tag the opener line names, matched exactly against the info
+  // string's first word: 1 to 64 characters, no whitespace, backtick or
+  // tilde.
+  string tag = 1 [(buf.validate.field).string.pattern = "^[^\\s`~]{1,64}$"];
+  // The custom element the chat creates for each fence of the tag.
+  string element_tag = 2 [(buf.validate.field).string.min_len = 1];
+}
+
+// The fence renderer's registration.
+message RegisterFenceRendererResponse {
+  // The id `Unregister` takes.
+  string registration_id = 1;
+}
+
+// One fence of a registered tag in an agent turn, as the conversation's own
+// projection computes it. `key` does not change while the turn streams and
+// is unique among the Thread's fences of one tag; `state` moves only from
+// "streaming" to "closed" or "unterminated".
+message ChatFence {
+  // `<promptId>/<turnSequence>/<index>`; unique within its tag.
+  string key = 1;
+  // The Thread's Project.
+  string project_id = 2;
+  // The Thread.
+  string thread_id = 3;
+  // The prompt of the turn that holds the fence.
+  string prompt_id = 4;
+  // The `sequence` of the first event of the turn that holds the fence, a
+  // whole number.
+  double turn_sequence = 5 [(buf.validate.field).cel = {
+    id: "turn_sequence.integer"
+    message: "turnSequence must be a whole number"
+    expression: "this == double(int(this))"
+  }];
+  // 0-based, among the fences of this tag in the turn; a whole number.
+  double index = 6 [
+    (buf.validate.field).double.gte = 0,
+    (buf.validate.field).cel = {
+      id: "index.integer"
+      message: "index must be a whole number"
+      expression: "this == double(int(this))"
+    }
+  ];
+  // The opener line after its backticks or tildes, trimmed.
+  string info = 7;
+  // The lines between the opener and the closer (or the end of the turn),
+  // joined by "\n".
+  string body = 8;
+  // "closed": the closer line exists. "streaming": no closer, the turn is
+  // the transcript's last turn that is not queued, and its prompt has no
+  // settled status. "unterminated": no closer and not streaming.
+  string state = 9 [(buf.validate.field).string = {
+    in: [
+      "streaming",
+      "closed",
+      "unterminated"
+    ]
+  }];
+}
+
+// Asks the fences of one tag in one Thread.
+message WatchFencesRequest {
+  // The Thread's Project.
+  string project_id = 1 [(buf.validate.field).string.min_len = 1];
+  // The Thread.
+  string thread_id = 2 [(buf.validate.field).string.min_len = 1];
+  // The fence tag, as `RegisterFenceRendererRequest.tag`.
+  string tag = 3 [(buf.validate.field).string.pattern = "^[^\\s`~]{1,64}$"];
+}
+
+// The Thread's whole list of fences of the tag.
+message WatchFencesResponse {
+  // The fences, in transcript order; empty for none.
+  repeated ChatFence fences = 1;
+}
+
+// Registers how the calls of one tool are drawn.
+message RegisterToolRendererRequest {
+  // The tool's exact name.
+  string tool_name = 1 [(buf.validate.field).string.min_len = 1];
+  // The element that draws each call, one per call; absent, the chat's
+  // generic row draws it.
+  optional string element_tag = 2 [(buf.validate.field).string.min_len = 1];
+  // True: the call is a block of its own, outside the activity group.
+  // Absent means false.
+  optional bool standalone = 3;
+  // True: the call's block is open until the reader closes it. Absent means
+  // false.
+  optional bool open_by_default = 4;
+}
+
+// The tool renderer's registration.
+message RegisterToolRendererResponse {
+  // The id `Unregister` takes.
+  string registration_id = 1;
+}
+
+// Registers the element that draws the prompts of one input source.
+message RegisterInputRendererRequest {
+  option (buf.validate.message).cel = {
+    id: "register_input_renderer_request.source"
+    message: "source must not be user or a bare bundle"
+    expression: "this.source != 'user' && this.source != 'bundle'"
+  };
+
+  // A lowercase input source kind other than "user"; for the kind "bundle",
+  // `bundle:<bundle id>`. A kind the runtime never sends registers but
+  // never draws.
+  string source = 1 [(buf.validate.field).string.pattern = "^(?:bundle:\\S+|[a-z][a-z0-9_-]*)$"];
+  // The element that draws each prompt of the source.
+  string element_tag = 2 [(buf.validate.field).string.min_len = 1];
+}
+
+// The input renderer's registration.
+message RegisterInputRendererResponse {
+  // The id `Unregister` takes.
+  string registration_id = 1;
+}
+
+// Ends a registration.
+message UnregisterRequest {
+  // The id a registration answered.
+  string registration_id = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+// The registration is gone.
+message UnregisterResponse {}

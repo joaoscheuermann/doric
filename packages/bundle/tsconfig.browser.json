@@ -9,5 +9,9 @@
     "lib": ["es2022", "dom"],
     "types": []
   },
-  "include": ["src/contracts/**/*.ts", "src/runtime/**/*.ts"]
+  "include": [
+    "src/contracts/**/*.ts",
+    "src/runtime/**/*.ts",
+    "src/sdk/client/**/*.ts"
+  ]
 }

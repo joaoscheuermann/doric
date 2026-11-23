@@ -36,8 +36,12 @@ jobs:
       # Cache node_modules
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 26
           cache: 'npm'
+
+      # The Rust toolchain rust-toolchain.toml pins (rustup reads the file).
+      - name: Install the Rust toolchain
+        run: rustup show active-toolchain || rustup toolchain install
 
       # Keep npm's lockfile resolution aligned with the Docker builder.
       - run: npm install --global npm@11.13.0
@@ -47,7 +51,28 @@ jobs:
       - name: Check Nx sync
         run: npx nx sync:check
 
-      - name: Test Biome configuration and bundle boundaries
+      - name: Lint the protos
+        run: npx buf lint
+
+      # The rules of section 8 that buf lint does not check (A54).
+      - name: Check the contract protos
+        run: npx nx run @org/source:proto-check
+
+      # Skipped when the base has no buf.yaml or no .proto files, where
+      # buf breaking fails with "had no .proto files".
+      - name: Check the protos for breaking changes
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          if git cat-file -e "$BASE_SHA:buf.yaml" 2>/dev/null &&
+            git ls-tree -r --name-only "$BASE_SHA" | grep -q '\.proto$'; then
+            npx buf breaking --against ".git#ref=$BASE_SHA"
+          else
+            echo "buf breaking skipped: the base $BASE_SHA has no .proto files"
+          fi
+
+      - name: Test Biome configuration, bundle boundaries and the contract inventory
         run: npm run lint:test
 
       - name: Check formatting
@@ -86,5 +111,111 @@ jobs:
       - name: Run Agent tests
         run: npx nx test agent
 
+      # clippy -D warnings, cargo test --locked and cargo fmt --check.
+      - name: Lint, test and format-check the Rust workspace
+        run: npx nx run-many -t lint test format-check --projects=tag:type:rust
+
       # Lint is reported separately during adoption.
       - run: npx nx run-many -t build typecheck
+
+  # The protocol conformance suite on each SDK's fixture, natively on each
+  # architecture (docs/designs/grpc-processes.md, section 10, "Protocol
+  # conformance across SDKs"; AC2.3).
+  conformance:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-latest, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 26
+          cache: 'npm'
+
+      - run: npm install --global npm@11.13.0
+
+      # Node 26's headers require C++20; tree-sitter 0.21.1 (packages/okf) has
+      # no arm64 prebuild and compiles with gyp's older default otherwise.
+      - run: npm ci
+        env:
+          CXXFLAGS: -std=c++20
+
+      - name: Run the protocol conformance suite
+        run: npx nx run bundle:conformance
+
+      # RK4's benchmark on the x64 runner only (docs/designs/grpc-processes.md,
+      # "Risks", RK4; AC2.2): reports its numbers and RK4's rule without
+      # failing the job (`RK4_NO_FAIL=1`).
+      - name: Run the RK4 benchmark
+        if: matrix.runner == 'ubuntu-latest'
+        env:
+          RK4_NO_FAIL: '1'
+        run: npx nx run bundle:bench-rk4
+
+  # Phase 0 spike (docs/designs/grpc-processes.md, T0.1): builds the SEAs and
+  # the native stub natively on each architecture, starts each against a stub
+  # router, and measures them and today's host (RK1).
+  sea-spike:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-latest, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
+    services:
+      postgres:
+        image: postgres:18.4-alpine3.24@sha256:9a8afca54e7861fd90fab5fdf4c42477a6b1cb7d293595148e674e0a3181de15
+        env:
+          POSTGRES_DB: doric
+          POSTGRES_PASSWORD: doric
+          POSTGRES_USER: doric
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U doric -d doric"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 26
+          cache: 'npm'
+
+      - run: npm install --global npm@11.13.0
+
+      # Node 26's headers require C++20; see the conformance job.
+      - run: npm ci
+        env:
+          CXXFLAGS: -std=c++20
+
+      - name: Install the Rust toolchain
+        run: rustup show active-toolchain || rustup toolchain install
+
+      # The spike's router and client import the generated control protocol
+      # from bundle/contracts/gen, which Node resolves to bundle's dist/.
+      - name: Build bundle
+        run: npx nx run bundle:build
+
+      - name: Build today's host
+        run: npx nx build doric-host
+
+      - name: Apply Doric migrations
+        env:
+          DORIC_DATABASE_URL: postgresql://doric:doric@127.0.0.1:5432/doric
+        run: npx nx run doric-host:migrate
+
+      - name: Run the SEA spike
+        env:
+          DORIC_DATABASE_URL: postgresql://doric:doric@127.0.0.1:5432/doric
+        run: node scripts/sea-spike.mjs
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: sea-spike-${{ matrix.runner }}
+          path: dist/sea-spike/results-*.json

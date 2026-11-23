@@ -1,0 +1,30 @@
+// `default.hooks/v1` (host, 1.1.0): the hooks the `default` bundle defines in
+// the host's `hooks/v1` and runs while it runs a prompt. Each message of this
+// file is the input of one hook; a bundle registers a handler with
+// `hooks/v1.Register` and `default` runs it with `hooks/v1.Run`, with the
+// prompt as the call's scope (`projectId`, `threadId`, `promptId`), cancelled
+// with the prompt. Hooks run in the host only.
+//
+// 1.1.0: the schema moves from zod to `.proto` with the same fields.
+syntax = "proto3";
+
+package doric.default.hooks.v1;
+
+import "doric/platform/v1/options.proto";
+
+option (doric.platform.v1.hooks) = {id: "default.hooks/v1"};
+
+// A model request of the prompt is about to be sent. Run before every model
+// request, so a handler can adjust the system prompt to the state the Thread
+// is in at that turn. Each handler receives the previous handler's output and
+// returns the input with its own change; the last output is the system
+// prompt the request carries, and the input itself when no handler is
+// registered.
+message OnBeforeModelRequestHookInput {
+  option (doric.platform.v1.hook) = {
+    name: "onBeforeModelRequestHook"
+    kind: HOOK_KIND_TRANSFORM
+  };
+  // The system prompt of the request; may be empty.
+  string system = 1;
+}

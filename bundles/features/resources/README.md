@@ -39,7 +39,7 @@ across bundles is described in the feature docs listed under
 
 [`package.json`](package.json) exports `./contracts`
 (`dist/contracts/index.js`, with `src/contracts/index.ts` as the source
-condition) and `./package.json`. It depends on `bundle`, `runtime`, `sandbox`,
+condition), `./contracts/gen/*` (the protobuf-es code `generate-proto` writes from `proto/`) and `./package.json`. It depends on `bundle`, `runtime`, `sandbox`,
 `tslib` and `zod`; `@tanstack/react-query`, `account`, `desktop`, `happy-dom`,
 `lucide-react` and `react` are dev dependencies.
 

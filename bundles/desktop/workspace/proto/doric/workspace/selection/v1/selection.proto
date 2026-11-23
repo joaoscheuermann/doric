@@ -1,0 +1,71 @@
+// `workspace.selection/v1` (client, 1.1.0): what the window's workspace
+// shows, as ids: the selected Project and Thread, validated against the
+// records the window knows. Only client parts of the same window call it.
+//
+// 1.1.0: `Current` is asynchronous; `subscribe` becomes the stream `Watch`,
+// whose first item is the present selection; `WatchOpenThread` is added and
+// replaces `workspace.hooks/v1.onOpenThreadHook`.
+syntax = "proto3";
+
+package doric.workspace.selection.v1;
+
+import "doric/platform/v1/options.proto";
+
+option (doric.platform.v1.contract) = {
+  id: "workspace.selection/v1"
+  cardinality: CARDINALITY_ONE
+  environment: ENVIRONMENT_CLIENT
+};
+
+// The window's selection.
+service SelectionService {
+  // The present selection; the first item of `Watch` holds the same value.
+  rpc Current(CurrentRequest) returns (CurrentResponse);
+  // Streams the selection: the present value first, then one item after
+  // every change of it.
+  rpc Watch(WatchRequest) returns (stream WatchResponse) {
+    option (doric.platform.v1.method).resumable = true;
+  }
+  // Streams the requests to open a Thread beside the conversation, from the
+  // opening of the stream on: it holds no earlier request. Each request goes
+  // to every open stream; with none open nothing happens. A stream that
+  // falls behind keeps the latest 100 requests and drops older ones.
+  rpc WatchOpenThread(WatchOpenThreadRequest) returns (stream WatchOpenThreadResponse);
+}
+
+// The selected Project and Thread, as ids.
+message Selection {
+  // The selected Project; absent when none is.
+  optional string project_id = 1;
+  // The selected Thread, of the selected Project; absent when none is.
+  optional string thread_id = 2;
+}
+
+// Asks the present selection.
+message CurrentRequest {}
+
+// The present selection.
+message CurrentResponse {
+  // The selection; an empty one when nothing is selected.
+  Selection selection = 1;
+}
+
+// Asks the selection as it changes.
+message WatchRequest {}
+
+// The selection after a change, or the present one for the first item.
+message WatchResponse {
+  // The selection; an empty one when nothing is selected.
+  Selection selection = 1;
+}
+
+// Asks the requests to open a Thread.
+message WatchOpenThreadRequest {}
+
+// One request to open a Thread beside the conversation.
+message WatchOpenThreadResponse {
+  // The Thread's Project.
+  string project_id = 1;
+  // The Thread to open.
+  string thread_id = 2;
+}

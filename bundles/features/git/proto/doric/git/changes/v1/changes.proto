@@ -1,0 +1,120 @@
+// `git.changes/v1` (client, 1.1.0): the window's one changes read per Project
+// and working directory, shared with the bundles that decorate from it (the
+// files tree). The `git` bundle's client part provides it; only client parts
+// of the same window reach it. Observing activates the read; it runs only
+// while observed.
+//
+// 1.1.0: `observe` becomes a server stream.
+syntax = "proto3";
+
+package doric.git.changes.v1;
+
+import "buf/validate/validate.proto";
+import "doric/git/commands/v1/commands.proto";
+import "doric/platform/v1/options.proto";
+
+option (doric.platform.v1.contract) = {
+  id: "git.changes/v1"
+  cardinality: CARDINALITY_ONE
+  environment: ENVIRONMENT_CLIENT
+};
+
+// The changes of the window's Projects.
+service ChangesService {
+  // Observes the changes of one Project, scoped to a working directory's
+  // repositories: the present state first, then one item per change. The
+  // caller ends it by cancelling.
+  rpc Observe(ObserveRequest) returns (stream ObserveResponse) {
+    option (doric.platform.v1.method).resumable = true;
+  }
+}
+
+// The changes of one Project, one entry per Git repository in the reached
+// path.
+message ProjectChanges {
+  // The path read, workspace-relative; absent for the workspace root.
+  optional string path = 1;
+  // One entry per repository the path reaches; empty when none.
+  repeated doric.git.commands.v1.RepositoryChanges repositories = 2;
+}
+
+// Where the window's changes read is: today's `ReadState<ProjectChanges>`.
+message ChangesReadState {
+  option (buf.validate.message).cel = {
+    id: "changes_read_state.value"
+    message: "value is set exactly when status is ready"
+    expression: "(this.status == 'ready') == has(this.value)"
+  };
+  option (buf.validate.message).cel = {
+    id: "changes_read_state.retry"
+    message: "only a refused read carries retryAfterSeconds"
+    expression: "!(this.status in ['idle', 'loading', 'ready']) || !has(this.retry_after_seconds)"
+  };
+  // "idle", "loading", "ready", or why there is no value: "missing",
+  // "pending", "unavailable", "expired", "invalid_path" or "not_found".
+  string status = 1 [(buf.validate.field).string = {
+    in: [
+      "idle",
+      "loading",
+      "ready",
+      "missing",
+      "pending",
+      "unavailable",
+      "expired",
+      "invalid_path",
+      "not_found"
+    ]
+  }];
+  // The changes; set when ready.
+  optional ProjectChanges value = 2;
+  // When to read again, in seconds; absent when the answer named no time.
+  optional double retry_after_seconds = 3 [(buf.validate.field).double.gte = 0];
+}
+
+// The mark a changed path carries in a tree, as the tree draws it: the text
+// its label reads, the count a directory badge shows, and the colour, the
+// letter and the strike a changed file's row shows. Git states the marks;
+// the tree draws them without knowing what a change is.
+message ChangeMark {
+  // The text the path's label reads.
+  string description = 1;
+  // The count a directory badge shows, a whole number.
+  double count = 2 [
+    (buf.validate.field).double.gte = 0,
+    (buf.validate.field).cel = {
+      id: "count.integer"
+      message: "count must be a whole number"
+      expression: "this == double(int(this))"
+    }
+  ];
+  // The colour token of a changed file's row; absent for none.
+  optional string tone = 3;
+  // The letter a changed file's row shows; absent for none.
+  optional string letter = 4;
+  // Whether a changed file's row is struck through; absent is not.
+  optional bool struck = 5;
+}
+
+// The changes of one Project, scoped to a working directory; today's
+// `ChangesScope`.
+message ObserveRequest {
+  // The Project.
+  string project_id = 1 [(buf.validate.field).string.min_len = 1];
+  // The raw working directory; the workspace root when absent.
+  optional string cwd = 2;
+}
+
+// What the changes read of one Project and working directory shows; today's
+// `ChangesObservation`.
+message ObserveResponse {
+  // The read's state.
+  ChangesReadState read = 1 [(buf.validate.field).required = true];
+  // The marks of the changed paths, by workspace-relative path, for the
+  // trees that draw them; empty when none.
+  map<string, ChangeMark> decorations = 2;
+  // The failed read's message, as the toast shows it; absent when the last
+  // read did not fail.
+  optional string error = 3;
+  // Whether a read is in flight.
+  bool fetching = 4;
+}

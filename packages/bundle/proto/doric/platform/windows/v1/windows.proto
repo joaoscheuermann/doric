@@ -1,0 +1,146 @@
+// `doric.windows/v1` (platform 2.0.0): the app's native windows, which
+// Electron main serves to client parts. `Open` receives a request the
+// `windows/v1` provider's policy let through.
+//
+// 2.0.0: served to client parts; `capture` is the server stream `Capture`,
+// which streams its PNG.
+syntax = "proto3";
+
+package doric.platform.windows.v1;
+
+import "buf/validate/validate.proto";
+import "doric/platform/v1/options.proto";
+import "doric/windows/v1/windows.proto";
+
+option (doric.platform.v1.contract) = {
+  id: "doric.windows/v1"
+  cardinality: CARDINALITY_ONE
+};
+
+// The native windows.
+service WindowsService {
+  // Opens a window: an app route, loaded by the shell with the app's preload
+  // and contracts, or a page on the host, rendered in its own session.
+  rpc Open(OpenRequest) returns (OpenResponse);
+  // Focuses the window of a key, or opens it when none is open.
+  rpc FocusOrOpen(FocusOrOpenRequest) returns (FocusOrOpenResponse);
+  // The last path main stored for a key; absent when it stored none.
+  rpc LastPath(LastPathRequest) returns (LastPathResponse);
+  // Focuses the window of a key without navigating it.
+  rpc Focus(FocusRequest) returns (FocusResponse);
+  // Loads a host-relative path in a view window, resolved against the origin
+  // the app reaches the host on. A path window fails `invalid_input`; a key
+  // that is not open fails `not_found`.
+  rpc Navigate(NavigateRequest) returns (NavigateResponse);
+  // Captures a rectangle of an open path window as a PNG: a `head` item,
+  // then its bytes. A key that is not open fails `not_found`; a view window,
+  // or a rectangle outside the viewport, fails `invalid_input`; a capture
+  // main could not take fails `unavailable`.
+  rpc Capture(CaptureRequest) returns (stream CaptureResponse);
+}
+
+// Opens a window.
+message OpenRequest {
+  // The window to open, as `windows/v1.Open` received it.
+  doric.windows.v1.OpenRequest open_window_request = 1 [(buf.validate.field).required = true];
+}
+
+// The window is open.
+message OpenResponse {}
+
+// Focuses or opens a window.
+message FocusOrOpenRequest {
+  // The window's key.
+  string key = 1;
+}
+
+// The window is focused or open.
+message FocusOrOpenResponse {}
+
+// Asks a key's last path.
+message LastPathRequest {
+  // The window's key.
+  string key = 1;
+}
+
+// A key's last path.
+message LastPathResponse {
+  // The last path main stored for the key; absent when it stored none.
+  optional string path = 1;
+}
+
+// Focuses a window.
+message FocusRequest {
+  // The window's key.
+  string key = 1;
+}
+
+// Whether a window was focused.
+message FocusResponse {
+  // True when a window of the key existed and was focused.
+  bool focused = 1;
+}
+
+// Navigates a view window.
+message NavigateRequest {
+  // The window's key.
+  string key = 1;
+  // The host-relative path to load, starting with `/`.
+  string path = 2 [(buf.validate.field).string.prefix = "/"];
+}
+
+// The window is navigating.
+message NavigateResponse {}
+
+// A rectangle of a window's viewport, in CSS px.
+message WindowRect {
+  // The left edge.
+  double x = 1 [(buf.validate.field).double.gte = 0];
+  // The top edge.
+  double y = 2 [(buf.validate.field).double.gte = 0];
+  // The width, at most 4096.
+  double width = 3 [(buf.validate.field).double = {
+    gt: 0
+    lte: 4096
+  }];
+  // The height, at most 4096.
+  double height = 4 [(buf.validate.field).double = {
+    gt: 0
+    lte: 4096
+  }];
+}
+
+// Captures a rectangle of a window.
+message CaptureRequest {
+  // The window's key.
+  string key = 1 [(buf.validate.field).string.min_len = 1];
+  // The rectangle to capture.
+  WindowRect rect = 2 [(buf.validate.field).required = true];
+}
+
+// The first item of a `Capture`: the PNG's size.
+message CaptureHead {
+  // The width in device pixels.
+  uint32 width = 1 [(buf.validate.field).uint32.gt = 0];
+  // The height in device pixels.
+  uint32 height = 2 [(buf.validate.field).uint32.gt = 0];
+  // The device pixels per CSS px the capture was taken at.
+  double scale = 3 [(buf.validate.field).double.gt = 0];
+}
+
+// One item of a `Capture`. The first item is a `head`, and only the first;
+// the PNG's bytes are the concatenation of the `chunk` items after it, of
+// which there is at least one.
+message CaptureResponse {
+  // The item.
+  oneof item {
+    option (buf.validate.oneof).required = true;
+    // The first item: the PNG's size.
+    CaptureHead head = 1;
+    // The PNG's next bytes, at most 1 MiB.
+    bytes chunk = 2 [(buf.validate.field).bytes = {
+      min_len: 1
+      max_len: 1048576
+    }];
+  }
+}

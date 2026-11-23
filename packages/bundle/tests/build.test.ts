@@ -5,6 +5,7 @@ import test from 'node:test';
 
 import { z } from 'zod';
 
+import { readStaticServices } from '../src/build/cli.js';
 import {
   defineHook,
   defineHooks,
@@ -529,3 +530,362 @@ void test('platform schema documents cover the manifest, composition, descriptor
     assert.ok(documents.has(path), path);
   }
 });
+
+void test('platform schema documents publish the v2 bundle manifest', () => {
+  const document = platformSchemaDocuments().get('bundle-manifest/v2.json');
+
+  assert.equal(document?.$id, 'doric://app/schemas/bundle-manifest/v2.json');
+});
+
+// The environment rule's build check (spec `docs/designs/grpc-processes.md`,
+// "The environment rule", A62, A63; T2.15).
+
+const providing = (id: string) => `import { z } from ${JSON.stringify(zodUrl)};
+import { defineMethod, defineService } from ${JSON.stringify(contractsUrl)};
+export const activate = ({ services }) => {
+  services.provide(defineService(${JSON.stringify(id)}, {
+    ping: defineMethod({ input: z.tuple([]), output: z.literal('pong'), execute: () => 'pong' }),
+  }));
+};
+`;
+
+const environmentManifest = (
+  manifestVersion: 1 | 2,
+  provides: readonly string[],
+) => ({
+  manifestVersion,
+  id: 'demo',
+  version: '1.0.0',
+  engines: { doric: '^1.0.0' },
+  provides: [...provides],
+});
+
+/** A host `main.ts` whose `runBundle` lists `entries` (source of each pair). */
+const mainWith = (imports: string, entries: readonly string[]) => `${imports}
+import { runBundle } from 'bundle';
+
+runBundle({
+  services: [
+${entries.map((entry) => `    ${entry},`).join('\n')}
+  ],
+  activate: () => undefined,
+});
+`;
+
+const rejectsWithCode = async (
+  run: Promise<unknown>,
+  code: string,
+  named: readonly string[],
+) =>
+  assert.rejects(run, (error: unknown) => {
+    assert.ok(error instanceof BuildError, String(error));
+    assert.equal(error.code, code, error.message);
+
+    for (const text of named) {
+      assert.ok(error.message.includes(text), error.message);
+    }
+
+    return true;
+  });
+
+void test('a v2 host part that provides a CLIENT contract fails with contract_environment', async () => {
+  await withRoot(async (root) => {
+    const dir = await writeBundle(root, 'demo', {
+      manifest: environmentManifest(2, ['ui/v1@1.0.0']),
+      files: { 'dist/host/index.js': providing('ui/v1') },
+    });
+
+    await rejectsWithCode(buildBundle(dir), 'contract_environment', [
+      'ui/v1',
+      'host',
+    ]);
+  });
+});
+
+void test('a v1 host part that provides a CLIENT contract still builds', async () => {
+  await withRoot(async (root) => {
+    const dir = await writeBundle(root, 'demo', {
+      manifest: environmentManifest(1, ['ui/v1@1.0.0']),
+      files: { 'dist/host/index.js': providing('ui/v1') },
+    });
+    const { descriptor } = await buildBundle(dir);
+
+    assert.deepEqual(
+      descriptor.contracts.map(({ id, environment }) => [id, environment]),
+      [['ui/v1', 'host']],
+    );
+  });
+});
+
+void test('a v2 desktopMain part that provides a contract of the index fails with contract_environment', async () => {
+  await withRoot(async (root) => {
+    const dir = await writeBundle(root, 'demo', {
+      manifest: environmentManifest(2, ['tools/v1@1.0.0']),
+      files: { 'dist/desktop/index.js': providing('tools/v1') },
+    });
+
+    await rejectsWithCode(buildBundle(dir), 'contract_environment', [
+      'tools/v1',
+      'desktopMain',
+    ]);
+  });
+});
+
+void test('a v2 host part builds with its HOST contract and a HOST handler service', async () => {
+  await withRoot(async (root) => {
+    const dir = await writeBundle(root, 'demo', {
+      manifest: environmentManifest(2, ['tools/v1@1.0.0']),
+      files: {
+        'dist/host/index.js': providing('tools/v1'),
+        'src/host/main.ts': mainWith(
+          "import { ToolHandlerService } from '../contracts/gen/doric/tools/v1/tools_pb.js';",
+          ['[ToolHandlerService, {}]'],
+        ),
+        // Stand-ins so esbuild resolves main.ts's imports; the build checks
+        // the services list against the package's own generated tools.proto.
+        'src/contracts/gen/doric/tools/v1/tools_pb.ts':
+          'export const ToolHandlerService = {};\n',
+        'node_modules/bundle/package.json': JSON.stringify({
+          name: 'bundle',
+          type: 'module',
+          exports: { '.': './index.js' },
+        }),
+        'node_modules/bundle/index.js':
+          'export const runBundle = () => undefined;\n',
+      },
+    });
+    const { descriptor } = await buildBundle(dir);
+
+    assert.deepEqual(
+      descriptor.contracts.map(({ id, environment }) => [id, environment]),
+      [['tools/v1', 'host']],
+    );
+    await access(join(dir, 'dist', 'host', 'main.mjs'));
+  });
+});
+
+for (const [contract, service, module] of [
+  ['commands/v1', 'CommandHandlerService', 'doric/commands/v1/commands_pb.js'],
+  ['ui/v1', 'UiService', 'doric/ui/v1/ui_pb.js'],
+] as const) {
+  void test(`a v2 host services list naming ${service} of the CLIENT contract ${contract} fails with contract_environment`, async () => {
+    await withRoot(async (root) => {
+      const dir = await writeBundle(root, 'demo', {
+        manifest: environmentManifest(2, ['demo.api/v1@1.0.0']),
+        files: {
+          'dist/host/index.js': providing('demo.api/v1'),
+          'src/host/main.ts': mainWith(
+            `import { ${service} } from '../contracts/gen/${module}';`,
+            [`[${service}, {}]`],
+          ),
+        },
+      });
+
+      await rejectsWithCode(buildBundle(dir), 'contract_environment', [
+        contract,
+        service,
+        'host',
+      ]);
+    });
+  });
+}
+
+void test('a v2 host services list that is not static fails with services_not_static', async () => {
+  await withRoot(async (root) => {
+    const dir = await writeBundle(root, 'demo', {
+      manifest: environmentManifest(2, ['demo.api/v1@1.0.0']),
+      files: {
+        'dist/host/index.js': providing('demo.api/v1'),
+        'src/host/main.ts': `import { runBundle } from 'bundle';
+import { ToolHandlerService } from '../contracts/gen/doric/tools/v1/tools_pb.js';
+
+const list = [[ToolHandlerService, {}]];
+
+runBundle({ services: list, activate: () => undefined });
+`,
+      },
+    });
+
+    await rejectsWithCode(buildBundle(dir), 'services_not_static', [
+      'src/host/main.ts:6',
+    ]);
+  });
+});
+
+void test('a v2 host services entry naming no service of the index fails with services_not_static', async () => {
+  await withRoot(async (root) => {
+    const dir = await writeBundle(root, 'demo', {
+      manifest: environmentManifest(2, ['demo.api/v1@1.0.0']),
+      files: {
+        'dist/host/index.js': providing('demo.api/v1'),
+        'src/host/main.ts': mainWith(
+          "import { MissingService } from '../contracts/gen/doric/tools/v1/tools_pb.js';",
+          ['[MissingService, {}]'],
+        ),
+      },
+    });
+
+    await rejectsWithCode(buildBundle(dir), 'services_not_static', [
+      'src/host/main.ts:6',
+    ]);
+  });
+});
+
+void test('readStaticServices reads the entries of a static services list in order', async () => {
+  await withRoot(async (root) => {
+    const dir = await writeBundle(root, 'demo', {
+      manifest: environmentManifest(2, []),
+      files: {
+        'src/host/main.ts': `import { runBundle } from 'bundle';
+import { ToolHandlerService } from 'bundle/contracts/gen/doric/tools/v1/tools_pb.js';
+import { DemoService } from '../contracts/gen/demo/v1/demo_pb.js';
+
+runBundle({
+  services: [
+    [ToolHandlerService, { check: () => ({}), execute: () => ({}) }],
+    [DemoService, {}],
+  ],
+  activate: () => undefined,
+});
+`,
+      },
+    });
+
+    assert.deepEqual(await readStaticServices(dir), [
+      {
+        protoFile: 'doric/tools/v1/tools.proto',
+        service: 'ToolHandlerService',
+        module: 'bundle/contracts/gen/doric/tools/v1/tools_pb.js',
+        location: 'src/host/main.ts:7',
+      },
+      {
+        protoFile: 'demo/v1/demo.proto',
+        service: 'DemoService',
+        module: '../contracts/gen/demo/v1/demo_pb.js',
+        location: 'src/host/main.ts:8',
+      },
+    ]);
+  });
+});
+
+void test('readStaticServices answers [] without main.ts, without runBundle or without services', async () => {
+  await withRoot(async (root) => {
+    const missing = await writeBundle(root, 'missing', {
+      manifest: environmentManifest(2, []),
+    });
+    const noCall = await writeBundle(root, 'no-call', {
+      manifest: environmentManifest(2, []),
+      files: { 'src/host/main.ts': 'export const value = 1;\n' },
+    });
+    const noServices = await writeBundle(root, 'no-services', {
+      manifest: environmentManifest(2, []),
+      files: {
+        'src/host/main.ts': `import { runBundle } from 'bundle';
+
+runBundle({ activate: () => undefined });
+`,
+      },
+    });
+
+    assert.deepEqual(await readStaticServices(missing), []);
+    assert.deepEqual(await readStaticServices(noCall), []);
+    assert.deepEqual(await readStaticServices(noServices), []);
+  });
+});
+
+const generated = "'../contracts/gen/demo/v1/demo_pb.js'";
+
+for (const [form, source] of [
+  [
+    'an identifier',
+    `import { runBundle } from 'bundle';
+import { DemoService } from ${generated};
+const list = [[DemoService, {}]];
+runBundle({ services: list, activate: () => undefined });
+`,
+  ],
+  [
+    'a shorthand property',
+    `import { runBundle } from 'bundle';
+import { DemoService } from ${generated};
+const services = [[DemoService, {}]];
+runBundle({ services, activate: () => undefined });
+`,
+  ],
+  [
+    'a conditional',
+    `import { runBundle } from 'bundle';
+import { DemoService } from ${generated};
+runBundle({ services: globalThis.flag ? [] : [[DemoService, {}]], activate: () => undefined });
+`,
+  ],
+  [
+    'a spread element',
+    `import { runBundle } from 'bundle';
+import { DemoService } from ${generated};
+const extra = [[DemoService, {}]];
+runBundle({ services: [...extra], activate: () => undefined });
+`,
+  ],
+  [
+    'an entry that is not an array literal',
+    `import { runBundle } from 'bundle';
+import { DemoService } from ${generated};
+const entry = [DemoService, {}];
+runBundle({ services: [entry], activate: () => undefined });
+`,
+  ],
+  [
+    'a service of a namespace import',
+    `import { runBundle } from 'bundle';
+import * as demo from ${generated};
+runBundle({ services: [[demo.DemoService, {}]], activate: () => undefined });
+`,
+  ],
+  [
+    'a service of a default import',
+    `import { runBundle } from 'bundle';
+import DemoService from ${generated};
+runBundle({ services: [[DemoService, {}]], activate: () => undefined });
+`,
+  ],
+  [
+    'a service of a module that is not generated',
+    `import { runBundle } from 'bundle';
+import { DemoService } from './services.js';
+runBundle({ services: [[DemoService, {}]], activate: () => undefined });
+`,
+  ],
+  [
+    'a service that is not imported',
+    `import { runBundle } from 'bundle';
+const DemoService = {};
+runBundle({ services: [[DemoService, {}]], activate: () => undefined });
+`,
+  ],
+  [
+    'two calls of runBundle',
+    `import { runBundle } from 'bundle';
+import { DemoService } from ${generated};
+runBundle({ services: [[DemoService, {}]], activate: () => undefined });
+runBundle({ services: [[DemoService, {}]], activate: () => undefined });
+`,
+  ],
+] as const) {
+  void test(`readStaticServices refuses ${form} with services_not_static`, async () => {
+    await withRoot(async (root) => {
+      const dir = await writeBundle(root, 'demo', {
+        manifest: environmentManifest(2, []),
+        files: { 'src/host/main.ts': source },
+      });
+
+      await assert.rejects(readStaticServices(dir), (error: unknown) => {
+        assert.ok(error instanceof BuildError, String(error));
+        assert.equal(error.code, 'services_not_static');
+        assert.match(error.message, /^src\/host\/main\.ts:\d+: \S/);
+
+        return true;
+      });
+    });
+  });
+}

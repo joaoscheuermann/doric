@@ -1,0 +1,44 @@
+// `doric.bundle/v1` (platform 2.0.0): the identity of the calling bundle's
+// instance.
+//
+// 2.0.0: `describe` is asynchronous.
+syntax = "proto3";
+
+package doric.platform.bundle.v1;
+
+import "buf/validate/validate.proto";
+import "doric/platform/v1/options.proto";
+
+option (doric.platform.v1.contract) = {
+  id: "doric.bundle/v1"
+  cardinality: CARDINALITY_ONE
+};
+
+// The caller's identity.
+service BundleService {
+  // The calling bundle's identity in its generation and environment; the
+  // same answer for every call of one instance.
+  rpc Describe(DescribeRequest) returns (DescribeResponse);
+}
+
+// Asks the caller's identity.
+message DescribeRequest {}
+
+// The caller's identity.
+message DescribeResponse {
+  // The calling bundle's id.
+  string bundle_id = 1;
+  // The calling bundle's version.
+  string version = 2;
+  // The calling instance's generation.
+  uint32 generation = 3;
+  // Where the caller runs: "host", "desktopMain" or "client"; phase 5
+  // drops "desktopMain" with that environment.
+  string environment = 4 [(buf.validate.field).string = {
+    in: [
+      "host",
+      "desktopMain",
+      "client"
+    ]
+  }];
+}

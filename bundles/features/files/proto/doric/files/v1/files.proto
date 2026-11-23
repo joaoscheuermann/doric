@@ -1,0 +1,502 @@
+// `files/v1` (host, 1.4.0): the reads of a Project's sandbox the file panel
+// and the file tab make, the New file / New folder writes, and the
+// per-directory listing the Files panel loads its tree with. Every RPC runs on
+// the calling Project's current lease without acquiring one; the Project is
+// the call's scope (`projectId`). A Project without a usable lease answers its
+// lease state, never an error.
+//
+// 1.4.0: the base64 content read (`content` with `encoding: 'base64'`) is
+// removed for `ReadBytes`, server streaming.
+syntax = "proto3";
+
+package doric.files.v1;
+
+import "buf/validate/validate.proto";
+import "doric/platform/v1/options.proto";
+
+option (doric.platform.v1.contract) = {
+  id: "files/v1"
+  cardinality: CARDINALITY_ONE
+  environment: ENVIRONMENT_HOST
+};
+
+// The Project sandbox's files. Every path is workspace-relative, or absolute
+// under the sandbox root; a path outside the workspace answers
+// `invalid_path`.
+service FilesService {
+  // Lists one directory level with the workspace visibility rules; the
+  // workspace root when `path` is absent.
+  rpc Directory(DirectoryRequest) returns (DirectoryResponse) {
+    option (doric.platform.v1.method).expose = EXPOSE_DESKTOP;
+  }
+  // Lists the whole visible tree below a path; the workspace root when `path`
+  // is absent.
+  rpc Tree(TreeRequest) returns (TreeResponse) {
+    option (doric.platform.v1.method).expose = EXPOSE_DESKTOP;
+  }
+  // Lists several directories one level each, in one sandbox command: the
+  // Files panel's read of its root and the directories open in it.
+  rpc Directories(DirectoriesRequest) returns (DirectoriesResponse) {
+    option (doric.platform.v1.method).expose = EXPOSE_DESKTOP;
+  }
+  // Reads one file as bounded UTF-8 text, never a mangled binary.
+  rpc Content(ContentRequest) returns (ContentResponse) {
+    option (doric.platform.v1.method).expose = EXPOSE_DESKTOP;
+  }
+  // Reads one file's exact bytes (a font, an image), under the bound the
+  // base64 read had: a first item with the outcome, then, when the file was
+  // read, its bytes in chunks.
+  rpc ReadBytes(ReadBytesRequest) returns (stream ReadBytesResponse) {
+    option (doric.platform.v1.method).expose = EXPOSE_DESKTOP;
+  }
+  // Creates an empty file; an existing name is never overwritten.
+  rpc CreateFile(CreateFileRequest) returns (CreateFileResponse) {
+    option (doric.platform.v1.method).expose = EXPOSE_DESKTOP;
+  }
+  // Creates an empty directory; an existing name is never overwritten.
+  rpc CreateDirectory(CreateDirectoryRequest) returns (CreateDirectoryResponse) {
+    option (doric.platform.v1.method).expose = EXPOSE_DESKTOP;
+  }
+}
+
+// One visible workspace entry; `path` is always workspace-relative.
+message SandboxEntry {
+  // The entry's last path segment.
+  string name = 1;
+  // The workspace-relative path.
+  string path = 2;
+  // "directory" or "file".
+  string type = 3 [(buf.validate.field).string = {
+    in: [
+      "directory",
+      "file"
+    ]
+  }];
+  // The file size in bytes, present when the listing measured it.
+  optional double size = 4 [
+    (buf.validate.field).double.gte = 0,
+    (buf.validate.field).cel = {
+      id: "size.integer"
+      message: "size must be a whole number of bytes"
+      expression: "this == double(int(this))"
+    }
+  ];
+}
+
+// One visible workspace entry and, for a directory, its visible children.
+message SandboxTreeNode {
+  // The entry's last path segment.
+  string name = 1;
+  // The workspace-relative path.
+  string path = 2;
+  // "directory" or "file".
+  string type = 3 [(buf.validate.field).string = {
+    in: [
+      "directory",
+      "file"
+    ]
+  }];
+  // The file size in bytes, present when the listing measured it.
+  optional double size = 4 [
+    (buf.validate.field).double.gte = 0,
+    (buf.validate.field).cel = {
+      id: "size.integer"
+      message: "size must be a whole number of bytes"
+      expression: "this == double(int(this))"
+    }
+  ];
+  // A directory's visible children; empty for a file, and for a directory
+  // whose every child is hidden or ignored.
+  repeated SandboxTreeNode children = 5;
+}
+
+// One directory level of the workspace (`GET /projects/:id/files`).
+message DirectoryRead {
+  option (buf.validate.message).cel = {
+    id: "directory_read.listed"
+    message: "only a listed read carries a path and entries"
+    expression: "this.status == 'listed' ? has(this.path) : (!has(this.path) && size(this.entries) == 0)"
+  };
+  // "listed", or why not: "not_found", "not_directory" or "invalid_path".
+  string status = 1 [(buf.validate.field).string = {
+    in: [
+      "listed",
+      "not_found",
+      "not_directory",
+      "invalid_path"
+    ]
+  }];
+  // The listed directory, workspace-relative; set when listed.
+  optional string path = 2;
+  // The directory's entries; empty unless listed.
+  repeated SandboxEntry entries = 3;
+}
+
+// The whole workspace tree below a path (`GET /projects/:id/tree`).
+message TreeRead {
+  option (buf.validate.message).cel = {
+    id: "tree_read.listed"
+    message: "only a listed read carries a path and entries"
+    expression: "this.status == 'listed' ? has(this.path) : (!has(this.path) && size(this.entries) == 0)"
+  };
+  // "listed", or why not: "not_found", "not_directory" or "invalid_path".
+  string status = 1 [(buf.validate.field).string = {
+    in: [
+      "listed",
+      "not_found",
+      "not_directory",
+      "invalid_path"
+    ]
+  }];
+  // The listed directory, workspace-relative; set when listed.
+  optional string path = 2;
+  // The tree below the directory; empty unless listed.
+  repeated SandboxTreeNode entries = 3;
+}
+
+// One directory of a `Directories` read: `path` is the path as it was asked,
+// and a listed directory's entries carry no size.
+message DirectoryListingRead {
+  option (buf.validate.message).cel = {
+    id: "directory_listing_read.listed"
+    message: "only a listed directory carries entries"
+    expression: "this.status == 'listed' || size(this.entries) == 0"
+  };
+  // The directory as it was asked.
+  string path = 1;
+  // "listed", or why not: "not_found", "not_directory" or "invalid_path".
+  string status = 2 [(buf.validate.field).string = {
+    in: [
+      "listed",
+      "not_found",
+      "not_directory",
+      "invalid_path"
+    ]
+  }];
+  // The directory's entries; empty unless listed.
+  repeated SandboxEntry entries = 3;
+}
+
+// Several directories listed one level each in one read, one result per
+// asked path in the order asked, each with the visibility rules the whole
+// tree read applies from `root`.
+message DirectoriesRead {
+  // Always "listed".
+  string status = 1 [(buf.validate.field).string.const = "listed"];
+  // One result per asked path, in the order asked.
+  repeated DirectoryListingRead directories = 2;
+}
+
+// One file as bounded text (`GET /projects/:id/file`): at most 262,144 bytes
+// of UTF-8 text, empty for a binary file.
+message ContentRead {
+  option (buf.validate.message).cel = {
+    id: "content_read.read"
+    message: "a read carries path, content, truncated and binary, and a refusal none of them"
+    expression: "this.status == 'read' ? (has(this.path) && has(this.content) && has(this.truncated) && has(this.binary)) : !(has(this.path) || has(this.content) || has(this.truncated) || has(this.binary))"
+  };
+  // "read", or why not: "not_found", "not_file" or "invalid_path".
+  string status = 1 [(buf.validate.field).string = {
+    in: [
+      "read",
+      "not_found",
+      "not_file",
+      "invalid_path"
+    ]
+  }];
+  // The path as it was asked; set when read.
+  optional string path = 2;
+  // The UTF-8 text, empty for a binary file; set when read.
+  optional string content = 3;
+  // Whether the file was cut at the bound; set when read.
+  optional bool truncated = 4;
+  // Whether the bytes hold a NUL byte; set when read.
+  optional bool binary = 5;
+}
+
+// The head of a `ReadBytes` read: the file's outcome. When `status` is
+// "read", the chunks that follow hold at most 4,194,304 bytes.
+message BytesRead {
+  option (buf.validate.message).cel = {
+    id: "bytes_read.read"
+    message: "a read carries path, truncated and binary, and a refusal none of them"
+    expression: "this.status == 'read' ? (has(this.path) && has(this.truncated) && has(this.binary)) : !(has(this.path) || has(this.truncated) || has(this.binary))"
+  };
+  // "read", or why not: "not_found", "not_file" or "invalid_path".
+  string status = 1 [(buf.validate.field).string = {
+    in: [
+      "read",
+      "not_found",
+      "not_file",
+      "invalid_path"
+    ]
+  }];
+  // The path as it was asked; set when read.
+  optional string path = 2;
+  // Whether the file was cut at the bound; set when read.
+  optional bool truncated = 3;
+  // Whether the bytes hold a NUL byte; set when read.
+  optional bool binary = 4;
+}
+
+// What New file / New folder answers. `created` names the new entry
+// workspace-relative; `refused` writes nothing; `failed` carries the
+// command's first stderr line.
+message CreateOutcome {
+  option (buf.validate.message).cel = {
+    id: "create_outcome.fields"
+    message: "created carries path, refused carries reason, failed carries message, and nothing else"
+    expression: "this.status == 'created' ? (has(this.path) && !has(this.reason) && !has(this.message)) : this.status == 'refused' ? (has(this.reason) && !has(this.path) && !has(this.message)) : (has(this.message) && !has(this.path) && !has(this.reason))"
+  };
+  // "created", "refused" or "failed".
+  string status = 1 [(buf.validate.field).string = {
+    in: [
+      "created",
+      "refused",
+      "failed"
+    ]
+  }];
+  // The new entry, workspace-relative; set when created.
+  optional string path = 2;
+  // Why nothing was written: "exists", "invalid-name", "outside" or
+  // "no-directory"; set when refused.
+  optional string reason = 3 [(buf.validate.field).string = {
+    in: [
+      "exists",
+      "invalid-name",
+      "outside",
+      "no-directory"
+    ]
+  }];
+  // The command's first stderr line; set when failed.
+  optional string message = 4;
+}
+
+// Asks one directory level.
+message DirectoryRequest {
+  // The directory; the workspace root when absent.
+  optional string path = 1;
+}
+
+// The Project's lease state and, when "ready", the read.
+message DirectoryResponse {
+  option (buf.validate.message).cel = {
+    id: "directory_response.value"
+    message: "value is set exactly when status is ready"
+    expression: "(this.status == 'ready') == has(this.value)"
+  };
+  // "ready", or why the lease could not run the read: "pending",
+  // "unavailable", "expired" or "missing".
+  string status = 1 [(buf.validate.field).string = {
+    in: [
+      "ready",
+      "pending",
+      "unavailable",
+      "expired",
+      "missing"
+    ]
+  }];
+  // The read; set when ready.
+  optional DirectoryRead value = 2;
+}
+
+// Asks the whole tree below a path.
+message TreeRequest {
+  // The directory; the workspace root when absent.
+  optional string path = 1;
+}
+
+// The Project's lease state and, when "ready", the read.
+message TreeResponse {
+  option (buf.validate.message).cel = {
+    id: "tree_response.value"
+    message: "value is set exactly when status is ready"
+    expression: "(this.status == 'ready') == has(this.value)"
+  };
+  // "ready", or why the lease could not run the read: "pending",
+  // "unavailable", "expired" or "missing".
+  string status = 1 [(buf.validate.field).string = {
+    in: [
+      "ready",
+      "pending",
+      "unavailable",
+      "expired",
+      "missing"
+    ]
+  }];
+  // The read; set when ready.
+  optional TreeRead value = 2;
+}
+
+// Asks several directories, one level each.
+message DirectoriesRequest {
+  // Workspace-relative directories (or absolute under the sandbox root); one
+  // to 1000.
+  repeated string paths = 1 [(buf.validate.field).repeated = {
+    min_items: 1
+    max_items: 1000
+  }];
+  // The tree these directories belong to; the workspace root when absent.
+  optional string root = 2;
+}
+
+// The Project's lease state and, when "ready", the read.
+message DirectoriesResponse {
+  option (buf.validate.message).cel = {
+    id: "directories_response.value"
+    message: "value is set exactly when status is ready"
+    expression: "(this.status == 'ready') == has(this.value)"
+  };
+  // "ready", or why the lease could not run the read: "pending",
+  // "unavailable", "expired" or "missing".
+  string status = 1 [(buf.validate.field).string = {
+    in: [
+      "ready",
+      "pending",
+      "unavailable",
+      "expired",
+      "missing"
+    ]
+  }];
+  // The read; set when ready.
+  optional DirectoriesRead value = 2;
+}
+
+// Asks one file as text.
+message ContentRequest {
+  // The file.
+  string path = 1;
+}
+
+// The Project's lease state and, when "ready", the read.
+message ContentResponse {
+  option (buf.validate.message).cel = {
+    id: "content_response.value"
+    message: "value is set exactly when status is ready"
+    expression: "(this.status == 'ready') == has(this.value)"
+  };
+  // "ready", or why the lease could not run the read: "pending",
+  // "unavailable", "expired" or "missing".
+  string status = 1 [(buf.validate.field).string = {
+    in: [
+      "ready",
+      "pending",
+      "unavailable",
+      "expired",
+      "missing"
+    ]
+  }];
+  // The read; set when ready.
+  optional ContentRead value = 2;
+}
+
+// Asks one file's exact bytes.
+message ReadBytesRequest {
+  // The file.
+  string path = 1;
+}
+
+// One item of a `ReadBytes` read. The first item is a `head`, and only the
+// first; `chunk` items follow only a head whose lease status is "ready" and
+// whose read's status is "read", and the file's bytes are their
+// concatenation. A read with no bytes, or with any other outcome, is the head
+// alone.
+message ReadBytesResponse {
+  // The item.
+  oneof item {
+    option (buf.validate.oneof).required = true;
+    // The first item: the lease state and the read's outcome.
+    ReadBytesHead head = 1;
+    // The file's next bytes, at most 1 MiB.
+    bytes chunk = 2 [(buf.validate.field).bytes = {
+      min_len: 1
+      max_len: 1048576
+    }];
+  }
+}
+
+// The first item of a `ReadBytes` read.
+message ReadBytesHead {
+  option (buf.validate.message).cel = {
+    id: "read_bytes_head.value"
+    message: "value is set exactly when status is ready"
+    expression: "(this.status == 'ready') == has(this.value)"
+  };
+  // "ready", or why the lease could not run the read: "pending",
+  // "unavailable", "expired" or "missing".
+  string status = 1 [(buf.validate.field).string = {
+    in: [
+      "ready",
+      "pending",
+      "unavailable",
+      "expired",
+      "missing"
+    ]
+  }];
+  // The read's outcome; set when ready.
+  optional BytesRead value = 2;
+}
+
+// Asks for a new empty file: a single-segment `name` in `directory`, a path
+// as the reads take it.
+message CreateFileRequest {
+  // The directory to create in, workspace-relative or absolute under the
+  // sandbox root.
+  string directory = 1;
+  // The new file's name, one path segment; another name is refused.
+  string name = 2;
+}
+
+// The Project's lease state and, when "ready", the outcome.
+message CreateFileResponse {
+  option (buf.validate.message).cel = {
+    id: "create_file_response.value"
+    message: "value is set exactly when status is ready"
+    expression: "(this.status == 'ready') == has(this.value)"
+  };
+  // "ready", or why the lease could not run the write: "pending",
+  // "unavailable", "expired" or "missing".
+  string status = 1 [(buf.validate.field).string = {
+    in: [
+      "ready",
+      "pending",
+      "unavailable",
+      "expired",
+      "missing"
+    ]
+  }];
+  // The outcome; set when ready.
+  optional CreateOutcome value = 2;
+}
+
+// Asks for a new empty directory: a single-segment `name` in `directory`, a
+// path as the reads take it.
+message CreateDirectoryRequest {
+  // The directory to create in, workspace-relative or absolute under the
+  // sandbox root.
+  string directory = 1;
+  // The new directory's name, one path segment; another name is refused.
+  string name = 2;
+}
+
+// The Project's lease state and, when "ready", the outcome.
+message CreateDirectoryResponse {
+  option (buf.validate.message).cel = {
+    id: "create_directory_response.value"
+    message: "value is set exactly when status is ready"
+    expression: "(this.status == 'ready') == has(this.value)"
+  };
+  // "ready", or why the lease could not run the write: "pending",
+  // "unavailable", "expired" or "missing".
+  string status = 1 [(buf.validate.field).string = {
+    in: [
+      "ready",
+      "pending",
+      "unavailable",
+      "expired",
+      "missing"
+    ]
+  }];
+  // The outcome; set when ready.
+  optional CreateOutcome value = 2;
+}

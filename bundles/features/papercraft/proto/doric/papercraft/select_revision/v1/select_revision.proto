@@ -1,0 +1,38 @@
+// `papercraft.select-revision/v1` (client command, 1.1.0): puts one revision
+// of the canvas's program on screen, the command of the bar's revision
+// dropdown. The `papercraft` client part registers it with `commands/v1`; a
+// caller runs it with `commands/v1.Execute`, the input below carried as its
+// `google.protobuf.Any`. The contract has no service. With no canvas to act
+// on, or without a `revision`, it does nothing.
+//
+// 1.1.0: the input moves from zod to `.proto` with the same fields.
+syntax = "proto3";
+
+package doric.papercraft.select_revision.v1;
+
+import "buf/validate/validate.proto";
+import "doric/platform/v1/options.proto";
+
+option (doric.platform.v1.contract) = {
+  id: "papercraft.select-revision/v1"
+  cardinality: CARDINALITY_ONE
+  environment: ENVIRONMENT_CLIENT
+};
+
+// The command's input: which canvas it acts on and the revision to show.
+message SelectRevisionInput {
+  option (doric.platform.v1.command).id = "papercraft.select-revision/v1";
+
+  // The canvas; absent acts on the canvas last touched.
+  optional string canvas_id = 1 [(buf.validate.field).string.min_len = 1];
+  // The revision to put on screen, a whole number from 1; absent changes
+  // nothing.
+  optional double revision = 2 [
+    (buf.validate.field).double.gte = 1,
+    (buf.validate.field).cel = {
+      id: "revision.integer"
+      message: "revision must be a whole number"
+      expression: "this == double(int(this))"
+    }
+  ];
+}

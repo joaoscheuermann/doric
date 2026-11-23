@@ -1,0 +1,97 @@
+// `doric.generation/v1` (platform 2.0.0): the generation of the calling
+// bundle's instance, the work holds that keep a draining instance alive, and
+// the signals it sends to the other live instances of its bundle. The host
+// process serves it on the router listener.
+//
+// 2.0.0: `hold` answers a `holdId` and `Release` replaces its `dispose`; the
+// generation events and the peer signals an instance receives are control
+// frames (`GenerationChanged`, `PeerSignal`), not hooks.
+syntax = "proto3";
+
+package doric.platform.generation.v1;
+
+import "buf/validate/validate.proto";
+import "doric/platform/v1/options.proto";
+import "google/protobuf/struct.proto";
+
+option (doric.platform.v1.contract) = {
+  id: "doric.generation/v1"
+  cardinality: CARDINALITY_ONE
+};
+
+// The caller's generation.
+service GenerationService {
+  // The calling instance's generation, incarnation and state.
+  rpc Describe(DescribeRequest) returns (DescribeResponse);
+  // Takes a work hold for the calling instance and answers its `holdId`. A
+  // draining instance does not stop while it has a hold; every hold of an
+  // instance ends when the instance stops, is lost or is invalid.
+  rpc Hold(HoldRequest) returns (HoldResponse);
+  // Ends a hold of the calling instance; an unknown id is a no-op.
+  rpc Release(ReleaseRequest) returns (ReleaseResponse);
+  // Sends a `PeerSignal` to every other live instance of the caller's bundle,
+  // and to no other bundle.
+  rpc Signal(SignalRequest) returns (SignalResponse);
+}
+
+// Asks the caller's generation.
+message DescribeRequest {}
+
+// The calling instance's generation.
+message DescribeResponse {
+  // The generation.
+  uint32 generation = 1;
+  // The incarnation within the generation.
+  uint32 incarnation = 2;
+  // "starting", "active", "draining", "stopped" or "failed".
+  string state = 3 [(buf.validate.field).string = {
+    in: [
+      "starting",
+      "active",
+      "draining",
+      "stopped",
+      "failed"
+    ]
+  }];
+}
+
+// Takes a work hold. The owner is the calling instance, never part of the
+// request.
+message HoldRequest {
+  // The work's key, opaque to the platform.
+  string key = 1 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 256
+  }];
+  // A label for a person.
+  optional string label = 2 [(buf.validate.field).string.max_len = 256];
+}
+
+// The hold is taken.
+message HoldResponse {
+  // The id `Release` takes.
+  string hold_id = 1;
+}
+
+// Ends a hold.
+message ReleaseRequest {
+  // The id `Hold` answered.
+  string hold_id = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+// The hold is ended.
+message ReleaseResponse {}
+
+// Sends a signal to the bundle's other live instances.
+message SignalRequest {
+  // The signal's topic.
+  string topic = 1 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 128
+  }];
+  // The signal's payload, JSON.
+  optional google.protobuf.Value payload = 2;
+}
+
+// The signal is sent.
+message SignalResponse {}

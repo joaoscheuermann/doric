@@ -1,0 +1,308 @@
+// `storage.backend/v1` (host, until phase 4): the store `core`'s
+// `storage/v1` writes through, served by `postgres`. Documents, stream
+// entries and blobs have the shapes of `storage/v1`, whose messages this file
+// imports; values are JSON text in UTF-8 in chunks of at most 1 MiB after
+// their item, and a commit is client streaming, applied when the stream ends.
+// It raises the errors `storage/v1` states for the same operations. The host
+// reads the storage identity with `Identity` under the caller `doric`.
+// Phase 4 removes this contract for `storage.kv/v1`.
+syntax = "proto3";
+
+package doric.storage.backend.v1;
+
+import "buf/validate/validate.proto";
+import "doric/platform/v1/options.proto";
+import "doric/storage/v1/storage.proto";
+
+option (doric.platform.v1.contract) = {
+  id: "storage.backend/v1"
+  cardinality: CARDINALITY_ONE
+  environment: ENVIRONMENT_HOST
+};
+
+// The store.
+service BackendService {
+  // Declares a storage type and its indexes; declaring it again with the
+  // same indexes changes nothing.
+  rpc DeclareType(DeclareTypeRequest) returns (DeclareTypeResponse);
+  // One document: a `document` item followed by its value's chunks, or no
+  // item when none has the key.
+  rpc Get(GetRequest) returns (stream GetResponse);
+  // One page of a type's documents by index: a `page` item first, then, per
+  // document, a `document` item followed by its value's chunks.
+  rpc Query(QueryRequest) returns (stream QueryResponse);
+  // One page of a stream's entries: a `page` item first, then, per entry, an
+  // `entry` item followed by its value's chunks.
+  rpc Read(ReadRequest) returns (stream ReadResponse);
+  // Applies one atomic batch, sent as `storage/v1.Commit` sends it, when the
+  // stream ends; it applies in the order expect, delete, put, drop streams,
+  // truncate, append, or not at all.
+  rpc Commit(stream CommitRequest) returns (CommitResponse);
+  // The commits after a position, one item per commit in position order.
+  rpc Feed(FeedRequest) returns (stream FeedResponse);
+  // Stores a blob, sent as chunks of its bytes, and answers its hash.
+  rpc PutBlob(stream PutBlobRequest) returns (PutBlobResponse);
+  // A blob's bytes: a `head` item first, then, when found, its bytes in
+  // chunks.
+  rpc GetBlob(GetBlobRequest) returns (stream GetBlobResponse);
+  // Removes a blob; an unknown or malformed hash is a no-op.
+  rpc DeleteBlob(DeleteBlobRequest) returns (DeleteBlobResponse);
+  // The limits a batch, a document and an append must stay within.
+  rpc Capabilities(CapabilitiesRequest) returns (CapabilitiesResponse);
+  // The backend's measurements.
+  rpc Health(HealthRequest) returns (HealthResponse);
+  // The host's storage identity, kept in a reserved record the first call
+  // creates.
+  rpc Identity(IdentityRequest) returns (IdentityResponse);
+  // Opens the backend's connection once, at the host's start; a failure
+  // fails the host's start.
+  rpc Connect(ConnectRequest) returns (ConnectResponse);
+}
+
+// The host's storage identity.
+message StorageIdentity {
+  // The host's id, a UUID.
+  string host_id = 1 [(buf.validate.field).string.uuid = true];
+  // The storage generation, a whole number above 0.
+  double storage_generation = 2 [
+    (buf.validate.field).double.gt = 0,
+    (buf.validate.field).cel = {
+      id: "storage_generation.integer"
+      message: "storageGeneration must be a whole number"
+      expression: "this == double(int(this))"
+    }
+  ];
+}
+
+// Declares a storage type.
+message DeclareTypeRequest {
+  // The storage type.
+  string type = 1;
+  // The type's indexes, in declaration order.
+  repeated doric.platform.v1.StorageIndex indexes = 2;
+}
+
+// The type is declared.
+message DeclareTypeResponse {}
+
+// Asks one document.
+message GetRequest {
+  // The storage type.
+  string type = 1;
+  // The document's id within the type.
+  string id = 2;
+}
+
+// One item of a `Get` read: the document, then its value's chunks.
+message GetResponse {
+  // The item.
+  oneof item {
+    option (buf.validate.oneof).required = true;
+    // The document, first and once.
+    doric.storage.v1.StoredDocument document = 1;
+    // The next bytes of the value's JSON text, at most 1 MiB.
+    bytes chunk = 2 [(buf.validate.field).bytes = {
+      min_len: 1
+      max_len: 1048576
+    }];
+  }
+}
+
+// Asks one page of a type's documents.
+message QueryRequest {
+  // The query.
+  doric.storage.v1.StorageQuery storage_query = 1 [(buf.validate.field).required = true];
+}
+
+// One item of a `Query` page.
+message QueryResponse {
+  // The item.
+  oneof item {
+    option (buf.validate.oneof).required = true;
+    // The page's head, first and once.
+    doric.storage.v1.QueryPage page = 1;
+    // The next document; its value's chunks follow.
+    doric.storage.v1.StoredDocument document = 2;
+    // The next bytes of the current document's value, at most 1 MiB.
+    bytes chunk = 3 [(buf.validate.field).bytes = {
+      min_len: 1
+      max_len: 1048576
+    }];
+  }
+}
+
+// Asks one page of a stream's entries.
+message ReadRequest {
+  // The read.
+  doric.storage.v1.StreamRead stream_read = 1 [(buf.validate.field).required = true];
+}
+
+// One item of a `Read` page.
+message ReadResponse {
+  // The item.
+  oneof item {
+    option (buf.validate.oneof).required = true;
+    // The page's head, first and once.
+    doric.storage.v1.StreamPage page = 1;
+    // The next entry; its value's chunks follow.
+    doric.storage.v1.StreamEntry entry = 2;
+    // The next bytes of the current entry's value, at most 1 MiB.
+    bytes chunk = 3 [(buf.validate.field).bytes = {
+      min_len: 1
+      max_len: 1048576
+    }];
+  }
+}
+
+// One item of a batch, as `storage/v1.CommitRequest` describes it.
+message CommitRequest {
+  // The item.
+  oneof item {
+    option (buf.validate.oneof).required = true;
+    // A revision a document must hold.
+    doric.storage.v1.ExpectedRevision expect = 1;
+    // A document to write; its value's chunks follow.
+    doric.storage.v1.DocumentKey put = 2;
+    // A document to remove.
+    doric.storage.v1.DocumentKey delete = 3;
+    // A whole stream to remove, with its entries and truncation marks.
+    string drop_stream = 4 [(buf.validate.field).string.min_len = 1];
+    // The batch's truncation.
+    doric.storage.v1.StreamTruncate truncate = 5;
+    // An append to a stream; at least one `event` follows.
+    doric.storage.v1.StreamAppend append = 6;
+    // The first bytes of the next event of the current append, at most
+    // 1 MiB.
+    bytes event = 7 [(buf.validate.field).bytes = {
+      min_len: 1
+      max_len: 1048576
+    }];
+    // The next bytes of the current value, at most 1 MiB.
+    bytes chunk = 8 [(buf.validate.field).bytes = {
+      min_len: 1
+      max_len: 1048576
+    }];
+  }
+}
+
+// The batch is applied.
+message CommitResponse {
+  // The commit's position in the feed, a whole number.
+  double position = 1 [(buf.validate.field).cel = {
+    id: "position.integer"
+    message: "position must be a whole number"
+    expression: "this == double(int(this))"
+  }];
+}
+
+// Asks the commits after a position.
+message FeedRequest {
+  // The position the feed starts after, a whole number.
+  double after = 1 [(buf.validate.field).cel = {
+    id: "after.integer"
+    message: "after must be a whole number"
+    expression: "this == double(int(this))"
+  }];
+  // The most commits the stream holds.
+  int32 limit = 2 [(buf.validate.field).int32.gt = 0];
+}
+
+// One commit of the feed.
+message FeedResponse {
+  // The commit's position, a whole number.
+  double position = 1 [(buf.validate.field).cel = {
+    id: "position.integer"
+    message: "position must be a whole number"
+    expression: "this == double(int(this))"
+  }];
+  // The documents the commit wrote or removed.
+  repeated doric.storage.v1.DocumentKey documents = 2;
+  // The streams that received appends.
+  repeated string streams = 3;
+  // The streams the commit truncated.
+  repeated string truncated = 4;
+  // The streams the commit removed.
+  repeated string dropped = 5;
+}
+
+// One chunk of a blob's bytes.
+message PutBlobRequest {
+  // The next bytes, at most 1 MiB.
+  bytes chunk = 1 [(buf.validate.field).bytes = {
+    min_len: 1
+    max_len: 1048576
+  }];
+}
+
+// The stored blob.
+message PutBlobResponse {
+  // The blob's hash, `sha256:<hex>`.
+  string hash = 1 [(buf.validate.field).string.pattern = "^sha256:[0-9a-f]{64}$"];
+}
+
+// Asks a blob's bytes.
+message GetBlobRequest {
+  // The blob's hash, `sha256:<hex>`.
+  string hash = 1;
+}
+
+// One item of a `GetBlob` read.
+message GetBlobResponse {
+  // The item.
+  oneof item {
+    option (buf.validate.oneof).required = true;
+    // The read's head, first and once.
+    doric.storage.v1.BlobHead head = 1;
+    // The blob's next bytes, at most 1 MiB.
+    bytes chunk = 2 [(buf.validate.field).bytes = {
+      min_len: 1
+      max_len: 1048576
+    }];
+  }
+}
+
+// Removes a blob.
+message DeleteBlobRequest {
+  // The blob's hash.
+  string hash = 1;
+}
+
+// The blob is gone, or was never stored.
+message DeleteBlobResponse {}
+
+// Asks the backend's limits.
+message CapabilitiesRequest {}
+
+// The backend's limits.
+message CapabilitiesResponse {
+  // The most items one batch holds.
+  uint32 max_batch = 1 [(buf.validate.field).uint32.gt = 0];
+  // The most bytes one document's JSON text holds.
+  uint32 max_document_bytes = 2 [(buf.validate.field).uint32.gt = 0];
+  // The most bytes one appended event's JSON text holds.
+  uint32 max_append_bytes = 3 [(buf.validate.field).uint32.gt = 0];
+}
+
+// Asks the backend's measurements.
+message HealthRequest {}
+
+// The backend's measurements.
+message HealthResponse {
+  // The measurements.
+  doric.storage.v1.StorageHealth storage_health = 1 [(buf.validate.field).required = true];
+}
+
+// Asks the host's storage identity.
+message IdentityRequest {}
+
+// The host's storage identity.
+message IdentityResponse {
+  // The identity.
+  StorageIdentity storage_identity = 1 [(buf.validate.field).required = true];
+}
+
+// Opens the backend's connection.
+message ConnectRequest {}
+
+// The connection is open.
+message ConnectResponse {}

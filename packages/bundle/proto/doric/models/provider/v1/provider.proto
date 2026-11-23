@@ -1,0 +1,802 @@
+// `models.provider/v1` (host, many providers, 1.4.0): one kind of model
+// provider (`claude`, `codex`, `openai`, `openrouter`). `core` calls each
+// provider bundle to describe its kind, read its catalog, and run model
+// operations with a `ProviderTarget` that carries the provider's values and
+// secret. The provider bundle keeps a cache of built providers keyed by
+// `providerId` and the SHA-256 of `values` and `secret`. An image part names
+// an attachment, whose bytes the provider bundle reads from
+// `runtime.attachments/v1.Read`; without a provider of it, a request with an
+// attachment part fails with `unavailable`.
+//
+// This file declares the content messages of a model call once; `models/v1`
+// imports them.
+//
+// 1.4.0: `create` is removed; `Complete` (client streaming), `Stream`
+// (bidirectional), `Embedding`, `Rerank`, `Models` and `ValidateModel` take a
+// `ProviderTarget` with the secret; an image part names an attachment instead
+// of carrying a `data:` URL.
+syntax = "proto3";
+
+package doric.models.provider.v1;
+
+import "buf/validate/validate.proto";
+import "doric/platform/v1/options.proto";
+import "google/protobuf/struct.proto";
+
+option (doric.platform.v1.contract) = {
+  id: "models.provider/v1"
+  cardinality: CARDINALITY_MANY
+  environment: ENVIRONMENT_HOST
+};
+
+// One kind of model provider.
+service ProviderService {
+  // The kind's descriptor (the llms `ProviderKind`).
+  rpc Kind(KindRequest) returns (KindResponse);
+  // Whether `GET /providers/kinds` lists the kind.
+  rpc Advertised(AdvertisedRequest) returns (AdvertisedResponse);
+  // Reads the kind's model catalog for a configuration.
+  rpc Catalog(CatalogRequest) returns (CatalogResponse);
+  // Whether a built provider's `Models` reports context capacity.
+  rpc CatalogCapacity(CatalogCapacityRequest) returns (CatalogCapacityResponse);
+  // The icons the kind chooses for a configuration, by name: its own and,
+  // per listed model, that model's own. No fallback.
+  rpc Icons(IconsRequest) returns (IconsResponse);
+  // Runs one completion: a `header` item first, then one `message` item per
+  // message of the conversation; answers when the model finished.
+  rpc Complete(stream CompleteRequest) returns (CompleteResponse);
+  // Runs one completion as a stream: the request items `Complete` takes,
+  // answered by one item per stream event.
+  rpc Stream(stream StreamRequest) returns (stream StreamResponse);
+  // Embeds one text.
+  rpc Embedding(EmbeddingRequest) returns (EmbeddingResponse);
+  // Ranks documents against a query.
+  rpc Rerank(RerankRequest) returns (RerankResponse);
+  // The provider's models.
+  rpc Models(ModelsRequest) returns (ModelsResponse);
+  // One model as the provider reports it; an unknown model fails.
+  rpc ValidateModel(ValidateModelRequest) returns (ValidateModelResponse);
+}
+
+// One configuration field of a provider kind.
+message ModelField {
+  // The field's key in the configuration values.
+  string key = 1;
+  // The field's label.
+  string label = 2;
+  // "text", "url", "number", "enum" or "secret".
+  string kind = 3 [(buf.validate.field).string = {
+    in: [
+      "text",
+      "url",
+      "number",
+      "enum",
+      "secret"
+    ]
+  }];
+  // Whether a configuration must set the field.
+  bool required = 4;
+  // What the field is for.
+  optional string description = 5;
+  // The input's placeholder.
+  optional string placeholder = 6;
+  // The values of an "enum" field.
+  repeated string options = 7;
+  // Whether the field is shown among the advanced ones.
+  optional bool advanced = 8;
+}
+
+// The site a provider page links to.
+message ModelKindSite {
+  // The site's URL, `https:`.
+  string url = 1 [
+    (buf.validate.field).string.uri = true,
+    (buf.validate.field).cel = {
+      id: "url.https"
+      message: "Expected an https: URL"
+      expression: "this.startsWith('https:')"
+    }
+  ];
+  // The control's label.
+  string label = 2 [(buf.validate.field).string.min_len = 1];
+}
+
+// A provider kind (the llms `ProviderKind`).
+message ModelKindDescriptor {
+  // The kind's id.
+  string id = 1;
+  // The kind's label.
+  string label = 2;
+  // What the kind is.
+  string description = 3;
+  // The kind's configuration fields.
+  repeated ModelField fields = 4;
+  // The lists the kind fills: "models", "reasonings".
+  repeated string lists = 5 [(buf.validate.field).repeated.items.string = {
+    in: [
+      "models",
+      "reasonings"
+    ]
+  }];
+  // Whether the kind's model list is its live catalog, so none is named by
+  // hand.
+  optional bool models_from_catalog = 6;
+  // The site a provider page links to; absent for a kind without one.
+  optional ModelKindSite site = 7;
+}
+
+// One model of a kind's catalog.
+message CatalogModel {
+  // The model's id.
+  string id = 1;
+  // The model's name.
+  optional string name = 2;
+  // The reasoning efforts the model accepts.
+  repeated string reasonings = 3;
+  // The parameters the model accepts.
+  repeated string parameters = 4;
+  // The model's default effort.
+  optional string default_effort = 5;
+  // Whether a configuration always lists the model.
+  bool mandatory = 6;
+}
+
+// A catalog read: the models, or why there are none (no URL, or a failed
+// read).
+message CatalogResult {
+  option (buf.validate.message).cel = {
+    id: "catalog_result.models"
+    message: "only a read carries models"
+    expression: "this.status == 'read' || size(this.models) == 0"
+  };
+  // "read", "absent" or "failed".
+  string status = 1 [(buf.validate.field).string = {
+    in: [
+      "read",
+      "absent",
+      "failed"
+    ]
+  }];
+  // The catalog's models; empty unless read.
+  repeated CatalogModel models = 2;
+}
+
+// The icons a provider chooses, by name.
+message ModelIconChoice {
+  // The provider's own icon; absent for none.
+  optional string provider = 1 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 64
+  }];
+  // Per requested model, in the same order and length, that model's own
+  // icon, or `""` for none.
+  repeated string models = 2 [(buf.validate.field).repeated.items.string.max_len = 64];
+}
+
+// Which provider a model operation runs on: its values and its secret.
+message ProviderTarget {
+  // The configured provider's id.
+  string provider_id = 1;
+  // The provider's configuration values.
+  map<string, string> values = 2;
+  // The provider's secret as stored now, when it has one.
+  optional string secret = 3 [(doric.platform.v1.field).secret = true];
+}
+
+// An attachment an image part names; the provider bundle reads its bytes
+// from `runtime.attachments/v1.Read`.
+message AttachmentRef {
+  // The attachment's id.
+  string id = 1 [(buf.validate.field).string.min_len = 1];
+  // The attachment's media type.
+  string media_type = 2;
+  // The attachment's name.
+  optional string name = 3;
+}
+
+// A text part of a message.
+message ProviderTextPart {
+  // The text.
+  string text = 1;
+}
+
+// An image part of a message.
+message ProviderImagePart {
+  // Where the image is.
+  oneof source {
+    option (buf.validate.oneof).required = true;
+    // An `https:` URL the provider fetches.
+    string url = 1 [(buf.validate.field).cel = {
+      id: "url.https"
+      message: "an image URL must be https:"
+      expression: "this.startsWith('https:')"
+    }];
+    // An attachment.
+    AttachmentRef attachment = 2;
+  }
+}
+
+// One part of a message's content.
+message ProviderContentPart {
+  // The part.
+  oneof type {
+    option (doric.platform.v1.oneof).discriminator = "type";
+    option (buf.validate.oneof).required = true;
+    // A text part.
+    ProviderTextPart text = 1;
+    // An image part.
+    ProviderImagePart image = 2;
+  }
+}
+
+// The parts of a message's content.
+message ProviderContentParts {
+  // The parts, in order.
+  repeated ProviderContentPart parts = 1;
+}
+
+// A tool call a model made.
+message ProviderToolCall {
+  // The call's id.
+  string id = 1;
+  // The tool's name.
+  string name = 2;
+  // The call's arguments, JSON text.
+  string arguments = 3;
+  // The call's position among the turn's calls.
+  optional int32 index = 4;
+}
+
+// One message of a conversation.
+message ProviderMessage {
+  // "system", "user", "assistant" or "tool".
+  string role = 1 [(buf.validate.field).string = {
+    in: [
+      "system",
+      "user",
+      "assistant",
+      "tool"
+    ]
+  }];
+  // The message's content; absent for none.
+  oneof content {
+    // The content as one text.
+    string text = 2;
+    // The content as parts.
+    ProviderContentParts parts = 3;
+  }
+  // The name of the message's author.
+  optional string name = 4;
+  // The tool call a "tool" message answers.
+  optional string tool_call_id = 5;
+  // "completed" or "incomplete", for a "tool" message.
+  optional string tool_result_status = 6 [(buf.validate.field).string = {
+    in: [
+      "completed",
+      "incomplete"
+    ]
+  }];
+  // The tool calls an "assistant" message made.
+  repeated ProviderToolCall tool_calls = 7;
+  // Opaque provider output items kept only for exact multi-turn replay.
+  repeated google.protobuf.Struct replay = 8;
+}
+
+// A tool a model may call.
+message ToolDefinition {
+  // The tool's name.
+  string name = 1;
+  // What the tool does.
+  optional string description = 2;
+  // The JSON Schema of the tool's input.
+  google.protobuf.Struct input_schema = 3;
+  // The JSON Schema of the tool's output.
+  google.protobuf.Struct output_schema = 4;
+  // Whether the model must follow the input schema exactly.
+  optional bool strict = 5;
+}
+
+// Which tool the model must or may call.
+message ProviderToolChoice {
+  // The choice.
+  oneof choice {
+    option (buf.validate.oneof).required = true;
+    // "auto", "required" or "none".
+    string mode = 1 [(buf.validate.field).string = {
+      in: [
+        "auto",
+        "required",
+        "none"
+      ]
+    }];
+    // The one tool the model must call.
+    string name = 2;
+  }
+}
+
+// The reasoning a request asks for.
+message ReasoningRequest {
+  // "none", "minimal", "low", "medium", "high", "xhigh" or "max".
+  optional string effort = 1 [(buf.validate.field).string = {
+    in: [
+      "none",
+      "minimal",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ]
+  }];
+  // "auto", "concise" or "detailed".
+  optional string summary = 2 [(buf.validate.field).string = {
+    in: [
+      "auto",
+      "concise",
+      "detailed"
+    ]
+  }];
+}
+
+// Per-call switches of a request.
+message ProviderCallFlags {
+  // The reasoning the call asks for; absent for the provider's default.
+  oneof reasoning {
+    // Whether the call reasons.
+    bool reasoning_enabled = 1;
+    // How the call reasons.
+    ReasoningRequest reasoning_request = 2;
+  }
+  // "auto", "default" or "priority".
+  optional string service_tier = 3 [(buf.validate.field).string = {
+    in: [
+      "auto",
+      "default",
+      "priority"
+    ]
+  }];
+  // Whether the answer reports usage.
+  optional bool include_usage = 4;
+  // Adds the structured output JSON Schema to the model's system prompt.
+  optional bool include_structured_schema_on_system_prompt = 5;
+}
+
+// A request's fields other than its messages.
+message ProviderRequestOptions {
+  // The model.
+  string model = 1;
+  // The tools the model may call.
+  repeated ToolDefinition tools = 2;
+  // Which tool the model must or may call.
+  optional ProviderToolChoice tool_choice = 3;
+  // Whether the model may call tools in parallel.
+  optional bool parallel_tool_calls = 4;
+  // The JSON Schema of a structured output, as JSON text.
+  optional string schema = 5 [(buf.validate.field).string.min_len = 1];
+  // "none", "minimal", "low", "medium", "high", "xhigh" or "max".
+  optional string effort = 6 [(buf.validate.field).string = {
+    in: [
+      "none",
+      "minimal",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ]
+  }];
+  // The sampling temperature.
+  optional double temperature = 7;
+  // The most tokens the answer holds.
+  optional int32 max_output_tokens = 8 [(buf.validate.field).int32.gt = 0];
+  // Per-call switches.
+  optional ProviderCallFlags flags = 9;
+}
+
+// The cost a provider reported.
+message UsageCost {
+  // The amount.
+  double amount = 1;
+  // The amount's unit.
+  optional string unit = 2;
+  // The amount the upstream provider charged.
+  optional double upstream_amount = 3;
+}
+
+// What a call used.
+message UsageMetadata {
+  // Input tokens.
+  optional double input_tokens = 1;
+  // Output tokens.
+  optional double output_tokens = 2;
+  // Every token.
+  optional double total_tokens = 3;
+  // Reasoning tokens.
+  optional double reasoning_tokens = 4;
+  // Input tokens read from the cache.
+  optional double cached_input_tokens = 5;
+  // Tokens written to the cache.
+  optional double cache_write_tokens = 6;
+  // Search units.
+  optional double search_units = 7;
+  // The cost.
+  optional UsageCost cost = 8;
+}
+
+// The reasoning of an answer.
+message ReasoningMetadata {
+  // The reasoning text.
+  optional string text = 1;
+  // "none", "minimal", "low", "medium", "high", "xhigh" or "max".
+  optional string effort = 2 [(buf.validate.field).string = {
+    in: [
+      "none",
+      "minimal",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ]
+  }];
+  // The reasoning summary.
+  optional string summary = 3;
+}
+
+// A finished completion.
+message ProviderFinished {
+  // The answer's text.
+  string text = 1;
+  // "stop", "length", "tool_calls", "content_filter", "error", "cancelled"
+  // or "unknown".
+  string finish_reason = 2 [(buf.validate.field).string = {
+    in: [
+      "stop",
+      "length",
+      "tool_calls",
+      "content_filter",
+      "error",
+      "cancelled",
+      "unknown"
+    ]
+  }];
+  // What the call used.
+  optional UsageMetadata usage = 3;
+  // The answer's reasoning.
+  optional ReasoningMetadata reasoning = 4;
+  // The model's refusal.
+  optional string refusal = 5;
+  // The tool calls of the answer.
+  repeated ProviderToolCall tool_calls = 6;
+  // Opaque provider output items kept only for exact multi-turn replay.
+  repeated google.protobuf.Struct replay = 7;
+  // The structured output, parsed and validated against the request's
+  // schema; absent without a schema.
+  optional google.protobuf.Value structured = 8;
+}
+
+// A failure a provider reported. `code` names what failed (for example
+// `network_error`, `http_error`, `auth_failed`, `missing_model`,
+// `invalid_structured_output`, `unsupported_embeddings`); adapters may add
+// others.
+message ProviderError {
+  // The provider's id.
+  string provider = 1;
+  // What failed.
+  string code = 2;
+  // A message for people.
+  string message = 3;
+  // The HTTP status the provider answered.
+  optional int32 status = 4;
+  // Whether a retry may succeed.
+  optional bool retryable = 5;
+  // A diagnostic for logs.
+  optional string diagnostic = 6;
+  // How long the provider asked a retry to wait, in milliseconds.
+  optional double retry_after_ms = 7;
+  // The provider's id for the failed request.
+  optional string request_id = 8;
+}
+
+// The answer started.
+message ProviderResponseStarted {
+  // The provider's id.
+  string provider = 1;
+  // The model.
+  string model = 2;
+  // The advertised context capacity, when the catalog knows it.
+  optional double context_window = 3;
+}
+
+// A piece of text, reasoning or refusal.
+message ProviderDelta {
+  // The piece.
+  string delta = 1;
+}
+
+// A piece of a tool call.
+message ProviderToolCallDelta {
+  // The call's position among the turn's calls.
+  int32 index = 1;
+  // The call's id, when known.
+  optional string id = 2;
+  // The tool's name, when known.
+  optional string name = 3;
+  // The next piece of the call's arguments.
+  optional string arguments_delta = 4;
+}
+
+// A tool call is complete.
+message ProviderToolCallDone {
+  // The call.
+  ProviderToolCall call = 1 [(buf.validate.field).required = true];
+}
+
+// What the call used so far.
+message ProviderUsage {
+  // The usage.
+  UsageMetadata usage = 1 [(buf.validate.field).required = true];
+}
+
+// The answer finished.
+message ProviderResponseFinished {
+  // The finished completion.
+  ProviderFinished finish = 1 [(buf.validate.field).required = true];
+}
+
+// The call failed.
+message ProviderStreamError {
+  // The failure.
+  ProviderError error = 1 [(buf.validate.field).required = true];
+}
+
+// One event of a streamed completion. The oneof's fields are today's `type`
+// values with `.` written `_`.
+message ProviderStreamEvent {
+  // The event.
+  oneof type {
+    option (doric.platform.v1.oneof).discriminator = "type";
+    option (buf.validate.oneof).required = true;
+    // "response.started".
+    ProviderResponseStarted response_started = 1;
+    // "text.delta".
+    ProviderDelta text_delta = 2;
+    // "reasoning.delta".
+    ProviderDelta reasoning_delta = 3;
+    // "refusal.delta".
+    ProviderDelta refusal_delta = 4;
+    // "tool_call.delta".
+    ProviderToolCallDelta tool_call_delta = 5;
+    // "tool_call.done".
+    ProviderToolCallDone tool_call_done = 6;
+    // "usage".
+    ProviderUsage usage = 7;
+    // "response.finished".
+    ProviderResponseFinished response_finished = 8;
+    // "error".
+    ProviderStreamError error = 9;
+  }
+}
+
+// A single-text embedding request.
+message ProviderEmbeddingRequest {
+  // The model.
+  string model = 1;
+  // The text.
+  string input = 2;
+  // The embedding's dimensions.
+  optional int32 dimensions = 3 [(buf.validate.field).int32.gt = 0];
+}
+
+// An embedding.
+message ProviderEmbeddingFinished {
+  // The vector.
+  repeated double embedding = 1;
+  // What the call used.
+  optional UsageMetadata usage = 2;
+}
+
+// A text-document rerank request.
+message ProviderRerankRequest {
+  // The model.
+  string model = 1;
+  // The query.
+  string query = 2;
+  // The documents.
+  repeated string documents = 3;
+  // How many results to answer.
+  optional int32 top_n = 4 [(buf.validate.field).int32.gt = 0];
+}
+
+// One ranked document.
+message ProviderRerankResult {
+  // The document's position in the request.
+  int32 index = 1 [(buf.validate.field).int32.gte = 0];
+  // The document's relevance.
+  double relevance_score = 2;
+}
+
+// A ranking.
+message ProviderRerankFinished {
+  // The ranked documents.
+  repeated ProviderRerankResult results = 1;
+  // What the call used.
+  optional UsageMetadata usage = 2;
+}
+
+// One model as a provider reports it.
+message Model {
+  // The model's id.
+  string id = 1;
+  // The model's name.
+  optional string name = 2;
+  // The model's context capacity.
+  optional double context_window = 3;
+  // What the model reads (`text`, `image`, ...); empty when the catalog
+  // does not say, which a caller reads as unknown.
+  repeated string input_modalities = 4;
+  // The provider's id.
+  optional string provider = 5;
+  // The provider's own record of the model.
+  optional google.protobuf.Value raw = 6;
+}
+
+// The first item of a completion: where it runs and its options.
+message ProviderCallHeader {
+  // The provider it runs on.
+  ProviderTarget target = 1 [(buf.validate.field).required = true];
+  // The request's fields other than its messages.
+  ProviderRequestOptions options = 2 [(buf.validate.field).required = true];
+}
+
+// Asks the kind's descriptor.
+message KindRequest {}
+
+// The kind's descriptor.
+message KindResponse {
+  // The descriptor.
+  ModelKindDescriptor model_kind_descriptor = 1 [(buf.validate.field).required = true];
+}
+
+// Asks whether the kind is listed.
+message AdvertisedRequest {}
+
+// Whether the kind is listed.
+message AdvertisedResponse {
+  // Whether `GET /providers/kinds` lists it (codex: false).
+  bool advertised = 1;
+}
+
+// Reads the kind's catalog.
+message CatalogRequest {
+  // The configuration values.
+  map<string, string> configuration = 1;
+  // The configuration's secret, when it has one.
+  optional string secret = 2 [(doric.platform.v1.field).secret = true];
+}
+
+// The catalog read.
+message CatalogResponse {
+  // The read.
+  CatalogResult catalog_result = 1 [(buf.validate.field).required = true];
+}
+
+// Asks whether a built provider reports context capacity.
+message CatalogCapacityRequest {}
+
+// Whether a built provider reports context capacity.
+message CatalogCapacityResponse {
+  // Whether its `Models` reports it; a provider that fails to answer has
+  // none.
+  bool catalog_capacity = 1;
+}
+
+// Asks the icons for a configuration.
+message IconsRequest {
+  // The configuration values.
+  map<string, string> configuration = 1;
+  // The models, at most 1000, each at most 512 characters.
+  repeated string models = 2 [(buf.validate.field).repeated = {
+    max_items: 1000
+    items: {
+      string: {max_len: 512}
+    }
+  }];
+}
+
+// The icons the kind chooses.
+message IconsResponse {
+  // The choice.
+  ModelIconChoice model_icon_choice = 1 [(buf.validate.field).required = true];
+}
+
+// One item of a completion request: the header first, then the messages.
+message CompleteRequest {
+  // The item.
+  oneof item {
+    option (buf.validate.oneof).required = true;
+    // The first item, once.
+    ProviderCallHeader header = 1;
+    // The next message of the conversation.
+    ProviderMessage message = 2;
+  }
+}
+
+// The finished completion.
+message CompleteResponse {
+  // The completion.
+  ProviderFinished provider_finished = 1 [(buf.validate.field).required = true];
+}
+
+// One item of a streamed completion request: the header first, then the
+// messages.
+message StreamRequest {
+  // The item.
+  oneof item {
+    option (buf.validate.oneof).required = true;
+    // The first item, once.
+    ProviderCallHeader header = 1;
+    // The next message of the conversation.
+    ProviderMessage message = 2;
+  }
+}
+
+// One event of the streamed completion.
+message StreamResponse {
+  // The event.
+  ProviderStreamEvent provider_stream_event = 1 [(buf.validate.field).required = true];
+}
+
+// Embeds one text on a provider.
+message EmbeddingRequest {
+  // The provider.
+  ProviderTarget target = 1 [(buf.validate.field).required = true];
+  // The request.
+  ProviderEmbeddingRequest request = 2 [(buf.validate.field).required = true];
+}
+
+// The embedding.
+message EmbeddingResponse {
+  // The embedding.
+  ProviderEmbeddingFinished provider_embedding_finished = 1 [(buf.validate.field).required = true];
+}
+
+// Ranks documents on a provider.
+message RerankRequest {
+  // The provider.
+  ProviderTarget target = 1 [(buf.validate.field).required = true];
+  // The request.
+  ProviderRerankRequest request = 2 [(buf.validate.field).required = true];
+}
+
+// The ranking.
+message RerankResponse {
+  // The ranking.
+  ProviderRerankFinished provider_rerank_finished = 1 [(buf.validate.field).required = true];
+}
+
+// Asks a provider's models.
+message ModelsRequest {
+  // The provider.
+  ProviderTarget target = 1 [(buf.validate.field).required = true];
+}
+
+// The provider's models.
+message ModelsResponse {
+  // The models.
+  repeated Model models = 1;
+}
+
+// Asks one model of a provider.
+message ValidateModelRequest {
+  // The provider.
+  ProviderTarget target = 1 [(buf.validate.field).required = true];
+  // The model's id.
+  string model = 2 [(buf.validate.field).string.min_len = 1];
+}
+
+// The model as the provider reports it.
+message ValidateModelResponse {
+  // The model.
+  Model model = 1 [(buf.validate.field).required = true];
+}

@@ -8,10 +8,79 @@ import type {
   QuarantineReason,
 } from '../contracts/platform.js';
 import type { ResolvedEnvironment } from './catalog.js';
-import { parseContractEntry } from './manifest.js';
+import { partLists } from './manifest.js';
 
 /** Recent errors kept per bundle. */
 export const DIAGNOSTIC_ERRORS_PER_BUNDLE = 50;
+
+/**
+ * An instance as the platform's reports name it (section 7, "Instance
+ * states"); the bundle is the report's `bundleId`.
+ */
+export interface ReportedInstance {
+  readonly generation: number;
+  readonly incarnation: number;
+}
+
+/**
+ * The host's own event loop was blocked: a health timer of the instance
+ * fired `delayMs` after its due time, more than the stall threshold, and the
+ * router checked again instead of declaring the instance invalid (RK17).
+ */
+export interface HostStalledReport extends DiagnosticReport {
+  readonly kind: 'host_stalled';
+  readonly details: ReportedInstance & { readonly delayMs: number };
+}
+
+/**
+ * An instance's process exited, or its control stream ended, without `Stop`
+ * (section 7, "Crashes", step 3). `exitCode` and `signal` (its name, such
+ * as `SIGSEGV`) are the process's, `null` when it had not exited when the
+ * loss was recorded; `cause` is how the control stream ended.
+ */
+export interface GenerationLostReport extends DiagnosticReport {
+  readonly kind: 'generation_lost';
+  readonly details: ReportedInstance & {
+    readonly cause: 'closed' | 'reset';
+    readonly exitCode: number | null;
+    readonly signal: string | null;
+  };
+}
+
+/**
+ * A new generation of the bundle did not become `active` after its restarts;
+ * the previous generation stays active (section 6, "Publish", step 2).
+ * `message` names the cause.
+ */
+export interface GenerationFailedReport extends DiagnosticReport {
+  readonly kind: 'generation_failed';
+  readonly details: { readonly generation: number };
+}
+
+/**
+ * A consumer's replay of its registrations to a new provider instance failed
+ * (`registration_replay_failed`), or the consumer did not answer
+ * `ReplayDone` within the replay timeout (`registration_replay_late`), after
+ * which the router released the calls it held (section 4). `bundleId` is the
+ * consumer's, `details` names both instances.
+ */
+export interface RegistrationReplayReport extends DiagnosticReport {
+  readonly kind: 'registration_replay_failed' | 'registration_replay_late';
+  readonly details: ReportedInstance & {
+    readonly provider: ReportedInstance & { readonly bundleId: string };
+  };
+}
+
+/**
+ * The reports of the gRPC platform (section 15). Each is a
+ * {@link DiagnosticReport}, given to {@link DiagnosticsStore.report} and kept
+ * in the bundle's list of recent errors like any other.
+ */
+export type PlatformReport =
+  | HostStalledReport
+  | GenerationLostReport
+  | GenerationFailedReport
+  | RegistrationReplayReport;
 
 interface BundleRecord {
   readonly id: string;
@@ -71,15 +140,13 @@ export class DiagnosticsStore {
       this.#bundles.set(entry.id, record);
 
       if (entry.state !== 'disabled') {
-        for (const required of entry.manifest?.requires ?? []) {
-          const parsed = parseContractEntry(required);
+        const part = resolved.environment === 'host' ? 'host' : 'client';
 
-          if (parsed !== undefined) {
-            const consumers = this.#consumers.get(parsed.id) ?? new Set();
+        for (const required of partLists(entry.manifest, part).requires) {
+          const consumers = this.#consumers.get(required.id) ?? new Set();
 
-            consumers.add(entry.id);
-            this.#consumers.set(parsed.id, consumers);
-          }
+          consumers.add(entry.id);
+          this.#consumers.set(required.id, consumers);
         }
       }
     }

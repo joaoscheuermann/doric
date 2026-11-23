@@ -51,6 +51,13 @@ export const contractErrorCodes = [
   'unknown_command',
   // desktop UI (stage 9, D9-18)
   'route_conflict',
+  // gRPC processes (phase 2)
+  'unknown_contract',
+  'unknown_provider',
+  'invalid_instance_token',
+  'instance_revoked',
+  'not_connected',
+  'control_stream_open',
 ] as const;
 
 export type ContractErrorCode = (typeof contractErrorCodes)[number];

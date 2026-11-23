@@ -1,0 +1,104 @@
+// `papercraft.snapshot/v1` (client, 1.1.0): captures a rectangle of the
+// calling window's own pixels as a PNG, which the window keeps as the stand-in
+// of a preview frame it unmounts. The `papercraft` client part provides it
+// over `doric.windows/v1.Capture`, so the opaque-origin preview frames inside
+// the rectangle are in the picture. A window captures only itself: the window
+// is the one the call is made in, never an input.
+//
+// 1.1.0: the provider moves from desktopMain to the window; the schemas move
+// from zod to `.proto` with the same fields; the PNG streams in chunks instead
+// of answering as base64; the method is no longer exposed to the desktop.
+syntax = "proto3";
+
+package doric.papercraft.snapshot.v1;
+
+import "buf/validate/validate.proto";
+import "doric/platform/v1/options.proto";
+
+option (doric.platform.v1.contract) = {
+  id: "papercraft.snapshot/v1"
+  cardinality: CARDINALITY_ONE
+  environment: ENVIRONMENT_CLIENT
+};
+
+// The window's capture of itself.
+service SnapshotService {
+  // Captures `rect` of the calling window. Fails `invalid_input` for a
+  // rectangle that fails its rules or lies outside the viewport,
+  // `unavailable` for a capture the window could not take, and `not_found`
+  // when the window closed.
+  rpc Capture(CaptureRequest) returns (stream CaptureResponse);
+}
+
+// The rectangle to capture, in CSS px of the calling window's viewport (the
+// coordinates `getBoundingClientRect` answers in the window's own document).
+// It must lie inside the viewport.
+message SnapshotRect {
+  // The left edge, finite and at least 0.
+  double x = 1 [(buf.validate.field).double = {
+    gte: 0
+    finite: true
+  }];
+  // The top edge, finite and at least 0.
+  double y = 2 [(buf.validate.field).double = {
+    gte: 0
+    finite: true
+  }];
+  // The width, above 0 and at most 4,096 (`SNAPSHOT_MAX_SIDE`).
+  double width = 3 [(buf.validate.field).double = {
+    gt: 0
+    lte: 4096
+  }];
+  // The height, above 0 and at most 4,096 (`SNAPSHOT_MAX_SIDE`).
+  double height = 4 [(buf.validate.field).double = {
+    gt: 0
+    lte: 4096
+  }];
+}
+
+// Asks one capture of the calling window.
+message CaptureRequest {
+  // The rectangle to capture.
+  SnapshotRect rect = 1 [(buf.validate.field).required = true];
+}
+
+// The first item of a `Capture`: the PNG's size and scale.
+message CaptureHead {
+  // The width in device pixels, a whole number above 0.
+  double width = 1 [
+    (buf.validate.field).double.gt = 0,
+    (buf.validate.field).cel = {
+      id: "width.integer"
+      message: "width must be a whole number"
+      expression: "this == double(int(this))"
+    }
+  ];
+  // The height in device pixels, a whole number above 0.
+  double height = 2 [
+    (buf.validate.field).double.gt = 0,
+    (buf.validate.field).cel = {
+      id: "height.integer"
+      message: "height must be a whole number"
+      expression: "this == double(int(this))"
+    }
+  ];
+  // The device pixels per CSS px the capture was taken at, above 0.
+  double scale = 3 [(buf.validate.field).double.gt = 0];
+}
+
+// One item of a `Capture`. The first item is a `head`, and only the first;
+// the PNG's bytes are the concatenation of the `chunk` items after it, of
+// which there is at least one.
+message CaptureResponse {
+  // The item.
+  oneof item {
+    option (buf.validate.oneof).required = true;
+    // The first item: the PNG's size and scale.
+    CaptureHead head = 1;
+    // The PNG's next bytes, at most 1 MiB.
+    bytes chunk = 2 [(buf.validate.field).bytes = {
+      min_len: 1
+      max_len: 1048576
+    }];
+  }
+}

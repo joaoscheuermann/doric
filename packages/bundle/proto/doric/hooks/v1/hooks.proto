@@ -1,0 +1,186 @@
+// `hooks/v1` (host, 1.1.0): the registry through which a bundle declares a
+// hooks contract, other bundles register handlers for its hooks, and the
+// declaring bundle runs them. A hooks contract's hooks, their kinds and their
+// orders are the options of its own `.proto` file
+// (`(doric.platform.v1.hooks)` and `(doric.platform.v1.hook)`); this contract
+// carries their inputs and outputs as `google.protobuf.Any` and never decodes
+// them. Hooks run in the host only: no client part defines, registers, runs or
+// observes a hook.
+//
+// 1.1.0: `define`, `use` and `whenAvailable` are removed; `Define`,
+// `Register`, `Run` and `WatchAvailability` replace them, and a handler is the
+// service `HookHandlerService`.
+syntax = "proto3";
+
+package doric.hooks.v1;
+
+import "buf/validate/validate.proto";
+import "doric/platform/v1/options.proto";
+import "google/protobuf/any.proto";
+
+option (doric.platform.v1.contract) = {
+  id: "hooks/v1"
+  cardinality: CARDINALITY_ONE
+  environment: ENVIRONMENT_HOST
+};
+
+// The hooks registry. Every registration is kept with the instance that made
+// it and ends with `Unregister` or with that instance.
+service HooksService {
+  // Declares a hooks contract of the caller. Its hooks and their kinds come
+  // from the contract's `.proto` options. Answers a `registrationId`; the
+  // same contract again from the same instance answers the same id.
+  rpc Define(DefineRequest) returns (DefineResponse);
+  // Registers the caller as a handler of one hook; the provider calls the
+  // caller's `HookHandlerService.Handle` when the hook runs. Answers a
+  // `registrationId`; the same `(contract, hook)` again from the same
+  // instance replaces the registration and answers the same id.
+  rpc Register(RegisterRequest) returns (RegisterResponse);
+  // Removes a registration `Define` or `Register` answered; an unknown id is
+  // a no-op.
+  rpc Unregister(UnregisterRequest) returns (UnregisterResponse);
+  // Runs one hook of a hooks contract the caller defined: calls each
+  // registered handler in the hook's order with the hook kind's semantics
+  // (observe, transform, decide, sequence) and answers the result.
+  rpc Run(RunRequest) returns (RunResponse);
+  // Streams whether a hooks contract is defined: the present state first,
+  // then one item per change.
+  rpc WatchAvailability(WatchAvailabilityRequest) returns (stream WatchAvailabilityResponse) {
+    option (doric.platform.v1.method).resumable = true;
+  }
+}
+
+// The handler of a hook, implemented by each bundle that registers one and
+// called by the `hooks/v1` provider on the registering instance.
+service HookHandlerService {
+  option (doric.platform.v1.service).role = SERVICE_ROLE_HANDLER;
+
+  // Handles one run of a hook the instance registered for.
+  rpc Handle(HookHandlerServiceHandleRequest) returns (HookHandlerServiceHandleResponse);
+}
+
+// A decide hook's answer: allow, or refuse with a reason.
+message Decision {
+  option (buf.validate.message).cel = {
+    id: "decision.reason"
+    message: "a refusal carries a reason and an allow none"
+    expression: "this.allow != has(this.reason)"
+  };
+  // Whether the input is allowed.
+  bool allow = 1;
+  // Why the input is refused; set exactly when `allow` is false.
+  optional string reason = 2;
+}
+
+// Declares a hooks contract of the caller.
+message DefineRequest {
+  // The hooks contract id, `<name>/v<major>`, as its file's
+  // `(doric.platform.v1.hooks).id` states it.
+  string contract = 1 [(buf.validate.field).string.pattern = "^[a-z][a-z0-9-]*(\\.[a-z0-9-]+)*/v[1-9][0-9]*$"];
+}
+
+// The definition's registration.
+message DefineResponse {
+  // The id `Unregister` takes.
+  string registration_id = 1;
+}
+
+// Registers the caller as a handler of one hook.
+message RegisterRequest {
+  // The hooks contract id.
+  string contract = 1 [(buf.validate.field).string.pattern = "^[a-z][a-z0-9-]*(\\.[a-z0-9-]+)*/v[1-9][0-9]*$"];
+  // The hook's name within the contract (for example "onSendHook").
+  string hook = 2 [(buf.validate.field).string.min_len = 1];
+  // The handler's position among the hook's handlers, ascending, a positive
+  // whole number; a handler without one runs after every ordered handler, in
+  // the order the hook's `order` option gives.
+  optional double order = 3 [
+    (buf.validate.field).double = {
+      gte: 1
+      lte: 9007199254740991
+    },
+    (buf.validate.field).cel = {
+      id: "order.integer"
+      message: "order must be a whole number"
+      expression: "this == double(int(this))"
+    }
+  ];
+}
+
+// The handler's registration.
+message RegisterResponse {
+  // The id `Unregister` takes.
+  string registration_id = 1;
+}
+
+// Removes a registration.
+message UnregisterRequest {
+  // The id `Define` or `Register` answered.
+  string registration_id = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+// The registration is gone.
+message UnregisterResponse {}
+
+// Runs one hook.
+message RunRequest {
+  // The hooks contract id; the caller must have defined it.
+  string contract = 1 [(buf.validate.field).string.pattern = "^[a-z][a-z0-9-]*(\\.[a-z0-9-]+)*/v[1-9][0-9]*$"];
+  // The hook's name within the contract.
+  string hook = 2 [(buf.validate.field).string.min_len = 1];
+  // The hook's input: a message with the `(doric.platform.v1.hook)` option of
+  // that hook, relayed to each handler undecoded.
+  google.protobuf.Any input = 3 [(buf.validate.field).required = true];
+}
+
+// The result of a run, by the hook's kind: nothing for observe and sequence,
+// the last handler's output for transform, the decision for decide.
+message RunResponse {
+  option (buf.validate.message).cel = {
+    id: "run_response.result"
+    message: "a run answers an output or a decision, not both"
+    expression: "!(has(this.output) && has(this.decision))"
+  };
+  // A transform hook's input after every handler; the input itself when no
+  // handler is registered.
+  optional google.protobuf.Any output = 1;
+  // A decide hook's decision: the first refusal, or allow when every handler
+  // allowed.
+  optional Decision decision = 2;
+}
+
+// Asks whether a hooks contract is defined.
+message WatchAvailabilityRequest {
+  // The hooks contract id.
+  string contract = 1 [(buf.validate.field).string.pattern = "^[a-z][a-z0-9-]*(\\.[a-z0-9-]+)*/v[1-9][0-9]*$"];
+}
+
+// One state of a hooks contract's definition.
+message WatchAvailabilityResponse {
+  // Whether a live instance has defined the contract.
+  bool available = 1;
+}
+
+// One run of a hook, for one handler.
+message HookHandlerServiceHandleRequest {
+  // The hooks contract id.
+  string contract = 1;
+  // The hook's name within the contract.
+  string hook = 2;
+  // The hook's input; for a transform hook, the previous handler's output.
+  google.protobuf.Any input = 3 [(buf.validate.field).required = true];
+}
+
+// What the handler answers, by the hook's kind: nothing for observe and
+// sequence, the transformed input for transform, a decision for decide.
+message HookHandlerServiceHandleResponse {
+  option (buf.validate.message).cel = {
+    id: "hook_handler_service_handle_response.result"
+    message: "a handler answers an output or a decision, not both"
+    expression: "!(has(this.output) && has(this.decision))"
+  };
+  // A transform handler's output, a message of the input's type.
+  optional google.protobuf.Any output = 1;
+  // A decide handler's decision.
+  optional Decision decision = 2;
+}

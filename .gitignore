@@ -69,3 +69,10 @@ Thumbs.db
 
 # Host composition overrides written by the splash recovery actions (HR-6)
 composition.overrides.json
+
+# Rust build output and the exported protos (proto-export)
+/dist/target/
+/dist/proto/
+
+# Generated protobuf-es code (generate-proto)
+**/src/contracts/gen/

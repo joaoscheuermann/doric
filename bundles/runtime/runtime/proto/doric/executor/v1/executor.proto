@@ -1,0 +1,329 @@
+// `executor/v1` (host, 1.6.0): one prompt run and the history operations
+// around it. Declared by `runtime`, provided by `default`, called by
+// `runtime`. Every call carries the id of a session `runtime` opened for it
+// (`executor.session/v1`), through which the executor reads and writes the
+// Thread's history, takes steering inputs and describes attachments, so
+// `runtime` keeps commit-before-publish, redaction, the storage-pause retry
+// and its aggregate atomic. A call's scope is `{ projectId, threadId,
+// promptId }` of the prompt; cancelling the call aborts the work.
+//
+// 1.6.0: `run`, `compact`, `checkpoint` and `rewind` take a `sessionId`
+// instead of functions; `formats` is asynchronous; `checkpoint` and `rewind`
+// stream their history parts as chunked JSON.
+syntax = "proto3";
+
+package doric.executor.v1;
+
+import "buf/validate/validate.proto";
+import "doric/platform/v1/options.proto";
+import "doric/runtime/threads/v1/threads.proto";
+import "doric/runtime/v2/runtime.proto";
+
+option (doric.platform.v1.contract) = {
+  id: "executor/v1"
+  cardinality: CARDINALITY_ONE
+  environment: ENVIRONMENT_HOST
+};
+
+// One prompt run, compaction, checkpoint and rewind.
+service ExecutorService {
+  // Runs one prompt on the Thread. A run of a Thread whose stored execution
+  // is unavailable fails before any model request.
+  rpc Run(RunRequest) returns (RunResponse);
+  // Before `prompt.started`: records the turn boundary once (an existing key
+  // wins) and answers the parts to write. The answer is a history patch as
+  // chunked JSON: a first item with the format, then for each part its name
+  // followed by its chunks.
+  rpc Checkpoint(CheckpointRequest) returns (stream CheckpointResponse);
+  // Rewind participation: the truncated history, as `Checkpoint` answers it;
+  // a stream with no item when the Thread has no checkpoint for the prompt.
+  rpc Rewind(RewindRequest) returns (stream RewindResponse);
+  // The history formats this executor reads. `runtime` reads it once per
+  // executor instance and keeps it until the provider changes.
+  rpc Formats(FormatsRequest) returns (FormatsResponse);
+  // Compacts an idle Thread on demand: condenses the oldest safe span into
+  // one summary message and records it. The call's scope carries the
+  // compaction's own prompt id.
+  rpc Compact(CompactRequest) returns (CompactResponse);
+}
+
+// The Thread a run or a compaction receives: the public `Thread` whose
+// `agent`, when present, also carries the agent's instructions. Only
+// `runtime` builds one; it is never published, stored or answered as the
+// Thread. `agent` absent is the default agent.
+message ExecutorThread {
+  // The Thread's id.
+  string id = 1;
+  // The Thread's Project.
+  string project_id = 2;
+  // The parent of a child Thread.
+  optional string parent_thread_id = 3;
+  // Who opened it, as `Thread.origin`.
+  optional string origin = 4 [(buf.validate.field).string = {
+    in: [
+      "user",
+      "agent"
+    ]
+  }];
+  // The display name.
+  string name = 5;
+  // The state, as `Thread.state`.
+  string state = 6 [(buf.validate.field).string = {
+    in: [
+      "queued",
+      "ready",
+      "running",
+      "cancelling",
+      "cancelled",
+      "failed"
+    ]
+  }];
+  // The sequence of the Thread's last event, a whole number.
+  double last_sequence = 7 [
+    (buf.validate.field).double.gte = 0,
+    (buf.validate.field).cel = {
+      id: "last_sequence.integer"
+      message: "lastSequence must be a whole number"
+      expression: "this == double(int(this))"
+    }
+  ];
+  // True while the queue is paused.
+  optional bool queue_paused = 8;
+  // The working directory, absolute in the sandbox.
+  string cwd = 9;
+  // The repository at `cwd`: "git" or "github".
+  optional string cwd_repo = 10 [(buf.validate.field).string = {
+    in: [
+      "git",
+      "github"
+    ]
+  }];
+  // The prompt that runs now.
+  optional string active_prompt_id = 11;
+  // When the running prompt started executing (ISO-8601).
+  optional string execution_started_at = 12;
+  // How long the last execution took, in milliseconds, a whole number.
+  optional double last_execution_ms = 13 [
+    (buf.validate.field).double.gte = 0,
+    (buf.validate.field).cel = {
+      id: "last_execution_ms.integer"
+      message: "lastExecutionMs must be a whole number"
+      expression: "this == double(int(this))"
+    }
+  ];
+  // Why the Thread failed.
+  optional string error_code = 14;
+  // When it was created (ISO-8601).
+  string created_at = 15;
+  // When it last changed (ISO-8601).
+  string updated_at = 16;
+  // When it started (ISO-8601).
+  optional string started_at = 17;
+  // When it finished (ISO-8601).
+  optional string finished_at = 18;
+  // The result of its most recent finished prompt.
+  optional doric.runtime.v2.ThreadOutcome result = 19;
+  // The agent it runs as, with its instructions; absent for the default
+  // agent.
+  optional doric.runtime.threads.v1.SpawnAgent agent = 20;
+  // The model it runs on.
+  optional string model = 21;
+  // The reasoning effort, as `Thread.effort`.
+  optional string effort = 22 [(buf.validate.field).string = {
+    in: [
+      "none",
+      "minimal",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ]
+  }];
+  // The provider it runs on; absent follows the configured default.
+  optional string provider_id = 23;
+  // When it was archived (ISO-8601).
+  optional string archived_at = 24;
+  // True while pinned.
+  optional bool pinned = 25;
+}
+
+// One prompt to run.
+message PromptJob {
+  // The prompt's id.
+  string id = 1;
+  // The prompt's text.
+  string prompt = 2;
+  // Where it came from.
+  doric.runtime.v2.InputSource source = 3 [(buf.validate.field).required = true];
+}
+
+// The executor's plain compaction policy.
+message CompactionPolicyValue {
+  // How many recent messages stay out of every condensation, a whole number.
+  double tail_min_messages = 1 [
+    (buf.validate.field).double.gte = 0,
+    (buf.validate.field).cel = {
+      id: "tail_min_messages.integer"
+      message: "tailMinMessages must be a whole number"
+      expression: "this == double(int(this))"
+    }
+  ];
+  // The summary's character budget, a whole number.
+  double summary_max_chars = 2 [
+    (buf.validate.field).double.gt = 0,
+    (buf.validate.field).cel = {
+      id: "summary_max_chars.integer"
+      message: "summaryMaxChars must be a whole number"
+      expression: "this == double(int(this))"
+    }
+  ];
+}
+
+// Runs one prompt.
+message RunRequest {
+  // The session `runtime` opened for this run.
+  string session_id = 1 [(buf.validate.field).string.min_len = 1];
+  // The Thread to run as: its agent with instructions, model and effort.
+  ExecutorThread thread = 2 [(buf.validate.field).required = true];
+  // The prompt.
+  PromptJob job = 3 [(buf.validate.field).required = true];
+}
+
+// The run's answer; today's `ExecutorRunResult`.
+message RunResponse {
+  // The prompt's final text.
+  string text = 1;
+}
+
+// Records a turn boundary.
+message CheckpointRequest {
+  // The session `runtime` opened for this checkpoint.
+  string session_id = 1 [(buf.validate.field).string.min_len = 1];
+  // The prompt whose boundary is recorded.
+  string prompt_id = 2;
+}
+
+// One item of a history patch: the format first, and only first, then for
+// each part its name followed by the chunks of its UTF-8 JSON value.
+message CheckpointResponse {
+  // The item.
+  oneof item {
+    option (buf.validate.oneof).required = true;
+    // The format the parts are written in; the first item.
+    string format = 1;
+    // The name of the part whose chunks follow.
+    string part = 2;
+    // The next chunk of the current part's JSON text, at most 1 MiB.
+    bytes chunk = 3 [(buf.validate.field).bytes = {
+      min_len: 1
+      max_len: 1048576
+    }];
+  }
+}
+
+// Truncates the history for a rewind.
+message RewindRequest {
+  // The session `runtime` opened for this rewind.
+  string session_id = 1 [(buf.validate.field).string.min_len = 1];
+  // The prompt the Thread rewinds to before.
+  string prompt_id = 2;
+  // The prompts the rewind removes.
+  repeated string removed_prompt_ids = 3;
+}
+
+// One item of the truncated history patch, as `CheckpointResponse`.
+message RewindResponse {
+  // The item.
+  oneof item {
+    option (buf.validate.oneof).required = true;
+    // The format the parts are written in; the first item.
+    string format = 1;
+    // The name of the part whose chunks follow.
+    string part = 2;
+    // The next chunk of the current part's JSON text, at most 1 MiB.
+    bytes chunk = 3 [(buf.validate.field).bytes = {
+      min_len: 1
+      max_len: 1048576
+    }];
+  }
+}
+
+// Asks the history formats the executor reads.
+message FormatsRequest {}
+
+// The history formats the executor reads.
+message FormatsResponse {
+  // The formats, for example "direct.history/v1".
+  repeated string formats = 1;
+}
+
+// Compacts an idle Thread.
+message CompactRequest {
+  // The session `runtime` opened for this compaction.
+  string session_id = 1 [(buf.validate.field).string.min_len = 1];
+  // The Thread being compacted, as `RunRequest.thread`.
+  ExecutorThread thread = 2 [(buf.validate.field).required = true];
+  // The compaction policy.
+  CompactionPolicyValue policy = 3 [(buf.validate.field).required = true];
+}
+
+// What the compaction became; today's `ExecutorCompactionResult`.
+message CompactResponse {
+  option (buf.validate.message).cel = {
+    id: "compact_response.compacted"
+    message: "summaryId and the counts are set exactly when compacted"
+    expression: "this.status == 'compacted' ? (has(this.summary_id) && has(this.condensed_messages) && has(this.retained_messages) && has(this.tokens_freed)) : !(has(this.summary_id) || has(this.condensed_messages) || has(this.retained_messages) || has(this.tokens_freed))"
+  };
+  option (buf.validate.message).cel = {
+    id: "compact_response.reason"
+    message: "reason is set exactly when refused"
+    expression: "(this.status == 'refused') == has(this.reason)"
+  };
+  option (buf.validate.message).cel = {
+    id: "compact_response.code"
+    message: "code is set exactly when failed"
+    expression: "(this.status == 'failed') == has(this.code)"
+  };
+  // "compacted", "refused" or "failed" (a failure the executor already
+  // recorded).
+  string status = 1 [(buf.validate.field).string = {
+    in: [
+      "compacted",
+      "refused",
+      "failed"
+    ]
+  }];
+  // The summary message's id; set when compacted.
+  optional string summary_id = 2;
+  // The messages condensed, a whole number; set when compacted.
+  optional double condensed_messages = 3 [(buf.validate.field).cel = {
+    id: "condensed_messages.integer"
+    message: "condensedMessages must be a whole number"
+    expression: "this == double(int(this))"
+  }];
+  // The messages kept, a whole number; set when compacted.
+  optional double retained_messages = 4 [(buf.validate.field).cel = {
+    id: "retained_messages.integer"
+    message: "retainedMessages must be a whole number"
+    expression: "this == double(int(this))"
+  }];
+  // The tokens freed, an estimate, a whole number; set when compacted.
+  optional double tokens_freed = 5 [(buf.validate.field).cel = {
+    id: "tokens_freed.integer"
+    message: "tokensFreed must be a whole number"
+    expression: "this == double(int(this))"
+  }];
+  // Why it was refused: "disabled", "missing_history" or
+  // "nothing_to_compact"; set when refused.
+  optional string reason = 6 [(buf.validate.field).string = {
+    in: [
+      "disabled",
+      "missing_history",
+      "nothing_to_compact"
+    ]
+  }];
+  // Why it failed, for example "summarizer_failed" or "unsafe_boundary";
+  // set when failed.
+  optional string code = 7;
+}

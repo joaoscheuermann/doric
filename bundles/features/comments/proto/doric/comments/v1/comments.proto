@@ -1,0 +1,229 @@
+// `comments/v1` (host, 1.1.0): anchored comments on any target the app can
+// address (an artifact revision, a message, a file and a line, an element of
+// a preview), owned by `comments`. A comment is immutable: editing one is a
+// new event, not a rewrite of the stored row.
+//
+// The registry never interprets a target: it stores the reference, validates
+// it against the messages below and forwards it; the bundle that owns the
+// target's `kind` knows what `revision` and `anchor` mean for it. The Thread
+// event log is the only record: `List` and `Resolve` fold the
+// `comments.added/v1` and `comments.resolved/v1` rows of the call's scope, so
+// a restarted host, a replay or a rewind answers what the log holds. Every
+// call is scoped: `Add` and `Resolve` need the Project, the Thread and the
+// prompt the event is written under (`invalid_scope` otherwise), and `List`
+// needs at least the Project.
+//
+// 1.1.0: the schemas move from zod to `.proto`; an anchor's form is the case
+// of a oneof; keys the messages do not declare are dropped.
+syntax = "proto3";
+
+package doric.comments.v1;
+
+import "buf/validate/validate.proto";
+import "doric/platform/v1/options.proto";
+
+option (doric.platform.v1.contract) = {
+  id: "comments/v1"
+  cardinality: CARDINALITY_ONE
+  environment: ENVIRONMENT_HOST
+};
+
+// The comments registry.
+service CommentsService {
+  // Writes `comments.added/v1` in the call's Thread and answers the comment.
+  // A `commentId` the Thread's log already holds answers that comment and
+  // appends nothing; an unknown `inReplyTo` is `invalid_input`.
+  rpc Add(AddRequest) returns (AddResponse);
+  // The comments of a target (or of a `kind`), in the order of the log: the
+  // call's Thread when the scope names one, else every Thread of its
+  // Project.
+  rpc List(ListRequest) returns (ListResponse);
+  // Marks one comment of the call's Thread attended (or reopens it), writing
+  // `comments.resolved/v1` there. A comment the Thread's log does not hold,
+  // one of another Thread or Project included, answers no comment and writes
+  // nothing.
+  rpc Resolve(ResolveRequest) returns (ResolveResponse);
+}
+
+// Where in the target a comment sits. Four forms, from the strongest to the
+// loosest: the stamped source of a built preview, a selector of the target's
+// derived structure, a free position with the nearest element named, and a
+// range of the target's text. Each form requires the fields that make it
+// point somewhere; the other fields stay optional on every form.
+message CommentAnchor {
+  option (buf.validate.message).cel = {
+    id: "comment_anchor.source_path"
+    message: "a source anchor needs a path"
+    expression: "!has(this.source) || (has(this.source.path) && this.source.path != '')"
+  };
+  option (buf.validate.message).cel = {
+    id: "comment_anchor.selector_selector"
+    message: "a selector anchor needs a selector"
+    expression: "!has(this.selector) || (has(this.selector.selector) && this.selector.selector != '')"
+  };
+  option (buf.validate.message).cel = {
+    id: "comment_anchor.point_xy"
+    message: "a point anchor needs x and y"
+    expression: "!has(this.point) || (has(this.point.x) && has(this.point.y))"
+  };
+  option (buf.validate.message).cel = {
+    id: "comment_anchor.range_text"
+    message: "a range anchor needs its text"
+    expression: "!has(this.range) || (has(this.range.text) && this.range.text != '')"
+  };
+
+  // The anchor's form, named as today's `form`.
+  oneof form {
+    option (doric.platform.v1.oneof).discriminator = "form";
+    option (buf.validate.oneof).required = true;
+    // The stamped source of a built preview; requires `path`.
+    CommentAnchorFields source = 1;
+    // A selector of the target's derived structure; requires `selector`.
+    CommentAnchorFields selector = 2;
+    // A free position and the nearest element's name; requires `x` and `y`.
+    CommentAnchorFields point = 3;
+    // A range of the target's text; requires `text`.
+    CommentAnchorFields range = 4;
+  }
+}
+
+// The fields every form of an anchor may carry.
+message CommentAnchorFields {
+  // The file of a `source` anchor, workspace-relative.
+  optional string path = 1;
+  // The line of a `source` anchor, a positive integer.
+  optional int32 line = 2 [(buf.validate.field).int32.gt = 0];
+  // A selector of the target's derived structure.
+  optional string selector = 3;
+  // The horizontal position, for a click on empty space.
+  optional double x = 4;
+  // The vertical position, for a click on empty space.
+  optional double y = 5;
+  // The nearest element's name.
+  optional string label = 6;
+  // The selected text of a `range` anchor.
+  optional string text = 7;
+  // The pseudo-element of the anchored element the comment is on:
+  // "::before" or "::after", for a kind whose target draws them; absent
+  // points at the element itself. The registry never interprets it.
+  optional string pseudo = 8 [(buf.validate.field).string = {
+    in: [
+      "::before",
+      "::after"
+    ]
+  }];
+  // The turn's own key, for a kind that draws its target as turns of
+  // blocks. The registry never interprets it.
+  optional string turn = 9;
+  // The 0-based index of the block the selection starts in. The registry
+  // never interprets it.
+  optional double block = 10;
+  // How far into that block the selected text starts, counted in characters
+  // that are not whitespace; valid only with `turn` and `block`.
+  optional double at = 11;
+  // The item of that block the selected text starts in, when the block is a
+  // list; valid only with `turn` and `block`.
+  optional double item = 12;
+}
+
+// What a comment is about; the registry never looks inside it.
+message CommentTarget {
+  // The kind of target, declared by the bundle that owns it.
+  string kind = 1;
+  // The identity of the target within its kind.
+  string id = 2;
+  // The revision of the target, a whole number; absent when it has no
+  // revisions.
+  optional double revision = 3 [(buf.validate.field).cel = {
+    id: "revision.integer"
+    message: "revision must be a whole number"
+    expression: "this == double(int(this))"
+  }];
+  // Where in the target the comment sits.
+  CommentAnchor anchor = 4 [(buf.validate.field).required = true];
+}
+
+// The identity of a target, as `List` filters by it: the anchor is where in
+// the target a comment sits, not which target it names.
+message CommentTargetKey {
+  // The kind of target.
+  string kind = 1;
+  // The identity of the target within its kind.
+  string id = 2;
+  // The revision of the target, a whole number; absent for every revision.
+  optional double revision = 3 [(buf.validate.field).cel = {
+    id: "revision.integer"
+    message: "revision must be a whole number"
+    expression: "this == double(int(this))"
+  }];
+}
+
+// One comment.
+message Comment {
+  // The comment's id.
+  string comment_id = 1;
+  // What it is about.
+  CommentTarget target = 2 [(buf.validate.field).required = true];
+  // Its text.
+  string text = 3;
+  // Who wrote it; absent when unknown.
+  optional string author = 4;
+  // Whether it was attended to.
+  bool resolved = 5;
+  // When it was written (ISO-8601).
+  string created_at = 6;
+  // The root comment this one answers; absent on a root comment. Threads
+  // are flat: a reply always names the root, never another reply.
+  optional string in_reply_to = 7;
+}
+
+// Writes a comment.
+message AddRequest {
+  // What it is about.
+  CommentTarget target = 1 [(buf.validate.field).required = true];
+  // Its text.
+  string text = 2;
+  // Who wrote it; absent when unknown.
+  optional string author = 3;
+  // The id the comment is written under, chosen by the caller so it exists
+  // before the flush; absent generates `comment-<uuid>`. Idempotent: a
+  // comment of the Thread's log with this id is answered as it is.
+  optional string comment_id = 4 [(buf.validate.field).string.pattern = "^[A-Za-z0-9_-]{1,128}$"];
+  // The comment of the same Thread this one answers; normalized to its
+  // root. An unknown id is `invalid_input`.
+  optional string in_reply_to = 5;
+}
+
+// The comment written, or the one the log already held under its id.
+message AddResponse {
+  // The comment.
+  Comment comment = 1 [(buf.validate.field).required = true];
+}
+
+// Asks the comments of a target or of a kind.
+message ListRequest {
+  // Only the comments of this target; absent for every target.
+  optional CommentTargetKey target = 1;
+  // Only the comments of this kind; absent for every kind.
+  optional string kind = 2;
+}
+
+// The comments, in the order of the log; empty when none.
+message ListResponse {
+  // The comments.
+  repeated Comment comments = 1;
+}
+
+// Marks a comment attended or reopens it.
+message ResolveRequest {
+  // The comment.
+  string comment_id = 1;
+  // True to mark it attended, false to reopen it.
+  bool resolved = 2;
+}
+
+// The comment after the change.
+message ResolveResponse {
+  // The comment; absent when the call's Thread holds no such comment.
+  optional Comment comment = 1;
+}

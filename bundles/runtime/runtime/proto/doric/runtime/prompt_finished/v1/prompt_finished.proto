@@ -1,0 +1,40 @@
+// `runtime.prompt-finished/v1` (host, 1.1.0): the event a Thread's prompt
+// raises when it finishes, owned by `runtime` and written to the Thread's
+// log. Stored rows keep the durable type `prompt.finished`, which readers
+// also read as this event type; stored events are never rewritten.
+//
+// 1.1.0: the schema moves from zod to `.proto`; keys the payload does not
+// declare are dropped.
+syntax = "proto3";
+
+package doric.runtime.prompt_finished.v1;
+
+import "buf/validate/validate.proto";
+import "doric/platform/v1/options.proto";
+import "doric/runtime/v2/runtime.proto";
+
+option (doric.platform.v1.contract) = {
+  id: "runtime.prompt-finished/v1"
+  cardinality: CARDINALITY_ONE
+  environment: ENVIRONMENT_HOST
+};
+
+// A prompt finished.
+message PromptFinished {
+  option (doric.platform.v1.event).type = "runtime.prompt-finished/v1";
+  // How it ended: "completed", "failed" or "cancelled".
+  string status = 1 [(buf.validate.field).string = {
+    in: [
+      "completed",
+      "failed",
+      "cancelled"
+    ]
+  }];
+  // Its final text.
+  string text = 2;
+  // Where the prompt came from.
+  doric.runtime.v2.InputSource source = 3 [(buf.validate.field).required = true];
+  // "queue_removed" for a queued prompt the reader removed before it ran;
+  // absent otherwise.
+  optional string reason = 4 [(buf.validate.field).string.const = "queue_removed"];
+}

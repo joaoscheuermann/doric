@@ -1,0 +1,226 @@
+diff --git a/node_modules/@connectrpc/connect/dist/cjs/protocol/run-call.js b/node_modules/@connectrpc/connect/dist/cjs/protocol/run-call.js
+index 6132011..488c260 100644
+--- a/node_modules/@connectrpc/connect/dist/cjs/protocol/run-call.js
++++ b/node_modules/@connectrpc/connect/dist/cjs/protocol/run-call.js
+@@ -79,7 +79,7 @@ function runStreamingCall(opt) {
+                     next: async () => {
+                         const result = signal.aborted
+                             ? undefined
+-                            : await Promise.race([it.next(), aborted]);
++                            : await (0, signals_js_1.raceSignal)(it.next(), signal, () => undefined);
+                         if (result !== undefined) {
+                             return result;
+                         }
+diff --git a/node_modules/@connectrpc/connect/dist/cjs/protocol/signals.d.ts b/node_modules/@connectrpc/connect/dist/cjs/protocol/signals.d.ts
+index 771af66..d610d29 100644
+--- a/node_modules/@connectrpc/connect/dist/cjs/protocol/signals.d.ts
++++ b/node_modules/@connectrpc/connect/dist/cjs/protocol/signals.d.ts
+@@ -34,3 +34,7 @@ export declare function createDeadlineSignal(timeoutMs: number | undefined): {
+  * @private Internal code, does not follow semantic versioning.
+  */
+ export declare function getAbortSignalReason(signal: AbortSignal): unknown;
++/**
++ * Settles like the promise, or with onAbort's result if the signal aborts first.
++ */
++export declare function raceSignal<T, U>(promise: Promise<T>, signal: AbortSignal, onAbort: () => U | PromiseLike<U>): Promise<T | U>;
+diff --git a/node_modules/@connectrpc/connect/dist/cjs/protocol/signals.js b/node_modules/@connectrpc/connect/dist/cjs/protocol/signals.js
+index 67c774a..a11f73f 100644
+--- a/node_modules/@connectrpc/connect/dist/cjs/protocol/signals.js
++++ b/node_modules/@connectrpc/connect/dist/cjs/protocol/signals.js
+@@ -16,6 +16,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
+ exports.createLinkedAbortController = createLinkedAbortController;
+ exports.createDeadlineSignal = createDeadlineSignal;
+ exports.getAbortSignalReason = getAbortSignalReason;
++exports.raceSignal = raceSignal;
+ const connect_error_js_1 = require("../connect-error.js");
+ const code_js_1 = require("../code.js");
+ /**
+@@ -98,3 +99,20 @@ function getAbortSignalReason(signal) {
+     e.name = "AbortError";
+     return e;
+ }
++/**
++ * Settles like the promise, or with onAbort's result if the signal aborts first.
++ */
++function raceSignal(promise, signal, onAbort) {
++    return new Promise((resolve, reject) => {
++        const listener = () => resolve(onAbort());
++        if (signal.aborted) {
++            listener();
++        }
++        else {
++            signal.addEventListener("abort", listener);
++        }
++        promise
++            .finally(() => signal.removeEventListener("abort", listener))
++            .then(resolve, reject);
++    });
++}
+diff --git a/node_modules/@connectrpc/connect/dist/cjs/protocol/universal-handler-client.js b/node_modules/@connectrpc/connect/dist/cjs/protocol/universal-handler-client.js
+index 8587192..318084d 100644
+--- a/node_modules/@connectrpc/connect/dist/cjs/protocol/universal-handler-client.js
++++ b/node_modules/@connectrpc/connect/dist/cjs/protocol/universal-handler-client.js
+@@ -35,14 +35,14 @@ function createUniversalHandlerClient(uHandlers) {
+             throw new connect_error_js_1.ConnectError(`RouterHttpClient: no handler registered for ${pathname}`, code_js_1.Code.Unimplemented);
+         }
+         const reqSignal = (_a = uClientReq.signal) !== null && _a !== void 0 ? _a : new AbortController().signal;
+-        const uServerRes = await raceSignal(reqSignal, handler({
++        const uServerRes = await (0, signals_js_1.raceSignal)(handler({
+             body: (_b = uClientReq.body) !== null && _b !== void 0 ? _b : (0, async_iterable_js_1.createAsyncIterable)([]),
+             httpVersion: "2.0",
+             method: uClientReq.method,
+             url: uClientReq.url,
+             header: uClientReq.header,
+             signal: reqSignal,
+-        }));
++        }), reqSignal, () => Promise.reject((0, signals_js_1.getAbortSignalReason)(reqSignal)));
+         const body = (_c = uServerRes.body) !== null && _c !== void 0 ? _c : (0, async_iterable_js_1.createAsyncIterable)([]);
+         return {
+             body: (0, async_iterable_js_1.pipe)(body, (iterable) => {
+@@ -51,7 +51,7 @@ function createUniversalHandlerClient(uHandlers) {
+                         const it = iterable[Symbol.asyncIterator]();
+                         const w = {
+                             next() {
+-                                return raceSignal(reqSignal, it.next());
++                                return (0, signals_js_1.raceSignal)(it.next(), reqSignal, () => Promise.reject((0, signals_js_1.getAbortSignalReason)(reqSignal)));
+                             },
+                         };
+                         if (it.throw !== undefined) {
+@@ -70,19 +70,3 @@ function createUniversalHandlerClient(uHandlers) {
+         };
+     };
+ }
+-/**
+- * Wrap a promise, and reject early if the given signal triggers before the
+- * promise is settled.
+- */
+-function raceSignal(signal, promise) {
+-    let cleanup;
+-    const signalPromise = new Promise((_, reject) => {
+-        const onAbort = () => reject((0, signals_js_1.getAbortSignalReason)(signal));
+-        if (signal.aborted) {
+-            return onAbort();
+-        }
+-        signal.addEventListener("abort", onAbort);
+-        cleanup = () => signal.removeEventListener("abort", onAbort);
+-    });
+-    return Promise.race([signalPromise, promise]).finally(cleanup);
+-}
+diff --git a/node_modules/@connectrpc/connect/dist/esm/protocol/run-call.js b/node_modules/@connectrpc/connect/dist/esm/protocol/run-call.js
+index 8cb110a..2d3a9ca 100644
+--- a/node_modules/@connectrpc/connect/dist/esm/protocol/run-call.js
++++ b/node_modules/@connectrpc/connect/dist/esm/protocol/run-call.js
+@@ -13,7 +13,7 @@
+ // limitations under the License.
+ import { applyInterceptors } from "../interceptor.js";
+ import { ConnectError } from "../connect-error.js";
+-import { createDeadlineSignal, createLinkedAbortController, getAbortSignalReason, } from "./signals.js";
++import { createDeadlineSignal, createLinkedAbortController, getAbortSignalReason, raceSignal, } from "./signals.js";
+ import { normalize, normalizeIterable } from "./normalize.js";
+ import { Code } from "../code.js";
+ /**
+@@ -75,7 +75,7 @@ export function runStreamingCall(opt) {
+                     next: async () => {
+                         const result = signal.aborted
+                             ? undefined
+-                            : await Promise.race([it.next(), aborted]);
++                            : await raceSignal(it.next(), signal, () => undefined);
+                         if (result !== undefined) {
+                             return result;
+                         }
+diff --git a/node_modules/@connectrpc/connect/dist/esm/protocol/signals.d.ts b/node_modules/@connectrpc/connect/dist/esm/protocol/signals.d.ts
+index 771af66..d610d29 100644
+--- a/node_modules/@connectrpc/connect/dist/esm/protocol/signals.d.ts
++++ b/node_modules/@connectrpc/connect/dist/esm/protocol/signals.d.ts
+@@ -34,3 +34,7 @@ export declare function createDeadlineSignal(timeoutMs: number | undefined): {
+  * @private Internal code, does not follow semantic versioning.
+  */
+ export declare function getAbortSignalReason(signal: AbortSignal): unknown;
++/**
++ * Settles like the promise, or with onAbort's result if the signal aborts first.
++ */
++export declare function raceSignal<T, U>(promise: Promise<T>, signal: AbortSignal, onAbort: () => U | PromiseLike<U>): Promise<T | U>;
+diff --git a/node_modules/@connectrpc/connect/dist/esm/protocol/signals.js b/node_modules/@connectrpc/connect/dist/esm/protocol/signals.js
+index 8b4fcae..6027d12 100644
+--- a/node_modules/@connectrpc/connect/dist/esm/protocol/signals.js
++++ b/node_modules/@connectrpc/connect/dist/esm/protocol/signals.js
+@@ -93,3 +93,20 @@ export function getAbortSignalReason(signal) {
+     e.name = "AbortError";
+     return e;
+ }
++/**
++ * Settles like the promise, or with onAbort's result if the signal aborts first.
++ */
++export function raceSignal(promise, signal, onAbort) {
++    return new Promise((resolve, reject) => {
++        const listener = () => resolve(onAbort());
++        if (signal.aborted) {
++            listener();
++        }
++        else {
++            signal.addEventListener("abort", listener);
++        }
++        promise
++            .finally(() => signal.removeEventListener("abort", listener))
++            .then(resolve, reject);
++    });
++}
+diff --git a/node_modules/@connectrpc/connect/dist/esm/protocol/universal-handler-client.js b/node_modules/@connectrpc/connect/dist/esm/protocol/universal-handler-client.js
+index d0ade09..9f1b13d 100644
+--- a/node_modules/@connectrpc/connect/dist/esm/protocol/universal-handler-client.js
++++ b/node_modules/@connectrpc/connect/dist/esm/protocol/universal-handler-client.js
+@@ -14,7 +14,7 @@
+ import { Code } from "../code.js";
+ import { ConnectError } from "../connect-error.js";
+ import { createAsyncIterable, pipe } from "./async-iterable.js";
+-import { getAbortSignalReason } from "./signals.js";
++import { getAbortSignalReason, raceSignal } from "./signals.js";
+ /**
+  * An in-memory UniversalClientFn that can be used to route requests to a ConnectRouter
+  * bypassing network calls. Useful for testing and calling in-process services.
+@@ -32,14 +32,14 @@ export function createUniversalHandlerClient(uHandlers) {
+             throw new ConnectError(`RouterHttpClient: no handler registered for ${pathname}`, Code.Unimplemented);
+         }
+         const reqSignal = (_a = uClientReq.signal) !== null && _a !== void 0 ? _a : new AbortController().signal;
+-        const uServerRes = await raceSignal(reqSignal, handler({
++        const uServerRes = await raceSignal(handler({
+             body: (_b = uClientReq.body) !== null && _b !== void 0 ? _b : createAsyncIterable([]),
+             httpVersion: "2.0",
+             method: uClientReq.method,
+             url: uClientReq.url,
+             header: uClientReq.header,
+             signal: reqSignal,
+-        }));
++        }), reqSignal, () => Promise.reject(getAbortSignalReason(reqSignal)));
+         const body = (_c = uServerRes.body) !== null && _c !== void 0 ? _c : createAsyncIterable([]);
+         return {
+             body: pipe(body, (iterable) => {
+@@ -48,7 +48,7 @@ export function createUniversalHandlerClient(uHandlers) {
+                         const it = iterable[Symbol.asyncIterator]();
+                         const w = {
+                             next() {
+-                                return raceSignal(reqSignal, it.next());
++                                return raceSignal(it.next(), reqSignal, () => Promise.reject(getAbortSignalReason(reqSignal)));
+                             },
+                         };
+                         if (it.throw !== undefined) {
+@@ -67,19 +67,3 @@ export function createUniversalHandlerClient(uHandlers) {
+         };
+     };
+ }
+-/**
+- * Wrap a promise, and reject early if the given signal triggers before the
+- * promise is settled.
+- */
+-function raceSignal(signal, promise) {
+-    let cleanup;
+-    const signalPromise = new Promise((_, reject) => {
+-        const onAbort = () => reject(getAbortSignalReason(signal));
+-        if (signal.aborted) {
+-            return onAbort();
+-        }
+-        signal.addEventListener("abort", onAbort);
+-        cleanup = () => signal.removeEventListener("abort", onAbort);
+-    });
+-    return Promise.race([signalPromise, promise]).finally(cleanup);
+-}

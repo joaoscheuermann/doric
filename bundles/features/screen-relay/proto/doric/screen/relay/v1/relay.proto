@@ -1,0 +1,53 @@
+// `screen.relay/v1` (host, 1.1.0): the token tree of every Project screen,
+// served on the origin the host already exposes. The `screen` bundle
+// publishes each session's upstream here and mounts nothing itself; a
+// request under a token the relay does not hold answers 404.
+//
+// 1.1.0: the schemas move to `.proto` with the same fields.
+syntax = "proto3";
+
+package doric.screen.relay.v1;
+
+import "buf/validate/validate.proto";
+import "doric/platform/v1/options.proto";
+
+option (doric.platform.v1.contract) = {
+  id: "screen.relay/v1"
+  cardinality: CARDINALITY_ONE
+  environment: ENVIRONMENT_HOST
+};
+
+// The screen relay.
+service RelayService {
+  // Registers, or replaces, the upstream of one session token; answers once
+  // the relay serves it.
+  rpc Expose(ExposeRequest) returns (ExposeResponse);
+  // Drops a token; its requests answer 404 afterwards. An unknown token is
+  // a no-op.
+  rpc Forget(ForgetRequest) returns (ForgetResponse);
+}
+
+// One session's upstream, under the token its path carries.
+message ExposeRequest {
+  // The session token.
+  string token = 1 [(buf.validate.field).string.min_len = 1];
+  // The host of the session's xpra server, as the host reaches it.
+  string host = 2 [(buf.validate.field).string.min_len = 1];
+  // The port of the session's xpra server.
+  uint32 port = 3 [(buf.validate.field).uint32 = {
+    gt: 0
+    lte: 65535
+  }];
+}
+
+// The relay serves the token.
+message ExposeResponse {}
+
+// The token to drop.
+message ForgetRequest {
+  // The session token.
+  string token = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+// The token is dropped.
+message ForgetResponse {}

@@ -1,0 +1,475 @@
+// `runtime.records/v1` (client, 1.1.0): a window's mirror of the host's
+// Projects and Threads, provided by `runtime`'s client part in each window
+// over `runtime/v2` and `runtime.threads/v1`. Reads answer from the mirror;
+// loads and writes go to the host. A write calls the host and puts the
+// answer into the mirror before it answers; a write the host refuses fails
+// with the host's status.
+//
+// A read of the mirror is `loading` (a load is in flight; `value` is the
+// last settled answer, if any), `ready` (`value` is the host's answer, kept
+// current by its notices) or `failed` (the last load failed with `error`; a
+// failed refresh keeps the last `value`).
+//
+// 1.1.0: every getter is asynchronous; `subscribe` becomes the stream
+// `Watch`, whose first item holds the present reads.
+syntax = "proto3";
+
+package doric.runtime.records.v1;
+
+import "buf/validate/validate.proto";
+import "doric/platform/v1/options.proto";
+import "doric/runtime/v2/runtime.proto";
+import "google/protobuf/struct.proto";
+
+option (doric.platform.v1.contract) = {
+  id: "runtime.records/v1"
+  cardinality: CARDINALITY_ONE
+  environment: ENVIRONMENT_CLIENT
+};
+
+// The window's mirror of Projects and Threads.
+service RecordsService {
+  // The Project list. The first call starts the load of the list and
+  // answers `loading`; later calls answer from the mirror and start no
+  // load.
+  rpc Projects(ProjectsRequest) returns (ProjectsResponse);
+  // A Project of the loaded list; absent otherwise. Starts no load.
+  rpc Project(ProjectRequest) returns (ProjectResponse);
+  // The Threads of one Project. The first call for a Project starts the load
+  // of its Threads and answers `loading`; from then on the Project is
+  // described and its read is kept current.
+  rpc Threads(ThreadsRequest) returns (ThreadsResponse);
+  // A Thread of a described Project; absent otherwise. Starts no load.
+  rpc Thread(ThreadRequest) returns (ThreadResponse);
+  // Whether the window is connected to the host now.
+  rpc Connection(ConnectionRequest) returns (ConnectionResponse);
+  // The mirror's reads: the first item holds the present ones, and one item
+  // follows every change of a read's answer or of the connection. The
+  // caller ends it by cancelling.
+  rpc Watch(WatchRequest) returns (stream WatchResponse) {
+    option (doric.platform.v1.method).resumable = true;
+  }
+  // Keeps a Project and its Threads current while the stream is open. No
+  // item is sent; the caller ends it by cancelling.
+  rpc Follow(FollowRequest) returns (stream FollowResponse);
+  // Starts a read again, whatever its state; it answers `loading` with its
+  // last `value` until it settles.
+  rpc Reload(ReloadRequest) returns (ReloadResponse);
+  // Asks the host for one Thread, for a Project that is not described;
+  // absent when the host has no such Thread. Changes no read; fails when the
+  // host call fails.
+  rpc FindThread(FindThreadRequest) returns (FindThreadResponse);
+  // The activity of every Project, from the host. Changes no read; fails
+  // when the host call fails.
+  rpc Activity(ActivityRequest) returns (ActivityResponse);
+  // Creates a Project; the new Project is described with no Threads.
+  rpc CreateProject(CreateProjectRequest) returns (CreateProjectResponse);
+  // Renames a Project.
+  rpc RenameProject(RenameProjectRequest) returns (RenameProjectResponse);
+  // Sets a Project's color, or clears it when `color` is absent.
+  rpc SetProjectColor(SetProjectColorRequest) returns (SetProjectColorResponse);
+  // Terminates a Project.
+  rpc TerminateProject(TerminateProjectRequest) returns (TerminateProjectResponse);
+  // Deletes a Project; it and its Threads leave every read.
+  rpc DeleteProject(DeleteProjectRequest) returns (DeleteProjectResponse);
+  // Creates a Thread, under `parentThreadId` when given.
+  rpc CreateThread(CreateThreadRequest) returns (CreateThreadResponse);
+  // Renames a Thread.
+  rpc RenameThread(RenameThreadRequest) returns (RenameThreadResponse);
+  // Terminates a Thread.
+  rpc TerminateThread(TerminateThreadRequest) returns (TerminateThreadResponse);
+  // Deletes a Thread; it and its descendants leave every read.
+  rpc DeleteThread(DeleteThreadRequest) returns (DeleteThreadResponse);
+  // Archives a Thread and its idle, unpinned descendants as one batch.
+  rpc ArchiveThread(ArchiveThreadRequest) returns (ArchiveThreadResponse);
+  // Un-archives a Thread and its descendants of one batch: `batch`, else the
+  // Thread's own.
+  rpc RestoreThread(RestoreThreadRequest) returns (RestoreThreadResponse);
+  // Pins or unpins a Thread.
+  rpc SetThreadPinned(SetThreadPinnedRequest) returns (SetThreadPinnedResponse);
+  // Tells the host that this window shows the Thread while the stream is
+  // open. No item is sent; it changes no read and reports no failure.
+  rpc View(ViewRequest) returns (stream ViewResponse);
+}
+
+// The failure a failed read holds: the host's rejection.
+message RecordsError {
+  // The rejection's code.
+  string code = 1;
+  // The rejection's message.
+  string message = 2;
+  // Any other field the rejection carries.
+  optional google.protobuf.Struct details = 3;
+}
+
+// A list of Projects.
+message ProjectList {
+  // The Projects.
+  repeated doric.runtime.v2.Project projects = 1;
+}
+
+// A list of Threads.
+message ThreadList {
+  // The Threads.
+  repeated doric.runtime.v2.Thread threads = 1;
+}
+
+// One read of the Project list; today's `RecordsRead<Project[]>`.
+message ProjectsRead {
+  option (buf.validate.message).cel = {
+    id: "projects_read.value"
+    message: "a ready read carries a value"
+    expression: "this.status != 'ready' || has(this.value)"
+  };
+  option (buf.validate.message).cel = {
+    id: "projects_read.error"
+    message: "error is set exactly when failed"
+    expression: "(this.status == 'failed') == has(this.error)"
+  };
+  // "loading", "ready" or "failed".
+  string status = 1 [(buf.validate.field).string = {
+    in: [
+      "loading",
+      "ready",
+      "failed"
+    ]
+  }];
+  // The list; set when ready, and the last settled answer otherwise, if
+  // any.
+  optional ProjectList value = 2;
+  // Why the last load failed; set when failed.
+  optional RecordsError error = 3;
+}
+
+// One read of a Project's Threads; today's `RecordsRead<Thread[]>`.
+message ThreadsRead {
+  option (buf.validate.message).cel = {
+    id: "threads_read.value"
+    message: "a ready read carries a value"
+    expression: "this.status != 'ready' || has(this.value)"
+  };
+  option (buf.validate.message).cel = {
+    id: "threads_read.error"
+    message: "error is set exactly when failed"
+    expression: "(this.status == 'failed') == has(this.error)"
+  };
+  // "loading", "ready" or "failed".
+  string status = 1 [(buf.validate.field).string = {
+    in: [
+      "loading",
+      "ready",
+      "failed"
+    ]
+  }];
+  // The Threads; set when ready, and the last settled answer otherwise, if
+  // any.
+  optional ThreadList value = 2;
+  // Why the last load failed; set when failed.
+  optional RecordsError error = 3;
+}
+
+// Asks the Project list.
+message ProjectsRequest {}
+
+// The Project list's read.
+message ProjectsResponse {
+  // The read.
+  ProjectsRead projects_read = 1 [(buf.validate.field).required = true];
+}
+
+// Asks one Project of the loaded list.
+message ProjectRequest {
+  // The Project.
+  string project_id = 1;
+}
+
+// The Project, when the loaded list holds it.
+message ProjectResponse {
+  // The Project; absent when the loaded list holds none by that id.
+  optional doric.runtime.v2.Project project = 1;
+}
+
+// Asks a Project's Threads.
+message ThreadsRequest {
+  // The Project.
+  string project_id = 1;
+}
+
+// The read of the Project's Threads.
+message ThreadsResponse {
+  // The read.
+  ThreadsRead threads_read = 1 [(buf.validate.field).required = true];
+}
+
+// Asks one Thread of a described Project.
+message ThreadRequest {
+  // The Thread.
+  string thread_id = 1;
+}
+
+// The Thread, when a described Project holds it.
+message ThreadResponse {
+  // The Thread; absent when no described Project holds it.
+  optional doric.runtime.v2.Thread thread = 1;
+}
+
+// Asks the connection state.
+message ConnectionRequest {}
+
+// The connection state.
+message ConnectionResponse {
+  // "connected" or "disconnected".
+  string connection = 1 [(buf.validate.field).string = {
+    in: [
+      "connected",
+      "disconnected"
+    ]
+  }];
+}
+
+// Watches the mirror.
+message WatchRequest {}
+
+// The mirror's reads at one moment.
+message WatchResponse {
+  // The Project list's read.
+  ProjectsRead projects = 1 [(buf.validate.field).required = true];
+  // The Threads' read of every described Project, by Project id.
+  map<string, ThreadsRead> threads = 2;
+  // "connected" or "disconnected".
+  string connection = 3 [(buf.validate.field).string = {
+    in: [
+      "connected",
+      "disconnected"
+    ]
+  }];
+}
+
+// Keeps a Project current.
+message FollowRequest {
+  // The Project.
+  string project_id = 1;
+}
+
+// Never sent: a `Follow` stream carries no item.
+message FollowResponse {}
+
+// Starts a read again, named by today's `target`.
+message ReloadRequest {
+  // The read.
+  oneof target {
+    option (doric.platform.v1.oneof).discriminator = "target";
+    option (buf.validate.oneof).required = true;
+    // The Project list.
+    ReloadProjects projects = 1;
+    // One Project's Threads.
+    ReloadThreads threads = 2;
+  }
+}
+
+// The Project list's read.
+message ReloadProjects {}
+
+// One Project's Threads' read.
+message ReloadThreads {
+  // The Project.
+  string project_id = 1;
+}
+
+// The read started again.
+message ReloadResponse {}
+
+// Asks the host for one Thread.
+message FindThreadRequest {
+  // The Thread.
+  string thread_id = 1;
+}
+
+// The Thread, when the host has it.
+message FindThreadResponse {
+  // The Thread; absent when the host has none by that id.
+  optional doric.runtime.v2.Thread thread = 1;
+}
+
+// Asks every Project's activity.
+message ActivityRequest {}
+
+// Every Project's activity.
+message ActivityResponse {
+  // The Projects with their activity.
+  repeated doric.runtime.v2.ProjectActivity project_activity = 1;
+}
+
+// Creates a Project.
+message CreateProjectRequest {
+  // The display name.
+  string name = 1;
+}
+
+// The new Project.
+message CreateProjectResponse {
+  // The Project.
+  doric.runtime.v2.Project project = 1 [(buf.validate.field).required = true];
+}
+
+// Renames a Project.
+message RenameProjectRequest {
+  // The Project.
+  string project_id = 1;
+  // The new name.
+  string name = 2;
+}
+
+// The renamed Project.
+message RenameProjectResponse {
+  // The Project.
+  doric.runtime.v2.Project project = 1 [(buf.validate.field).required = true];
+}
+
+// Sets or clears a Project's color.
+message SetProjectColorRequest {
+  // The Project.
+  string project_id = 1;
+  // The new color, as `Project.color`; absent clears it.
+  optional string color = 2 [(buf.validate.field).string = {
+    in: [
+      "red",
+      "orange",
+      "amber",
+      "green",
+      "teal",
+      "blue",
+      "violet",
+      "pink"
+    ]
+  }];
+}
+
+// The Project.
+message SetProjectColorResponse {
+  // The Project.
+  doric.runtime.v2.Project project = 1 [(buf.validate.field).required = true];
+}
+
+// Terminates a Project.
+message TerminateProjectRequest {
+  // The Project.
+  string project_id = 1;
+}
+
+// The terminated Project.
+message TerminateProjectResponse {
+  // The Project.
+  doric.runtime.v2.Project project = 1 [(buf.validate.field).required = true];
+}
+
+// Deletes a Project.
+message DeleteProjectRequest {
+  // The Project.
+  string project_id = 1;
+}
+
+// The Project is deleted.
+message DeleteProjectResponse {}
+
+// Creates a Thread.
+message CreateThreadRequest {
+  // The Project.
+  string project_id = 1;
+  // The display name.
+  string name = 2;
+  // The parent Thread; a top-level Thread when absent.
+  optional string parent_thread_id = 3;
+}
+
+// The new Thread.
+message CreateThreadResponse {
+  // The Thread.
+  doric.runtime.v2.Thread thread = 1 [(buf.validate.field).required = true];
+}
+
+// Renames a Thread.
+message RenameThreadRequest {
+  // The Thread.
+  string thread_id = 1;
+  // The new name.
+  string name = 2;
+}
+
+// The renamed Thread.
+message RenameThreadResponse {
+  // The Thread.
+  doric.runtime.v2.Thread thread = 1 [(buf.validate.field).required = true];
+}
+
+// Terminates a Thread.
+message TerminateThreadRequest {
+  // The Thread.
+  string thread_id = 1;
+}
+
+// The terminated Thread.
+message TerminateThreadResponse {
+  // The Thread.
+  doric.runtime.v2.Thread thread = 1 [(buf.validate.field).required = true];
+}
+
+// Deletes a Thread.
+message DeleteThreadRequest {
+  // The Thread.
+  string thread_id = 1;
+}
+
+// The Thread is deleted.
+message DeleteThreadResponse {}
+
+// Archives a Thread.
+message ArchiveThreadRequest {
+  // The Thread.
+  string thread_id = 1;
+}
+
+// The archive.
+message ArchiveThreadResponse {
+  // The archive batch, which `RestoreThread` takes to undo.
+  string batch = 1;
+  // Every Thread the archive marked, the target first.
+  repeated doric.runtime.v2.Thread threads = 2;
+}
+
+// Restores an archived Thread.
+message RestoreThreadRequest {
+  // The Thread.
+  string thread_id = 1;
+  // The batch to restore; the Thread's own when absent.
+  optional string batch = 2;
+}
+
+// Every restored Thread.
+message RestoreThreadResponse {
+  // The restored Threads.
+  repeated doric.runtime.v2.Thread threads = 1;
+}
+
+// Pins or unpins a Thread.
+message SetThreadPinnedRequest {
+  // The Thread.
+  string thread_id = 1;
+  // True to pin, false to unpin.
+  bool pinned = 2;
+}
+
+// The Thread.
+message SetThreadPinnedResponse {
+  // The Thread.
+  doric.runtime.v2.Thread thread = 1 [(buf.validate.field).required = true];
+}
+
+// Tells the host the window shows a Thread.
+message ViewRequest {
+  // The Thread.
+  string thread_id = 1;
+}
+
+// Never sent: a `View` stream carries no item.
+message ViewResponse {}

@@ -1,0 +1,76 @@
+// `chat.lexical/v1` (client, 1.1.0): the Lexical nodes and extensions other
+// bundles add to the window's conversation editor. A registration names
+// exports of the caller's own client module, which `chat`'s client part
+// imports from the module namespace the in-window directory knows for the
+// caller; no class or object crosses the contract. `chat`'s client part
+// provides it; only client parts of the same window call it.
+//
+// The list freezes when the window's first conversation editor is created:
+// a registration after that fails with `frozen`, and ending a registration
+// after it leaves the frozen list as it was, since a live editor cannot drop
+// a node class.
+//
+// 1.1.0: `registerNodes` and `registerExtension` name exports instead of
+// passing classes; each answers a `registrationId` and `Unregister`
+// replaces the `Disposable`.
+syntax = "proto3";
+
+package doric.chat.lexical.v1;
+
+import "buf/validate/validate.proto";
+import "doric/platform/v1/options.proto";
+
+option (doric.platform.v1.contract) = {
+  id: "chat.lexical/v1"
+  cardinality: CARDINALITY_ONE
+  environment: ENVIRONMENT_CLIENT
+};
+
+// The conversation editor's nodes and extensions.
+service LexicalService {
+  // Adds the Lexical node classes the named exports of the caller's client
+  // module hold. Fails with `invalid_input` when an export is missing or is
+  // not a node class, and with `frozen` once the first conversation editor
+  // exists; nothing is registered then.
+  rpc RegisterNodes(RegisterNodesRequest) returns (RegisterNodesResponse);
+  // Adds the Lexical extension the named export of the caller's client
+  // module holds. Fails as `RegisterNodes` does.
+  rpc RegisterExtension(RegisterExtensionRequest) returns (RegisterExtensionResponse);
+  // Ends a registration; before the freeze its nodes or extension leave the
+  // list, after it the list stays as it was. An unknown or ended id is a
+  // no-op.
+  rpc Unregister(UnregisterRequest) returns (UnregisterResponse);
+}
+
+// Adds node classes.
+message RegisterNodesRequest {
+  // The names of the exports, each holding one node class; empty for none.
+  repeated string exports = 1 [(buf.validate.field).repeated.items.string.min_len = 1];
+}
+
+// The nodes' registration.
+message RegisterNodesResponse {
+  // The id `Unregister` takes.
+  string registration_id = 1;
+}
+
+// Adds an extension.
+message RegisterExtensionRequest {
+  // The name of the export that holds the extension.
+  string export = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+// The extension's registration.
+message RegisterExtensionResponse {
+  // The id `Unregister` takes.
+  string registration_id = 1;
+}
+
+// Ends a registration.
+message UnregisterRequest {
+  // The id a registration answered.
+  string registration_id = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+// The registration is gone.
+message UnregisterResponse {}

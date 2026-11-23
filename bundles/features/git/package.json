@@ -10,9 +10,16 @@
       "types": "./dist/contracts/index.d.ts",
       "import": "./dist/contracts/index.js",
       "default": "./dist/contracts/index.js"
+    },
+    "./contracts/gen/*": {
+      "@org/source": "./src/contracts/gen/*",
+      "types": "./dist/contracts/gen/*",
+      "import": "./dist/contracts/gen/*",
+      "default": "./dist/contracts/gen/*"
     }
   },
   "dependencies": {
+    "@bufbuild/protobuf": "^2.17.0",
     "bundle": "0.0.1",
     "files": "0.0.1",
     "runtime": "0.0.1",
@@ -26,6 +33,7 @@
     "@tanstack/query-core": "^5.104.1",
     "@tanstack/react-query": "^5.104.1",
     "desktop": "1.0.0",
+    "esbuild": "0.28.2",
     "happy-dom": "20.8.9",
     "layout": "0.0.1",
     "lucide-react": "^0.544.0",

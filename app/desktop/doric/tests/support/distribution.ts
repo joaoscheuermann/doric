@@ -23,6 +23,12 @@ export interface FixtureBundle {
   readonly engines?: string;
   readonly provides?: readonly FixtureContract[];
   readonly requires?: readonly string[];
+  /**
+   * Requirements per part: with either set, the manifest is version 2 and
+   * `requires` is ignored (A41).
+   */
+  readonly host?: FixturePartLists;
+  readonly client?: FixturePartLists;
   /** The window scope keys each provided contract accepts (`desktopScope`). */
   readonly desktopScope?: Readonly<Record<string, readonly string[]>>;
   /** dist-relative path → content. */
@@ -32,6 +38,16 @@ export interface FixtureBundle {
   readonly reasons?: DistributionBundle['reasons'];
   readonly phase?: 'foundation' | 'core' | 'others';
 }
+
+export interface FixturePartLists {
+  readonly requires?: readonly string[];
+  readonly optional?: readonly string[];
+}
+
+const partLists = (lists: FixturePartLists | undefined) => ({
+  requires: [...(lists?.requires ?? [])],
+  optional: [...(lists?.optional ?? [])],
+});
 
 const sha256 = (content: string): string =>
   createHash('sha256').update(content).digest('hex');
@@ -56,19 +72,30 @@ export const fixtureDistribution = (input: {
   const bundles: DistributionBundle[] = input.bundles.map((bundle) => {
     const version = bundle.version ?? '1.0.0';
     const provides = bundle.provides ?? [];
-    const manifest = {
-      manifestVersion: 1 as const,
+    const common = {
       id: bundle.id,
       version,
       engines: { doric: bundle.engines ?? '^1.0.0' },
       provides: [...new Set(provides.map((contract) => contract.id))].map(
         (id) => `${id}@1.0.0`,
       ),
-      requires: [...(bundle.requires ?? [])],
       ...(bundle.desktopScope === undefined
         ? {}
         : { desktopScope: bundle.desktopScope }),
     };
+    const manifest: NonNullable<DistributionBundle['manifest']> =
+      bundle.host === undefined && bundle.client === undefined
+        ? {
+            manifestVersion: 1,
+            ...common,
+            requires: [...(bundle.requires ?? [])],
+          }
+        : {
+            manifestVersion: 2,
+            ...common,
+            host: partLists(bundle.host),
+            client: partLists(bundle.client),
+          };
     const descriptor = {
       descriptorVersion: 1,
       bundle: { id: bundle.id, version },

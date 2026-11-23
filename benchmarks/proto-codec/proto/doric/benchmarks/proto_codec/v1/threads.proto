@@ -1,0 +1,181 @@
+// Draft of a `runtime.threads/v1.WatchThread` item, for the phase 0 codec
+// benchmark (docs/designs/grpc-processes.md, section 8, "The benchmark"). It
+// follows section 8's message rules: closed sets are strings, numbers that may
+// pass 32 bits are `double`, `unknown` is `google.protobuf.Value`.
+syntax = "proto3";
+
+package doric.benchmarks.proto_codec.v1;
+
+import "buf/validate/validate.proto";
+import "doric/platform/v1/options.proto";
+import "google/protobuf/struct.proto";
+
+// One item of the stream; today's `ThreadWatchItem`.
+message WatchThreadResponse {
+  // The item, discriminated by `kind` today.
+  oneof item {
+    option (doric.platform.v1.oneof).discriminator = "kind";
+    // The first item: the Thread and the events after `afterSequence`.
+    ThreadSnapshot snapshot = 1;
+    // A live event, after the snapshot.
+    ThreadEvent event = 2;
+    // The Thread's record changed.
+    Thread updated = 3;
+    // The Thread was deleted.
+    ThreadDeleted deleted = 4;
+  }
+}
+
+// `thread:snapshot`: an unknown Thread answers no project, no thread and no events.
+message ThreadSnapshot {
+  // The Thread's id.
+  string thread_id = 1 [(buf.validate.field).string.min_len = 1];
+  // The Thread's Project, when the Thread exists.
+  optional string project_id = 2;
+  // The Project's record.
+  optional Project project = 3;
+  // The Thread's record.
+  optional Thread thread = 4;
+  // The events after `afterSequence`, in order.
+  repeated ThreadEvent events = 5;
+}
+
+// `thread:deleted`.
+message ThreadDeleted {
+  // The Project of the deleted Thread.
+  string project_id = 1 [(buf.validate.field).string.min_len = 1];
+  // The deleted Thread.
+  string thread_id = 2 [(buf.validate.field).string.min_len = 1];
+}
+
+// A persisted event of a Thread; today's `ThreadEvent`.
+message ThreadEvent {
+  // The Project.
+  string project_id = 1;
+  // The Thread.
+  string thread_id = 2;
+  // The prompt the event belongs to.
+  string prompt_id = 3;
+  // The position of the event in the Thread, from 1.
+  uint32 sequence = 4;
+  // The event's type.
+  string type = 5;
+  // The event itself, JSON.
+  google.protobuf.Value event = 6;
+  // When the event was stored (ISO-8601).
+  string created_at = 7;
+}
+
+// A Project's record; today's `Project`.
+message Project {
+  // The id.
+  string id = 1;
+  // The name.
+  string name = 2;
+  // One of today's project colors.
+  optional string color = 3;
+  // The state.
+  string state = 4 [(buf.validate.field).string = {
+    in: ["queued", "ready", "cancelling", "cancelled", "failed"]
+  }];
+  // Grows with each configuration change.
+  uint32 config_revision = 5;
+  // Why the Project failed.
+  optional string error_code = 6;
+  // ISO-8601.
+  string created_at = 7;
+  // ISO-8601.
+  string updated_at = 8;
+  // ISO-8601.
+  optional string started_at = 9;
+  // ISO-8601.
+  optional string finished_at = 10;
+}
+
+// The result of a Thread's last prompt.
+message ThreadOutcome {
+  // The status.
+  string status = 1;
+  // The text.
+  string text = 2;
+  // The prompt.
+  string prompt_id = 3;
+  // ISO-8601.
+  string at = 4;
+}
+
+// The agent a Thread runs.
+message ThreadAgent {
+  // The agent's name.
+  string name = 1;
+  // Where the definition came from.
+  string source = 2 [(buf.validate.field).string = {
+    in: ["built-in", "workspace"]
+  }];
+}
+
+// A Thread's record; today's `Thread`.
+message Thread {
+  // The id.
+  string id = 1;
+  // The Project.
+  string project_id = 2;
+  // The parent Thread of a child.
+  optional string parent_thread_id = 3;
+  // Who started it.
+  optional string origin = 4 [(buf.validate.field).string = {
+    in: ["user", "agent"]
+  }];
+  // The name.
+  string name = 5;
+  // The state.
+  string state = 6 [(buf.validate.field).string = {
+    in: ["queued", "ready", "running", "cancelling", "cancelled", "failed"]
+  }];
+  // The sequence of the last event.
+  uint32 last_sequence = 7;
+  // Whether the prompt queue is paused.
+  optional bool queue_paused = 8;
+  // The working directory.
+  string cwd = 9;
+  // The kind of repository at `cwd`.
+  optional string cwd_repo = 10 [(buf.validate.field).string = {
+    in: ["git", "github"]
+  }];
+  // The prompt that runs.
+  optional string active_prompt_id = 11;
+  // ISO-8601.
+  optional string execution_started_at = 12;
+  // Milliseconds.
+  optional double last_execution_ms = 13 [(buf.validate.field).cel = {
+    id: "whole_number"
+    message: "must be a whole number"
+    expression: "this == double(int(this))"
+  }];
+  // Why the Thread failed.
+  optional string error_code = 14;
+  // ISO-8601.
+  string created_at = 15;
+  // ISO-8601.
+  string updated_at = 16;
+  // ISO-8601.
+  optional string started_at = 17;
+  // ISO-8601.
+  optional string finished_at = 18;
+  // The last prompt's result.
+  optional ThreadOutcome result = 19;
+  // The agent.
+  optional ThreadAgent agent = 20;
+  // The model.
+  optional string model = 21;
+  // The reasoning effort.
+  optional string effort = 22 [(buf.validate.field).string = {
+    in: ["none", "minimal", "low", "medium", "high", "xhigh", "max"]
+  }];
+  // The provider.
+  optional string provider_id = 23;
+  // ISO-8601.
+  optional string archived_at = 24;
+  // Whether the Thread is pinned.
+  optional bool pinned = 25;
+}

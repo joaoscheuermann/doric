@@ -1,0 +1,563 @@
+// `sandbox/v1` (host, 1.1.0): the Project sandboxes the runtime leases. The
+// contract is declared by `runtime` and provided by `docker` or `firecracker`;
+// `runtime` and `transport` call it. A lease is an id: `Acquire` answers one,
+// every sandbox operation names it, and `Release` ends it. A lease belongs to
+// the instance that acquired it, and the provider releases it when that
+// instance is gone. An operation on a lease that is unknown, released or owned
+// by another instance fails with `NOT_FOUND`, reason `unknown_lease`.
+//
+// The operations' content messages (`SandboxExecInput`, `SandboxExecResult`,
+// ...) are declared here once; `runtime.lease/v1` holds the same messages in
+// requests and responses of its own.
+//
+// 1.1.0: `acquire` answers a `leaseId` instead of a live lease; each sandbox
+// operation is a method keyed by the `leaseId`; `Release` replaces `release`;
+// cancelling `Acquire` replaces its abort signal.
+syntax = "proto3";
+
+package doric.sandbox.v1;
+
+import "buf/validate/validate.proto";
+import "doric/platform/v1/options.proto";
+
+option (doric.platform.v1.contract) = {
+  id: "sandbox/v1"
+  cardinality: CARDINALITY_ONE
+  environment: ENVIRONMENT_HOST
+};
+
+// The Project sandboxes and the operations on a leased one.
+service SandboxService {
+  // What the active provider is (logs and `GET /vms`).
+  rpc Describe(DescribeRequest) returns (DescribeResponse);
+  // Acquires the named sandbox of a Project, provisioning it when needed, and
+  // answers its lease. Cancelling the call abandons the acquisition.
+  rpc Acquire(AcquireRequest) returns (AcquireResponse);
+  // Ends a lease; an unknown or already released lease is a no-op.
+  rpc Release(ReleaseRequest) returns (ReleaseResponse);
+  // Discards a deleted Project's durable workspace (a Docker volume; a no-op
+  // for Firecracker).
+  rpc Discard(DiscardRequest) returns (DiscardResponse);
+  // The machines this provider provisioned and has not disposed yet.
+  rpc Machines(MachinesRequest) returns (MachinesResponse);
+  // One machine of this provider; absent when it has none by that id.
+  rpc Machine(MachineRequest) returns (MachineResponse);
+  // Runs one command to its end and answers its output.
+  rpc Exec(ExecRequest) returns (ExecResponse);
+  // Starts a live process. The first request item is the head; the next ones
+  // write to its stdin or resize its terminal. The answer items are its
+  // output, then one `exit` item, after which the stream ends. Cancelling the
+  // call terminates the process tree. A sandbox that cannot start live
+  // processes fails the call with `UNIMPLEMENTED`.
+  rpc Start(stream StartRequest) returns (stream StartResponse);
+  // What the sandbox consumes now; absent when its provider offers no
+  // reading. A read: it never provisions, restarts or interrupts anything.
+  rpc Stats(StatsRequest) returns (StatsResponse);
+  // Clones a Git repository into the sandbox.
+  rpc CloneRepo(CloneRepoRequest) returns (CloneRepoResponse);
+  // Reads one file as UTF-8 text.
+  rpc ReadFile(ReadFileRequest) returns (ReadFileResponse);
+  // Writes one file as UTF-8 text, replacing it.
+  rpc WriteFile(WriteFileRequest) returns (WriteFileResponse);
+  // Writes one file's exact bytes: a head, then the bytes in chunks, written
+  // when the stream ends.
+  rpc PutFile(stream PutFileRequest) returns (PutFileResponse);
+  // Reads one file's exact bytes, in chunks; an empty file answers no item.
+  rpc GetFile(GetFileRequest) returns (stream GetFileResponse);
+  // The unified diff of the workspace, or of some of its paths.
+  rpc Diff(DiffRequest) returns (DiffResponse);
+  // The SSH access of the sandbox; absent when it offers none.
+  rpc Ssh(SshRequest) returns (SshResponse);
+}
+
+// A machine a provider provisioned.
+message RunningMachine {
+  // The machine's id.
+  string id = 1;
+  // The provider that runs it: "docker" or "firecracker" today.
+  string provider = 2;
+}
+
+// How a sandbox's SSH server is reached.
+message SandboxSshAccess {
+  // The host to connect to.
+  string host = 1;
+  // The port to connect to.
+  int32 port = 2 [(buf.validate.field).int32 = {
+    gte: 1
+    lte: 65535
+  }];
+  // Always "root".
+  string username = 3 [(buf.validate.field).string.const = "root"];
+  // The private key that authenticates as `username`, PEM.
+  string private_key = 4 [(doric.platform.v1.field).secret = true];
+  // The `known_hosts` line of the sandbox's host key.
+  string known_hosts = 5;
+  // The fingerprint of the sandbox's host key.
+  string host_key_fingerprint = 6;
+}
+
+// One command to run in a sandbox.
+message SandboxExecInput {
+  // The command and its arguments; at least the command.
+  repeated string cmd = 1 [(buf.validate.field).repeated.min_items = 1];
+  // The working directory; the sandbox's default when absent.
+  optional string cwd = 2;
+  // Extra environment entries, each `NAME=value`.
+  repeated string env = 3;
+  // The user to run as; the sandbox's default when absent.
+  optional string user = 4;
+  // How long the command may run, in milliseconds, a whole number; no limit
+  // when absent.
+  optional double timeout_ms = 5 [
+    (buf.validate.field).double.gt = 0,
+    (buf.validate.field).cel = {
+      id: "timeout_ms.integer"
+      message: "timeoutMs must be a whole number of milliseconds"
+      expression: "this == double(int(this))"
+    }
+  ];
+  // Whether the command gets a terminal, which merges stderr into stdout.
+  optional bool tty = 6;
+}
+
+// What one command produced.
+message SandboxExecResult {
+  // The exit code; absent when the command ended without one (a signal, a
+  // timeout).
+  optional int32 exit_code = 1;
+  // The standard output, decoded as UTF-8.
+  string stdout = 2;
+  // The standard error, decoded as UTF-8.
+  string stderr = 3;
+  // The standard output's exact bytes.
+  bytes stdout_bytes = 4;
+  // The standard error's exact bytes.
+  bytes stderr_bytes = 5;
+}
+
+// One live process to start: a command and its terminal size.
+message SandboxProcessInput {
+  // The command and its arguments; at least the command.
+  repeated string cmd = 1 [(buf.validate.field).repeated.min_items = 1];
+  // The working directory; the sandbox's default when absent.
+  optional string cwd = 2;
+  // Extra environment entries, each `NAME=value`.
+  repeated string env = 3;
+  // The user to run as; the sandbox's default when absent.
+  optional string user = 4;
+  // How long the process may run, in milliseconds, a whole number; no limit
+  // when absent.
+  optional double timeout_ms = 5 [
+    (buf.validate.field).double.gt = 0,
+    (buf.validate.field).cel = {
+      id: "timeout_ms.integer"
+      message: "timeoutMs must be a whole number of milliseconds"
+      expression: "this == double(int(this))"
+    }
+  ];
+  // Whether the process gets a terminal; a terminal merges stderr into
+  // stdout.
+  optional bool tty = 6;
+  // The terminal's columns.
+  optional int32 cols = 7 [(buf.validate.field).int32.gt = 0];
+  // The terminal's rows.
+  optional int32 rows = 8 [(buf.validate.field).int32.gt = 0];
+}
+
+// A new terminal size for a live process.
+message SandboxProcessResize {
+  // The terminal's columns.
+  int32 cols = 1 [(buf.validate.field).int32.gt = 0];
+  // The terminal's rows.
+  int32 rows = 2 [(buf.validate.field).int32.gt = 0];
+}
+
+// Output of a live process, in the order it was produced.
+message SandboxProcessOutput {
+  // "stdout" or "stderr".
+  string stream = 1 [(buf.validate.field).string = {
+    in: [
+      "stdout",
+      "stderr"
+    ]
+  }];
+  // The text, decoded as UTF-8.
+  string data = 2;
+}
+
+// A sandbox's resource reading.
+message SandboxStats {
+  // The sandbox's busy share of its own CPU allotment, 0 to 100.
+  optional double cpu_percent = 1 [(buf.validate.field).double = {
+    gte: 0
+    lte: 100
+  }];
+  // The cores the sandbox's quota allows, where the provider knows them.
+  optional double cpu_count = 2 [(buf.validate.field).double.gte = 0];
+  // The memory in use, in bytes, a whole number.
+  optional double memory_used_bytes = 3 [
+    (buf.validate.field).double.gte = 0,
+    (buf.validate.field).cel = {
+      id: "memory_used_bytes.integer"
+      message: "memoryUsedBytes must be a whole number"
+      expression: "this == double(int(this))"
+    }
+  ];
+  // The memory the sandbox is held to, in bytes; absent where none is
+  // enforced.
+  optional double memory_limit_bytes = 4 [
+    (buf.validate.field).double.gte = 0,
+    (buf.validate.field).cel = {
+      id: "memory_limit_bytes.integer"
+      message: "memoryLimitBytes must be a whole number"
+      expression: "this == double(int(this))"
+    }
+  ];
+  // When the reading was taken (ISO-8601).
+  string at = 5;
+}
+
+// The credential a clone authenticates with, named by today's `kind`.
+message GitAuth {
+  // The credential.
+  oneof kind {
+    option (doric.platform.v1.oneof).discriminator = "kind";
+    option (buf.validate.oneof).required = true;
+    // A token, with an optional user name.
+    GitTokenAuth token = 1;
+    // A user name and a password.
+    GitBasicAuth basic = 2;
+  }
+}
+
+// A token credential.
+message GitTokenAuth {
+  // The token.
+  string token = 1 [(doric.platform.v1.field).secret = true];
+  // The user name sent with it; the provider's default when absent.
+  optional string username = 2;
+}
+
+// A user name and password credential.
+message GitBasicAuth {
+  // The user name.
+  string username = 1;
+  // The password.
+  string password = 2 [(doric.platform.v1.field).secret = true];
+}
+
+// A repository to clone.
+message CloneRepoInput {
+  // The repository's URL.
+  string url = 1 [(buf.validate.field).string.min_len = 1];
+  // The directory to clone into; derived from the URL when absent.
+  optional string directory = 2;
+  // The branch to check out; the remote's default when absent.
+  optional string branch = 3;
+  // The commit to check out after the clone.
+  optional string commit = 4;
+  // The credential; none when absent.
+  optional GitAuth auth = 5;
+  // How long the clone may run, in milliseconds, a whole number.
+  optional double timeout_ms = 6 [
+    (buf.validate.field).double.gt = 0,
+    (buf.validate.field).cel = {
+      id: "timeout_ms.integer"
+      message: "timeoutMs must be a whole number of milliseconds"
+      expression: "this == double(int(this))"
+    }
+  ];
+}
+
+// A cloned repository.
+message ClonedRepo {
+  // Where it was cloned, absolute in the sandbox.
+  string path = 1;
+  // The commit checked out.
+  string commit = 2;
+}
+
+// One file to read as text.
+message ReadFileInput {
+  // The file, absolute or relative to the sandbox root.
+  string path = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+// One file read as text.
+message ReadFileOutput {
+  // The file's content, decoded as UTF-8.
+  string content = 1;
+}
+
+// One file to write as text.
+message WriteFileInput {
+  // The file, absolute or relative to the sandbox root.
+  string path = 1 [(buf.validate.field).string.min_len = 1];
+  // The new content, written as UTF-8.
+  string content = 2;
+}
+
+// One file to write as bytes.
+message PutFileInput {
+  // The file, absolute or relative to the sandbox root.
+  string path = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+// One file to read as bytes.
+message GetFileInput {
+  // The file, absolute or relative to the sandbox root.
+  string path = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+// What a diff covers.
+message SandboxDiffInput {
+  // The directory the diff runs in; the workspace root when absent.
+  optional string cwd = 1;
+  // Workspace-relative paths that scope the diff; empty is the whole tree.
+  repeated string paths = 2;
+}
+
+// A diff of the workspace.
+message DiffOutput {
+  // The unified diff; empty when nothing changed.
+  string diff = 1;
+}
+
+// Asks what the provider is.
+message DescribeRequest {}
+
+// The active provider; today's `SandboxDescription`.
+message DescribeResponse {
+  // The provider: "docker" or "firecracker" today.
+  string provider = 1;
+  // Whether the provider keeps a named durable workspace per Project (Docker
+  // does; Firecracker does not).
+  bool durable_workspace = 2;
+}
+
+// Acquires a Project's sandbox.
+message AcquireRequest {
+  // The Project's sandbox identity.
+  string identity = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+// The new lease.
+message AcquireResponse {
+  // The id every operation on the lease takes.
+  string lease_id = 1;
+  // The leased sandbox's id.
+  string sandbox_id = 2;
+  // The leased sandbox's workspace root, absolute.
+  string root = 3;
+}
+
+// Ends a lease.
+message ReleaseRequest {
+  // The lease.
+  string lease_id = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+// The lease is released.
+message ReleaseResponse {}
+
+// Discards a deleted Project's durable workspace.
+message DiscardRequest {
+  // The Project's sandbox identity.
+  string identity = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+// The workspace is discarded.
+message DiscardResponse {}
+
+// Asks the provider's machines.
+message MachinesRequest {}
+
+// The provider's machines.
+message MachinesResponse {
+  // The machines provisioned and not disposed yet.
+  repeated RunningMachine machines = 1;
+}
+
+// Asks one machine.
+message MachineRequest {
+  // The machine's id.
+  string id = 1;
+}
+
+// One machine, when the provider has it.
+message MachineResponse {
+  // The machine; absent when the provider has none by that id.
+  optional RunningMachine running_machine = 1;
+}
+
+// Runs one command on a lease.
+message ExecRequest {
+  // The lease.
+  string lease_id = 1 [(buf.validate.field).string.min_len = 1];
+  // The command.
+  SandboxExecInput request = 2 [(buf.validate.field).required = true];
+}
+
+// The command's output.
+message ExecResponse {
+  // What the command produced.
+  SandboxExecResult response = 1 [(buf.validate.field).required = true];
+}
+
+// The first item of a `Start` stream.
+message StartHead {
+  // The lease.
+  string lease_id = 1 [(buf.validate.field).string.min_len = 1];
+  // The process to start.
+  SandboxProcessInput request = 2 [(buf.validate.field).required = true];
+}
+
+// One item a `Start` caller sends: the head first, and only first, then
+// writes and resizes.
+message StartRequest {
+  // The item.
+  oneof item {
+    option (buf.validate.oneof).required = true;
+    // The process to start; the first item.
+    StartHead head = 1;
+    // Text written to the process's stdin.
+    string write = 2;
+    // A new terminal size.
+    SandboxProcessResize resize = 3;
+  }
+}
+
+// One item of a live process: its output, then its exit.
+message StartResponse {
+  // The item.
+  oneof item {
+    option (buf.validate.oneof).required = true;
+    // Output, in the order produced.
+    SandboxProcessOutput output = 1;
+    // The process ended; the last item. Its output holds at most the last MiB
+    // of each stream.
+    SandboxExecResult exit = 2;
+  }
+}
+
+// Asks a lease's resource reading.
+message StatsRequest {
+  // The lease.
+  string lease_id = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+// The resource reading, when the provider offers one.
+message StatsResponse {
+  // The reading; absent when the provider offers none.
+  optional SandboxStats response = 1;
+}
+
+// Clones a repository on a lease.
+message CloneRepoRequest {
+  // The lease.
+  string lease_id = 1 [(buf.validate.field).string.min_len = 1];
+  // The repository to clone.
+  CloneRepoInput request = 2 [(buf.validate.field).required = true];
+}
+
+// The cloned repository.
+message CloneRepoResponse {
+  // Where it was cloned and the commit checked out.
+  ClonedRepo response = 1 [(buf.validate.field).required = true];
+}
+
+// Reads one file as text on a lease.
+message ReadFileRequest {
+  // The lease.
+  string lease_id = 1 [(buf.validate.field).string.min_len = 1];
+  // The file.
+  ReadFileInput request = 2 [(buf.validate.field).required = true];
+}
+
+// The file's text.
+message ReadFileResponse {
+  // The content.
+  ReadFileOutput response = 1 [(buf.validate.field).required = true];
+}
+
+// Writes one file as text on a lease.
+message WriteFileRequest {
+  // The lease.
+  string lease_id = 1 [(buf.validate.field).string.min_len = 1];
+  // The file and its content.
+  WriteFileInput request = 2 [(buf.validate.field).required = true];
+}
+
+// The file is written.
+message WriteFileResponse {}
+
+// The first item of a `PutFile` stream.
+message PutFileHead {
+  // The lease.
+  string lease_id = 1 [(buf.validate.field).string.min_len = 1];
+  // The file to write.
+  PutFileInput request = 2 [(buf.validate.field).required = true];
+}
+
+// One item a `PutFile` caller sends: the head first, and only first, then
+// the bytes in chunks; the file's bytes are the chunks' concatenation.
+message PutFileRequest {
+  // The item.
+  oneof item {
+    option (buf.validate.oneof).required = true;
+    // The file to write; the first item.
+    PutFileHead head = 1;
+    // The file's next bytes, at most 1 MiB.
+    bytes chunk = 2 [(buf.validate.field).bytes = {
+      min_len: 1
+      max_len: 1048576
+    }];
+  }
+}
+
+// The file is written.
+message PutFileResponse {}
+
+// Reads one file's bytes on a lease.
+message GetFileRequest {
+  // The lease.
+  string lease_id = 1 [(buf.validate.field).string.min_len = 1];
+  // The file.
+  GetFileInput request = 2 [(buf.validate.field).required = true];
+}
+
+// One chunk of the file's bytes; the file is the chunks' concatenation.
+message GetFileResponse {
+  // The file's next bytes, at most 1 MiB.
+  bytes chunk = 1 [(buf.validate.field).bytes = {
+    min_len: 1
+    max_len: 1048576
+  }];
+}
+
+// Diffs the workspace of a lease.
+message DiffRequest {
+  // The lease.
+  string lease_id = 1 [(buf.validate.field).string.min_len = 1];
+  // What the diff covers; the whole workspace when absent.
+  optional SandboxDiffInput request = 2;
+}
+
+// The workspace's diff.
+message DiffResponse {
+  // The diff.
+  DiffOutput response = 1 [(buf.validate.field).required = true];
+}
+
+// Asks a lease's SSH access.
+message SshRequest {
+  // The lease.
+  string lease_id = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+// The SSH access, when the sandbox offers one.
+message SshResponse {
+  // The access; absent when the sandbox offers none.
+  optional SandboxSshAccess response = 1;
+}

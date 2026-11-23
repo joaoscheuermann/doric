@@ -74,7 +74,8 @@ never used ([`services/lease.ts`](src/host/services/lease.ts)).
 
 The package is `runtime` ([`package.json`](package.json)). It exports
 `runtime/contracts` ([`src/contracts/index.ts`](src/contracts/index.ts)) and
-`runtime/testing` ([`src/testing.ts`](src/testing.ts)). `runtime/contracts` is
+`runtime/testing` ([`src/testing.ts`](src/testing.ts)), and `runtime/contracts/gen/*`, the
+protobuf-es code `generate-proto` writes from `proto/`. `runtime/contracts` is
 browser-safe: it holds contract refs, zod schemas, types and pure functions,
 and imports only `zod` and `bundle/contracts` at run time; its imports from
 `sandbox`, `sandpool` and `host-config/contracts` are type-only (the

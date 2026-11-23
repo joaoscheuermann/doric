@@ -1,0 +1,146 @@
+// `settings/v1` (host, 1.1.0): the settings spaces of the bundles. A space is
+// a settings id whose value is the message with the option
+// `(doric.platform.v1.settings).id` of that id; a value crosses as a
+// `google.protobuf.Any` of that message, validated against its descriptor.
+// Errors: `unknown_settings` (the id is not registered), `settings_missing`
+// (the space was never set and its message refuses an empty value),
+// `settings_conflict` (`expectedRevision` does not match) and `invalid_input`
+// (the value fails its message's rules).
+//
+// 1.1.0: `subscribe` becomes the stream `Watch`; a settings schema is named
+// by `messageType`; the desktopMain provider is removed.
+syntax = "proto3";
+
+package doric.settings.v1;
+
+import "buf/validate/validate.proto";
+import "doric/platform/v1/options.proto";
+import "google/protobuf/any.proto";
+
+option (doric.platform.v1.contract) = {
+  id: "settings/v1"
+  cardinality: CARDINALITY_ONE
+  environment: ENVIRONMENT_HOST
+};
+
+// The settings spaces.
+service SettingsService {
+  // Registers a settings id for the calling bundle and answers a
+  // `registrationId`.
+  rpc Register(RegisterRequest) returns (RegisterResponse);
+  // Removes a registration; an unknown id is a no-op.
+  rpc Unregister(UnregisterRequest) returns (UnregisterResponse);
+  // The space's value.
+  rpc Get(GetRequest) returns (GetResponse);
+  // The space's value with its revision, version and write time.
+  rpc Entry(EntryRequest) returns (EntryResponse);
+  // Writes the space's value and answers the entry the write produced.
+  rpc Set(SetRequest) returns (SetResponse);
+  // Streams the space's entry: the present entry first when the space was
+  // ever written, then one item per write.
+  rpc Watch(WatchRequest) returns (stream WatchResponse) {
+    option (doric.platform.v1.method).resumable = true;
+  }
+}
+
+// One settings space: its value, a revision for optimistic writes and its
+// version.
+message SettingsEntry {
+  // The value, a message of the space's `messageType`.
+  google.protobuf.Any value = 1 [(buf.validate.field).required = true];
+  // The space's revision, a whole number; it grows by one on every write.
+  double revision = 2 [(buf.validate.field).cel = {
+    id: "revision.integer"
+    message: "revision must be a whole number"
+    expression: "this == double(int(this))"
+  }];
+  // The owner's contract version from `provides`.
+  string version = 3;
+  // When the space was last written (ISO-8601, milliseconds, UTC).
+  string updated_at = 4;
+  // The global settings generation counter after that write, a whole number.
+  double generation = 5 [(buf.validate.field).cel = {
+    id: "generation.integer"
+    message: "generation must be a whole number"
+    expression: "this == double(int(this))"
+  }];
+}
+
+// Registers a settings id.
+message RegisterRequest {
+  // The settings id, `<name>/v<major>` (for example
+  // "host-config.configuration/v1").
+  string id = 1 [(buf.validate.field).string.pattern = "^[a-z][a-z0-9-]*(\\.[a-z0-9-]+)*/v[1-9][0-9]*$"];
+  // The full name of the value's message, which has the option
+  // `(doric.platform.v1.settings).id` of `id`; read from the catalog's
+  // descriptors.
+  string message_type = 2 [(buf.validate.field).string.pattern = "^[A-Za-z_][A-Za-z0-9_]*(\\.[A-Za-z_][A-Za-z0-9_]*)*$"];
+}
+
+// The settings id's registration.
+message RegisterResponse {
+  // The id `Unregister` takes.
+  string registration_id = 1;
+}
+
+// Removes a registration.
+message UnregisterRequest {
+  // The id `Register` answered.
+  string registration_id = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+// The registration is gone.
+message UnregisterResponse {}
+
+// Asks a space's value.
+message GetRequest {
+  // The settings id.
+  string id = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+// A space's value.
+message GetResponse {
+  // The value, a message of the space's `messageType`.
+  google.protobuf.Any value = 1 [(buf.validate.field).required = true];
+}
+
+// Asks a space's entry.
+message EntryRequest {
+  // The settings id.
+  string id = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+// A space's entry.
+message EntryResponse {
+  // The entry.
+  SettingsEntry settings_entry = 1 [(buf.validate.field).required = true];
+}
+
+// Writes a space's value.
+message SetRequest {
+  // The settings id.
+  string id = 1 [(buf.validate.field).string.min_len = 1];
+  // The new value, a message of the space's `messageType`.
+  google.protobuf.Any value = 2 [(buf.validate.field).required = true];
+  // The revision the space must hold for the write to apply; absent writes
+  // whatever it holds.
+  optional double expected_revision = 3;
+}
+
+// The entry the write produced.
+message SetResponse {
+  // The entry.
+  SettingsEntry settings_entry = 1 [(buf.validate.field).required = true];
+}
+
+// Asks a space's entries as they change.
+message WatchRequest {
+  // The settings id.
+  string id = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+// One entry of the space.
+message WatchResponse {
+  // The entry.
+  SettingsEntry settings_entry = 1 [(buf.validate.field).required = true];
+}

@@ -1,0 +1,83 @@
+// `menus/v1` (client, 1.1.0): the app's menu items, keybindings and the
+// context their `when` conditions read.
+//
+// 1.1.0: the provider moves to the window (`core`'s client part); the
+// desktopMain provider is removed. No member changes.
+syntax = "proto3";
+
+package doric.menus.v1;
+
+import "buf/validate/validate.proto";
+import "doric/platform/v1/options.proto";
+
+option (doric.platform.v1.contract) = {
+  id: "menus/v1"
+  cardinality: CARDINALITY_ONE
+  environment: ENVIRONMENT_CLIENT
+};
+
+// The app's menus and keybindings.
+service MenusService {
+  // Adds a menu item that runs a command.
+  rpc AddItem(AddItemRequest) returns (AddItemResponse);
+  // Binds a key to a command.
+  rpc AddKeybinding(AddKeybindingRequest) returns (AddKeybindingResponse);
+  // Sets or clears one key of the context `when` conditions read.
+  rpc SetContext(SetContextRequest) returns (SetContextResponse);
+}
+
+// When an item or a binding applies; every field set must hold.
+message MenuWhen {
+  // The active route pattern.
+  optional string path = 1;
+  // The focused area.
+  optional string focus = 2;
+}
+
+// Adds a menu item.
+message AddItemRequest {
+  // The item's id.
+  string id = 1;
+  // Where the item goes: "app/<menu>" or "dock".
+  string location = 2;
+  // The command the item runs.
+  string command = 3;
+  // The item's label.
+  string label = 4;
+  // When the item applies; absent, always.
+  optional MenuWhen when = 5;
+  // The item's position in its menu.
+  optional double order = 6;
+}
+
+// The item is added.
+message AddItemResponse {}
+
+// Binds a key.
+message AddKeybindingRequest {
+  // The command the key runs.
+  string command = 1;
+  // The key.
+  string key = 2;
+  // When the binding applies; absent, always.
+  optional MenuWhen when = 3;
+}
+
+// The binding is added.
+message AddKeybindingResponse {}
+
+// Sets one key of the context.
+message SetContextRequest {
+  // "path" or "focus".
+  string key = 1 [(buf.validate.field).string = {
+    in: [
+      "path",
+      "focus"
+    ]
+  }];
+  // The key's value; absent clears it.
+  optional string value = 2;
+}
+
+// The context is set.
+message SetContextResponse {}

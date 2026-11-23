@@ -4,9 +4,34 @@
   "projectType": "library",
   "sourceRoot": "packages/bundle/src",
   "targets": {
+    "generate-proto": {
+      "executor": "nx:run-commands",
+      "cache": true,
+      "dependsOn": ["@org/source:proto-export"],
+      "inputs": [
+        "{workspaceRoot}/buf.yaml",
+        "{workspaceRoot}/buf.lock",
+        "{workspaceRoot}/buf.gen.yaml",
+        "{projectRoot}/proto/**/*.proto",
+        {
+          "dependentTasksOutputFiles": "**/*.proto"
+        },
+        {
+          "externalDependencies": ["@bufbuild/buf", "@bufbuild/protoc-gen-es"]
+        }
+      ],
+      "outputs": ["{projectRoot}/src/contracts/gen"],
+      "options": {
+        "commands": [
+          "npx buf generate --template buf.gen.yaml --path packages/bundle/proto/doric -o packages/bundle",
+          "npx buf generate dist/proto --template buf.gen.yaml --path dist/proto/buf/validate --path dist/proto/google/rpc -o packages/bundle"
+        ],
+        "parallel": false
+      }
+    },
     "build": {
       "executor": "nx:run-commands",
-      "dependsOn": ["^build"],
+      "dependsOn": ["generate-proto", "^build"],
       "outputs": ["{projectRoot}/dist"],
       "options": {
         "commands": [
@@ -18,7 +43,7 @@
     },
     "typecheck": {
       "executor": "nx:run-commands",
-      "dependsOn": ["build", "^typecheck"],
+      "dependsOn": ["generate-proto", "build", "^typecheck"],
       "options": {
         "commands": [
           "tsc --build packages/bundle/tsconfig.json --emitDeclarationOnly",
@@ -29,13 +54,37 @@
     },
     "test": {
       "executor": "nx:run-commands",
-      "dependsOn": ["^build"],
+      "dependsOn": ["build", "^build"],
       "outputs": ["{projectRoot}/dist-tests"],
       "options": {
         "commands": [
           "tsc -p packages/bundle/tsconfig.browser.json",
           "tsc -p packages/bundle/tsconfig.spec.json",
-          "node --test packages/bundle/dist-tests/tests/*.test.js"
+          "node --test 'packages/bundle/dist-tests/tests/*.test.js' 'packages/bundle/dist-tests/tests/platform/**/*.test.js'"
+        ],
+        "parallel": false
+      }
+    },
+    "conformance": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["build", "^build"],
+      "outputs": ["{projectRoot}/dist-tests"],
+      "options": {
+        "commands": [
+          "tsc -p packages/bundle/tsconfig.spec.json",
+          "node --test 'packages/bundle/dist-tests/tests/conformance/*.test.js'"
+        ],
+        "parallel": false
+      }
+    },
+    "bench-rk4": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "dependsOn": ["build", "^build"],
+      "options": {
+        "commands": [
+          "tsc -p packages/bundle/tsconfig.spec.json",
+          "node packages/bundle/dist-tests/tests/bench/rk4.js"
         ],
         "parallel": false
       }

@@ -1,0 +1,168 @@
+// `runtime.workspace/v1` (host, 1.3.0): the working directory of the calling
+// prompt's own Thread (the call's scope), and Thread sessions, served by
+// `runtime`.
+//
+// A Thread session holds one live Thread while its `OpenThread` stream is
+// open: the Thread stays live and, with `exclusive`, the Project mutation
+// lock is held. Its id is bound to the opening instance; from another
+// instance, or after the session ended, an operation that names it fails with
+// `NOT_FOUND`, reason `unknown_session`. A process started in a session
+// keeps running after the session ends.
+//
+// 1.3.0: `withThread` is removed; `OpenThread` and `ThreadState` replace it,
+// and `runtime.lease/v1` operations take the session's id.
+syntax = "proto3";
+
+package doric.runtime.workspace.v1;
+
+import "buf/validate/validate.proto";
+import "doric/platform/v1/options.proto";
+
+option (doric.platform.v1.contract) = {
+  id: "runtime.workspace/v1"
+  cardinality: CARDINALITY_ONE
+  environment: ENVIRONMENT_HOST
+};
+
+// The calling Thread's working directory and Thread sessions.
+service WorkspaceService {
+  // The Thread's current working directory, absolute in the sandbox.
+  rpc Cwd(CwdRequest) returns (CwdResponse);
+  // Moves the Thread's working directory. A relative path resolves against
+  // the current directory, the way `cd` does; outside the workspace root
+  // nothing moves. Every outcome is an answer.
+  rpc SetCwd(SetCwdRequest) returns (SetCwdResponse);
+  // The Thread's working directory and the repository hint of its own root,
+  // probed now; a probe that fails or times out answers the hint the Thread
+  // already had. When the probed hint differs from the stored one, the
+  // runtime writes it, publishes a Thread update and fires
+  // `onThreadCwdChangedHook`.
+  rpc Location(LocationRequest) returns (LocationResponse);
+  // Opens a Thread session on one live Thread, whatever the call's scope,
+  // after bringing the Project back when `resume` is set. The first item is
+  // `ready`, after which the stream stays open with no other item until the
+  // caller cancels it, or a refusal, after which the stream ends. Cancelling
+  // the stream, or the end of the caller's instance, ends the session: the
+  // lock is released and, with `refreshHint`, the repository hint is
+  // refreshed.
+  rpc OpenThread(OpenThreadRequest) returns (stream OpenThreadResponse);
+  // The live state of a Thread session's Thread.
+  rpc ThreadState(ThreadStateRequest) returns (ThreadStateResponse);
+}
+
+// An open Thread session.
+message ThreadSession {
+  // The session's id, which `ThreadState` and `runtime.lease/v1`'s
+  // `LeaseTarget.threadSessionId` take.
+  string thread_session_id = 1;
+  // The Thread's Project.
+  string project_id = 2;
+  // The Thread.
+  string thread_id = 3;
+  // The Thread's working directory when the session opened.
+  string cwd = 4;
+  // The sandbox the session runs on.
+  string sandbox_id = 5;
+}
+
+// A refused Thread session.
+message ThreadSessionRefusal {}
+
+// Asks the Thread's working directory.
+message CwdRequest {}
+
+// The Thread's working directory.
+message CwdResponse {
+  // The directory, absolute in the sandbox.
+  string cwd = 1;
+}
+
+// Moves the Thread's working directory.
+message SetCwdRequest {
+  // The new directory, absolute or relative to the current one.
+  string path = 1;
+}
+
+// What the move did; today's `CwdChange`.
+message SetCwdResponse {
+  option (buf.validate.message).cel = {
+    id: "set_cwd_response.cwd"
+    message: "cwd is set exactly when the directory moved"
+    expression: "(this.status == 'set') == has(this.cwd)"
+  };
+  // "set", or why nothing moved: "outside" (the path leaves the workspace
+  // root), "missing" (no such path) or "not-directory".
+  string status = 1 [(buf.validate.field).string = {
+    in: [
+      "set",
+      "outside",
+      "missing",
+      "not-directory"
+    ]
+  }];
+  // The new directory, absolute; set when it moved.
+  optional string cwd = 2;
+}
+
+// Asks the Thread's location.
+message LocationRequest {}
+
+// The Thread's location; today's `CwdLocation`.
+message LocationResponse {
+  // The working directory, absolute in the sandbox.
+  string cwd = 1;
+  // "git" or "github" when the directory itself holds a `.git` marker;
+  // absent otherwise.
+  optional string repo = 2 [(buf.validate.field).string = {
+    in: [
+      "git",
+      "github"
+    ]
+  }];
+}
+
+// Opens a Thread session.
+message OpenThreadRequest {
+  // The Thread.
+  string thread_id = 1 [(buf.validate.field).string.min_len = 1];
+  // True to hold the Project mutation lock while the session is open.
+  bool exclusive = 2;
+  // True to bring the Project back from durable state first.
+  optional bool resume = 3;
+  // True to refresh the Thread's repository hint when the session ends.
+  optional bool refresh_hint = 4;
+}
+
+// The one item of an `OpenThread` stream: the session, or why it did not
+// open (today's `ThreadTaskOutcome`), named by its `status`.
+message OpenThreadResponse {
+  // The outcome.
+  oneof status {
+    option (doric.platform.v1.oneof).discriminator = "status";
+    option (buf.validate.oneof).required = true;
+    // The session is open while the stream stays open.
+    ThreadSession ready = 1;
+    // No such Thread.
+    ThreadSessionRefusal missing = 2;
+    // No runtime for it, or its Project or the Thread is closing or
+    // terminal.
+    ThreadSessionRefusal inactive = 3;
+    // Its Project has no lease yet.
+    ThreadSessionRefusal pending = 4;
+  }
+}
+
+// Asks a Thread session's live state.
+message ThreadStateRequest {
+  // The session.
+  string thread_session_id = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+// A Thread session's live state.
+message ThreadStateResponse {
+  // Whether the Project or the Thread started closing.
+  bool closing = 1;
+  // The working directories of the Project's Threads with an active or
+  // queued prompt.
+  repeated string busy_cwds = 2;
+}

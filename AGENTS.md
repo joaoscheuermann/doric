@@ -66,6 +66,13 @@ worker, lifecycle, TUI, slash-command, service, or multi-process architecture.
 Those terms are out-of-scope markers unless the user explicitly expands the
 product scope and current files support the change.
 
+Exception approved by the owner on 2026-11-21: the bundle process model of
+`docs/designs/grpc-processes.md` is in scope. The host process runs the
+platform (catalog, supervisor, router, gateway, public listener) and supervises
+one process per bundle; bundles talk to each other only through the router,
+over gRPC on `127.0.0.1`. The feature doc is
+`docs/features/bundle-processes.md`.
+
 ## Hard Constraints
 
 ### HC-001 Grounding Is Mandatory Context
@@ -92,13 +99,20 @@ explicitly expands the scope.
 
 Enforcement: do not add or design CLI, daemon, worker, lifecycle service, TUI,
 slash-command, Rust product packages, or multi-process behavior without
-explicit user approval for that scope.
+explicit user approval for that scope. Approved by the owner on 2026-11-21: the
+bundle process model (one supervised process per bundle, calls through the
+router), and Rust for bundles and for the server-side Rust SDK
+`packages/bundle-rs`, both described in `docs/features/bundle-processes.md`. A
+process outside that model, a change to how bundle processes are started,
+supervised or connected, a new Rust bundle, or Rust outside bundles and that
+SDK, still needs that approval.
 
 ### HC-004 Respect Minimal Boundaries
 
 Do not add package splits, host/runtime boundaries, provider coupling, tool
 privileges, persistence layers, or process orchestration before they are needed
-by the agent core.
+by the agent core. The platform's supervisor, router and gateway are the
+approved process orchestration; do not add another.
 
 Enforcement: inspect current manifests and source before changing package
 layout, public APIs, provider composition, tool registration, event streaming,
@@ -273,6 +287,20 @@ revising model-facing prompts.
 - Run `npx nx sync` when TypeScript project references need reconciliation.
 - Validate package changes with `npx nx show projects` plus affected
   `typecheck`, `test`, or `build` targets.
+
+## Rust
+
+- Rust is used for bundles the owner approved and for `packages/bundle-rs`; Nx,
+  cargo, clippy, rustfmt and tests follow
+  `.agents/skills/coding-conventions/references/monodon-rust.md`, and the code
+  follows `.agents/skills/coding-conventions/references/sexy-rust.md`.
+- Toolchain: `rust-toolchain.toml` pins the version, the components `rustfmt`
+  and `clippy`, and the targets `x86_64-unknown-linux-gnu` and
+  `aarch64-unknown-linux-gnu`; change it in its own pull request.
+- Place: a Rust bundle lives under `bundles/<group>/<id>/` with `Cargo.toml`,
+  `manifest.json`, `project.json` and a private `package.json` without
+  dependencies.
+- Safety: every crate root has `#![forbid(unsafe_code)]`.
 
 ## Validation And Response
 

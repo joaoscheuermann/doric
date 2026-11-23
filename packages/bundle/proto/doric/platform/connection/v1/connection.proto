@@ -1,0 +1,53 @@
+// `doric.connection/v1` (platform 2.0.0): the status of the app's connection
+// to the host, as a window shows it.
+//
+// 2.0.0: `status` is asynchronous; `subscribe` is the server stream `Watch`,
+// whose first item is the present status.
+syntax = "proto3";
+
+package doric.platform.connection.v1;
+
+import "buf/validate/validate.proto";
+import "doric/platform/v1/options.proto";
+
+option (doric.platform.v1.contract) = {
+  id: "doric.connection/v1"
+  cardinality: CARDINALITY_ONE
+};
+
+// The host connection's status.
+service ConnectionService {
+  // The present status; "disconnected" until main reports the first one.
+  rpc Status(StatusRequest) returns (StatusResponse);
+  // The present status first, then one item per change, never two equal
+  // items in a row; the caller ends it by cancelling.
+  rpc Watch(WatchRequest) returns (stream WatchResponse);
+}
+
+// Asks the present status.
+message StatusRequest {}
+
+// The present status.
+message StatusResponse {
+  // "connected" or "disconnected".
+  string status = 1 [(buf.validate.field).string = {
+    in: [
+      "connected",
+      "disconnected"
+    ]
+  }];
+}
+
+// Opens the stream of statuses.
+message WatchRequest {}
+
+// One status.
+message WatchResponse {
+  // "connected" or "disconnected".
+  string status = 1 [(buf.validate.field).string = {
+    in: [
+      "connected",
+      "disconnected"
+    ]
+  }];
+}

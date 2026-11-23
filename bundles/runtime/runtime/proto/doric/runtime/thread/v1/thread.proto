@@ -1,0 +1,266 @@
+// `runtime.thread/v1` (host, 1.4.0): the storage type of a Thread's document
+// and the entries of its event stream `runtime.thread.events/<threadId>`,
+// owned by `runtime`. The document's `lastSequence` equals the stream's
+// counter; an entry's sequence and `createdAt` are the stream entry's, never
+// part of its value.
+//
+// 1.4.0: the schema moves from zod to `.proto` with the same fields; a
+// `null` is an absent field; the keys a pending prompt's `source` does not
+// declare are dropped.
+syntax = "proto3";
+
+package doric.runtime.thread.v1;
+
+import "buf/validate/validate.proto";
+import "doric/platform/v1/options.proto";
+import "doric/runtime/threads/v1/threads.proto";
+import "doric/runtime/v2/runtime.proto";
+import "google/protobuf/struct.proto";
+
+option (doric.platform.v1.contract) = {
+  id: "runtime.thread/v1"
+  cardinality: CARDINALITY_ONE
+  environment: ENVIRONMENT_HOST
+};
+
+// One Thread, as stored.
+message ThreadDocument {
+  option (doric.platform.v1.storage_type) = {
+    type: "runtime.thread/v1"
+    indexes: [
+      {
+        name: "byProject"
+        fields: [
+          "projectId",
+          "createdKey"
+        ]
+      },
+      {
+        name: "byParent"
+        fields: [
+          "projectId",
+          "parentThreadId",
+          "createdKey"
+        ]
+      },
+      {
+        name: "byOpen"
+        fields: [
+          "open",
+          "createdKey"
+        ]
+      }
+    ]
+  };
+  // The Thread's id, a UUID.
+  string id = 1 [(buf.validate.field).string.uuid = true];
+  // The Project, a UUID.
+  string project_id = 2 [(buf.validate.field).string.uuid = true];
+  // The parent Thread, a UUID; absent for a top-level Thread.
+  optional string parent_thread_id = 3 [(buf.validate.field).string.uuid = true];
+  // Who opened it: "user" or "agent"; absent on a Thread written before the
+  // distinction.
+  optional string origin = 4 [(buf.validate.field).string = {
+    in: [
+      "user",
+      "agent"
+    ]
+  }];
+  // The display name.
+  string name = 5;
+  // "queued", "ready", "running", "cancelling", "cancelled" or "failed".
+  string state = 6 [(buf.validate.field).string = {
+    in: [
+      "queued",
+      "ready",
+      "running",
+      "cancelling",
+      "cancelled",
+      "failed"
+    ]
+  }];
+  // Whether the Thread is open.
+  bool open = 7;
+  // The working directory; "/workspace" by default.
+  string cwd = 8;
+  // The repository at `cwd`: "git" or "github"; absent when none.
+  optional string cwd_repo = 9 [(buf.validate.field).string = {
+    in: [
+      "git",
+      "github"
+    ]
+  }];
+  // Whether the queue is paused.
+  bool queue_paused = 10;
+  // The prompt that runs now, a UUID.
+  optional string active_prompt_id = 11 [(buf.validate.field).string.uuid = true];
+  // Why the Thread failed; absent unless it failed.
+  optional string error_code = 12;
+  // The event stream's counter, a whole number.
+  double last_sequence = 13 [(buf.validate.field).cel = {
+    id: "last_sequence.integer"
+    message: "lastSequence must be a whole number"
+    expression: "this == double(int(this))"
+  }];
+  // The result of the most recent finished prompt.
+  optional ThreadDocumentResult result = 14;
+  // The latest `prompt.started`.
+  optional LastStarted last_started = 15;
+  // The usage state, JSON; absent derives it lazily from the events.
+  optional google.protobuf.Value usage = 16;
+  // The unfinished prompts; absent folds them lazily from the stream
+  // (rows written before stage 7).
+  optional PendingPrompts pending = 17;
+  // When it was created (ISO-8601).
+  string created_at = 18;
+  // When it last changed (ISO-8601).
+  string updated_at = 19;
+  // When it started (ISO-8601).
+  optional string started_at = 20;
+  // When it finished (ISO-8601).
+  optional string finished_at = 21;
+  // The agent it was spawned as, instructions included; the instructions
+  // reach only the executor. Absent when spawned without one.
+  optional doric.runtime.threads.v1.SpawnAgent agent = 22;
+  // The resolved model.
+  optional string model = 23;
+  // The resolved effort, as `Thread.effort`.
+  optional string effort = 24 [(buf.validate.field).string = {
+    in: [
+      "none",
+      "minimal",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ]
+  }];
+  // The Thread's provider.
+  optional string provider_id = 25;
+  // Present while archived.
+  optional ThreadArchive archive = 26;
+  // The last time an archive of this Thread was undone (ISO-8601).
+  optional string restored_at = 27;
+  // Present (true) while pinned; removed on unpin.
+  optional bool pinned = 28 [(buf.validate.field).bool.const = true];
+  // The last time a view of it started or ended (ISO-8601).
+  optional string viewed_at = 29;
+  // `createdAt + '|' + id`, the sortable field of the list indexes.
+  string created_key = 30;
+}
+
+// The result of a Thread's most recent finished prompt, as stored.
+message ThreadDocumentResult {
+  // How the prompt ended.
+  string status = 1;
+  // Its final text.
+  string text = 2;
+  // The prompt, a UUID.
+  string prompt_id = 3 [(buf.validate.field).string.uuid = true];
+  // When it finished (ISO-8601).
+  string at = 4;
+  // "interrupted" when the reader stopped the turn (a cancelled result);
+  // absent otherwise.
+  optional string reason = 5 [(buf.validate.field).string.const = "interrupted"];
+}
+
+// The latest `prompt.started` of a Thread.
+message LastStarted {
+  // The prompt, a UUID.
+  string prompt_id = 1 [(buf.validate.field).string.uuid = true];
+  // When it started (ISO-8601).
+  string at = 2;
+}
+
+// A Thread's unfinished prompts.
+message PendingPrompts {
+  // The prompts.
+  repeated PendingPrompt prompts = 1;
+}
+
+// One unfinished prompt: its progress and the fold's bookkeeping.
+message PendingPrompt {
+  // The prompt.
+  string prompt_id = 1;
+  // Its text.
+  string text = 2;
+  // Its revision, a whole number.
+  optional double revision = 3 [(buf.validate.field).cel = {
+    id: "revision.integer"
+    message: "revision must be a whole number"
+    expression: "this == double(int(this))"
+  }];
+  // Where it came from.
+  doric.runtime.v2.InputSource source = 4 [(buf.validate.field).required = true];
+  // Whether it started.
+  bool started = 5;
+  // Why it is paused: "host_stopped", "host_restarted", "reader_stopped" or
+  // "storage_low"; absent when not paused.
+  optional string paused = 6 [(buf.validate.field).string = {
+    in: [
+      "host_stopped",
+      "host_restarted",
+      "reader_stopped",
+      "storage_low"
+    ]
+  }];
+  // Whether a later input superseded it.
+  optional bool superseded = 7;
+  // The attempts so far, a whole number.
+  double attempts = 8 [(buf.validate.field).cel = {
+    id: "attempts.integer"
+    message: "attempts must be a whole number"
+    expression: "this == double(int(this))"
+  }];
+  // When it was accepted (ISO-8601).
+  optional string accepted_at = 9;
+  // The cross-Thread boot order, (acceptedSequence, threadId) ascending, a
+  // whole number.
+  double accepted_sequence = 10 [(buf.validate.field).cel = {
+    id: "accepted_sequence.integer"
+    message: "acceptedSequence must be a whole number"
+    expression: "this == double(int(this))"
+  }];
+  // The sequence at which it was queued, a whole number.
+  optional double queued_sequence = 11 [(buf.validate.field).cel = {
+    id: "queued_sequence.integer"
+    message: "queuedSequence must be a whole number"
+    expression: "this == double(int(this))"
+  }];
+  // The sequence at which it was paused, a whole number.
+  optional double paused_sequence = 12 [(buf.validate.field).cel = {
+    id: "paused_sequence.integer"
+    message: "pausedSequence must be a whole number"
+    expression: "this == double(int(this))"
+  }];
+  // Whether it is the Thread's first prompt.
+  optional bool first = 13;
+  // The prompt this steering input waits to be taken into.
+  optional string steer = 14;
+}
+
+// A Thread's archive mark.
+message ThreadArchive {
+  // When it was archived (ISO-8601).
+  string at = 1;
+  // The archive batch, a UUID; Undo and Restore act on it.
+  string batch = 2 [(buf.validate.field).string.uuid = true];
+}
+
+// The value of one entry of a Thread's event stream: the Project, Thread and
+// prompt it belongs to, its durable `type` and its body.
+message ThreadEventEnvelope {
+  option (doric.platform.v1.stream_entry).prefix = "runtime.thread.events/";
+  // The Project.
+  string project_id = 1;
+  // The Thread.
+  string thread_id = 2;
+  // The prompt.
+  string prompt_id = 3;
+  // The event's durable type.
+  string type = 4;
+  // The event's body: the JSON of the event type's message for a registered
+  // type, the executor's object kept whole otherwise.
+  google.protobuf.Struct event = 5 [(buf.validate.field).required = true];
+}

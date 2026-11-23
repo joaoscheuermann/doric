@@ -1,0 +1,130 @@
+// `runtime.attachments/v1` (host, 1.1.0): the images of the calling Project,
+// served by `runtime`. An image is kept once as a content-addressed blob and
+// named in text by a Markdown line `![name](doric-attachment:<id>)`, so
+// prompts, queued inputs and tool results stay text. `Attach` keeps an image
+// for the Thread of the scope's `threadId`, deleted with that Thread or its
+// Project; `Read` answers for the scope's `projectId` or the Project of its
+// `threadId`, so every Thread of a Project reads its images. A call without
+// that scope fails with `INVALID_ARGUMENT`.
+//
+// 1.1.0: `attach` takes the bytes client streaming and `read` answers them
+// server streaming, instead of base64 text.
+syntax = "proto3";
+
+package doric.runtime.attachments.v1;
+
+import "buf/validate/validate.proto";
+import "doric/platform/v1/options.proto";
+
+option (doric.platform.v1.contract) = {
+  id: "runtime.attachments/v1"
+  cardinality: CARDINALITY_ONE
+  environment: ENVIRONMENT_HOST
+};
+
+// The images of the calling Project.
+service AttachmentsService {
+  // Keeps an image for the Project and answers its attachment: a head, then
+  // the bytes in chunks. Fails with `INVALID_ARGUMENT` for bytes that are
+  // not a PNG, JPEG, WebP or GIF image, or that are empty or larger than
+  // 5 MiB. The same bytes again answer the same id.
+  rpc Attach(stream AttachRequest) returns (AttachResponse) {
+    option (doric.platform.v1.method).expose = EXPOSE_DESKTOP;
+  }
+  // One attachment of the Project, bytes and all: a head, then, when the
+  // Project holds it, its bytes in chunks of at most 1 MiB.
+  rpc Read(ReadRequest) returns (stream ReadResponse) {
+    option (doric.platform.v1.method).expose = EXPOSE_DESKTOP;
+  }
+}
+
+// One stored attachment.
+message Attachment {
+  // The reference a line names: `sha256-<64 hex>`, the blob's hash.
+  string id = 1 [(buf.validate.field).string.pattern = "^sha256-[0-9a-f]{64}$"];
+  // The name to show, 1 to 200 characters.
+  string name = 2 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 200
+  }];
+  // "image/png", "image/jpeg", "image/webp" or "image/gif", as the bytes
+  // start, whatever the file claimed.
+  string media_type = 3 [(buf.validate.field).string = {
+    in: [
+      "image/png",
+      "image/jpeg",
+      "image/webp",
+      "image/gif"
+    ]
+  }];
+  // The size in bytes, a positive whole number.
+  double size = 4 [
+    (buf.validate.field).double = {
+      gt: 0
+      lte: 5242880
+    },
+    (buf.validate.field).cel = {
+      id: "size.integer"
+      message: "size must be a whole number of bytes"
+      expression: "this == double(int(this))"
+    }
+  ];
+}
+
+// The first item of an `Attach` stream.
+message AttachHead {
+  // The name to show; a reference line writes it on one line, without
+  // brackets, "image" when nothing is left.
+  string name = 1;
+}
+
+// One item an `Attach` caller sends: the head first, and only first, then
+// the image's bytes in chunks; the image is the chunks' concatenation.
+message AttachRequest {
+  // The item.
+  oneof item {
+    option (buf.validate.oneof).required = true;
+    // The name; the first item.
+    AttachHead head = 1;
+    // The image's next bytes, at most 1 MiB.
+    bytes chunk = 2 [(buf.validate.field).bytes = {
+      min_len: 1
+      max_len: 1048576
+    }];
+  }
+}
+
+// The kept image.
+message AttachResponse {
+  // The attachment.
+  Attachment attachment = 1 [(buf.validate.field).required = true];
+}
+
+// Asks one attachment.
+message ReadRequest {
+  // The attachment's id.
+  string id = 1;
+}
+
+// The first item of a `Read` stream.
+message ReadHead {
+  // The attachment; absent when the Project holds none by that id, and then
+  // no chunk follows.
+  optional Attachment attachment = 1;
+}
+
+// One item of a `Read` stream: the head first, and only first, then the
+// image's bytes in chunks.
+message ReadResponse {
+  // The item.
+  oneof item {
+    option (buf.validate.oneof).required = true;
+    // What the attachment is; the first item.
+    ReadHead head = 1;
+    // The image's next bytes, at most 1 MiB.
+    bytes chunk = 2 [(buf.validate.field).bytes = {
+      min_len: 1
+      max_len: 1048576
+    }];
+  }
+}

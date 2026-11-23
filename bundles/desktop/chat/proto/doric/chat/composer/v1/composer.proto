@@ -1,0 +1,340 @@
+// `chat.composer/v1` (host, 1.1.0): the draft every window shares, per
+// Thread: its words and its comment stack, one state. `chat`'s host part
+// serves it in memory; the state is lost when the chat process restarts or
+// changes generation. Windows read and edit it through the methods exposed
+// to the desktop; the bundle that owns a comment kind registers, from its
+// host part, how the items of that kind flush.
+//
+// A draft is keyed by the Thread and the Project of the call's scope.
+//
+// Concurrent edits: the host applies updates in the order it receives them.
+// `SetText` replaces the whole draft text, so the last text received wins;
+// `AddItem`, `UpdateNote` and `RemoveItem` act on one item by its id, and
+// removing an id the stack no longer holds does nothing. Every change raises
+// the state's `revision` by one, and each `Watch` item carries it.
+//
+// 1.1.0: `watch` is a server stream whose items carry a `revision`; a flush
+// is the registering bundle's `ComposerFlushHandlerService`, and
+// `registerFlush` takes the kind as data and answers a `registrationId`.
+syntax = "proto3";
+
+package doric.chat.composer.v1;
+
+import "buf/validate/validate.proto";
+import "doric/comments/v1/comments.proto";
+import "doric/platform/v1/options.proto";
+import "google/protobuf/struct.proto";
+
+option (doric.platform.v1.contract) = {
+  id: "chat.composer/v1"
+  cardinality: CARDINALITY_ONE
+  environment: ENVIRONMENT_HOST
+};
+
+// The shared draft of each Thread.
+service ComposerService {
+  // The Thread's draft: its text and its stack, empty until written.
+  rpc Read(ReadRequest) returns (ReadResponse) {
+    option (doric.platform.v1.method).expose = EXPOSE_DESKTOP;
+  }
+  // Streams the Thread's draft: a snapshot first, then one delta per change,
+  // each with the state's revision after it. The caller ends it by
+  // cancelling.
+  rpc Watch(WatchRequest) returns (stream WatchResponse) {
+    option (doric.platform.v1.method).expose = EXPOSE_DESKTOP;
+    option (doric.platform.v1.method).resumable = true;
+  }
+  // Replaces the Thread's draft text; every open `Watch` sends the delta.
+  rpc SetText(SetTextRequest) returns (SetTextResponse) {
+    option (doric.platform.v1.method).expose = EXPOSE_DESKTOP;
+  }
+  // Adds one item to the Thread's stack and answers it with its identity.
+  rpc AddItem(AddItemRequest) returns (AddItemResponse) {
+    option (doric.platform.v1.method).expose = EXPOSE_DESKTOP;
+  }
+  // Replaces the note of one stack item; an id the stack does not hold does
+  // nothing.
+  rpc UpdateNote(UpdateNoteRequest) returns (UpdateNoteResponse) {
+    option (doric.platform.v1.method).expose = EXPOSE_DESKTOP;
+  }
+  // Removes one item from the Thread's stack; an id the stack does not hold
+  // does nothing.
+  rpc RemoveItem(RemoveItemRequest) returns (RemoveItemResponse) {
+    option (doric.platform.v1.method).expose = EXPOSE_DESKTOP;
+  }
+  // Calls, in stack order, `ComposerFlushHandlerService.Flush` of the bundle
+  // that registered each item's kind, takes the flushed items off the stack
+  // and answers each with the comment writes the sender performs. An item
+  // stays on the stack when its kind has no flush, when its flush answers no
+  // write, or when it replies to an item that stays. A flush that fails
+  // fails the call and leaves the whole stack where it was. A refused send
+  // never calls it.
+  rpc Flush(FlushRequest) returns (FlushResponse) {
+    option (doric.platform.v1.method).expose = EXPOSE_DESKTOP;
+  }
+  // Registers the calling instance's `ComposerFlushHandlerService` as the
+  // flush of one comment kind and answers a `registrationId`. A kind that
+  // already has a flush is `registration_conflict`, and nothing is
+  // registered. The registration also ends with the registering instance.
+  rpc RegisterFlush(RegisterFlushRequest) returns (RegisterFlushResponse);
+  // Ends a flush registration; an unknown or ended id is a no-op.
+  rpc Unregister(UnregisterRequest) returns (UnregisterResponse);
+}
+
+// How the items of one comment kind flush, implemented by the host part of
+// the bundle that registered the kind and called by `chat`'s host part
+// during `Flush`.
+service ComposerFlushHandlerService {
+  option (doric.platform.v1.service).role = SERVICE_ROLE_HANDLER;
+
+  // Turns one item of the registered kind into the durable comment writes
+  // the sender performs through `comments/v1`; no write keeps the item on
+  // the stack. A failure fails the composer's `Flush`.
+  rpc Flush(ComposerFlushHandlerServiceFlushRequest) returns (ComposerFlushHandlerServiceFlushResponse);
+}
+
+// One item of a Thread's comment stack: a draft until the send flushes it.
+message ComposerItem {
+  // The item's identity, assigned when it is added: `comment-<uuid>`. It is
+  // also the id of the comment the item becomes.
+  string id = 1 [(buf.validate.field).string.min_len = 1];
+  // The kind of comment, declared by the bundle that owns it.
+  string kind = 2 [(buf.validate.field).string.min_len = 1];
+  // The element tag that draws the item's line; `chat-comment-line` names
+  // the built-in line.
+  string element_tag = 3 [(buf.validate.field).string.min_len = 1];
+  // The owner's payload, any JSON value; absent for none. Chat reads only
+  // the target, the pin, the root a reply continues and the target's
+  // references, and leaves every other field to the owner.
+  google.protobuf.Value data = 4;
+  // Who wrote the comment; absent when unknown.
+  optional string author = 5;
+  // The note as written.
+  string note = 6;
+}
+
+// The draft one Thread holds: its words and its comment stack.
+message ComposerSnapshot {
+  // The Thread.
+  string thread_id = 1;
+  // The draft text; "" for none.
+  string text = 2;
+  // The stack, in order; empty for none.
+  repeated ComposerItem items = 3;
+}
+
+// The Thread's draft text changed.
+message ComposerTextDelta {
+  // The Thread.
+  string thread_id = 1;
+  // The whole new text.
+  string text = 2;
+}
+
+// An item was added to, or changed on, the Thread's stack.
+message ComposerItemDelta {
+  // The Thread.
+  string thread_id = 1;
+  // The item as it is now.
+  ComposerItem item = 2 [(buf.validate.field).required = true];
+}
+
+// An item left the Thread's stack.
+message ComposerRemovedDelta {
+  // The Thread.
+  string thread_id = 1;
+  // The removed item's id.
+  string id = 2;
+}
+
+// Where the send runs a flush: the prompt the host just accepted.
+message ComposerFlushContext {
+  // The Thread's Project; absent when the send names none.
+  optional string project_id = 1;
+  // The Thread.
+  string thread_id = 2 [(buf.validate.field).string.min_len = 1];
+  // The prompt the host accepted.
+  string prompt_id = 3 [(buf.validate.field).string.min_len = 1];
+}
+
+// One durable comment write a flush answers: the fields of
+// `comments/v1.Add`, with the comment id (the item's own id, so the write is
+// idempotent) and the root a reply continues.
+message ComposerCommentWrite {
+  // What the comment is about.
+  doric.comments.v1.CommentTarget target = 1 [(buf.validate.field).required = true];
+  // Its text.
+  string text = 2;
+  // Who wrote it; absent when unknown.
+  optional string author = 3;
+  // The id the comment is written under; absent lets `comments/v1`
+  // generate one.
+  optional string comment_id = 4;
+  // The comment this one answers; absent on a root comment.
+  optional string in_reply_to = 5;
+}
+
+// One item the send took off the stack, with the writes its kind's flush
+// answered. The sender performs the writes and, when one fails, puts the
+// item back on the stack with `AddItem`, keeping its id.
+message ComposerFlushed {
+  // The item.
+  ComposerItem item = 1 [(buf.validate.field).required = true];
+  // The comment writes; empty for none.
+  repeated ComposerCommentWrite writes = 2;
+}
+
+// Asks one Thread's draft.
+message ReadRequest {
+  // The Thread.
+  string thread_id = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+// The Thread's draft.
+message ReadResponse {
+  // The draft; empty text and stack until written.
+  ComposerSnapshot composer_snapshot = 1 [(buf.validate.field).required = true];
+}
+
+// Asks one Thread's draft as it changes.
+message WatchRequest {
+  // The Thread.
+  string thread_id = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+// One item of `Watch`: the snapshot first, then the live deltas.
+message WatchResponse {
+  // The state's revision after this item, a whole number; it rises by one
+  // with every change.
+  double revision = 1 [(buf.validate.field).cel = {
+    id: "revision.integer"
+    message: "revision must be a whole number"
+    expression: "this == double(int(this))"
+  }];
+  // The item, named as today's `kind`.
+  oneof kind {
+    option (doric.platform.v1.oneof).discriminator = "kind";
+    option (buf.validate.oneof).required = true;
+    // The whole draft.
+    ComposerSnapshot snapshot = 2;
+    // The draft text changed.
+    ComposerTextDelta text = 3;
+    // An item was added.
+    ComposerItemDelta added = 4;
+    // An item's note changed.
+    ComposerItemDelta updated = 5;
+    // An item was removed.
+    ComposerRemovedDelta removed = 6;
+  }
+}
+
+// Replaces one Thread's draft text.
+message SetTextRequest {
+  // The Thread.
+  string thread_id = 1 [(buf.validate.field).string.min_len = 1];
+  // The whole new text; "" clears it.
+  string text = 2;
+}
+
+// The text is set.
+message SetTextResponse {}
+
+// Adds one item to a Thread's stack.
+message AddItemRequest {
+  // The Thread.
+  string thread_id = 1 [(buf.validate.field).string.min_len = 1];
+  // The id an item put back on the stack keeps (a flushed comment whose
+  // write failed): honoured when it carries the `comment-` prefix and the
+  // stack does not hold it yet; otherwise, or when absent, the composer
+  // assigns a new one.
+  optional string id = 2 [(buf.validate.field).string.min_len = 1];
+  // The kind of comment.
+  string kind = 3 [(buf.validate.field).string.min_len = 1];
+  // The element tag that draws the item's line.
+  string element_tag = 4 [(buf.validate.field).string.min_len = 1];
+  // The owner's payload, any JSON value; absent for none.
+  google.protobuf.Value data = 5;
+  // Who wrote the comment; absent when unknown.
+  optional string author = 6;
+  // The note; absent for "".
+  optional string note = 7;
+}
+
+// The item added.
+message AddItemResponse {
+  // The item, with its identity.
+  ComposerItem composer_item = 1 [(buf.validate.field).required = true];
+}
+
+// Replaces the note of one stack item.
+message UpdateNoteRequest {
+  // The Thread.
+  string thread_id = 1 [(buf.validate.field).string.min_len = 1];
+  // The item.
+  string id = 2 [(buf.validate.field).string.min_len = 1];
+  // The new note.
+  string note = 3;
+}
+
+// The note is set, or the item was not on the stack.
+message UpdateNoteResponse {}
+
+// Removes one stack item.
+message RemoveItemRequest {
+  // The Thread.
+  string thread_id = 1 [(buf.validate.field).string.min_len = 1];
+  // The item.
+  string id = 2 [(buf.validate.field).string.min_len = 1];
+}
+
+// The item is gone, or was not on the stack.
+message RemoveItemResponse {}
+
+// Flushes one Thread's stack for an accepted prompt.
+message FlushRequest {
+  // The Thread.
+  string thread_id = 1 [(buf.validate.field).string.min_len = 1];
+  // The prompt the host accepted.
+  string prompt_id = 2 [(buf.validate.field).string.min_len = 1];
+}
+
+// The items the send took off the stack.
+message FlushResponse {
+  // Each flushed item with its writes, in stack order; empty for none.
+  repeated ComposerFlushed flushed = 1;
+}
+
+// Registers the flush of one comment kind.
+message RegisterFlushRequest {
+  // The comment kind.
+  string kind = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+// The flush's registration.
+message RegisterFlushResponse {
+  // The id `Unregister` takes.
+  string registration_id = 1;
+}
+
+// Ends a flush registration.
+message UnregisterRequest {
+  // The id `RegisterFlush` answered.
+  string registration_id = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+// The registration is gone.
+message UnregisterResponse {}
+
+// Flushes one item of the registered kind.
+message ComposerFlushHandlerServiceFlushRequest {
+  // The item.
+  ComposerItem item = 1 [(buf.validate.field).required = true];
+  // The prompt the flush runs for.
+  ComposerFlushContext context = 2 [(buf.validate.field).required = true];
+}
+
+// The writes the item becomes.
+message ComposerFlushHandlerServiceFlushResponse {
+  // The comment writes; empty for none.
+  repeated ComposerCommentWrite writes = 1;
+}

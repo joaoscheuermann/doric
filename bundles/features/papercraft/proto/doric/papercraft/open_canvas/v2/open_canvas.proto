@@ -1,0 +1,37 @@
+// `papercraft.open-canvas/v2` (client command, 2.1.0, D26): opens the canvas
+// window of one papercraft program, or focuses it when it is open, at
+// `/papercraft/<projectId>/<threadId>/<identity>`. A second run for the same
+// program focuses the window the first opened. The `papercraft` client part
+// registers it with `commands/v1`; a caller runs it with
+// `commands/v1.Execute`, the input below carried as its
+// `google.protobuf.Any`. The contract has no service.
+//
+// 2.1.0: the provider moves from desktopMain to the window; the input moves
+// from zod to `.proto` with the same fields; a field the message does not
+// declare (an old `artifactId`) is dropped instead of failing.
+syntax = "proto3";
+
+package doric.papercraft.open_canvas.v2;
+
+import "buf/validate/validate.proto";
+import "doric/platform/v1/options.proto";
+
+option (doric.platform.v1.contract) = {
+  id: "papercraft.open-canvas/v2"
+  cardinality: CARDINALITY_ONE
+  environment: ENVIRONMENT_CLIENT
+};
+
+// The command's input: the conversation the program belongs to and the
+// program. A missing field fails `invalid_input`.
+message OpenCanvasInput {
+  option (doric.platform.v1.command).id = "papercraft.open-canvas/v2";
+
+  // The Project; it scopes every host call of the canvas window.
+  string project_id = 1 [(buf.validate.field).string.min_len = 1];
+  // The Thread: the composer stack the window's comments join and the log it
+  // watches.
+  string thread_id = 2 [(buf.validate.field).string.min_len = 1];
+  // The papercraft program's identity.
+  string identity = 3 [(buf.validate.field).string.min_len = 1];
+}

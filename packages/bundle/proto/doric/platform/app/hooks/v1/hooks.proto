@@ -1,0 +1,91 @@
+// `doric.app.hooks/v1` (platform 2.0.0): the lifecycle hooks the platform
+// defines in the host's `hooks/v1`. Each message of this file is the input of
+// one hook; a bundle registers a handler with `hooks/v1.Register` and the
+// platform runs it with `hooks/v1.Run`.
+//
+// 2.0.0: `onGenerationChangedHook`, `onPeerSignalHook` and
+// `onGenerationReadyHook` are removed for the control frames
+// `GenerationChanged` and `PeerSignal`; `onAppReadyHook`, `onAppActivateHook`,
+// `onBeforeQuitHook` and `onConnectionChangedHook` are removed with
+// desktopMain.
+syntax = "proto3";
+
+package doric.platform.app.hooks.v1;
+
+import "buf/validate/validate.proto";
+import "doric/platform/v1/options.proto";
+
+option (doric.platform.v1.hooks) = {id: "doric.app.hooks/v1"};
+
+// A bundle instance became active.
+message OnActivateHookInput {
+  option (doric.platform.v1.hook) = {
+    name: "onActivateHook"
+    kind: HOOK_KIND_OBSERVE
+  };
+  // The bundle's id.
+  string bundle_id = 1;
+  // The bundle's version.
+  string version = 2;
+  // The instance's generation.
+  uint32 generation = 3;
+  // Where the instance runs: "host", "desktopMain" or "client"; phase 5
+  // drops "desktopMain" with that environment.
+  string environment = 4 [(buf.validate.field).string = {
+    in: [
+      "host",
+      "desktopMain",
+      "client"
+    ]
+  }];
+}
+
+// A bundle instance was deactivated.
+message OnDeactivateHookInput {
+  option (doric.platform.v1.hook) = {
+    name: "onDeactivateHook"
+    kind: HOOK_KIND_OBSERVE
+  };
+  // The bundle's id.
+  string bundle_id = 1;
+  // The bundle's version.
+  string version = 2;
+  // The instance's generation.
+  uint32 generation = 3;
+  // Where the instance ran: "host", "desktopMain" or "client"; phase 5
+  // drops "desktopMain" with that environment.
+  string environment = 4 [(buf.validate.field).string = {
+    in: [
+      "host",
+      "desktopMain",
+      "client"
+    ]
+  }];
+}
+
+// The host starts, before it listens. Handlers run one after another and are
+// awaited; a handler's failure fails the host's start.
+message OnHostStartHookInput {
+  option (doric.platform.v1.hook) = {
+    name: "onHostStartHook"
+    kind: HOOK_KIND_SEQUENCE
+  };
+}
+
+// The host stops, after its listeners close. Handlers run one after another
+// in the reverse of the activation order and are awaited.
+message OnHostStopHookInput {
+  option (doric.platform.v1.hook) = {
+    name: "onHostStopHook"
+    kind: HOOK_KIND_SEQUENCE
+    order: HOOK_ORDER_REVERSE
+  };
+}
+
+// The host listens on its public listener.
+message OnHostReadyHookInput {
+  option (doric.platform.v1.hook) = {
+    name: "onHostReadyHook"
+    kind: HOOK_KIND_OBSERVE
+  };
+}

@@ -1,0 +1,57 @@
+// `doric.appearance/v1` (platform 2.0.0): the theme preference of every
+// window, which main keeps in `userData/doric/appearance.json`. A bundle on
+// an app without it finds no provider; it detects the contract with
+// `services.whenAvailable` and omits what needs it.
+//
+// 2.0.0: the schema moves to `.proto` with the same fields.
+syntax = "proto3";
+
+package doric.platform.appearance.v1;
+
+import "buf/validate/validate.proto";
+import "doric/platform/v1/options.proto";
+
+option (doric.platform.v1.contract) = {
+  id: "doric.appearance/v1"
+  cardinality: CARDINALITY_ONE
+};
+
+// The theme preference.
+service AppearanceService {
+  // The saved preference; "dark" when none is saved or it is unreadable.
+  rpc Get(GetRequest) returns (GetResponse);
+  // Saves the preference and only then repaints every window in it. A file
+  // that cannot be written fails `unavailable` and leaves the saved
+  // preference unchanged.
+  rpc Set(SetRequest) returns (SetResponse);
+}
+
+// Asks the saved preference.
+message GetRequest {}
+
+// The saved preference.
+message GetResponse {
+  // "dark", "light" or "system", which follows the operating system.
+  string theme = 1 [(buf.validate.field).string = {
+    in: [
+      "dark",
+      "light",
+      "system"
+    ]
+  }];
+}
+
+// Saves a preference.
+message SetRequest {
+  // "dark", "light" or "system", which follows the operating system.
+  string theme = 1 [(buf.validate.field).string = {
+    in: [
+      "dark",
+      "light",
+      "system"
+    ]
+  }];
+}
+
+// The preference is saved and every window repainted.
+message SetResponse {}

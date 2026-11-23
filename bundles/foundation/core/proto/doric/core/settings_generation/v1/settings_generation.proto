@@ -1,0 +1,33 @@
+// `core.settings-generation/v1` (host, 1.1.0): the storage type of the one
+// global settings generation counter, owned by `core`. Its one document has
+// the id "global"; the counter grows with every write of a `settings/v1`
+// space.
+//
+// 1.1.0: the schema moves from zod to `.proto` with the same field.
+syntax = "proto3";
+
+package doric.core.settings_generation.v1;
+
+import "buf/validate/validate.proto";
+import "doric/platform/v1/options.proto";
+
+option (doric.platform.v1.contract) = {
+  id: "core.settings-generation/v1"
+  cardinality: CARDINALITY_ONE
+  environment: ENVIRONMENT_HOST
+};
+
+// The settings generation counter, as stored.
+message SettingsGenerationDocument {
+  option (doric.platform.v1.storage_type) = {type: "core.settings-generation/v1"};
+
+  // The counter, a whole number of at least 0.
+  double generation = 1 [
+    (buf.validate.field).double.gte = 0,
+    (buf.validate.field).cel = {
+      id: "generation.integer"
+      message: "generation must be a whole number"
+      expression: "this == double(int(this))"
+    }
+  ];
+}

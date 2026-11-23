@@ -1,0 +1,21 @@
+// Draft of `doric.tools.v1.ExecuteRequest`, for the phase 0 codec benchmark
+// (docs/designs/grpc-processes.md, section 8, "The benchmark").
+syntax = "proto3";
+
+package doric.benchmarks.proto_codec.v1;
+
+import "buf/validate/validate.proto";
+import "google/protobuf/struct.proto";
+
+// A call of a tool by name.
+message ExecuteRequest {
+  // The tool's name.
+  string name = 1 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 128
+  }];
+  // The Project the call runs in, for a tool scoped to one.
+  optional string project_id = 2;
+  // The tool's input, JSON.
+  google.protobuf.Value input = 3;
+}

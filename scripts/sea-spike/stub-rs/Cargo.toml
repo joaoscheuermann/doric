@@ -1,0 +1,22 @@
+[package]
+name = "doric-spike-stub"
+version = "0.0.0"
+edition.workspace = true
+publish = false
+description = "Phase 0 spike: the native stub of the sqlite bundle, which opens the control stream and sends a Hello."
+
+[[bin]]
+name = "doric-spike-stub"
+path = "src/main.rs"
+
+[dependencies]
+prost.workspace = true
+prost-types.workspace = true
+tokio.workspace = true
+tokio-stream.workspace = true
+tonic.workspace = true
+tonic-prost.workspace = true
+
+[build-dependencies]
+protox.workspace = true
+tonic-prost-build.workspace = true

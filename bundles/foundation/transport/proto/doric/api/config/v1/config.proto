@@ -1,0 +1,57 @@
+// `api.config/v1` (host, 1.0.0): the public API of the one Doric
+// configuration, which replaces `GET /config` and `PUT /config`. The
+// `transport` bundle provides it over `host-config/v1`.
+//
+// A refusal is a gRPC status whose `google.rpc.ErrorInfo` has `domain`
+// "doric" and `reason` the REST error code of today: `invalid_config`
+// (`INVALID_ARGUMENT`) and `configuration_rejected` (`UNAVAILABLE`). No
+// response carries an error.
+syntax = "proto3";
+
+package doric.api.config.v1;
+
+import "buf/validate/validate.proto";
+import "doric/host_config/v1/host_config.proto";
+import "doric/platform/v1/options.proto";
+import "google/protobuf/struct.proto";
+
+option (doric.platform.v1.contract) = {
+  id: "api.config/v1"
+  cardinality: CARDINALITY_ONE
+  environment: ENVIRONMENT_HOST
+};
+
+// The Doric configuration.
+service ConfigService {
+  // The active configuration with its revision and update time
+  // (`GET /config`).
+  rpc GetConfig(GetConfigRequest) returns (GetConfigResponse);
+  // Replaces the configuration, serialized with every other replacement
+  // (`PUT /config`). A value the configuration rules, a credential it names or
+  // a tool value refuses is `invalid_config`; any other failure is
+  // `configuration_rejected`, and the active configuration is then unchanged.
+  rpc PutConfig(PutConfigRequest) returns (PutConfigResponse);
+}
+
+// Reads the active configuration.
+message GetConfigRequest {}
+
+// The active configuration.
+message GetConfigResponse {
+  // The configuration with its revision and update time.
+  doric.host_config.v1.DoricConfiguration doric_configuration = 1 [(buf.validate.field).required = true];
+}
+
+// Replaces the configuration.
+message PutConfigRequest {
+  // The new configuration object as written, open JSON: `host-config`
+  // validates it against the provider kind catalog and the credential store,
+  // which no rule of this message can reach.
+  google.protobuf.Struct configuration = 1 [(buf.validate.field).required = true];
+}
+
+// The configuration now active.
+message PutConfigResponse {
+  // The configuration with its new revision.
+  doric.host_config.v1.DoricConfiguration doric_configuration = 1 [(buf.validate.field).required = true];
+}

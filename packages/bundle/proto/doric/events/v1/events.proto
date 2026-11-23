@@ -1,0 +1,150 @@
+// `events/v1` (host, 1.1.0): the event types of the bundles and where their
+// rows go. An event type's payload is the message with the option
+// `(doric.platform.v1.event).type` of that type; it crosses as a
+// `google.protobuf.Any` of that message, validated against its descriptor.
+// The owner of an event type registers it and one sink, and appends to it;
+// `core` writes each row to the stream the sink names, through `storage/v1`,
+// and fires `core.event-hooks/v1.onEventAppendedHook`.
+//
+// Errors: `unknown_event` (the type is not registered), `invalid_scope` (the
+// call's scope lacks a key the sink names, or no sink is registered),
+// `not_owner` (only the owner appends, and a sink writes only the streams its
+// owner names), `invalid_input` (a payload or a sink that breaks its rules)
+// and `registration_conflict`.
+//
+// 1.1.0: an event payload is named by `messageType`; `Unsink` replaces the
+// `Disposable` of `sink`. Phase 4 replaces `Sink` with the handler service
+// `EventSinkService`.
+syntax = "proto3";
+
+package doric.events.v1;
+
+import "buf/validate/validate.proto";
+import "doric/platform/v1/options.proto";
+import "google/protobuf/any.proto";
+
+option (doric.platform.v1.contract) = {
+  id: "events/v1"
+  cardinality: CARDINALITY_ONE
+  environment: ENVIRONMENT_HOST
+};
+
+// The event types and their sinks.
+service EventsService {
+  // Registers an event type of the calling bundle and answers a
+  // `registrationId`.
+  rpc Register(RegisterRequest) returns (RegisterResponse);
+  // Removes a registration `Register` answered; an unknown id is a no-op.
+  rpc Unregister(UnregisterRequest) returns (UnregisterResponse);
+  // Registers where the rows of the calling bundle's appended events go, one
+  // sink per bundle, and answers a `registrationId`.
+  rpc Sink(SinkRequest) returns (SinkResponse);
+  // Removes a sink `Sink` answered; an unknown id is a no-op.
+  rpc Unsink(UnsinkRequest) returns (UnsinkResponse);
+  // Appends one event of a type the caller registered; answers after its row
+  // is written.
+  rpc Append(AppendRequest) returns (AppendResponse);
+}
+
+// Registers an event type.
+message RegisterRequest {
+  // The event type, `<name>/v<major>` (for example "comments.added/v1").
+  string type = 1 [(buf.validate.field).string.pattern = "^[a-z][a-z0-9-]*(\\.[a-z0-9-]+)*/v[1-9][0-9]*$"];
+  // The full name of the payload's message, which has the option
+  // `(doric.platform.v1.event).type` of `type`; read from the catalog's
+  // descriptors.
+  string message_type = 2 [(buf.validate.field).string.pattern = "^[A-Za-z_][A-Za-z0-9_]*(\\.[A-Za-z_][A-Za-z0-9_]*)*$"];
+}
+
+// The event type's registration.
+message RegisterResponse {
+  // The id `Unregister` takes.
+  string registration_id = 1;
+}
+
+// Removes a registration.
+message UnregisterRequest {
+  // The id `Register` answered.
+  string registration_id = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+// The registration is gone.
+message UnregisterResponse {}
+
+// Where the rows of appended events go: the scope keys a row carries and the
+// stream it is appended to. The platform keeps no stream name, scope key or
+// row shape of its own. Every `{key}` placeholder of `stream` must name one
+// of `scopeKeys`.
+message SinkRequest {
+  option (buf.validate.message).cel = {
+    id: "sink_request.placeholders"
+    message: "every stream placeholder must be a scope key of the sink"
+    expression:
+      "size(this.scope_keys) == 0 || this.stream.matches("
+      "r'^(?:[^{}]|\\}|(?:\\{[^{}]*)*\\{(?:' + this.scope_keys[0]"
+      " + '|' + (size(this.scope_keys) > 1 ? this.scope_keys[1] : this.scope_keys[0])"
+      " + '|' + (size(this.scope_keys) > 2 ? this.scope_keys[2] : this.scope_keys[0])"
+      " + '|' + (size(this.scope_keys) > 3 ? this.scope_keys[3] : this.scope_keys[0])"
+      " + '|' + (size(this.scope_keys) > 4 ? this.scope_keys[4] : this.scope_keys[0])"
+      " + '|' + (size(this.scope_keys) > 5 ? this.scope_keys[5] : this.scope_keys[0])"
+      " + '|' + (size(this.scope_keys) > 6 ? this.scope_keys[6] : this.scope_keys[0])"
+      " + '|' + (size(this.scope_keys) > 7 ? this.scope_keys[7] : this.scope_keys[0])"
+      " + '|' + (size(this.scope_keys) > 8 ? this.scope_keys[8] : this.scope_keys[0])"
+      " + '|' + (size(this.scope_keys) > 9 ? this.scope_keys[9] : this.scope_keys[0])"
+      " + '|' + (size(this.scope_keys) > 10 ? this.scope_keys[10] : this.scope_keys[0])"
+      " + '|' + (size(this.scope_keys) > 11 ? this.scope_keys[11] : this.scope_keys[0])"
+      " + '|' + (size(this.scope_keys) > 12 ? this.scope_keys[12] : this.scope_keys[0])"
+      " + '|' + (size(this.scope_keys) > 13 ? this.scope_keys[13] : this.scope_keys[0])"
+      " + '|' + (size(this.scope_keys) > 14 ? this.scope_keys[14] : this.scope_keys[0])"
+      " + '|' + (size(this.scope_keys) > 15 ? this.scope_keys[15] : this.scope_keys[0])"
+      " + r')\\})*(?:\\{[^{}]*)*$')"
+  };
+  // The call-scope keys a row carries, in row order: 1 to 16, unique, each a
+  // scope key. Every key is required: an append whose scope lacks one is
+  // `invalid_scope`.
+  repeated string scope_keys = 1 [(buf.validate.field).repeated = {
+    min_items: 1
+    max_items: 16
+    unique: true
+    items: {
+      string: {pattern: "^[A-Za-z][A-Za-z0-9_.-]{0,63}$"}
+    }
+  }];
+  // The stream a row is appended to. A `{key}` placeholder names one of
+  // `scopeKeys` and is replaced by that key's value in the call's scope.
+  string stream = 2 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 256
+  }];
+  // What a call must carry, named in the `invalid_scope` message.
+  optional string scope_description = 3 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 256
+  }];
+}
+
+// The sink's registration.
+message SinkResponse {
+  // The id `Unsink` takes.
+  string registration_id = 1;
+}
+
+// Removes a sink.
+message UnsinkRequest {
+  // The id `Sink` answered.
+  string registration_id = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+// The sink is gone.
+message UnsinkResponse {}
+
+// Appends one event.
+message AppendRequest {
+  // The event type.
+  string type = 1 [(buf.validate.field).string.pattern = "^[a-z][a-z0-9-]*(\\.[a-z0-9-]+)*/v[1-9][0-9]*$"];
+  // The payload, a message of the type's `messageType`.
+  google.protobuf.Any payload = 2 [(buf.validate.field).required = true];
+}
+
+// The event's row is written.
+message AppendResponse {}

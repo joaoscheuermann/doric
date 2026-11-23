@@ -34,8 +34,8 @@ How bundles are built and loaded is in
 | `requires`        | `tools/v1@^1.0.0`, `skills/v1@^1.0.0`, `models/v1@^1.2.0`, `host-config/v1@^1.1.0`, `hooks/v1@^1.0.0`, `log/v1@^1.0.0`, `ui/v1@^1.0.0` |
 | `optional`        | `runtime.lease/v1`, `runtime.workspace/v1`, `chat.views/v1`, `default.skill-sources/v1`                                                |
 
-The package exports `./contracts` ([`src/contracts/index.ts`](src/contracts/index.ts))
-and `./package.json`. It declares no slot.
+The package exports `./contracts` ([`src/contracts/index.ts`](src/contracts/index.ts)),
+`./contracts/gen/*` (the protobuf-es code `generate-proto` writes from `proto/`) and `./package.json`. It declares no slot.
 
 ## Parts
 

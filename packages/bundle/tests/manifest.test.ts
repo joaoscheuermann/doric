@@ -9,7 +9,15 @@ import {
   readComposition,
   readManifest,
 } from '../src/index.js';
-import { parseManifest, rangeMajor, satisfies } from '../src/runtime/index.js';
+import {
+  httpPrefixOf,
+  httpPrefixPattern,
+  manifestV2Schema,
+  parseManifest,
+  partLists,
+  rangeMajor,
+  satisfies,
+} from '../src/runtime/index.js';
 import { manifest, withRoot, writeBundle } from './support/fixtures.js';
 
 const valid = manifest('git', {
@@ -77,6 +85,282 @@ void test('accepts bundle IDs that only start with "doric"', () => {
   );
 });
 
+/** The `files` example of the spec's "Requirements per part". */
+const filesV2 = {
+  manifestVersion: 2,
+  id: 'files',
+  version: '2.0.0',
+  engines: { doric: '^2.0.0' },
+  description: 'Core capabilities available to the Doric agent.',
+  provides: [
+    'files/v1@1.4.0',
+    'files.sandbox/v1@1.1.0',
+    'files.refresh/v1@1.1.0',
+    'files.open-file/v1@1.1.0',
+  ],
+  host: {
+    requires: [
+      'tools/v1@^1.4.0',
+      'runtime.workspace/v1@^1.2.0',
+      'runtime.lease/v1@^1.2.0',
+      'runtime.attachments/v1@^1.0.0',
+    ],
+  },
+  client: {
+    requires: [
+      'ui/v1@^1.0.0',
+      'regions/v1@^1.0.0',
+      'commands/v1@^1.0.0',
+      'workspace.selection/v1@^1.0.0',
+      'runtime.records/v1@^1.0.0',
+      'layout.panel/v3@^3.0.0',
+      'layout.tabs/v2@^2.0.0',
+    ],
+    optional: ['files.decorations/v1', 'chat.activity/v1', 'chat.views/v1'],
+  },
+  desktopScope: { 'files/v1': ['projectId', 'threadId', 'promptId'] },
+};
+
+const minimalV2 = {
+  manifestVersion: 2,
+  id: 'files',
+  version: '2.0.0',
+  engines: { doric: '^2.0.0' },
+};
+
+const entry = (id: string, major: number, spec: string) => ({
+  id,
+  major,
+  spec,
+});
+
+void test('accepts the spec files example as a v2 manifest and answers each part its own lists', () => {
+  assert.equal(manifestV2Schema.safeParse(filesV2).success, true);
+
+  const { manifest: parsed } = parseManifest(filesV2);
+
+  assert.equal(parsed.manifestVersion, 2);
+  assert.deepEqual(partLists(parsed, 'host'), {
+    requires: [
+      entry('tools/v1', 1, '^1.4.0'),
+      entry('runtime.workspace/v1', 1, '^1.2.0'),
+      entry('runtime.lease/v1', 1, '^1.2.0'),
+      entry('runtime.attachments/v1', 1, '^1.0.0'),
+    ],
+    optional: [],
+  });
+  assert.deepEqual(partLists(parsed, 'client'), {
+    requires: [
+      entry('ui/v1', 1, '^1.0.0'),
+      entry('regions/v1', 1, '^1.0.0'),
+      entry('commands/v1', 1, '^1.0.0'),
+      entry('workspace.selection/v1', 1, '^1.0.0'),
+      entry('runtime.records/v1', 1, '^1.0.0'),
+      entry('layout.panel/v3', 3, '^3.0.0'),
+      entry('layout.tabs/v2', 2, '^2.0.0'),
+    ],
+    optional: ['files.decorations/v1', 'chat.activity/v1', 'chat.views/v1'],
+  });
+});
+
+void test('v2 part objects are optional and default to empty lists', () => {
+  const parsed = manifestV2Schema.parse(minimalV2);
+
+  assert.deepEqual(parsed.host, { requires: [], optional: [] });
+  assert.deepEqual(parsed.client, { requires: [], optional: [] });
+  assert.deepEqual(parsed.provides, []);
+
+  const read = parseManifest(minimalV2).manifest;
+
+  for (const part of ['host', 'client'] as const) {
+    assert.deepEqual(partLists(read, part), { requires: [], optional: [] });
+  }
+
+  const hostOnly = parseManifest({
+    ...minimalV2,
+    host: { requires: ['tools/v1@^1.0.0'] },
+  }).manifest;
+
+  assert.deepEqual(partLists(hostOnly, 'host'), {
+    requires: [entry('tools/v1', 1, '^1.0.0')],
+    optional: [],
+  });
+  assert.deepEqual(partLists(hostOnly, 'client'), {
+    requires: [],
+    optional: [],
+  });
+});
+
+void test('accepts the same contract in both parts of a v2 manifest', () => {
+  assert.equal(
+    manifestV2Schema.safeParse({
+      ...minimalV2,
+      host: { requires: ['tools/v1@^1.0.0'] },
+      client: { requires: ['tools/v1@^1.0.0'], optional: [] },
+    }).success,
+    true,
+  );
+});
+
+void test('rejects v2 manifests that break the per-part rules', () => {
+  const cases: Record<string, unknown> = {
+    'a doric.* id under host.requires': {
+      ...minimalV2,
+      host: { requires: ['doric.catalog/v1@^1.0.0'] },
+    },
+    'a doric.* id under client.optional': {
+      ...minimalV2,
+      client: { optional: ['doric.windows/v1'] },
+    },
+    'a doric.* id under host.optional': {
+      ...minimalV2,
+      host: { optional: ['doric.catalog/v1'] },
+    },
+    'an id under both requires and optional of the host part': {
+      ...minimalV2,
+      host: { requires: ['tools/v1@^1.0.0'], optional: ['tools/v1'] },
+    },
+    'an id under both requires and optional of the client part': {
+      ...minimalV2,
+      client: { requires: ['ui/v1@^1.0.0'], optional: ['ui/v1'] },
+    },
+    'an id twice under client.requires': {
+      ...minimalV2,
+      client: { requires: ['ui/v1@^1.0.0', 'ui/v1@^1.2.0'] },
+    },
+    'an id twice under host.optional': {
+      ...minimalV2,
+      host: { optional: ['chat.views/v1', 'chat.views/v1'] },
+    },
+    'a requires range admitting another major': {
+      ...minimalV2,
+      client: { requires: ['ui/v1@^2.0.0'] },
+    },
+    'a requires range admitting several majors': {
+      ...minimalV2,
+      host: { requires: ['tools/v1@>=1.0.0'] },
+    },
+    'top-level requires': { ...minimalV2, requires: ['tools/v1@^1.0.0'] },
+    'top-level optional': { ...minimalV2, optional: ['tools/v1'] },
+    'an unknown top-level key': { ...minimalV2, tools: [] },
+    'an unknown host key': { ...minimalV2, host: { services: [] } },
+    'an unknown client key': {
+      ...minimalV2,
+      client: { httpPrefix: '/screen/' },
+    },
+    'provides major differs from the ID': {
+      ...minimalV2,
+      provides: ['files/v1@2.0.0'],
+    },
+    'uses the platform ID': { ...minimalV2, id: 'doric' },
+    'has an invalid version': { ...minimalV2, version: '2.0' },
+  };
+
+  for (const [name, document] of Object.entries(cases)) {
+    assert.equal(manifestV2Schema.safeParse(document).success, false, name);
+    assert.throws(() => parseManifest(document), name);
+  }
+});
+
+void test('accepts host.httpPrefix of one segment between slashes in v1 and v2', () => {
+  assert.equal(httpPrefixPattern.test('/screen/'), true);
+  assert.equal(
+    manifestV1Schema.safeParse({ ...valid, host: { httpPrefix: '/screen/' } })
+      .success,
+    true,
+  );
+  assert.equal(
+    manifestV2Schema.safeParse({
+      ...minimalV2,
+      host: { httpPrefix: '/screen/' },
+    }).success,
+    true,
+  );
+
+  for (const prefix of ['/a/b/', 'screen']) {
+    assert.equal(httpPrefixPattern.test(prefix), false, prefix);
+    assert.equal(
+      manifestV1Schema.safeParse({ ...valid, host: { httpPrefix: prefix } })
+        .success,
+      false,
+      `v1 ${prefix}`,
+    );
+    assert.equal(
+      manifestV2Schema.safeParse({
+        ...minimalV2,
+        host: { httpPrefix: prefix },
+      }).success,
+      false,
+      `v2 ${prefix}`,
+    );
+  }
+
+  assert.equal(
+    manifestV1Schema.safeParse({ ...valid, host: { requires: [] } }).success,
+    false,
+    'v1 host holds httpPrefix only',
+  );
+});
+
+void test('httpPrefixOf answers host.httpPrefix of either version, or undefined', () => {
+  assert.equal(
+    httpPrefixOf(
+      parseManifest({ ...valid, host: { httpPrefix: '/screen/' } }).manifest,
+    ),
+    '/screen/',
+  );
+  assert.equal(
+    httpPrefixOf(
+      parseManifest({ ...minimalV2, host: { httpPrefix: '/screen/' } })
+        .manifest,
+    ),
+    '/screen/',
+  );
+  assert.equal(httpPrefixOf(parseManifest(valid).manifest), undefined);
+  assert.equal(
+    httpPrefixOf(parseManifest({ ...valid, host: {} }).manifest),
+    undefined,
+  );
+  assert.equal(httpPrefixOf(parseManifest(filesV2).manifest), undefined);
+});
+
+void test('a v1 manifest answers its bundle-wide lists for both parts', () => {
+  const { manifest: parsed } = parseManifest({
+    ...valid,
+    optional: ['chat.views/v1'],
+  });
+
+  assert.equal(parsed.manifestVersion, 1);
+
+  for (const part of ['host', 'client'] as const) {
+    assert.deepEqual(
+      partLists(parsed, part),
+      {
+        requires: [
+          entry('tools/v1', 1, '^1.0.0'),
+          entry('runtime.lease/v1', 1, '^1.0.0'),
+        ],
+        optional: ['chat.views/v1'],
+      },
+      part,
+    );
+  }
+
+  for (const part of ['host', 'client'] as const) {
+    assert.deepEqual(
+      partLists(parseManifest(valid).manifest, part),
+      {
+        requires: [
+          entry('tools/v1', 1, '^1.0.0'),
+          entry('runtime.lease/v1', 1, '^1.0.0'),
+        ],
+        optional: [],
+      },
+      `${part} without optional`,
+    );
+  }
+});
+
 void test('converts a v0 manifest in memory without assigning a product identity', () => {
   const converted = convertV0({
     name: 'core',
@@ -85,6 +369,7 @@ void test('converts a v0 manifest in memory without assigning a product identity
     skills: [{ path: 'skills/a/SKILL.md', alwaysAvailable: false }],
   });
 
+  assert.ok(converted.manifest.manifestVersion === 1);
   assert.equal(converted.manifest.id, 'core');
   assert.equal(converted.manifest.version, '0.0.0');
   assert.deepEqual(converted.manifest.provides, []);
@@ -104,6 +389,7 @@ void test('converts a v0 manifest in memory without assigning a product identity
     skills: [],
   });
 
+  assert.ok(withoutTools.manifest.manifestVersion === 1);
   assert.equal(withoutTools.manifest.id, 'threads');
   assert.deepEqual(withoutTools.manifest.requires, []);
 });
@@ -114,8 +400,12 @@ void test('rejects a v0 name that is not a bundle ID', () => {
   );
 });
 
-void test('recognizes v1 by manifestVersion and reads v0 otherwise', () => {
+void test('recognizes v1 and v2 by manifestVersion and reads v0 otherwise', () => {
   assert.equal(parseManifest(valid).legacy, undefined);
+  assert.equal(parseManifest(valid).manifest.manifestVersion, 1);
+  assert.equal(parseManifest(filesV2).legacy, undefined);
+  assert.equal(parseManifest(filesV2).manifest.manifestVersion, 2);
+  assert.throws(() => parseManifest({ ...filesV2, manifestVersion: 3 }));
   assert.notEqual(
     parseManifest({ name: 'git', description: 'x', tools: [], skills: [] })
       .legacy,

@@ -1,0 +1,48 @@
+{
+  "name": "@org/source",
+  "$schema": "node_modules/nx/schemas/project-schema.json",
+  "targets": {
+    "proto-export": {
+      "executor": "nx:run-commands",
+      "cache": true,
+      "inputs": [
+        "{workspaceRoot}/buf.yaml",
+        "{workspaceRoot}/buf.lock",
+        "{workspaceRoot}/packages/*/proto/**/*.proto",
+        "{workspaceRoot}/bundles/*/*/proto/**/*.proto",
+        "{workspaceRoot}/benchmarks/*/proto/**/*.proto"
+      ],
+      "outputs": ["{workspaceRoot}/dist/proto"],
+      "options": {
+        "commands": [
+          "npx buf export . --output dist/proto",
+          "npx buf export buf.build/googleapis/googleapis:8ac61b9e502343289c8c42b17aa5b245 --path google/rpc/error_details.proto --output dist/proto"
+        ],
+        "parallel": false,
+        "cwd": "{workspaceRoot}"
+      }
+    },
+    "proto-check": {
+      "executor": "nx:run-commands",
+      "cache": true,
+      "dependsOn": ["bundle:build"],
+      "inputs": [
+        "{workspaceRoot}/buf.yaml",
+        "{workspaceRoot}/buf.lock",
+        "{workspaceRoot}/packages/*/proto/**/*.proto",
+        "{workspaceRoot}/bundles/*/*/proto/**/*.proto",
+        "{workspaceRoot}/benchmarks/*/proto/**/*.proto",
+        "{workspaceRoot}/packages/bundle/src/build/proto-rules.ts"
+      ],
+      "options": {
+        "commands": [
+          "mkdir -p dist/proto-check",
+          "npx buf build --as-file-descriptor-set -o dist/proto-check/image.binpb",
+          "node packages/bundle/dist/build/proto-rules.js dist/proto-check/image.binpb"
+        ],
+        "parallel": false,
+        "cwd": "{workspaceRoot}"
+      }
+    }
+  }
+}

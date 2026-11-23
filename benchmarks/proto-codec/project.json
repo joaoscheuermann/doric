@@ -1,0 +1,22 @@
+{
+  "name": "proto-codec",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "projectType": "application",
+  "sourceRoot": "benchmarks/proto-codec/src",
+  "tags": ["type:benchmark"],
+  "targets": {
+    "bench": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "dependsOn": ["bundle:generate-proto"],
+      "options": {
+        "commands": [
+          "npx buf generate --template buf.gen.yaml --path benchmarks/proto-codec/proto/doric -o benchmarks/proto-codec/dist",
+          "node --conditions=@org/source --import @swc-node/register/esm-register benchmarks/proto-codec/src/main.ts"
+        ],
+        "parallel": false,
+        "cwd": "{workspaceRoot}"
+      }
+    }
+  }
+}

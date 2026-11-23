@@ -1,0 +1,234 @@
+// Custom options through which a `.proto` file declares Doric contract
+// metadata: the contract a file defines, the role of a service, how a method
+// is exposed, and what a message is (an event, settings, a stored record, a
+// command input or a hook input). The build and the catalog read these
+// options from the descriptors; they change no wire format.
+//
+// This file is not a contract and is not held to the contract message rules,
+// but it holds no 64-bit integer. Extension numbers are in the range
+// 50000-99999 that protobuf reserves for in-house options.
+syntax = "proto3";
+
+package doric.platform.v1;
+
+import "google/protobuf/descriptor.proto";
+
+extend google.protobuf.FileOptions {
+  // The contract this file defines. A file of a contract sets it; the build
+  // refuses a contract whose cardinality or environment is unspecified, and a
+  // file whose package is not the one its id maps to.
+  ContractOption contract = 50100;
+  // The hooks contract this file defines; each hook input of the file is a
+  // message with the `hook` option.
+  HooksOption hooks = 50101;
+}
+
+extend google.protobuf.ServiceOptions {
+  // The role of a service; a service without it is a contract's own service.
+  ServiceOption service = 50110;
+}
+
+extend google.protobuf.MethodOptions {
+  // How a method is exposed and whether its stream can be opened again; a
+  // method without it is not exposed and not resumable.
+  MethodOption method = 50120;
+}
+
+extend google.protobuf.MessageOptions {
+  // Marks the message as the payload of an event type.
+  EventOption event = 50130;
+  // Marks the message as the value of a settings id.
+  SettingsOption settings = 50131;
+  // Marks the message as the value of a storage type, with its indexes.
+  StorageTypeOption storage_type = 50132;
+  // Marks the message as the entry of the storage streams whose id starts
+  // with the prefix.
+  StreamEntryOption stream_entry = 50133;
+  // Marks the message as the input of a command id.
+  CommandOption command = 50134;
+  // Marks the message as the input of a hook of the file's hooks contract.
+  HookOption hook = 50135;
+}
+
+extend google.protobuf.OneofOptions {
+  // Names the key of the discriminated union this oneof replaces.
+  OneofOption oneof = 50140;
+}
+
+extend google.protobuf.FieldOptions {
+  // Per-field handling; a field without it is an ordinary field.
+  FieldOption field = 50150;
+}
+
+// The contract a file defines.
+message ContractOption {
+  // The contract id, `<name>/v<major>` (for example "tools/v1"). Its package
+  // is `doric.<name>.v<major>`, and a platform id `doric.<name>/v<major>`'s is
+  // `doric.platform.<name>.v<major>` ("doric.log/v1" is
+  // `doric.platform.log.v1`), every `-` of the name replaced by `_`.
+  string id = 1;
+  // How many providers the contract has. Must not be unspecified.
+  Cardinality cardinality = 2;
+  // Where the contract is served; one environment per contract. Must not be
+  // unspecified for a bundle's contract. A platform contract (`doric.*`)
+  // leaves it unspecified: the platform serves it where it runs.
+  Environment environment = 3;
+}
+
+// The hooks contract a file defines.
+message HooksOption {
+  // The hooks contract id, `<name>/v<major>`.
+  string id = 1;
+}
+
+// The role of a service.
+message ServiceOption {
+  // The role; unspecified is a contract's own service.
+  ServiceRole role = 1;
+}
+
+// How a method is exposed and resumed.
+message MethodOption {
+  // Where the method is exposed beyond the bundles; unspecified exposes it
+  // nowhere else.
+  Expose expose = 1;
+  // True when the method is a server stream the client SDK opens again when
+  // its provider instance is lost or drained; its first item is a snapshot,
+  // or each item is a state, so a caller that opens it again loses nothing.
+  bool resumable = 2;
+}
+
+// The event type whose payload the message is.
+message EventOption {
+  // The event type, `<name>/v<major>` (for example "comments.added/v1").
+  string type = 1;
+}
+
+// The settings id whose value the message is.
+message SettingsOption {
+  // The settings id, `<name>/v<major>` (for example
+  // "host-config.configuration/v1").
+  string id = 1;
+}
+
+// The storage type whose documents the message is, with its indexes.
+message StorageTypeOption {
+  // The storage type, `<name>/v<major>` (for example "runtime.thread/v1");
+  // its namespace is the owning bundle's id.
+  string type = 1;
+  // The type's indexes, in declaration order; their names are unique within
+  // the type.
+  repeated StorageIndex indexes = 2;
+}
+
+// One index of a storage type.
+message StorageIndex {
+  // The index name, unique within its type.
+  string name = 1;
+  // The paths of the indexed fields in the document's protobuf JSON form, in
+  // key order.
+  repeated string fields = 2;
+  // True when no two documents of the type may hold the same key of this
+  // index; absent is false.
+  optional bool unique = 3;
+}
+
+// The storage streams whose entries the message is.
+message StreamEntryOption {
+  // The prefix that starts the id of every stream whose entries are this
+  // message (for example "runtime.thread.events/").
+  string prefix = 1;
+}
+
+// The command id whose input the message is.
+message CommandOption {
+  // The command id, `<name>/v<major>` (for example "core.open-settings/v1").
+  string id = 1;
+}
+
+// A hook of the file's hooks contract, whose input the message is.
+message HookOption {
+  // The hook name, unique within its hooks contract (for example
+  // "onSendHook").
+  string name = 1;
+  // How the hook's handlers run. Must not be unspecified.
+  HookKind kind = 2;
+  // Which way the catalog order runs; unspecified is a hook without an order.
+  HookOrder order = 3;
+}
+
+// The discriminated union a oneof replaces.
+message OneofOption {
+  // The key that discriminated the union today (for example "kind"); the
+  // names of the oneof's fields are that key's values.
+  string discriminator = 1;
+}
+
+// Per-field handling.
+message FieldOption {
+  // True when the field holds a secret: the SDK, the router and the storage
+  // scripts never log or print its value.
+  bool secret = 1;
+}
+
+// How many providers a contract has.
+enum Cardinality {
+  // Not set; refused by the build.
+  CARDINALITY_UNSPECIFIED = 0;
+  // Exactly one provider.
+  CARDINALITY_ONE = 1;
+  // Any number of providers.
+  CARDINALITY_MANY = 2;
+}
+
+// Where a contract is served.
+enum Environment {
+  // Not set; refused by the build.
+  ENVIRONMENT_UNSPECIFIED = 0;
+  // Served by host parts, in bundle processes.
+  ENVIRONMENT_HOST = 1;
+  // Served by client parts, in a window.
+  ENVIRONMENT_CLIENT = 2;
+}
+
+// Where a method is exposed beyond the bundles.
+enum Expose {
+  // Not exposed beyond the bundles.
+  EXPOSE_UNSPECIFIED = 0;
+  // Exposed to the desktop app.
+  EXPOSE_DESKTOP = 1;
+}
+
+// The role of a service.
+enum ServiceRole {
+  // A contract's own service.
+  SERVICE_ROLE_UNSPECIFIED = 0;
+  // A handler service: implemented by the bundles that register with the
+  // contract and called by its provider.
+  SERVICE_ROLE_HANDLER = 1;
+}
+
+// How a hook's handlers run.
+enum HookKind {
+  // Not set; refused by the build.
+  HOOK_KIND_UNSPECIFIED = 0;
+  // Handlers receive the input and return nothing.
+  HOOK_KIND_OBSERVE = 1;
+  // Handlers return a transformed input.
+  HOOK_KIND_TRANSFORM = 2;
+  // Handlers return a decision to allow or refuse.
+  HOOK_KIND_DECIDE = 3;
+  // Handlers run one after another and are awaited; a handler's failure
+  // fails the execution.
+  HOOK_KIND_SEQUENCE = 4;
+}
+
+// Which way the catalog order runs for a hook's handlers.
+enum HookOrder {
+  // A hook without an order.
+  HOOK_ORDER_UNSPECIFIED = 0;
+  // The catalog's activation order.
+  HOOK_ORDER_ACTIVATION = 1;
+  // The reverse of the activation order.
+  HOOK_ORDER_REVERSE = 2;
+}

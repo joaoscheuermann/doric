@@ -1,0 +1,338 @@
+// `terminal/v1` (host, 1.3.0): the tracked terminal commands of the calling
+// prompt's Thread (`Run`, the call's scope) and the terminal sessions of
+// every Project: the manual shells a reader opens and the commands the agent
+// runs, with their output stream. The `terminal` bundle provides it.
+//
+// 1.3.0: `watchProject` becomes a server stream.
+syntax = "proto3";
+
+package doric.terminal.v1;
+
+import "buf/validate/validate.proto";
+import "doric/platform/v1/options.proto";
+import "doric/runtime/v2/runtime.proto";
+
+option (doric.platform.v1.contract) = {
+  id: "terminal/v1"
+  cardinality: CARDINALITY_ONE
+  environment: ENVIRONMENT_HOST
+};
+
+// Terminal commands and sessions. A refusal is an answer (an absent value or
+// `false`), never an error.
+service TerminalService {
+  // Runs one command, registered with the calling prompt's Thread for its
+  // whole life. A foreground command answers its result; a background one
+  // answers at once with its terminal id.
+  rpc Run(RunRequest) returns (RunResponse);
+  // A Project's sessions, in start order.
+  rpc List(ListRequest) returns (ListResponse) {
+    option (doric.platform.v1.method).expose = EXPOSE_DESKTOP;
+  }
+  // Opens a manual bash PTY in the Thread's working directory, bringing its
+  // Project back first. An absent session is `terminal_unavailable`: no such
+  // Thread, a finished or closing one, or a Project without a sandbox.
+  rpc Create(CreateRequest) returns (CreateResponse) {
+    option (doric.platform.v1.method).expose = EXPOSE_DESKTOP;
+  }
+  // A session's retained output after a cursor; an absent snapshot is
+  // `terminal_missing`.
+  rpc Snapshot(SnapshotRequest) returns (SnapshotResponse) {
+    option (doric.platform.v1.method).expose = EXPOSE_DESKTOP;
+  }
+  // Writes text to a running session; `false` is `terminal_missing` (no
+  // running process).
+  rpc Input(InputRequest) returns (InputResponse) {
+    option (doric.platform.v1.method).expose = EXPOSE_DESKTOP;
+  }
+  // Resizes a running session; `false` is `terminal_missing` (no running
+  // process).
+  rpc Resize(ResizeRequest) returns (ResizeResponse) {
+    option (doric.platform.v1.method).expose = EXPOSE_DESKTOP;
+  }
+  // Stops and removes a session; `false` when none existed. Idempotent.
+  rpc Stop(StopRequest) returns (StopResponse) {
+    option (doric.platform.v1.method).expose = EXPOSE_DESKTOP;
+  }
+  // Names a session. The name is trimmed; an absent, empty or
+  // whitespace-only name clears it. The session's `updated` item carries the
+  // result. `false` is `terminal_missing`.
+  rpc Rename(RenameRequest) returns (RenameResponse) {
+    option (doric.platform.v1.method).expose = EXPOSE_DESKTOP;
+  }
+  // A Project's terminal stream: one snapshot first, then its updates and
+  // removals, and live output only after the snapshot (never buffered before
+  // it). The caller ends it by cancelling.
+  rpc WatchProject(WatchProjectRequest) returns (stream WatchProjectResponse) {
+    option (doric.platform.v1.method).expose = EXPOSE_DESKTOP;
+    option (doric.platform.v1.method).resumable = true;
+  }
+}
+
+// One tracked terminal, as `GET /projects/:id/terminals` lists it.
+message TerminalSession {
+  // The terminal's id.
+  string id = 1;
+  // The Project.
+  string project_id = 2;
+  // The Thread that started it.
+  string thread_id = 3;
+  // Who started it: "agent" or "user".
+  string origin = 4 [(buf.validate.field).string = {
+    in: [
+      "agent",
+      "user"
+    ]
+  }];
+  // The command it runs.
+  string command = 5;
+  // Its working directory.
+  string cwd = 6;
+  // When it started (ISO-8601).
+  string started_at = 7;
+  // How long it may run, in milliseconds, a whole number; absent for no
+  // limit.
+  optional double timeout_ms = 8 [
+    (buf.validate.field).double.gte = 0,
+    (buf.validate.field).cel = {
+      id: "timeout_ms.integer"
+      message: "timeoutMs must be a whole number of milliseconds"
+      expression: "this == double(int(this))"
+    }
+  ];
+  // "starting", "running" or "exited".
+  string state = 9 [(buf.validate.field).string = {
+    in: [
+      "starting",
+      "running",
+      "exited"
+    ]
+  }];
+  // Whether it runs in a terminal.
+  bool pty = 10;
+  // The name the reader gave the session, trimmed and never empty; absent
+  // while it has none, when its command names it.
+  optional string name = 11 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 80
+  }];
+}
+
+// A session's retained output after a cursor (`GET /terminals/:id`).
+message TerminalSnapshot {
+  // The session.
+  TerminalSession terminal = 1 [(buf.validate.field).required = true];
+  // The retained output after the cursor.
+  string output = 2;
+  // The exclusive UTF-16 offset after `output`, a whole number.
+  double offset = 3 [
+    (buf.validate.field).double.gte = 0,
+    (buf.validate.field).cel = {
+      id: "offset.integer"
+      message: "offset must be a whole number"
+      expression: "this == double(int(this))"
+    }
+  ];
+  // Whether the cursor is older than the retained output.
+  bool truncated = 4;
+}
+
+// A Project's sessions, the first item of a Project's terminal stream.
+message ProjectTerminals {
+  // The Project.
+  string project_id = 1;
+  // Its sessions, in start order.
+  repeated TerminalSession terminals = 2;
+}
+
+// Runs one command; today's `TerminalInput`.
+message RunRequest {
+  // The shell command.
+  string command = 1;
+  // The working directory.
+  string cwd = 2;
+  // How long it may run, in milliseconds, a whole number; 0 is no limit.
+  double timeout_ms = 3 [
+    (buf.validate.field).double.gte = 0,
+    (buf.validate.field).cel = {
+      id: "timeout_ms.integer"
+      message: "timeoutMs must be a whole number of milliseconds"
+      expression: "this == double(int(this))"
+    }
+  ];
+  // Whether it runs in the background and answers at once.
+  optional bool background = 4;
+  // Whether it runs in a terminal.
+  optional bool pty = 5;
+}
+
+// A foreground command's result (today's `TerminalResult`), or a background
+// command's id (today's `BackgroundTerminal`, `background` true and nothing
+// but `terminalId`).
+message RunResponse {
+  option (buf.validate.message).cel = {
+    id: "run_response.shape"
+    message: "a background answer carries only terminalId, a result every field but background"
+    expression: "has(this.background) ? !(has(this.stdout) || has(this.stderr) || has(this.exit_code) || has(this.duration_ms) || has(this.reason)) : (has(this.stdout) && has(this.stderr) && has(this.exit_code) && has(this.duration_ms) && has(this.reason))"
+  };
+  // The terminal's id.
+  string terminal_id = 1;
+  // Always true when set: the command runs in the background.
+  optional bool background = 2 [(buf.validate.field).bool.const = true];
+  // The standard output; set for a result.
+  optional string stdout = 3;
+  // The standard error; set for a result.
+  optional string stderr = 4;
+  // The exit code; set for a result.
+  optional int32 exit_code = 5;
+  // How long it ran, in milliseconds, a whole number; set for a result.
+  optional double duration_ms = 6 [
+    (buf.validate.field).double.gte = 0,
+    (buf.validate.field).cel = {
+      id: "duration_ms.integer"
+      message: "durationMs must be a whole number of milliseconds"
+      expression: "this == double(int(this))"
+    }
+  ];
+  // How it ended: "exited", "timeout", "terminated" or "failed"; set for a
+  // result.
+  optional string reason = 7 [(buf.validate.field).string = {
+    in: [
+      "exited",
+      "timeout",
+      "terminated",
+      "failed"
+    ]
+  }];
+}
+
+// Asks a Project's sessions.
+message ListRequest {
+  // The Project.
+  string project_id = 1;
+}
+
+// A Project's sessions.
+message ListResponse {
+  // The sessions, in start order; empty when it has none.
+  repeated TerminalSession terminals = 1;
+}
+
+// Opens a manual shell in a Thread's working directory.
+message CreateRequest {
+  // The Thread.
+  string thread_id = 1;
+  // The terminal's columns; the provider's default when absent.
+  optional int32 cols = 2;
+  // The terminal's rows; the provider's default when absent.
+  optional int32 rows = 3;
+}
+
+// The new session, when one opened.
+message CreateResponse {
+  // The session; absent is `terminal_unavailable`.
+  optional TerminalSession terminal_session = 1;
+}
+
+// Asks a session's output after a cursor.
+message SnapshotRequest {
+  // The session.
+  string terminal_id = 1;
+  // The UTF-16 offset to read after, a whole number; 0 reads all that is
+  // retained.
+  double after = 2 [
+    (buf.validate.field).double.gte = 0,
+    (buf.validate.field).cel = {
+      id: "after.integer"
+      message: "after must be a whole number"
+      expression: "this == double(int(this))"
+    }
+  ];
+}
+
+// The snapshot, when the session exists.
+message SnapshotResponse {
+  // The snapshot; absent is `terminal_missing`.
+  optional TerminalSnapshot terminal_snapshot = 1;
+}
+
+// Writes text to a session.
+message InputRequest {
+  // The session.
+  string terminal_id = 1;
+  // The text, as typed.
+  string data = 2;
+}
+
+// Whether the text reached a running process.
+message InputResponse {
+  // `false` is `terminal_missing`.
+  bool sent = 1;
+}
+
+// Resizes a session.
+message ResizeRequest {
+  // The session.
+  string terminal_id = 1;
+  // The new columns.
+  int32 cols = 2;
+  // The new rows.
+  int32 rows = 3;
+}
+
+// Whether a running process was resized.
+message ResizeResponse {
+  // `false` is `terminal_missing`.
+  bool resized = 1;
+}
+
+// Stops and removes a session.
+message StopRequest {
+  // The session.
+  string terminal_id = 1;
+}
+
+// Whether a session existed.
+message StopResponse {
+  // `false` when none existed.
+  bool stopped = 1;
+}
+
+// Names a session.
+message RenameRequest {
+  // The session.
+  string terminal_id = 1 [(buf.validate.field).string.min_len = 1];
+  // The name, at most 80 characters before trimming; absent clears it.
+  optional string name = 2 [(buf.validate.field).string.max_len = 80];
+}
+
+// Whether the session was named.
+message RenameResponse {
+  // `false` is `terminal_missing`.
+  bool renamed = 1;
+}
+
+// Watches a Project's sessions.
+message WatchProjectRequest {
+  // The Project.
+  string project_id = 1;
+}
+
+// One item of a Project's terminal stream: the snapshot first, and only
+// first, then updates, removals and live output; today's
+// `TerminalWatchItem`, named by its `kind`.
+message WatchProjectResponse {
+  // The item.
+  oneof item {
+    option (doric.platform.v1.oneof).discriminator = "kind";
+    option (buf.validate.oneof).required = true;
+    // `terminal:snapshot`: the Project's sessions.
+    ProjectTerminals snapshot = 1;
+    // `terminal:updated`: a session that started or changed.
+    TerminalSession updated = 2;
+    // `terminal:removed`: a session that is gone.
+    doric.runtime.v2.TerminalRemoved removed = 3;
+    // `terminal:output`: a chunk of a session's live output.
+    doric.runtime.v2.TerminalOutput output = 4;
+  }
+}

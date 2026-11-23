@@ -1,0 +1,225 @@
+// `settings.models/v1` (client, 1.1.0): everything the footer execution
+// picker shows and every execution a pick yields. `settings` computes it from
+// its configuration rules; the chat draws it and writes the Thread through
+// `runtime.threads/v1`. Read only: nothing writes the default through this
+// contract. Only client parts of the same window call it.
+//
+// 1.1.0: `view` and `reload` are asynchronous; `subscribe` becomes the
+// stream `Watch`, whose first item is the view `View` answers.
+syntax = "proto3";
+
+package doric.settings.models.v1;
+
+import "buf/validate/validate.proto";
+import "doric/platform/v1/options.proto";
+
+option (doric.platform.v1.contract) = {
+  id: "settings.models/v1"
+  cardinality: CARDINALITY_ONE
+  environment: ENVIRONMENT_CLIENT
+};
+
+// The execution picker's data.
+service ModelsService {
+  // The picker's data for one stored execution, or for the default
+  // execution when `stored` is absent. The first item of `Watch` for the
+  // same `stored` holds the same view.
+  rpc View(ViewRequest) returns (ViewResponse);
+  // Streams the view of one stored execution: the present view first, then
+  // one item after every change of what `View` answers for it (the
+  // configuration, an icon or the read's state).
+  rpc Watch(WatchRequest) returns (stream WatchResponse) {
+    option (doric.platform.v1.method).resumable = true;
+  }
+  // Reads the configuration again. Answers at once and never fails; a call
+  // while a read runs starts no second one. The outcome reaches `Watch`.
+  rpc Reload(ReloadRequest) returns (ReloadResponse);
+}
+
+// What a Thread record stores of its execution; a Thread created before
+// `runtime.threads/v1` 1.7.0 stores none of it.
+message StoredExecution {
+  // The stored provider; absent when none is stored.
+  optional string provider_id = 1;
+  // The stored model; absent when none is stored.
+  optional string model = 2;
+  // The stored effort, as the record holds it; absent when none is stored.
+  optional string effort = 3;
+}
+
+// A provider, a model and an optional effort: the input of
+// `runtime.threads/v1.SetThreadExecution` without its `id`.
+message ModelExecution {
+  // The provider.
+  string provider_id = 1;
+  // The model.
+  string model = 2;
+  // The effort the model accepts; absent when it accepts none, so no
+  // reasoning block is sent.
+  optional string effort = 3 [(buf.validate.field).string = {
+    in: [
+      "none",
+      "minimal",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ]
+  }];
+}
+
+// One cause below the outermost level of a failure.
+message ErrorCause {
+  // The cause's code, when it states one.
+  optional string code = 1;
+  // The cause's provider id, when it states one.
+  optional string provider = 2;
+  // The cause's HTTP status, when it states one.
+  optional int32 status = 3;
+  // The cause's own `retryable` flag, when it states one.
+  optional bool retryable = 4;
+  // The cause's message.
+  string message = 5;
+}
+
+// A failure as the window shows it (`desktop/reads`' `ErrorInfo`).
+message ErrorInfo {
+  // The outermost code; "" when the error names none.
+  string code = 1;
+  // The outermost level's provider id, when it states one.
+  optional string provider = 2;
+  // The outermost level's HTTP status, when it states one.
+  optional int32 status = 3;
+  // The outermost message, trimmed; "" when there is none.
+  string message = 4;
+  // The outermost level's own `retryable` flag, when it states one.
+  optional bool retryable = 5;
+  // The causes below the outermost level, outermost first; at most 7; empty
+  // for none.
+  repeated ErrorCause causes = 6 [(buf.validate.field).repeated.max_items = 7];
+  // When the failure happened (ISO 8601); absent where nothing records the
+  // time.
+  optional string at = 7;
+}
+
+// One model the reader can pick.
+message ModelChoice {
+  // The choice's label.
+  string label = 1;
+  // The choice's key, unique in the view.
+  string value = 2;
+  // SVG markup of the model's icon; absent when it has none.
+  optional string icon = 3;
+  // What the Thread runs on when the reader picks this model.
+  ModelExecution execution = 4 [(buf.validate.field).required = true];
+}
+
+// The models of one provider.
+message ModelGroup {
+  // The provider's label; absent when one provider holds every model.
+  optional string label = 1;
+  // The provider's models; empty for none.
+  repeated ModelChoice choices = 2;
+}
+
+// One effort the reader can pick.
+message EffortChoice {
+  // The choice's label.
+  string label = 1;
+  // The effort.
+  string value = 2 [(buf.validate.field).string = {
+    in: [
+      "none",
+      "minimal",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ]
+  }];
+  // "(default)" on the effort the model's catalog names as its default;
+  // absent on the others.
+  optional string note = 3;
+  // What the Thread runs on when the reader picks this effort.
+  ModelExecution execution = 4 [(buf.validate.field).required = true];
+}
+
+// The picker before any configuration was read.
+message ExecutionLoading {
+  // The last read's failure, kept while a read that follows it runs;
+  // absent when none failed.
+  ErrorInfo error = 1;
+  // Whether a read runs.
+  bool reloading = 2;
+}
+
+// The picker over a configuration that was read.
+message ExecutionReady {
+  // A failed re-read; the view keeps the last configuration beside it.
+  // Absent when the last read succeeded.
+  ErrorInfo error = 1;
+  // Whether a read runs.
+  bool reloading = 2;
+  // The execution shown: the stored one resolved against the
+  // configuration, or the default.
+  ModelExecution execution = 3 [(buf.validate.field).required = true];
+  // The shown model's icon; absent when it has none.
+  optional string icon = 4;
+  // The `value` of the shown model's choice.
+  string value = 5;
+  // False when no provider lists a model, and the model is typed by hand.
+  bool lists_models = 6;
+  // The models, by provider; empty for none.
+  repeated ModelGroup groups = 7;
+  // The efforts the shown model accepts, without "none"; empty for none.
+  repeated EffortChoice efforts = 8;
+  // The shown effort's label; "Unavailable" when `efforts` is empty.
+  string effort_label = 9;
+  // The provider a model typed by hand is written on.
+  string typed_provider_id = 10;
+}
+
+// What the picker shows, named as today's `status`.
+message ExecutionView {
+  // The view's state.
+  oneof status {
+    option (doric.platform.v1.oneof).discriminator = "status";
+    option (buf.validate.oneof).required = true;
+    // No configuration was read yet.
+    ExecutionLoading loading = 1;
+    // A configuration was read.
+    ExecutionReady ready = 2;
+  }
+}
+
+// Asks the view of one stored execution.
+message ViewRequest {
+  // The Thread's stored execution; absent for the default execution.
+  StoredExecution stored = 1;
+}
+
+// The view.
+message ViewResponse {
+  // The view.
+  ExecutionView execution_view = 1 [(buf.validate.field).required = true];
+}
+
+// Asks the view of one stored execution as it changes.
+message WatchRequest {
+  // The Thread's stored execution; absent for the default execution.
+  StoredExecution stored = 1;
+}
+
+// The view after a change, or the present one for the first item.
+message WatchResponse {
+  // The view.
+  ExecutionView execution_view = 1 [(buf.validate.field).required = true];
+}
+
+// Asks a new read of the configuration.
+message ReloadRequest {}
+
+// The read started, or one was already running.
+message ReloadResponse {}

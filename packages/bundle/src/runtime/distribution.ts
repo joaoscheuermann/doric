@@ -10,7 +10,7 @@ import type {
 import type { CatalogCandidate } from './catalog.js';
 import type { Composition } from './composition.js';
 import { descriptorSchema } from './descriptor.js';
-import { manifestV1Schema } from './manifest.js';
+import { manifestV1Schema, manifestV2Schema } from './manifest.js';
 
 export type {
   DistributionArtifact,
@@ -34,6 +34,12 @@ export const distributedSource = (bundle: {
   dir: `${bundle.id}@${bundle.version}`,
 });
 
+const isVersion2 = (document: unknown): boolean =>
+  typeof document === 'object' &&
+  document !== null &&
+  'manifestVersion' in document &&
+  document.manifestVersion === 2;
+
 const candidateOf = (
   bundle: DistributionBundle,
   embedded = false,
@@ -41,7 +47,10 @@ const candidateOf = (
   const source: CatalogCandidate['source'] = embedded
     ? { kind: 'embedded' }
     : distributedSource(bundle);
-  const manifest = manifestV1Schema.safeParse(bundle.manifest);
+  // A distributed manifest is v1 or v2 as the host read it.
+  const manifest = (
+    isVersion2(bundle.manifest) ? manifestV2Schema : manifestV1Schema
+  ).safeParse(bundle.manifest);
 
   if (!manifest.success) {
     return {

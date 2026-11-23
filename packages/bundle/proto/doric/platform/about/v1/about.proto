@@ -1,0 +1,31 @@
+// `doric.about/v1` (platform 2.0.0): what the app says about itself. A
+// bundle on an app without it finds no provider; it detects the contract with
+// `services.whenAvailable` and omits what needs it.
+//
+// 2.0.0: the schema moves to `.proto` with the same fields.
+syntax = "proto3";
+
+package doric.platform.about.v1;
+
+import "doric/platform/v1/options.proto";
+
+option (doric.platform.v1.contract) = {
+  id: "doric.about/v1"
+  cardinality: CARDINALITY_ONE
+};
+
+// The app's description.
+service AboutService {
+  // The app's version; the same answer for every call in a window, and never
+  // a failure while the provider is registered.
+  rpc Get(GetRequest) returns (GetResponse);
+}
+
+// Asks the app's description.
+message GetRequest {}
+
+// The app's description.
+message GetResponse {
+  // The app's version, as main reads it with `app.getVersion()`.
+  string version = 1;
+}

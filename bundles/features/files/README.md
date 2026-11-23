@@ -48,6 +48,16 @@ bundle has no settings, routes or storage of its own.
 
 ## Parts
 
+- **Protos** ([`proto/doric/files/v1/files.proto`](proto/doric/files/v1/files.proto)):
+  the package `doric.files.v1` and its `FilesService`; beside it
+  `doric/files/{sandbox,decorations,refresh,open_file}/v1`, the client
+  contracts `files` declares. `files.decorations/v1` lives here although `git`
+  provides it, because a `.proto` lives in the project that declares its
+  contract (spec A57). The `generate-proto`
+  target writes the protobuf-es code into `src/contracts/gen/` (ignored by
+  Git), exported as `files/contracts/gen/*`; it depends on
+  `@bufbuild/protobuf`; `@bufbuild/protovalidate` is a devDependency, used only
+  by `tests/generated-imports.test.ts`.
 - **Contracts** ([`src/contracts/index.ts`](src/contracts/index.ts) and
   [`src/contracts/reads.ts`](src/contracts/reads.ts), exported as
   `files/contracts` through [`package.json`](package.json)): the five
@@ -933,7 +943,8 @@ directory posing as the sandbox ([`tests/fake-sandbox.ts`](tests/fake-sandbox.ts
 and fake runtime services ([`tests/support/services.ts`](tests/support/services.ts));
 the host reads and writes (`reads.test.ts`, `write-entry.test.ts`); the
 window's DOM-free logic (coordinator, sandbox store, reads, decorations, open
-file); the manifest, the activation order, the skills and the stylesheet; and,
+file); the manifest, the activation order, the skills and the stylesheet; the
+generated code's imports (`generated-imports.test.ts`); and,
 in [`tests/client/`](tests/client), the rendered views under `happy-dom`
 through [`tests/client/support/render.ts`](tests/client/support/render.ts).
 [`stories/`](stories) holds the views' stories over fakes in

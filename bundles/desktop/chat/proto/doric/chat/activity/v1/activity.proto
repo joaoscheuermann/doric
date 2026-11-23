@@ -1,0 +1,78 @@
+// `chat.activity/v1` (client, 1.0.0): what the window's conversations
+// receive, as data-only streams: the live updates of the Threads `chat`
+// holds, and the Projects whose sandbox activity changed. `chat`'s client
+// part provides it; only client parts of the same window call it.
+//
+// Each stream starts when it is opened and holds no earlier item; items are
+// in the order `chat` produced them. `chat` never waits for a consumer: it
+// puts each item on the queue of every open stream. A queue holds at most
+// 10,000 items; when a new item finds it full, the oldest item is dropped
+// and the next item delivered on that stream counts it in `skipped`. A
+// consumer ends a stream by cancelling it.
+//
+// 1.0.0: new. `WatchThreadUpdates` and `WatchSandboxActivity` replace the
+// observe hooks `onThreadUpdateHook` and `onSandboxActivityHook` of
+// `chat.hooks/v2`; `onMountHook` and `onUnmountHook` have no replacement.
+syntax = "proto3";
+
+package doric.chat.activity.v1;
+
+import "buf/validate/validate.proto";
+import "doric/platform/v1/options.proto";
+import "doric/runtime/v2/runtime.proto";
+
+option (doric.platform.v1.contract) = {
+  id: "chat.activity/v1"
+  cardinality: CARDINALITY_ONE
+  environment: ENVIRONMENT_CLIENT
+};
+
+// The conversations' activity.
+service ActivityService {
+  // Streams every live event of a held Thread as `chat` receives it (before
+  // the 100 ms flush; never a snapshot or history), and every `updated`
+  // record of a held Thread.
+  rpc WatchThreadUpdates(WatchThreadUpdatesRequest) returns (stream WatchThreadUpdatesResponse);
+  // Streams the Project of a Thread `chat` starts to hold, whose working
+  // directory changes, or whose state changes to anything but "running";
+  // once per Project per store change. Never after a finished tool call:
+  // the owner of a tool watches `WatchThreadUpdates` for that.
+  rpc WatchSandboxActivity(WatchSandboxActivityRequest) returns (stream WatchSandboxActivityResponse);
+}
+
+// Asks the live updates of the held Threads.
+message WatchThreadUpdatesRequest {}
+
+// One update of one held Thread.
+message WatchThreadUpdatesResponse {
+  // The Thread's Project.
+  string project_id = 1;
+  // The Thread.
+  string thread_id = 2;
+  // The Thread's name.
+  string thread_name = 3;
+  // The update, named as today's `kind`.
+  oneof update {
+    option (doric.platform.v1.oneof).discriminator = "kind";
+    option (buf.validate.oneof).required = true;
+    // A live event of the Thread.
+    doric.runtime.v2.ThreadEvent event = 4;
+    // The Thread's record after an update.
+    doric.runtime.v2.Thread updated = 5;
+  }
+  // How many items this stream dropped since the item before this one,
+  // because its queue was full; 0 when none.
+  uint32 skipped = 6;
+}
+
+// Asks the Projects whose sandbox activity changes.
+message WatchSandboxActivityRequest {}
+
+// One Project whose sandbox activity changed.
+message WatchSandboxActivityResponse {
+  // The Project.
+  string project_id = 1;
+  // How many items this stream dropped since the item before this one,
+  // because its queue was full; 0 when none.
+  uint32 skipped = 2;
+}

@@ -1,0 +1,17 @@
+// T1.1: two RPCs that share a request; buf lint refuses it with
+// RPC_REQUEST_RESPONSE_UNIQUE (the second RPC's request also breaks
+// RPC_REQUEST_STANDARD_NAME, which a shared request cannot avoid).
+syntax = "proto3";
+
+package fixture.v1;
+
+service FixtureService {
+  rpc Get(GetRequest) returns (GetResponse);
+  rpc Find(GetRequest) returns (FindResponse);
+}
+
+message GetRequest {}
+
+message GetResponse {}
+
+message FindResponse {}

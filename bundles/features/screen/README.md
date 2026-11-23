@@ -30,7 +30,7 @@ built and loaded.
 | `desktopScope` | `projectId`, `threadId` and `promptId`: the scope keys a window may send with a call of `screen.sessions/v2`                                                                 |
 
 Every entry of `requires` is required: a composition missing any of them
-quarantines the bundle. The package exports `screen/contracts` and `screen/package.json`
+quarantines the bundle. The package exports `screen/contracts`, `screen/contracts/gen/*` (the protobuf-es code `generate-proto` writes from `proto/`) and `screen/package.json`
 ([`package.json`](package.json), [`src/contracts/index.ts`](src/contracts/index.ts)).
 
 ## Parts

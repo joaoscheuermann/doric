@@ -57,7 +57,12 @@ the bundle are in [`AGENTS.md`](AGENTS.md).
 - `desktopScope`: a window may send `projectId`, `threadId` and `promptId` to
   `git.commands/v1`.
 
-[`package.json`](package.json) exports `./contracts` (the contracts module).
+[`package.json`](package.json) exports `./contracts` (the contracts module) and
+`./contracts/gen/*`, the protobuf-es code the target `generate-proto` writes
+into `src/contracts/gen/` (ignored by Git) from
+[`proto/doric/git/`](proto/doric/git): `commands/v1`, `changes/v1` and
+`open_comparison/v1`, the target shape of its contracts. That code imports
+`@bufbuild/protobuf`, a dependency.
 At run time the host part imports `sandbox` (`listSandboxRepos`,
 `workspacePathKind`), `tool` (`defineTool`), `runtime/contracts` and
 `terminal/contracts`; the client part imports the values
@@ -828,6 +833,7 @@ npx nx run bundle-git:test
 npx nx run bundle-git:build
 ```
 
+- `build` and `typecheck` run `generate-proto` first.
 - `build` ([`project.json`](project.json)) compiles the host and contracts
   (`tsconfig.json`) and the client with its stories (`tsconfig.client.json`),
   then runs the bundle CLI, which validates the manifest and the skills,
@@ -839,7 +845,8 @@ npx nx run bundle-git:build
   directory through fakes of `runtime.workspace/v1`, `runtime.lease/v1` and
   `terminal/v1` ([`tests/support/runtime.ts`](tests/support/runtime.ts),
   [`tests/support/services.ts`](tests/support/services.ts)); the tests under
-  `tests/client/` boot `happy-dom`.
+  `tests/client/` boot `happy-dom`. `tests/generated-imports.test.ts` imports
+  `files/contracts/gen` and bundles it with `esbuild`, a dev dependency.
 - `npx nx run doric-host:build-bundles` stages `dist/` into the Doric host's
   bundles at `app/backend/doric-host/dist/bundles/git`, which the host loads
   at startup.

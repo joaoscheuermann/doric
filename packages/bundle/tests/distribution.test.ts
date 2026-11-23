@@ -205,7 +205,9 @@ void test('the distribution catalog carries the host generation, identity, parts
     assert.deepEqual(catalog.host.storage, catalog.storage);
 
     const byId = new Map(catalog.bundles.map((bundle) => [bundle.id, bundle]));
-    assert.deepEqual(byId.get('alpha')?.manifest?.optional, ['optional/v1']);
+    const alphaManifest = byId.get('alpha')?.manifest;
+    assert.ok(alphaManifest?.manifestVersion === 1);
+    assert.deepEqual(alphaManifest.optional, ['optional/v1']);
     assert.deepEqual(byId.get('alpha')?.manifest?.desktopScope, { 'alpha.api/v1': ['entityId'] });
 
     assert.deepEqual(byId.get('alpha')?.parts, {

@@ -1,0 +1,74 @@
+// `settings.config/v1` (client, 1.2.0): the settings window's one autosave
+// draft of the host configuration, for a section another bundle draws. The
+// draft is the window's own: a change made through `ApplyDraftPatch` is
+// debounced and flushed on a field blur and on the window's close exactly
+// like a change the built-in sections make. Only client parts of the same
+// window call it.
+//
+// The draft is the JSON object of a `host-config.configuration/v1` value
+// (`doric.host_config.configuration.v1.ConfigurationValue`) while the reader
+// edits it: it may break that message's rules until it is saved, so it
+// crosses as a `google.protobuf.Struct` and the save validates it.
+//
+// 1.2.0: `draft` is asynchronous; `setDraft`, which took a function, is
+// removed for `ApplyDraftPatch`, a JSON merge patch; `subscribe` becomes the
+// stream `Watch`, whose first item is the present draft.
+syntax = "proto3";
+
+package doric.settings.config.v1;
+
+import "buf/validate/validate.proto";
+import "doric/platform/v1/options.proto";
+import "google/protobuf/struct.proto";
+
+option (doric.platform.v1.contract) = {
+  id: "settings.config/v1"
+  cardinality: CARDINALITY_ONE
+  environment: ENVIRONMENT_CLIENT
+};
+
+// The settings window's draft.
+service ConfigService {
+  // The window's draft; absent until the host configuration loaded. The
+  // first item of `Watch` holds the same value.
+  rpc Draft(DraftRequest) returns (DraftResponse);
+  // Merges a JSON merge patch (RFC 7396) into the draft; every open `Watch`
+  // then sends the draft that results. Before the configuration loaded the
+  // patch is ignored. The patch is not validated against the
+  // configuration's rules; the save is.
+  rpc ApplyDraftPatch(ApplyDraftPatchRequest) returns (ApplyDraftPatchResponse);
+  // Streams the draft: the present value first, then one item after every
+  // change of it.
+  rpc Watch(WatchRequest) returns (stream WatchResponse) {
+    option (doric.platform.v1.method).resumable = true;
+  }
+}
+
+// Asks the window's draft.
+message DraftRequest {}
+
+// The window's draft.
+message DraftResponse {
+  // The draft, the configuration's JSON object; absent until the host
+  // configuration loaded.
+  optional google.protobuf.Struct draft = 1;
+}
+
+// Changes the draft.
+message ApplyDraftPatchRequest {
+  // The JSON merge patch: a member set to `null` removes that member, an
+  // object merges member by member, any other value replaces the member.
+  google.protobuf.Struct patch = 1 [(buf.validate.field).required = true];
+}
+
+// The patch is merged, or ignored before the configuration loaded.
+message ApplyDraftPatchResponse {}
+
+// Asks the draft as it changes.
+message WatchRequest {}
+
+// The draft after a change, or the present one for the first item.
+message WatchResponse {
+  // The draft; absent until the host configuration loaded.
+  optional google.protobuf.Struct draft = 1;
+}

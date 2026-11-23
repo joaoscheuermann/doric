@@ -37,8 +37,8 @@ Feature docs that describe this bundle's behavior across bundles:
   `models/v1@^1.3.0`, `tools/v1@^1.0.0`.
 - `optional`: `core.open-settings/v1`, `workspace.dashboard/v1`.
 
-The package ([`package.json`](package.json)) exports only `./contracts` and
-`./package.json`.
+The package ([`package.json`](package.json)) exports `./contracts`,
+`./contracts/gen/*` (the protobuf-es code `generate-proto` writes from `proto/`) and `./package.json`.
 
 ## Activation
 

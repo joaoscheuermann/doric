@@ -1,0 +1,91 @@
+// `commands/v1` (client, 1.1.0): the commands of one window. A client part
+// registers a command by id as data and implements its behavior as the
+// handler service `CommandHandlerService`; the in-window directory calls it.
+// A command's input is the message with the option
+// `(doric.platform.v1.command).id` of that id, carried as a
+// `google.protobuf.Any`.
+//
+// 1.1.0: `register` takes data; a command runs on the registering client
+// part's `CommandHandlerService`; the desktopMain provider is removed.
+syntax = "proto3";
+
+package doric.commands.v1;
+
+import "buf/validate/validate.proto";
+import "doric/platform/v1/options.proto";
+import "google/protobuf/any.proto";
+
+option (doric.platform.v1.contract) = {
+  id: "commands/v1"
+  cardinality: CARDINALITY_ONE
+  environment: ENVIRONMENT_CLIENT
+};
+
+// The window's commands.
+service CommandsService {
+  // Registers a command of the calling client part and answers a
+  // `registrationId`; an id another bundle holds is
+  // `registration_conflict`.
+  rpc Register(RegisterRequest) returns (RegisterResponse);
+  // Removes a registration; an unknown id is a no-op.
+  rpc Unregister(UnregisterRequest) returns (UnregisterResponse);
+  // Runs a command on its registering client part's
+  // `CommandHandlerService.Execute`; answers when it finished.
+  rpc Execute(ExecuteRequest) returns (ExecuteResponse);
+}
+
+// A registered command's behavior, implemented by the client part that
+// registers it and called by the in-window directory.
+service CommandHandlerService {
+  option (doric.platform.v1.service).role = SERVICE_ROLE_HANDLER;
+
+  // Runs the command with its input.
+  rpc Execute(CommandHandlerServiceExecuteRequest) returns (CommandHandlerServiceExecuteResponse);
+}
+
+// Registers a command.
+message RegisterRequest {
+  // The command id, `<name>/v<major>` (for example "core.open-settings/v1").
+  string id = 1 [(buf.validate.field).string.pattern = "^[a-z][a-z0-9-]*(\\.[a-z0-9-]+)*/v[1-9][0-9]*$"];
+  // The full name of the input's message, which has the option
+  // `(doric.platform.v1.command).id` of `id`; absent for a command without
+  // input.
+  optional string input_type = 2 [(buf.validate.field).string.pattern = "^[A-Za-z_][A-Za-z0-9_]*(\\.[A-Za-z_][A-Za-z0-9_]*)*$"];
+}
+
+// The command's registration.
+message RegisterResponse {
+  // The id `Unregister` takes.
+  string registration_id = 1;
+}
+
+// Removes a registration.
+message UnregisterRequest {
+  // The id `Register` answered.
+  string registration_id = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+// The registration is gone.
+message UnregisterResponse {}
+
+// Runs a command.
+message ExecuteRequest {
+  // The command id.
+  string id = 1 [(buf.validate.field).string.pattern = "^[a-z][a-z0-9-]*(\\.[a-z0-9-]+)*/v[1-9][0-9]*$"];
+  // The command's input, a message of its `inputType`; absent for none.
+  optional google.protobuf.Any input = 2;
+}
+
+// The command finished.
+message ExecuteResponse {}
+
+// Runs one registered command.
+message CommandHandlerServiceExecuteRequest {
+  // The command id.
+  string id = 1;
+  // The command's input; absent for none.
+  optional google.protobuf.Any input = 2;
+}
+
+// The command finished.
+message CommandHandlerServiceExecuteResponse {}

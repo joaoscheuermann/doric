@@ -47,8 +47,8 @@ bundles are built and loaded is described in
 - `desktopScope`: `papercraft.programs/v1` and `papercraft.cache/v1` are called
   from a window with the keys `projectId` and `threadId`.
 
-The package ([`package.json`](package.json)) exports only `./contracts` and
-`./package.json`. It depends on `@openuidev/lang-core` 1.0.2,
+The package ([`package.json`](package.json)) exports `./contracts`,
+`./contracts/gen/*` (the protobuf-es code `generate-proto` writes from `proto/`) and `./package.json`. It depends on `@openuidev/lang-core` 1.0.2,
 `@openuidev/react-lang` 1.0.2 and `@openuidev/react-ui` 0.18.1 (exact
 versions), `esbuild` 0.28.2, `tailwindcss` and `@tailwindcss/oxide` 4.3.3,
 `jdenticon`, `lucide-react`, React 19, `zod` 4 and the workspace packages

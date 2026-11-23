@@ -62,7 +62,7 @@ without it.
 
 [`package.json`](package.json) names the package `host-config` (version
 `0.0.1`, private, ES module) and exports `./package.json`, `./contracts`,
-`./kernel` and `./testing` ([Entry points](#entry-points)). Its dependencies
+`./contracts/gen/*` (the protobuf-es code `generate-proto` writes from `proto/`), `./kernel` and `./testing` ([Entry points](#entry-points)). Its dependencies
 are `bundle`, `core` (for `readModelProperties` of `core/contracts`), `llms`
 (the provider kind catalog), `tool` (bound tool factories), `tslib` and `zod`
 (`^4.4.3`).

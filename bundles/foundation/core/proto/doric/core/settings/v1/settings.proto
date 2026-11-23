@@ -1,0 +1,41 @@
+// `core.settings/v1` (host, 1.1.0): the storage type of one `settings/v1`
+// space, owned by `core`. Each registered space is one document whose id is
+// the settings id; the document's revision is the space's revision.
+//
+// The stored value is the space's raw JSON, as 1.x rows hold it, so the data
+// migration needs no message type; `settings/v1` carries the same value on
+// the wire as a `google.protobuf.Any` of the space's message.
+//
+// 1.1.0: the schema moves from zod to `.proto` with the same fields.
+syntax = "proto3";
+
+package doric.core.settings.v1;
+
+import "buf/validate/validate.proto";
+import "doric/platform/v1/options.proto";
+import "google/protobuf/struct.proto";
+
+option (doric.platform.v1.contract) = {
+  id: "core.settings/v1"
+  cardinality: CARDINALITY_ONE
+  environment: ENVIRONMENT_HOST
+};
+
+// One settings space, as stored.
+message SettingsDocument {
+  option (doric.platform.v1.storage_type) = {type: "core.settings/v1"};
+
+  // The space's value as JSON, the JSON form of a message of the space's
+  // `messageType`.
+  google.protobuf.Value value = 1 [(buf.validate.field).required = true];
+  // The owner's contract version from `provides` at the write.
+  string version = 2;
+  // When the space was written (ISO-8601, milliseconds, UTC).
+  string updated_at = 3;
+  // The global settings generation counter after the write, a whole number.
+  double generation = 4 [(buf.validate.field).cel = {
+    id: "generation.integer"
+    message: "generation must be a whole number"
+    expression: "this == double(int(this))"
+  }];
+}

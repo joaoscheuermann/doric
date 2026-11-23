@@ -1,0 +1,13 @@
+// T1.1: an RPC that answers google.protobuf.Empty; buf lint refuses it with
+// RPC_RESPONSE_STANDARD_NAME.
+syntax = "proto3";
+
+package fixture.v1;
+
+import "google/protobuf/empty.proto";
+
+service FixtureService {
+  rpc Ping(PingRequest) returns (google.protobuf.Empty);
+}
+
+message PingRequest {}

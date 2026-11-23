@@ -1,0 +1,104 @@
+// `openui.programs/v1` (host, 1.1.0): the one sink of fence errors for both
+// program tags (`openui-lang` and `papercraft`), provided by the `openui`
+// host part and exposed to the desktop with the call scope `projectId`,
+// `threadId`. The errors of a report reach the agent at the Thread's next
+// prompt start, as one `validation` instruct.
+//
+// 1.1.0: the schemas move from zod to `.proto` with the same fields; keys the
+// messages do not declare are dropped.
+syntax = "proto3";
+
+package doric.openui.programs.v1;
+
+import "buf/validate/validate.proto";
+import "doric/platform/v1/options.proto";
+
+option (doric.platform.v1.contract) = {
+  id: "openui.programs/v1"
+  cardinality: CARDINALITY_ONE
+  environment: ENVIRONMENT_HOST
+};
+
+// The fence error sink.
+service ProgramsService {
+  // Keeps the report's errors for the Thread's next prompt start. A report
+  // whose key's prompt is neither the Thread's current nor its previous
+  // started prompt, or for a Thread the host has not seen start a prompt, is
+  // dropped without error. Each error (by tag, key, code and statement) is
+  // delivered at most once. A request that fails its rules is
+  // `invalid_input`.
+  rpc ReportErrors(ReportErrorsRequest) returns (ReportErrorsResponse) {
+    option (doric.platform.v1.method).expose = EXPOSE_DESKTOP;
+  }
+}
+
+// One error of a fence's program, as reported to the host.
+message ReportedError {
+  // lang-core 1.0.2's `OpenUIErrorCode`.
+  string code = 1 [(buf.validate.field).string = {
+    in: [
+      "missing-required",
+      "null-required",
+      "unknown-component",
+      "inline-reserved",
+      "excess-args",
+      "type-mismatch",
+      "unknown-function",
+      "no-root",
+      "runtime-error",
+      "render-error",
+      "parse-exception",
+      "parse-failed",
+      "tool-not-found",
+      "tool-error",
+      "mcp-error"
+    ]
+  }];
+  // A statement name of the reported program; absent when the error names
+  // none.
+  optional string statement_id = 2 [(buf.validate.field).string.pattern = "^[A-Za-z_$][A-Za-z0-9_$]{0,63}$"];
+  // Only for an error the shell's own code computed: 1 to 300 characters.
+  optional string message = 3 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 300
+  }];
+}
+
+// The errors of one fence revision, reported once it is "closed" or
+// "unterminated".
+message ReportErrorsRequest {
+  // The fence tag: "openui-lang" or "papercraft".
+  string tag = 1 [(buf.validate.field).string = {
+    in: [
+      "openui-lang",
+      "papercraft"
+    ]
+  }];
+  // The chat's fence key, `<promptId>/<turnSequence>/<index>`.
+  string key = 2 [(buf.validate.field).string.pattern = "^[^/]+/\\d+/\\d+$"];
+  // The revision's program identity: a written identity (a lowercase letter,
+  // then up to 63 lowercase letters, digits and hyphens) or an anonymous one
+  // (`_` and a 1-based ordinal of at most 9 digits).
+  string identity = 3 [(buf.validate.field).string.pattern = "^(?:[a-z][a-z0-9-]{0,63}|_[1-9][0-9]{0,8})$"];
+  // The fence revision, a whole number from 1.
+  double revision = 4 [
+    (buf.validate.field).double.gte = 1,
+    (buf.validate.field).cel = {
+      id: "revision.integer"
+      message: "revision must be a whole number"
+      expression: "this == double(int(this))"
+    }
+  ];
+  // "closed" or "unterminated".
+  string state = 5 [(buf.validate.field).string = {
+    in: [
+      "closed",
+      "unterminated"
+    ]
+  }];
+  // The revision's errors, at most 50; empty for none.
+  repeated ReportedError errors = 6 [(buf.validate.field).repeated.max_items = 50];
+}
+
+// The report is kept, or dropped as the method describes.
+message ReportErrorsResponse {}

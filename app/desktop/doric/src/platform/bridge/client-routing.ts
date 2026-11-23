@@ -12,6 +12,7 @@ import {
   type DistributionCatalog,
   descriptorSchema,
   documentExposure,
+  partLists,
 } from 'bundle/runtime';
 import {
   type RemoteContract,
@@ -318,10 +319,12 @@ export const mayUse = (entry: CatalogEntry, contract: string): boolean => {
     return false;
   }
 
+  const lists = partLists(manifest, 'client');
+
   return [
-    ...manifest.requires,
+    ...lists.requires.map(({ id }) => id),
     ...manifest.provides,
-    ...(manifest.optional ?? []),
+    ...lists.optional,
   ].some((declared) => contractIdOf(declared) === contract);
 };
 
