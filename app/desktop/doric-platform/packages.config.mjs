@@ -44,8 +44,11 @@ export const lexicalRoots = [
  * imports a package the workspace does not install (the build names it).
  * Base UI is shared like React: its contexts and stores must be one instance
  * per window, so `desktop/ui` and every bundle reach the same copy.
+ * `@bufbuild/protobuf` is shared the same way: every generated module, the
+ * platform's and each bundle's, imports it, and its registries and
+ * descriptors must be one instance per window (A53).
  */
-export const esmPackages = ['zod', '@base-ui/react'];
+export const esmPackages = ['zod', '@base-ui/react', '@bufbuild/protobuf'];
 
 /** Platform-owned packages; their folders carry `PLATFORM_ASSETS_VERSION`. */
 export const bundleContracts = {
@@ -53,6 +56,18 @@ export const bundleContracts = {
   package: 'bundle',
   source: 'packages/bundle/src/contracts/index.ts',
   file: 'contracts.js',
+  /**
+   * `bundle`'s generated code (A53): each `<path>_pb.ts` under `source` is an
+   * entry of the contracts group, served as `<dir>/<path>_pb.js` in the
+   * `bundle@<PLATFORM_ASSETS_VERSION>` folder under the specifier
+   * `<specifier><path>_pb.js`, as `buf/validate`, `google/rpc` and the
+   * platform contracts' generated files import it.
+   */
+  generated: {
+    specifier: 'bundle/contracts/gen/',
+    source: 'packages/bundle/src/contracts/gen',
+    dir: 'contracts/gen',
+  },
 };
 
 export const desktopUi = {

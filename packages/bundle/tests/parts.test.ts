@@ -171,6 +171,115 @@ void test('a client part leaves the import-map specifiers to the window', async 
   );
 });
 
+// T3.14 (AC3.15, A53): window modules leave generated code and
+// `@bufbuild/protobuf` to the window's import map; the desktop part bundles
+// its own generated code.
+const generatedMarker = 'demo-generated-marker';
+const generatedFile = {
+  'src/contracts/gen/demo/v1/demo_pb.ts': `export const DemoMarker = '${generatedMarker}';\n`,
+};
+const windowGeneratedImports = (ownGen: string) =>
+  [
+    `import * as files from 'files/contracts/gen/doric/files/v1/files_pb.js';`,
+    `import { DemoMarker } from '${ownGen}';`,
+    `import { fileDesc } from '@bufbuild/protobuf/codegenv2';`,
+    `export const parts = [files, DemoMarker, fileDesc];`,
+    '',
+  ].join('\n');
+const windowGeneratedExternals = new Set([
+  'files/contracts/gen/doric/files/v1/files_pb.js',
+  'demo/contracts/gen/demo/v1/demo_pb.js',
+  '@bufbuild/protobuf/codegenv2',
+]);
+
+void test('T3.14: a client part leaves generated code and @bufbuild/protobuf to the window', async () => {
+  await withBundle(
+    {
+      ...generatedFile,
+      'src/client/index.ts': windowGeneratedImports(
+        '../contracts/gen/demo/v1/demo_pb.js',
+      ),
+    },
+    async (dir) => {
+      await buildParts({ bundleDir: dir, mode: 'production' });
+
+      const output = await read(dir, 'client/index.js');
+
+      assert.deepEqual(new Set(importsOf(output)), windowGeneratedExternals);
+      assert.doesNotMatch(output, new RegExp(generatedMarker));
+    },
+  );
+});
+
+void test('T3.14: a client chunk leaves generated code and @bufbuild/protobuf to the window', async () => {
+  await withBundle(
+    {
+      ...generatedFile,
+      'src/client/index.ts': `export const activate = () => 'main';\n`,
+      'src/client/chunks/x.ts': windowGeneratedImports(
+        '../../contracts/gen/demo/v1/demo_pb.js',
+      ),
+    },
+    async (dir) => {
+      await buildParts({ bundleDir: dir, mode: 'production' });
+
+      const output = await read(dir, 'client/chunks/x.js');
+
+      assert.deepEqual(new Set(importsOf(output)), windowGeneratedExternals);
+      assert.doesNotMatch(output, new RegExp(generatedMarker));
+    },
+  );
+});
+
+void test('T3.14: a client part keeps its own contracts as <id>/contracts and its own generated file as <id>/contracts/gen/<path>', async () => {
+  await withBundle(
+    {
+      ...generatedFile,
+      'src/contracts/index.ts': `export const DemoV1 = 'demo/v1';\n`,
+      'src/client/index.ts': [
+        `import { DemoV1 } from '../contracts/index.js';`,
+        `import { DemoMarker } from '../contracts/gen/demo/v1/demo_pb.js';`,
+        `export const activate = () => [DemoV1, DemoMarker];`,
+        '',
+      ].join('\n'),
+    },
+    async (dir) => {
+      await buildParts({ bundleDir: dir, mode: 'production' });
+
+      assert.deepEqual(
+        new Set(importsOf(await read(dir, 'client/index.js'))),
+        new Set(['demo/contracts', 'demo/contracts/gen/demo/v1/demo_pb.js']),
+      );
+    },
+  );
+});
+
+void test('T3.14: a desktop part bundles its own generated code', async () => {
+  await withBundle(
+    {
+      ...generatedFile,
+      'src/desktop/index.ts': [
+        `import { DemoMarker } from '../contracts/gen/demo/v1/demo_pb.js';`,
+        `export const activate = () => DemoMarker;`,
+        '',
+      ].join('\n'),
+    },
+    async (dir) => {
+      await buildParts({ bundleDir: dir, mode: 'production' });
+
+      const output = await read(dir, 'desktop/index.js');
+
+      assert.match(output, new RegExp(generatedMarker));
+      assert.deepEqual(
+        importsOf(output).filter((specifier) =>
+          specifier.startsWith('demo/contracts'),
+        ),
+        [],
+      );
+    },
+  );
+});
+
 void test('a bundled CommonJS dependency that requires an external gets the window instance', async () => {
   await withBundle(
     {

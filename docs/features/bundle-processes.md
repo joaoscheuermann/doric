@@ -199,10 +199,9 @@ Phase 1 adds:
   generated file import another owner's through that export, and `buf/validate`
   and `google/rpc` are generated in `bundle` only.
 - Hand-written code may import another bundle's generated code as
-  `<other>/contracts/gen/*`, except a client or desktopMain part before phase 3:
-  its build externalizes only `bundle/contracts` and `*/contracts` and turns its
-  own `src/contracts/…` imports into `<id>/contracts`, so neither part can load
-  generated code (`packages/bundle/src/build/parts.ts`).
+  `<other>/contracts/gen/*`. Through phase 2 a client or desktopMain part could
+  not: its build externalized only `bundle/contracts` and `*/contracts`. Phase 3
+  (S35) lifts this restriction (`packages/bundle/src/build/parts.ts`).
 - Through phase 6 the zod `define*` contracts stay the runtime truth and the
   `.proto` files describe the target shape; no runtime code uses the generated
   code yet. A change to a zod contract on this branch also updates its `.proto`
@@ -432,6 +431,18 @@ S34 adds `AgentOptions.maxRecordOutputChars` to `packages/agent`: it caps the
 output a stored tool record keeps, with `capOutput`'s marker (unset: the whole
 output); `maxToolResultChars` still caps what the model sees.
 
+S35 loads generated code in the window (T3.14, AC3.15). A client part (entry
+and chunks) keeps `@bufbuild/protobuf`, `@bufbuild/protobuf/*` and every
+`<package>/contracts/gen/<path>` external; a relative import into the bundle's
+own generated code becomes `<id>/contracts/gen/<path>`. Desktop parts and
+workers bundle generated code; a frame refuses `@bufbuild/protobuf`. The window
+import map adds `<id>/contracts/gen/` for each bundle with generated code,
+including bundles without `contracts/index.js` (such as `transport`).
+`doric-platform` serves `@bufbuild/protobuf` by its npm version and
+`bundle/contracts/gen/<path>_pb.js`, built with `contracts.js` so each generated
+module loads once; its build fails when `packages/bundle`'s generated files are
+missing.
+
 ## Evolution
 
 - 2026-11-22: phase 0 of
@@ -489,3 +500,7 @@ output); `maxToolResultChars` still caps what the model sees.
 - 2026-11-22: phase 3, slice S34, of
   [`docs/designs/grpc-processes.md`](../designs/grpc-processes.md) (v6.12):
   `AgentOptions.maxRecordOutputChars` caps a stored tool record's output.
+- 2026-11-22: phase 3, slice S35, of
+  [`docs/designs/grpc-processes.md`](../designs/grpc-processes.md) (v6.12):
+  client parts load generated code and `@bufbuild/protobuf` from the window
+  import map; the phase-1 restriction on `<other>/contracts/gen/*` is lifted.

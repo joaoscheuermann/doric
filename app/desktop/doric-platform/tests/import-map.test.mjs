@@ -3,7 +3,7 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 import { describe, test } from 'node:test';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { PLATFORM_ASSETS_VERSION } from 'bundle/runtime';
 import * as esbuild from 'esbuild';
@@ -51,7 +51,7 @@ describe('the platform import map', () => {
     }
   });
 
-  test('serves exactly React, ReactDOM, Lexical, Base UI, desktop/ui, zod and bundle/contracts', () => {
+  test('serves exactly React, ReactDOM, Lexical, Base UI, desktop/ui, zod, @bufbuild/protobuf and bundle/contracts', () => {
     const roots = new Set(
       Object.keys(imports).map((specifier) => {
         const parts = specifier.split('/');
@@ -67,6 +67,7 @@ describe('the platform import map', () => {
           '@base-ui/react',
           'desktop',
           'zod',
+          '@bufbuild/protobuf',
           'bundle',
         ].includes(root) || root.startsWith('@lexical/'),
         `unexpected platform package ${root}`,
@@ -319,6 +320,152 @@ describe('the platform import map', () => {
       ],
     });
     assert.deepEqual(unmapped, []);
+  });
+});
+
+// T3.14 (AC3.15, A53): `bundle`'s generated code and `@bufbuild/protobuf`
+// are served once per window through the map.
+describe('the generated code in the platform map', () => {
+  const bundleFolder = join(platform, `bundle@${PLATFORM_ASSETS_VERSION}`);
+  const generatedSources = join(workspace, 'packages/bundle/src/contracts/gen');
+  const generatedPaths = filesUnder(generatedSources)
+    .filter((path) => path.endsWith('_pb.ts'))
+    .map((path) =>
+      relative(generatedSources, path)
+        .split(/[\\/]/)
+        .join('/')
+        .replace(/\.ts$/, '.js'),
+    );
+  const emittedUnder = (dir) =>
+    existsSync(dir) ? filesUnder(dir).filter((path) => path.endsWith('.js')) : [];
+
+  test('maps bundle/contracts/gen/<path>_pb.js for every generated file of bundle, and nothing else under that prefix', () => {
+    assert.ok(generatedPaths.includes('doric/platform/v1/options_pb.js'));
+    assert.ok(generatedPaths.includes('buf/validate/validate_pb.js'));
+    assert.ok(generatedPaths.includes('google/rpc/status_pb.js'));
+    assert.equal(
+      imports['bundle/contracts/gen/doric/platform/v1/options_pb.js'],
+      `${prefix}bundle@${PLATFORM_ASSETS_VERSION}/contracts/gen/doric/platform/v1/options_pb.js`,
+    );
+    assert.deepEqual(
+      Object.fromEntries(
+        Object.entries(imports).filter(([specifier]) =>
+          specifier.startsWith('bundle/contracts/gen/'),
+        ),
+      ),
+      Object.fromEntries(
+        generatedPaths.map((path) => [
+          `bundle/contracts/gen/${path}`,
+          `${prefix}bundle@${PLATFORM_ASSETS_VERSION}/contracts/gen/${path}`,
+        ]),
+      ),
+    );
+  });
+
+  test('serves @bufbuild/protobuf, its codegenv2 and its wkt by npm version', () => {
+    const version = manifest(
+      join(workspace, 'node_modules/@bufbuild/protobuf/package.json'),
+    ).version;
+    const folder = `${prefix}@bufbuild/protobuf@${version}`;
+    assert.equal(imports['@bufbuild/protobuf'], `${folder}/index.js`);
+    assert.equal(
+      imports['@bufbuild/protobuf/codegenv2'],
+      `${folder}/codegenv2.js`,
+    );
+    assert.equal(imports['@bufbuild/protobuf/wkt'], `${folder}/wkt.js`);
+  });
+
+  test('leaves every generated file importing only mapped bundle/contracts/gen/… and @bufbuild/protobuf specifiers', () => {
+    const emitted = emittedUnder(join(bundleFolder, 'contracts', 'gen'));
+    assert.ok(emitted.length > 0, 'no generated file was emitted');
+    const wrong = emitted.flatMap((path) =>
+      bareImports(readFileSync(path, 'utf8'))
+        .filter(
+          (specifier) =>
+            !(specifier in imports) ||
+            !(
+              specifier.startsWith('bundle/contracts/gen/') ||
+              specifier === '@bufbuild/protobuf' ||
+              specifier.startsWith('@bufbuild/protobuf/')
+            ),
+        )
+        .map((specifier) => `${relative(platform, path)} imports ${specifier}`),
+    );
+    assert.deepEqual(wrong, []);
+  });
+
+  test('leaves @bufbuild/protobuf to the map in contracts.js', async () => {
+    // esbuild follows contracts.js and its relative chunks; each bare import is recorded.
+    const bare = new Set();
+    await esbuild.build({
+      entryPoints: [join(bundleFolder, 'contracts.js')],
+      bundle: true,
+      write: false,
+      format: 'esm',
+      logLevel: 'silent',
+      plugins: [
+        {
+          name: 'collect-bare-imports',
+          setup(build) {
+            build.onResolve({ filter: /^[^./]/ }, (args) => {
+              if (args.kind === 'entry-point') return undefined;
+              bare.add(args.path);
+              return { path: args.path, external: true };
+            });
+          },
+        },
+      ],
+    });
+    assert.ok(
+      bare.has('@bufbuild/protobuf'),
+      `contracts.js bundles @bufbuild/protobuf; it imports only ${[...bare].join(', ')}`,
+    );
+  });
+
+  test('emits each generated descriptor in exactly one file, so contracts.js and the generated entries share it', () => {
+    const emitted = emittedUnder(platform).map((path) => ({
+      path,
+      source: readFileSync(path, 'utf8'),
+    }));
+    const counts = generatedPaths.map((path) => {
+      const source = readFileSync(
+        join(generatedSources, path.replace(/\.js$/, '.ts')),
+        'utf8',
+      );
+      const descriptor = /fileDesc\(\s*"([^"]+)"/.exec(source)?.[1];
+      assert.ok(descriptor !== undefined, `${path} has no descriptor`);
+      return [
+        path,
+        emitted.filter((file) => file.source.includes(descriptor)).length,
+      ];
+    });
+    assert.deepEqual(
+      counts.filter(([, count]) => count !== 1),
+      [],
+    );
+  });
+
+  test('loads generated code, bundle/contracts and @bufbuild/protobuf through the map as one instance', () => {
+    const report = JSON.parse(
+      execFileSync(
+        process.execPath,
+        [
+          join(project, 'tests/fixtures/apply-import-map.mjs'),
+          platform,
+          join(project, 'tests/fixtures/generated-modules.mjs'),
+        ],
+        { encoding: 'utf8' },
+      ),
+    );
+    const base = `${pathToFileURL(platform).href}/`;
+    for (const [specifier, url] of Object.entries(report.resolved)) {
+      assert.ok(specifier in imports, `${specifier} is not mapped`);
+      assert.equal(url, imports[specifier].replace(prefix, base), specifier);
+    }
+    assert.equal(report.fileDesc, 'function');
+    assert.equal(report.controlDependsOnStatus, true);
+    assert.equal(report.statusIsMessage, true);
+    assert.equal(report.contractsStatusIsMessage, true);
   });
 });
 

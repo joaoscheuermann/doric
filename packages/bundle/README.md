@@ -3407,7 +3407,10 @@ function matchesExternal(
 `clientExternals` are the window import-map specifiers a client part leaves
 external, so one instance of each exists per window; `frameExternals` are
 those of a frame's import map. A pattern with `*` matches any specifier with
-its prefix and suffix ([`externals.ts`](src/build/externals.ts)). The import
+its prefix and suffix ([`externals.ts`](src/build/externals.ts)).
+`clientExternals` includes `@bufbuild/protobuf` and `@bufbuild/protobuf/*`;
+`<package>/contracts/gen/<path>` stays external through the client build's
+plugin, not the list. The import
 map is described in [Platform
 packages](../../docs/architecture/bundles/platform-packages.md#the-import-map-of-a-window).
 
@@ -3544,6 +3547,11 @@ source maps in development mode, none in production.
 - A relative import that resolves into the bundle's own `src/contracts/`
   becomes the external `<id>/contracts`, except in a frame, which bundles the
   contracts' sources it imports.
+- A client part (entry and chunks) also keeps every
+  `<package>/contracts/gen/<path>` external (a plugin decides, since the
+  pattern needs two `*`); a relative import into its own `src/contracts/gen/`
+  becomes `<id>/contracts/gen/<path>`. Desktop parts and workers bundle
+  generated code; a frame refuses `@bufbuild/protobuf`.
 - A bundled CommonJS module that `require`s an external gets a module that
   re-exports the external's ESM namespace, so the external stays one instance
   from the import map.

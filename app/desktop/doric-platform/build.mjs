@@ -157,6 +157,28 @@ const esmGroup = (name) => {
 for (const name of lexical) groups.push(esmGroup(name));
 for (const name of esmPackages) groups.push(esmGroup(name));
 
+/** `bundle`'s generated files, `<path>_pb.ts` relative to `dir`, sorted. */
+const generatedFiles = (dir, prefix = '') =>
+  existsSync(dir)
+    ? readdirSync(dir, { withFileTypes: true })
+        .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
+        .flatMap((entry) =>
+          entry.isDirectory()
+            ? generatedFiles(join(dir, entry.name), `${prefix}${entry.name}/`)
+            : entry.isFile() && entry.name.endsWith('_pb.ts')
+              ? [`${prefix}${entry.name}`]
+              : [],
+        )
+    : [];
+
+const generatedSource = join(workspace, bundleContracts.generated.source);
+const bundleGenerated = generatedFiles(generatedSource);
+if (bundleGenerated.length === 0) {
+  throw new Error(
+    `${bundleContracts.generated.source} has no generated files; run npx nx run bundle:generate-proto first.`,
+  );
+}
+
 groups.push({
   kind: 'contracts',
   package: bundleContracts.package,
@@ -167,6 +189,14 @@ groups.push({
       file: bundleContracts.file,
       source: join(workspace, bundleContracts.source),
     },
+    ...bundleGenerated.map((path) => {
+      const file = path.replace(/\.ts$/, '.js');
+      return {
+        specifier: `${bundleContracts.generated.specifier}${file}`,
+        file: `${bundleContracts.generated.dir}/${file}`,
+        source: join(generatedSource, path),
+      };
+    }),
   ],
 });
 

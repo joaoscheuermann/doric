@@ -596,11 +596,15 @@ export class DesktopPlatform {
     return generationImportMap(
       this.#platformMap,
       live.retained
-        .filter((bundle) => bundle.parts.contracts !== undefined)
+        .filter(
+          (bundle) =>
+            bundle.parts.contracts !== undefined ||
+            bundle.files.some((file) => file.path.startsWith('contracts/gen/')),
+        )
         .map((bundle) => ({
           id: bundle.id,
           version: bundle.version,
-          entry: bundle.parts.contracts as string,
+          entry: bundle.parts.contracts,
         })),
     );
   }

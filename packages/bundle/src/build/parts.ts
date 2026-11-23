@@ -1,10 +1,11 @@
 // Builds the desktop parts of a bundle: `src/desktop/index.ts` (desktopMain,
 // run in a utilityProcess) and `src/client/index.ts` (+ `styles.css`, run in
 // a window). Both are ESM with the platform specifiers left external, so one
-// instance of `zod`, `bundle/contracts` and each `<id>/contracts` exists per
-// generation. A client's frames (`src/client/frames/*.ts`) are modules of
-// their own, for documents outside the window: only the frame import map's
-// specifiers stay external.
+// instance of `zod`, `bundle/contracts`, each `<id>/contracts` and, in a
+// window, each generated module and `@bufbuild/protobuf` exists per
+// generation (A53). A client's frames (`src/client/frames/*.ts`) are modules
+// of their own, for documents outside the window: only the frame import
+// map's specifiers stay external.
 
 import {
   mkdir,
@@ -125,9 +126,14 @@ const inside = (root: string, path: string): boolean => {
 
 /**
  * [S8-18] Imports that resolve into the bundle's own `src/contracts/**`
- * become the external `<id>/contracts`, and forbidden imports fail.
+ * outside `gen/` become the external `<id>/contracts`; in a window module,
+ * `<package>/contracts/gen/<path>` and a relative import into the bundle's
+ * own `src/contracts/gen/` stay external (A53); forbidden imports fail.
  */
 const EXTERNAL_REQUIRE = 'doric-external-require';
+
+/** `<package>/contracts/gen/<path>`: one package segment, a non-empty path. */
+const GENERATED_SPECIFIER = /^[^./@][^/]*\/contracts\/gen\/.+$/;
 
 const partPlugin = (input: {
   readonly id: string;
@@ -136,6 +142,12 @@ const partPlugin = (input: {
   readonly forbidden: (specifier: string) => boolean;
   /** The part's external specifiers (stage 9). */
   readonly external?: readonly string[];
+  /**
+   * True for the window modules (the client entry and its chunks): generated
+   * code stays external as `<package>/contracts/gen/<path>`. Absent for the
+   * desktop part, workers and frames, which bundle what they import.
+   */
+  readonly windowModule?: boolean;
 }): Plugin => ({
   name: 'doric-part',
   setup(context) {
@@ -174,10 +186,28 @@ const partPlugin = (input: {
         };
       }
 
+      if (input.windowModule && GENERATED_SPECIFIER.test(args.path)) {
+        return { path: args.path, external: true };
+      }
+
       // A frame bundles the contracts' sources it imports: its document
       // has no `<id>/contracts`.
       if (args.path.startsWith('.') && input.part !== 'frame') {
         const target = resolve(args.resolveDir, args.path);
+        const generatedDir = join(input.contractsDir, 'gen');
+
+        if (inside(generatedDir, target)) {
+          const path = relative(generatedDir, target).split(sep).join('/');
+
+          if (input.windowModule && path !== '') {
+            return {
+              path: `${input.id}/contracts/gen/${path}`,
+              external: true,
+            };
+          }
+
+          return undefined;
+        }
 
         if (inside(input.contractsDir, target)) {
           return { path: `${input.id}/contracts`, external: true };
@@ -306,6 +336,31 @@ const entriesOf = async (dir: string): Promise<readonly string[]> => {
 /**
  * Builds the desktop parts the bundle has sources for into `dist/desktop/`
  * and `dist/client/`, replacing earlier outputs of those folders.
+ *
+ * Window modules (the client entry `client/index.js` and its chunks
+ * `client/chunks/*.js`) keep external:
+ * - every `clientExternals` specifier, `@bufbuild/protobuf` and its subpaths
+ *   included;
+ * - every specifier `<package>/contracts/gen/<path>` (one package segment,
+ *   a non-empty path), as written;
+ * - a relative import that resolves inside the bundle's own
+ *   `src/contracts/gen/`, as the specifier `<id>/contracts/gen/<path>`,
+ *   `<path>` being the target relative to that directory with `/`
+ *   separators and the extension as written (`_pb.js`);
+ * - a relative import that resolves elsewhere inside `src/contracts/`, as
+ *   `<id>/contracts` (unchanged).
+ * So a window module's output holds no generated file and no
+ * `@bufbuild/protobuf` code.
+ *
+ * The desktop part and client workers bundle generated code: a relative
+ * import inside `src/contracts/gen/` is no longer turned into
+ * `<id>/contracts` for any part. Frames are unchanged, except that
+ * `@bufbuild/protobuf`, now a window specifier, is a forbidden import of a
+ * frame like the other window specifiers but `zod`.
+ *
+ * Fails with `PartBuildError` as today (a forbidden import, an esbuild
+ * error); this change adds no error. Returns the built parts as
+ * dist-relative paths, as today.
  */
 export const buildParts = async (
   options: PartBuildOptions,
@@ -372,6 +427,7 @@ export const buildParts = async (
         part: 'client',
         forbidden: forbiddenInClient,
         external: clientExternals,
+        windowModule: true,
       }),
       mode: options.mode,
       label: 'client',
@@ -426,6 +482,7 @@ export const buildParts = async (
           part: 'client',
           forbidden: forbiddenInClient,
           external: clientExternals,
+          windowModule: true,
         }),
         mode: options.mode,
         label: `client chunk ${name}`,
