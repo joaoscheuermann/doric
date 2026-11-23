@@ -78,7 +78,8 @@ bundle has no settings, routes or storage of its own.
   `runtime.workspace/v1` and `runtime.lease/v1`, and `view-image` streams
   `ReadFileBytes` into `runtime.attachments/v1.Attach`. The process serves
   `files/v1` 1.4.0 ([`src/host/lease.ts`](src/host/lease.ts)) on the lease
-  scope `{ projectId }` only: each method is one `Describe`, then steps with
+  scope `{ projectId }` only, through `runOnProjectLease` of
+  `runtime/contracts`: each method is one `Describe`, then steps with
   `expectSandboxId`, and the first not-ready step is the `{ status }` answer.
   `ReadBytes` streams its head, then chunks of at most 1 MiB (truncated at
   `BYTES_LIMIT`, `binary` on a NUL byte). Before activation its methods fail

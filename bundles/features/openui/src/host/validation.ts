@@ -11,9 +11,8 @@ import {
   ContractError,
   defineMethod,
   defineService,
-  type Services,
 } from 'bundle/contracts';
-import { type InputSource, RuntimeThreadsV1 } from 'runtime/contracts';
+import type { InputSource } from 'runtime/contracts';
 
 import {
   type OpenUIErrorCodeName,
@@ -21,6 +20,7 @@ import {
   openuiProgramsMethods,
   type ProgramErrorsInput,
 } from '../contracts/index.js';
+import type { OpenuiThreads } from './ports.js';
 
 /** D18's fixed text of each code, for an error without `message`. */
 export const FIXED_TEXT: Readonly<Record<OpenUIErrorCodeName, string>> = {
@@ -85,7 +85,8 @@ const promptOf = (key: string): string => key.slice(0, key.indexOf('/'));
 const seenPromptOf = (id: string): string =>
   promptOf((JSON.parse(id) as readonly string[])[1] ?? '');
 
-const scopeOf = (call: Call): { readonly threadId: string } => {
+/** The Thread a call is scoped to; `invalid_scope` without a Project and a Thread. */
+export const scopeOf = (call: Call): { readonly threadId: string } => {
   const { projectId, threadId } = call.scope ?? {};
 
   if (projectId === undefined || threadId === undefined) {
@@ -105,14 +106,33 @@ const promptText = (lines: readonly string[], dropped: number): string => {
   return `${OPENING}\n\n${lines.join('\n')}${more}`;
 };
 
+/** The `onPromptStartedHook` input the registry reads. */
+export interface PromptStartedInput {
+  readonly threadId: string;
+  readonly promptId: string;
+  readonly source?: InputSource;
+}
+
 /** Whether `source` is a prompt this bundle's validation instruct queued. */
 const isValidationStart = (source: InputSource | undefined): boolean =>
   source?.kind === 'bundle' &&
   source.bundleId === 'openui' &&
   source.reason === 'validation';
 
-/** The entries of every Thread, and the hook and service over them. */
-export const createValidation = (services: Services) => {
+/**
+ * The validation registry over `threads.instruct`. Behaviour (D18, U50):
+ * `report` keeps the errors of a report whose key's prompt is the Thread's
+ * current or previous started prompt; a `closed` report gives a `validation`
+ * instruct 200 ms later (budget three per prompt a validation instruct did not
+ * start, called **without** a call); `promptStarted` moves the entry to the
+ * new prompt and gives every waiting line in one instruct made **with** the
+ * hook's call, and rejects when that instruct rejects; a failed timer
+ * instruct gives its lines back. `report` never fails. `dispose` stops every
+ * timer; no instruct starts after it. `service` (kernel) is
+ * `openui.programs/v1` with `reportErrors` = `invalid_scope` unless the call
+ * scope has a Project and a Thread, then `report`.
+ */
+export const createValidation = (threads: Pick<OpenuiThreads, 'instruct'>) => {
   // Insertion order is prompt start order: the first entry started longest ago.
   const entries = new Map<string, Entry>();
   let disposed = false;
@@ -147,7 +167,7 @@ export const createValidation = (services: Services) => {
     };
 
     try {
-      const result = await services.use(RuntimeThreadsV1).instruct({
+      const result = await threads.instruct({
         id: threadId,
         prompt: promptText(lines, dropped),
         reason: 'validation',
@@ -227,11 +247,7 @@ export const createValidation = (services: Services) => {
 
   /** `onPromptStartedHook`: the entry moves to the new prompt and gives every waiting line in one instruct. */
   const promptStarted = async (
-    input: {
-      readonly threadId: string;
-      readonly promptId: string;
-      readonly source?: InputSource;
-    },
+    input: PromptStartedInput,
     call: Call,
   ): Promise<void> => {
     const found = entries.get(input.threadId);
@@ -273,7 +289,7 @@ export const createValidation = (services: Services) => {
     const lines = [...entry.later.splice(0), ...entry.now.splice(0)];
     const { dropped } = entry;
     entry.dropped = 0;
-    await services.use(RuntimeThreadsV1).instruct(
+    await threads.instruct(
       {
         id: input.threadId,
         prompt: promptText(lines, dropped),
@@ -301,5 +317,5 @@ export const createValidation = (services: Services) => {
     for (const entry of entries.values()) clearTimer(entry);
   };
 
-  return { promptStarted, service, dispose };
+  return { report, promptStarted, service, dispose };
 };

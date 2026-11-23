@@ -11,10 +11,8 @@ import {
   ContractError,
   defineMethod,
   defineService,
-  EventsV1,
   type Services,
 } from 'bundle/contracts';
-import { RuntimeThreadsV1 } from 'runtime/contracts';
 
 import {
   type AskAnswer,
@@ -27,6 +25,7 @@ import {
   type QuestionRef,
   type QuestionState,
 } from '../contracts/index.js';
+import { kernelOpenuiPorts, type OpenuiPorts } from './ports.js';
 
 /** The Project and the Thread whose log a call folds. */
 interface ThreadScope {
@@ -61,17 +60,15 @@ const payloadOf = (event: unknown): unknown =>
 
 /** The question's state from the first matching answered row of the scope's Thread. */
 const readState = async (
-  services: Services,
+  ports: OpenuiPorts,
   call: Call,
   scope: ThreadScope,
   promptId: string,
   digest: string,
 ): Promise<QuestionState> => {
-  const log = await services
-    .use(RuntimeThreadsV1)
-    .threadEvents({ id: scope.threadId, afterSequence: 0 }, call);
+  const rows = await ports.threads.rows(scope.threadId, call);
 
-  for (const entry of log?.events ?? []) {
+  for (const entry of rows) {
     if (
       entry.projectId !== scope.projectId ||
       entry.threadId !== scope.threadId ||
@@ -202,12 +199,12 @@ const routed = async <T>(run: () => Promise<T>): Promise<T> => {
  * after resuming a paused, empty queue. Anything else is `unavailable`.
  */
 const send = async (
-  services: Services,
+  ports: OpenuiPorts,
   call: Call,
   scope: ThreadScope,
   prompt: string,
 ): Promise<string> => {
-  const threads = services.use(RuntimeThreadsV1);
+  const { threads } = ports;
   const thread = await routed(() => threads.thread(scope.threadId, call));
 
   if (thread === undefined || thread.projectId !== scope.projectId) {
@@ -265,8 +262,44 @@ const send = async (
   return result.promptId;
 };
 
-/** Provides `openui.questions/v1`; both methods are exposed to the desktop. */
-export const questionsService = () => {
+/**
+ * The two question operations over ports, with the per-question queue: answer
+ * calls for one question (prompt id and digest) run one at a time across both
+ * entries' callers of this object.
+ *
+ * - `status`: `answered` with the answers of the first `openui.answered/v1`
+ *   row of the call's Thread (same Project) whose `questionPromptId` and
+ *   `digest` match, else `pending`. Reads the log once; writes nothing.
+ * - `answer`: an already answered question answers that state, sending
+ *   nothing. Otherwise checks the answers, sends `formatAnswers(...)` by
+ *   today's route (steer of the active prompt; else prompt, after resuming a
+ *   paused, empty queue), then appends the row under the prompt that took
+ *   them, and answers `answered` with the input's answers.
+ *
+ * Errors (`ContractError`): `invalid_scope` when `call.scope` lacks
+ * `projectId` or `threadId`; `invalid_input` for answers that do not fit;
+ * `unavailable` "The Thread did not take the answers." with `{status}`
+ * (missing Thread, other Project, an agent's Thread, a refused
+ * steer/resume/prompt) or `{reason}` (a rejected runtime call, its message);
+ * a rejected log read or append rejects with that error. What stays true: the
+ * first answer is final; answers are sent at most once per accepted call and
+ * recorded only after they were sent.
+ */
+export interface QuestionOperations {
+  status(
+    ports: OpenuiPorts,
+    input: QuestionRef,
+    call: Call,
+  ): Promise<QuestionState>;
+  answer(
+    ports: OpenuiPorts,
+    input: QuestionAnswerInput,
+    call: Call,
+  ): Promise<QuestionState>;
+}
+
+/** Creates the operations with an empty queue. No I/O; never throws. */
+export const createQuestions = (): QuestionOperations => {
   // The answer calls in flight, one chain per question, so they run one at a time.
   const chains = new Map<string, Promise<void>>();
 
@@ -282,63 +315,75 @@ export const questionsService = () => {
     return result;
   };
 
+  return {
+    status: async (ports, input, call) =>
+      readState(
+        ports,
+        call,
+        scopeOf(call),
+        input.promptId,
+        digestOf(input.questions),
+      ),
+    answer: async (ports, input, call) => {
+      const scope = scopeOf(call);
+      const digest = digestOf(input.questions);
+
+      return await oneAtATime(`${input.promptId}\n${digest}`, async () => {
+        const state = await readState(
+          ports,
+          call,
+          scope,
+          input.promptId,
+          digest,
+        );
+
+        if (state.state === 'answered') return state;
+
+        checkAnswers(input.questions.questions, input.answers);
+        const promptId = await send(
+          ports,
+          call,
+          scope,
+          formatAnswers(input.questions.questions, input.answers),
+        );
+        await ports.appendAnswered(
+          { ...scope, promptId },
+          {
+            questionPromptId: input.promptId,
+            digest,
+            answers: input.answers,
+          },
+          call,
+        );
+
+        return { state: 'answered', answers: input.answers };
+      });
+    },
+  };
+};
+
+/** Kernel: provides `openui.questions/v1` over `createQuestions()` with `kernelOpenuiPorts(services)` per call; both methods are exposed to the desktop. */
+export const questionsService = () => {
+  const questions = createQuestions();
+
   return defineService(OpenuiQuestionsV1, {
     status: defineMethod({
       ...openuiQuestionsMethods.status,
-      execute: async (
+      execute: (
         input: QuestionRef,
         call: Call,
         services: Services,
       ): Promise<QuestionState> =>
-        readState(
-          services,
-          call,
-          scopeOf(call),
-          input.promptId,
-          digestOf(input.questions),
-        ),
+        questions.status(kernelOpenuiPorts(services), input, call),
     }),
     answer: defineMethod({
       ...openuiQuestionsMethods.answer,
-      execute: async (
+      execute: (
         input: QuestionAnswerInput,
         call: Call,
         services: Services,
-      ): Promise<QuestionState> => {
-        const scope = scopeOf(call);
-        const digest = digestOf(input.questions);
-
-        return await oneAtATime(`${input.promptId}\n${digest}`, async () => {
-          const state = await readState(
-            services,
-            call,
-            scope,
-            input.promptId,
-            digest,
-          );
-
-          if (state.state === 'answered') return state;
-
-          checkAnswers(input.questions.questions, input.answers);
-          const promptId = await send(
-            services,
-            call,
-            scope,
-            formatAnswers(input.questions.questions, input.answers),
-          );
-          await services.use(EventsV1, { ...scope, promptId }).append(
-            answeredEvent,
-            {
-              questionPromptId: input.promptId,
-              digest,
-              answers: [...input.answers],
-            },
-            call,
-          );
-
-          return { state: 'answered', answers: input.answers };
-        });
-      },
+      ): Promise<QuestionState> =>
+        questions.answer(kernelOpenuiPorts(services), input, call),
     }),
   });
 };

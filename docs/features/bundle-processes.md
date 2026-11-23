@@ -1048,3 +1048,22 @@ after a 5 s grace; a failure after the cancel answers `run_cancelled` or
   without live terminals it fails `unsupported_operation` "Live terminals are
   unavailable.". `createTestRouter` now ends a cancelled streaming handler with
   `return()`, so its `finally` runs, as the real transport does.
+- 2026-11-23: phase 3, slice S55a, of
+  [`docs/designs/grpc-processes.md`](../designs/grpc-processes.md):
+  `runtime/contracts` exports the routed-lease steps `leaseStatusOf`,
+  `execRequestOf`, `execResultOf` and `runOnProjectLease` (one `Describe`,
+  `expectSandboxId` on every step, the first `leaseStatus` failure is the
+  `{ status }` answer, other failures keep code, message and details). `files`
+  uses them; `screen` and `resources` keep their own.
+- 2026-11-23: phase 3, slice S56, of
+  [`docs/designs/grpc-processes.md`](../designs/grpc-processes.md): `openui`
+  runs as its own process (`src/host/main.ts`, `createOpenuiHost`) serving
+  `openui.programs/v1` and `openui.questions/v1`, registering
+  `openui.answered/v1`, its `runtime.hooks/v1` handler and its skill; its
+  services answer `unavailable` until activation. Routed requests are parsed
+  again with today's zod schemas, so the questions digest matches the
+  kernel's; stored `openui.answered/v1` rows read the same in both encodings.
+  The skill is never read at import: the kernel reads it in `activate` beside
+  the compiled module, the process through `context.assets.read` (needs
+  `host.assets`, slice S62). The 200 ms validation timer's instruct runs
+  detached.

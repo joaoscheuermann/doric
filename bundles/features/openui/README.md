@@ -490,6 +490,18 @@ type ThreadUpdateInput = {
 available, and registers the skill. The cleanup disposes the skill, the hook
 and every pending validation timer.
 
+The same services also run as the bundle's own process
+([`src/host/main.ts`](src/host/main.ts), `createOpenuiHost`): it serves
+`openui.programs/v1` and `openui.questions/v1`, registers
+`openui.answered/v1`, a `runtime.hooks/v1` handler and the skill, and its
+services answer `unavailable` until activation. A routed request is parsed
+again with the same zod schemas, so a questions digest matches the kernel's;
+stored `openui.answered/v1` rows read the same in both encodings. The skill is
+never read at import: the kernel reads it in activation beside the compiled
+module, the process with `context.assets.read` (which needs the manifest's
+`host.assets`, slice S62). The 200 ms validation timer's instruct runs
+detached.
+
 ### The `openui` skill
 
 How skills a bundle registers are listed and loaded is described in

@@ -1415,6 +1415,11 @@ for every acquisition
 
 ## Other exports of `runtime/contracts`
 
+- **Routed-lease steps**: `leaseStatusOf`, `execRequestOf`, `execResultOf`
+  and `runOnProjectLease` run a task on a Project's lease over
+  `runtime.lease/v1`: one `Describe`, `expectSandboxId` on every step; the
+  first `leaseStatus` failure becomes the `{ status }` answer, other failures
+  keep their code, message and details. Used by `files`.
 - **Thread sessions**: `withThreadSession` opens
   `runtime.workspace/v1.OpenThread`, runs its task on the `ready` item, answers
   `missing`, `inactive` or `pending` without running the task, and ends the
