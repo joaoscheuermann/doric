@@ -862,3 +862,19 @@ to every host part.
   restore a restarted relay. Open: an old `screen` generation's shutdown can
   forget tokens the new one re-exposed. The kernel entry and manifest are
   unchanged until S62, which adds `host.httpPrefix: "/screen/"`.
+- 2026-11-23: phase 3, slice S49b, of
+  [`docs/designs/grpc-processes.md`](../designs/grpc-processes.md): `screen`
+  has its process entry, `src/host/main.ts` (built to `dist/host/main.mjs`),
+  calling `runBundle` with `SessionsService` (`screen.sessions/v2`) listed
+  statically. `Attach` fails `unavailable` until activation, which builds the
+  session manager with `context.log`, `trackedRelay` and `routedScreenLease`
+  (over `runtime.lease/v1`). The routed lease describes once and pins every
+  `Exec` to that sandbox id in the caller's scope; a `leaseStatus` failure ends
+  the run as `pending` or `unavailable` (reason `sandbox`) even when swallowed,
+  and later execs reject without a call. `trackedRelay` tracks each exposed
+  token with `registrations.track` for replay to a restarted relay; `forget`
+  untracks and calls `Forget`. Open: a swallowed lease failure in the
+  `xpra list` wait loop runs to the loop's deadline; the S49a handover race.
+  The kernel entry is unchanged until S62, which adds `host.requires`
+  `runtime.lease/v1@^1.4.0`, `screen.relay/v1@^1.1.0`, `log/v1` and provides
+  `screen.sessions/v2@2.1.0`.

@@ -19,6 +19,13 @@ import type { Sandbox } from 'sandbox';
 
 import type { ScreenUnavailableReason } from '../contracts/index.js';
 
+/**
+ * The part of a sandbox a screen session needs: its `id` (the cache key of
+ * the sandbox's address) and `exec`. A full `Sandbox` is one (kernel path);
+ * so is the routed sandbox of `routedScreenLease` (router path).
+ */
+export type ScreenSandbox = Pick<Sandbox, 'id' | 'exec'>;
+
 /** The marker file that makes a session recoverable across restarts. */
 export const SCREEN_MARKER_PATH = '/tmp/doric-screen.json';
 
@@ -177,9 +184,10 @@ export interface ScreenSessionManager {
   /**
    * Ensures the Project's session on the given lease and answers the record
    * the relay exposes. Throws `ScreenSessionError` when the sandbox image
-   * has no xpra or the session cannot be started.
+   * has no xpra or the session cannot be started. Takes a `ScreenSandbox`:
+   * every existing caller (a `Sandbox`, the tests' fakes) still type-checks.
    */
-  ensure(sandbox: Sandbox): Promise<ScreenSession>;
+  ensure(sandbox: ScreenSandbox): Promise<ScreenSession>;
 }
 
 const defaultSleep = (ms: number): Promise<void> =>
@@ -217,7 +225,7 @@ export const createScreenSessionManager = (
   const hosts = new Map<string, string>();
 
   const exec = async (
-    sandbox: Sandbox,
+    sandbox: ScreenSandbox,
     cmd: readonly string[],
     timeoutMs = 30_000,
   ) => {
@@ -234,7 +242,7 @@ export const createScreenSessionManager = (
    * value is interpolated into the command text.
    */
   const readControlFile = async (
-    sandbox: Sandbox,
+    sandbox: ScreenSandbox,
     path: string,
   ): Promise<string> => {
     const result = await exec(sandbox, ['cat', path], 10_000).catch(
@@ -245,7 +253,7 @@ export const createScreenSessionManager = (
   };
 
   const writeControlFile = async (
-    sandbox: Sandbox,
+    sandbox: ScreenSandbox,
     path: string,
     content: string,
   ): Promise<void> => {
@@ -257,18 +265,18 @@ export const createScreenSessionManager = (
   };
 
   const readMarker = async (
-    sandbox: Sandbox,
+    sandbox: ScreenSandbox,
   ): Promise<ScreenMarker | undefined> =>
     markerOf(await readControlFile(sandbox, SCREEN_MARKER_PATH));
 
   const writeMarker = async (
-    sandbox: Sandbox,
+    sandbox: ScreenSandbox,
     marker: ScreenMarker,
   ): Promise<void> => {
     await writeControlFile(sandbox, SCREEN_MARKER_PATH, JSON.stringify(marker));
   };
 
-  const hostOf = async (sandbox: Sandbox): Promise<string> => {
+  const hostOf = async (sandbox: ScreenSandbox): Promise<string> => {
     const cached = hosts.get(sandbox.id);
 
     if (cached !== undefined) {
@@ -308,7 +316,9 @@ export const createScreenSessionManager = (
   };
 
   /** The displays `xpra list` reports as live, read through the sandbox shell. */
-  const liveDisplays = async (sandbox: Sandbox): Promise<readonly number[]> => {
+  const liveDisplays = async (
+    sandbox: ScreenSandbox,
+  ): Promise<readonly number[]> => {
     const listed = await exec(sandbox, ['xpra', 'list'], 10_000).catch(
       () => undefined,
     );
@@ -323,7 +333,7 @@ export const createScreenSessionManager = (
    * settle a session the relay cannot reach as the one that started.
    */
   const waitForDisplay = async (
-    sandbox: Sandbox,
+    sandbox: ScreenSandbox,
     display: number,
     timeoutMs: number,
   ): Promise<boolean> => {
@@ -343,7 +353,7 @@ export const createScreenSessionManager = (
   };
 
   const start = async (
-    sandbox: Sandbox,
+    sandbox: ScreenSandbox,
     input: {
       readonly display: number;
       readonly ports: readonly number[];

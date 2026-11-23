@@ -223,6 +223,35 @@ importing their packages; `runtime.records/v1` and `runtime.lease/v1` come from
   relay that fails or is gone; a generation that published none touches no
   relay ([`src/host/index.ts`](src/host/index.ts)).
 
+### Process entry (S49b)
+
+The bundle also has a process entry, [`src/host/main.ts`](src/host/main.ts),
+built to `dist/host/main.mjs`, for the bundle-process runtime
+([bundle processes](../../../docs/features/bundle-processes.md)). It calls
+`runBundle` with `SessionsService` (`screen.sessions/v2`) listed statically.
+The session code takes narrower types (`ScreenSandbox`, `ScreenLease`,
+`ScreenRelayPublisher`). The kernel entry and the manifest are unchanged until
+S62, which adds `host.requires` `runtime.lease/v1@^1.4.0`,
+`screen.relay/v1@^1.1.0` and `log/v1`, and provides `screen.sessions/v2@2.1.0`.
+In this entry:
+
+- Before activation, `Attach` fails `unavailable` ("The screen sessions are not
+  ready."). At activation the session manager is built with `context.log`, the
+  relay publisher (`trackedRelay`) and the routed lease (`routedScreenLease`
+  over `runtime.lease/v1`).
+- `routedScreenLease` calls `Describe` once, then pins every `Exec` to that
+  sandbox id; lease calls inherit the caller's scope. A `leaseStatus` failure
+  ends the run as `pending` or `unavailable` with reason `sandbox`, even when
+  the session manager swallows that step's failure, and later execs of the run
+  reject without a call. Other failures pass through with their code.
+- `trackedRelay` publishes each token to `screen.relay/v1` through
+  `registrations.track`, so a restarted relay gets the tokens back by replay;
+  `forget` untracks the token and calls `Forget`; a failed `Expose` tracks
+  nothing.
+- Open: a lease failure swallowed inside the manager's `xpra list` wait loop
+  lets the loop run to its own deadline before answering; and an old
+  generation's shutdown can forget tokens the new one re-exposed (S49a).
+
 ## Views, dials and windows on the desktop
 
 [`src/desktop/views.ts`](src/desktop/views.ts),

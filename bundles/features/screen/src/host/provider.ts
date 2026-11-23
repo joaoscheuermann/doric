@@ -10,8 +10,11 @@
 
 import type { Log } from 'bundle/contracts';
 import { type Call, defineMethod, defineService } from 'bundle/contracts';
-import { type RuntimeLease, RuntimeLeaseV1 } from 'runtime/contracts';
-import type { ScreenRelay } from 'screen-relay/contracts';
+import { type LeaseOutcome, RuntimeLeaseV1 } from 'runtime/contracts';
+import type {
+  ScreenRelayExpose,
+  ScreenRelayForget,
+} from 'screen-relay/contracts';
 
 import {
   type ScreenAttach,
@@ -20,15 +23,42 @@ import {
 } from '../contracts/index.js';
 import {
   createScreenSessionManager,
+  type ScreenSandbox,
   type ScreenSession,
   ScreenSessionError,
   type ScreenSessionManager,
 } from './session.js';
 
+/**
+ * Where `attach` runs the session's steps: today's `withLease` shape,
+ * narrowed to what the sessions use. Runs `task` on the Project's current
+ * sandbox, never acquiring one, and answers `{ status: 'ready', value }`, or
+ * the non-ready outcome without running (or while running) the task. A
+ * failure of `task` other than a lease outcome rejects with it.
+ * `RuntimeLease` (kernel, `runtime/contracts`) is assignable to it unchanged.
+ */
+export interface ScreenLease {
+  withLease<T>(
+    task: (sandbox: ScreenSandbox) => Promise<T>,
+    call?: Call,
+  ): Promise<LeaseOutcome<T>>;
+}
+
+/**
+ * Where sessions are published: `expose` resolves once the relay serves the
+ * token, `forget` once it dropped it; both reject with the relay's failure.
+ * The kernel's `ScreenRelay` and the router's `trackedRelay` are both one.
+ */
+export interface ScreenRelayPublisher {
+  expose(input: ScreenRelayExpose): Promise<unknown>;
+  forget(input: ScreenRelayForget): Promise<unknown>;
+}
+
 /** One `attach` request as the provider receives it. */
 export interface ScreenAttachInput {
   readonly projectId: string;
-  readonly lease: RuntimeLease;
+  /** Was `RuntimeLease`; widened to what the sessions use. */
+  readonly lease: ScreenLease;
   readonly call?: Call;
 }
 
@@ -46,7 +76,7 @@ export interface ScreenSessionsDeps {
    * resident `screen-relay` bundle owns. Taken through a function so a call
    * that never reaches a session creates no relay handle.
    */
-  readonly relay: () => ScreenRelay;
+  readonly relay: () => ScreenRelayPublisher;
   readonly manager?: () => ScreenSessionManager;
 }
 
