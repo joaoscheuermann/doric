@@ -1,7 +1,7 @@
 // What `createCoreServices().activate` binds: the backend, the catalog and
 // `core`'s own `Call`, read by every routed service at call time.
 
-import type { JsonValue } from '@bufbuild/protobuf';
+import type { DescService, JsonValue } from '@bufbuild/protobuf';
 import { type Client, ConnectError } from '@connectrpc/connect';
 import {
   type Call,
@@ -52,6 +52,16 @@ export interface CoreBinding {
    * naming that bundle, generation and incarnation).
    */
   referenceSource(caller: StampedCaller): Client<typeof ReferenceSourceService>;
+  /**
+   * A client of the handler service `service` (`ToolHandlerService`,
+   * `HookHandlerService`) of the instance `caller`:
+   * `context.services.use(service, { target: \`${bundleId}/${generation}/${incarnation}\` })`.
+   * Creating it makes no call and never throws. A call fails as the router
+   * ends it (an instance that is gone fails with `generation_lost` or
+   * `unavailable`). A call made inside a handler inherits that call's
+   * deadline, scope, trace and signal.
+   */
+  handler<S extends DescService>(service: S, caller: StampedCaller): Client<S>;
 }
 
 const providesOf = (manifest: JsonValue | undefined): readonly string[] => {
@@ -105,6 +115,10 @@ export const createBinding = (context: HostContext): CoreBinding => {
     ),
     referenceSource: (caller) =>
       context.services.use(ReferenceSourceService, {
+        target: `${caller.bundleId}/${caller.generation}/${caller.incarnation}`,
+      }),
+    handler: (service, caller) =>
+      context.services.use(service, {
         target: `${caller.bundleId}/${caller.generation}/${caller.incarnation}`,
       }),
     catalog: (call) => {

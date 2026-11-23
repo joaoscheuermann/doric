@@ -517,7 +517,7 @@ the core's host contracts, these are `secrets/v1.registerReferences` and
 
 In a host process, `createCoreServices({ types, validators, now? })`
 ([`services.ts`](src/host/services.ts)) answers `{ services, activate(context) }`
-and serves `storage/v1`, `settings/v1`, `secrets/v1` and `events/v1` over the router beside the kernel
+and serves `storage/v1`, `settings/v1`, `secrets/v1`, `events/v1`, `tools/v1` and `skills/v1` over the router beside the kernel
 entry; calls before `activate` fail `unavailable`. Storage views are
 partitioned by the router-stamped caller generation, and types are released on
 `InstanceGone` (data kept). Settings values are protobuf messages (`Any`)
@@ -533,6 +533,15 @@ secret. Events: `Register` refuses a payload message with a field named `type`;
 `Sink` binds an events stream; `Append` stores `{ type, ...payload JSON }` (zero
 values omitted), redacted, committed through the storage facade as core, then
 calls the `onEventAppended` option (fire-and-forget) until `hooks/v1` is served.
+Tools are keyed by name and Project: a registration in an overlapping Project by
+another bundle fails `duplicate_tool`; the newest instance of a bundle serves its
+keys. `List` and `Catalog` answer the unscoped tools plus the call's Project's,
+by order then registration order; `Execute` relays to the registering
+instance's `ToolHandlerService` with the caller's deadline, failing `not_found`
+for a tool the call does not see and `unavailable` for an unreachable instance.
+Skills fail `duplicate_skill` across bundles and `unavailable_tool` for an
+`allowedTools` entry the caller does not see. `InstanceGone` drops an
+instance's tools and skills.
 
 ### `tools/v1`
 

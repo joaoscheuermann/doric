@@ -11,7 +11,9 @@ import { type Call, ContractError } from 'bundle/contracts';
 import { EventsService } from 'bundle/contracts/gen/doric/events/v1/events_pb.js';
 import { SecretsService } from 'bundle/contracts/gen/doric/secrets/v1/secrets_pb.js';
 import { SettingsService } from 'bundle/contracts/gen/doric/settings/v1/settings_pb.js';
+import { SkillsService } from 'bundle/contracts/gen/doric/skills/v1/skills_pb.js';
 import { StorageService } from 'bundle/contracts/gen/doric/storage/v1/storage_pb.js';
+import { ToolsService } from 'bundle/contracts/gen/doric/tools/v1/tools_pb.js';
 import type {
   BundleInstance,
   HostContext,
@@ -27,7 +29,9 @@ import { type CoreBinding, createBinding } from './binding.js';
 import { createEventsService } from './events/service.js';
 import { createSecretsService } from './secrets/service.js';
 import { createSettingsService } from './settings/service.js';
+import { createSkillsService } from './skills/service.js';
 import { createStorageFacade } from './storage/facade.js';
+import { createToolsService } from './tools/service.js';
 
 /** The services `createCoreServices` answers, in this order. */
 export type CoreDataServices = readonly [
@@ -35,6 +39,8 @@ export type CoreDataServices = readonly [
   typeof SettingsService,
   typeof SecretsService,
   typeof EventsService,
+  typeof ToolsService,
+  typeof SkillsService,
 ];
 
 export interface CoreServicesOptions {
@@ -88,6 +94,16 @@ export interface CoreServices {
    * message's proto defaults (the empty message), since `settings/v1`'s
    * registration carries no defaults; `settings_missing` when protovalidate
    * refuses the empty message.
+   *
+   * `tools/v1` and `skills/v1` keep D4's key rule (`RegistrationTable`).
+   * Every registration belongs to the router-stamped calling instance. A
+   * bundle's newest instance serves its keys, and the registration ends
+   * with `Unregister` or that instance's `InstanceGone`. Unlike
+   * `storage/v1`, `settings/v1` and `events/v1`, these are not partitioned
+   * by generation: every caller sees the serving registration of every key.
+   *
+   * `tools/v1.Execute` calls the registering instance's
+   * `ToolHandlerService` with `target` naming it.
    */
   readonly services: ServiceEntries<CoreDataServices>;
   /**
@@ -102,7 +118,7 @@ export interface CoreServices {
    * It also gives `context.instances.onGone` the registrations of all four
    * services, so an `InstanceGone` disposes every registration of that
    * instance (each dispose guarded; core's own never throw). The documents
-   * it wrote stay.
+   * it wrote stay. It also drops the instance's tools and skills.
    *
    * Does no I/O. No backend and no catalog is reached until the first RPC
    * that needs one, and `core`'s own storage types (`core.settings/v1`,
@@ -164,6 +180,8 @@ export const createCoreServices = (
     () => options.types,
     options.onEventAppended,
   );
+  const tools = createToolsService(bind);
+  const skills = createSkillsService(bind, tools);
 
   return {
     services: [
@@ -174,6 +192,8 @@ export const createCoreServices = (
       [SettingsService, settings.implementation],
       [SecretsService, secrets.implementation],
       [EventsService, events.implementation],
+      [ToolsService, tools.implementation],
+      [SkillsService, skills.implementation],
     ],
     activate: (context) => {
       if (binding !== undefined) {
@@ -189,6 +209,8 @@ export const createCoreServices = (
         settings.registrations.dropInstance(instance);
         secrets.registrations.dropInstance(instance);
         events.registrations.dropInstance(instance);
+        tools.registrations.dropInstance(instance);
+        skills.registrations.dropInstance(instance);
       });
     },
   };

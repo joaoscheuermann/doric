@@ -22,7 +22,12 @@ import {
   MessageOptionsSchema,
   OneofDescriptorProtoSchema,
 } from '@bufbuild/protobuf/wkt';
-import type { Client, ServiceImpl } from '@connectrpc/connect';
+import {
+  type Client,
+  createClient,
+  createRouterTransport,
+  type ServiceImpl,
+} from '@connectrpc/connect';
 import { createTestServices } from 'bundle';
 import {
   type CallScope,
@@ -30,6 +35,7 @@ import {
   type SecretsBackend,
   SecretsBackendV1,
   StorageBackendV1,
+  toConnectError,
 } from 'bundle/contracts';
 import {
   DoubleRulesSchema,
@@ -38,6 +44,7 @@ import {
   file_buf_validate_validate,
   StringRulesSchema,
 } from 'bundle/contracts/gen/buf/validate/validate_pb.js';
+import { HookHandlerService } from 'bundle/contracts/gen/doric/hooks/v1/hooks_pb.js';
 import { CatalogService } from 'bundle/contracts/gen/doric/platform/catalog/v1/catalog_pb.js';
 import {
   EventOptionSchema,
@@ -50,7 +57,8 @@ import { BackendService as SecretsBackendService } from 'bundle/contracts/gen/do
 import { ReferenceSourceService } from 'bundle/contracts/gen/doric/secrets/v1/secrets_pb.js';
 import { BackendService as StorageBackendService } from 'bundle/contracts/gen/doric/storage/backend/v1/backend_pb.js';
 import { StorageService } from 'bundle/contracts/gen/doric/storage/v1/storage_pb.js';
-import { ajvValidators, type BundleInstance } from 'bundle/host';
+import { ToolHandlerService } from 'bundle/contracts/gen/doric/tools/v1/tools_pb.js';
+import { ajvValidators, type BundleInstance, type UseOptions } from 'bundle/host';
 import { createTestRouter, type TestRouter } from 'bundle/testing';
 import {
   createMemoryStore,
@@ -81,6 +89,19 @@ export const CORE_INSTANCE: BundleInstance = {
 
 /** The generation the catalog fake answers as active. */
 export const ACTIVE_GENERATION = 1;
+
+/** The handler services one fake registering instance serves. */
+export interface InstanceHandlers {
+  readonly tools?: Partial<ServiceImpl<typeof ToolHandlerService>>;
+  readonly hooks?: Partial<ServiceImpl<typeof HookHandlerService>>;
+}
+
+/** One handler call core made through a `target`ed client. */
+export interface HandlerCall {
+  readonly target: string;
+  readonly method: string;
+  readonly request: unknown;
+}
 
 /** `core`'s data services on one `createTestRouter`, over the memory backends. */
 export interface RoutedCore {
@@ -119,6 +140,18 @@ export interface RoutedCore {
    * directly (fakes are not reachable through a router client).
    */
   readonly secretsBackend: SecretsBackend;
+  /**
+   * The handler services of the fake registering instances, by target
+   * `<bundleId>/<generation>/<incarnation>` (incarnation 1 for a caller of
+   * `client`). `serveCore` wraps `context.services.use`: a `use` of
+   * `ToolHandlerService` or `HookHandlerService` with a `target` answers an
+   * in-memory client of this map's entry (`createRouterTransport`). A target
+   * with no entry, or no implementation for the method, fails with
+   * `ContractError('unavailable')`, as a gone instance would.
+   */
+  readonly handlers: Map<string, InstanceHandlers>;
+  /** Every handler call core made, in order: `{ target, method, request }`. */
+  readonly handlerCalls: readonly HandlerCall[];
   /**
    * Delivers `InstanceGone` of `instance` to the handlers `core` gave
    * `context.instances.onGone`, as the router would (the test router sends
@@ -185,6 +218,10 @@ const notServed = (): never => {
  *   `bundles`, and `core` as the host provider of `events/v1`;
  * - `[ReferenceSourceService, …]`, answering `references` (failing for
  *   `failingSources`).
+ *
+ * `core`'s `context.services.use` answers a `target`ed `ToolHandlerService`
+ * or `HookHandlerService` from `handlers`, recording each call in
+ * `handlerCalls`; every other `use` reaches the test router.
  */
 export const serveCore = async (
   options: ServeCoreOptions = {},
@@ -264,6 +301,51 @@ export const serveCore = async (
       return { credentialIds: [...(references.get(source) ?? [])] };
     },
   };
+  const handlers = new Map<string, InstanceHandlers>();
+  const handlerCalls: HandlerCall[] = [];
+  const handlerClient = <S extends DescService>(
+    ref: S,
+    target: string,
+  ): Client<S> => {
+    const kind = ref.typeName === ToolHandlerService.typeName ? 'tools' : 'hooks';
+    const implementation = Object.fromEntries(
+      ref.methods.map((method) => [
+        method.localName,
+        async (request: unknown, context: unknown) => {
+          handlerCalls.push({ target, method: method.localName, request });
+
+          const served = handlers.get(target)?.[kind] as
+            | Record<string, (request: unknown, context: unknown) => unknown>
+            | undefined;
+          const handle = served?.[method.localName];
+
+          if (handle === undefined) {
+            throw toConnectError(
+              new ContractError(
+                'unavailable',
+                `No instance ${target} serves ${ref.typeName}.${method.name}.`,
+              ),
+            );
+          }
+
+          try {
+            return await handle(request, context);
+          } catch (error) {
+            throw error instanceof ContractError
+              ? toConnectError(error)
+              : error;
+          }
+        },
+      ]),
+    ) as ServiceImpl<S>;
+
+    return createClient(
+      ref,
+      createRouterTransport((router) => {
+        router.service(ref, implementation);
+      }),
+    );
+  };
   const core = createCoreServices({
     types: options.types ?? testMessages(),
     validators: ajvValidators(),
@@ -295,8 +377,18 @@ export const serveCore = async (
   await router.activate({
     services: core.services,
     activate: (context) => {
+      const use = context.services.use.bind(context.services);
+
       core.activate({
         ...context,
+        services: {
+          use: <S extends DescService>(ref: S, useOptions?: UseOptions<S>) =>
+            useOptions?.target !== undefined &&
+            (ref.typeName === ToolHandlerService.typeName ||
+              ref.typeName === HookHandlerService.typeName)
+              ? handlerClient(ref, useOptions.target)
+              : use(ref, useOptions),
+        },
         instances: {
           onGone: (handler) => {
             goneHandlers.push(handler);
@@ -322,6 +414,8 @@ export const serveCore = async (
     failingSources,
     referenceCalls,
     secretsBackend: backends.services.use(SecretsBackendV1),
+    handlers,
+    handlerCalls,
     storage: (bundleId, generation = bundleId === 'doric' ? 0 : 1) =>
       storageClient(
         router.client(StorageService, {

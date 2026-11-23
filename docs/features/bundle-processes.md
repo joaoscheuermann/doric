@@ -502,6 +502,21 @@ with a field named `type`; `Sink` binds an events stream; `Append` stores
 the storage facade as core, then calls the `onEventAppended` option
 (fire-and-forget) until `hooks/v1` is served (S40).
 
+S40a adds `tools/v1` and `skills/v1` to `createCoreServices`. Tools are keyed by
+name and Project: one name may be registered in different Projects, and a
+registration in an overlapping Project by another bundle fails `duplicate_tool`
+(T3.10, AC3.13); the newest instance of a bundle serves its keys, and an older
+instance never refuses a newer one. `List` and `Catalog` answer the unscoped
+tools plus the call's Project's, by order then registration order. `Execute`
+relays to the registering instance's `ToolHandlerService` (router target bundle,
+generation and incarnation), inheriting the caller's deadline; a tool the call
+does not see is `not_found`, an unreachable instance `unavailable`.
+`InstanceGone` drops the instance's tools and skills. Skills fail
+`duplicate_skill` across bundles and `unavailable_tool` for an `allowedTools`
+entry the caller does not see. `tools/v1` has no `Check` RPC; the model repair
+flow is deferred to the runtime and default slices. Hooks and log follow in
+S40b.
+
 ## Evolution
 
 - 2026-11-22: phase 0 of
@@ -584,3 +599,7 @@ the storage facade as core, then calls the `onEventAppended` option
   [`docs/designs/grpc-processes.md`](../designs/grpc-processes.md) (v6.12):
   `createCoreServices` also serving `secrets/v1` and `events/v1`, with the
   `onEventAppended` option standing in for `hooks/v1` until S40.
+- 2026-11-22: phase 3, slice S40a, of
+  [`docs/designs/grpc-processes.md`](../designs/grpc-processes.md) (v6.12):
+  `createCoreServices` also serving `tools/v1` and `skills/v1`, tools keyed by
+  name and Project.
