@@ -443,6 +443,16 @@ including bundles without `contracts/index.js` (such as `transport`).
 module loads once; its build fails when `packages/bundle`'s generated files are
 missing.
 
+S36 adds the entry `storage/rpc` to `packages/storage` (T3.9, AC3.11):
+`serveStorageBackend`/`storageBackendClient` for `storage.backend/v1` and
+`serveSecretsBackend`/`secretsBackendClient` for `secrets.backend/v1`, with values
+as JSON chunks of at most 1 MiB after their item. Backend errors cross with code
+and details; the client refuses values JSON cannot hold with `invalid_input`; a
+malformed answer stream is `invalid_output`; transport cancel, deadline and
+unavailability map to `cancelled`, `deadline_exceeded` and `unavailable`. The
+conformance kit passes over the router with the memory backend. Phase 4 deletes
+the entry with `storage.backend/v1`.
+
 ## Evolution
 
 - 2026-11-22: phase 0 of
@@ -504,3 +514,7 @@ missing.
   [`docs/designs/grpc-processes.md`](../designs/grpc-processes.md) (v6.12):
   client parts load generated code and `@bufbuild/protobuf` from the window
   import map; the phase-1 restriction on `<other>/contracts/gen/*` is lifted.
+- 2026-11-22: phase 3, slice S36, of
+  [`docs/designs/grpc-processes.md`](../designs/grpc-processes.md) (v6.12):
+  `storage/rpc` carries `storage.backend/v1` and `secrets.backend/v1` over the
+  router until phase 4.

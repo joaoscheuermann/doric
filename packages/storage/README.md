@@ -40,12 +40,13 @@ Node.js (`Buffer`, `node:crypto`, and `node:test` in the kit)
 ([`package.json`](package.json)). Each entry resolves to `src/` under the
 `@org/source` condition and to the built `dist/` otherwise.
 
-| Specifier              | Source                                                 | Contents                                                                                |
-| ---------------------- | ------------------------------------------------------ | --------------------------------------------------------------------------------------- |
-| `storage`              | [`src/index.ts`](src/index.ts)                         | Index keys, query cursors, stream ids, conflict and limit errors, batch accounting      |
-| `storage/memory`       | [`src/memory/index.ts`](src/memory/index.ts)           | `memoryStorageBackend`, `memorySecretsBackend`, `createMemoryStore`, `memoryFoundation` |
-| `storage/conformance`  | [`src/conformance/index.ts`](src/conformance/index.ts) | `runStorageConformance`, `runConformanceCase`, `conformanceCases` and the harness types |
-| `storage/package.json` | [`package.json`](package.json)                         | The manifest                                                                            |
+| Specifier              | Source                                                 | Contents                                                                                                                                                                                          |
+| ---------------------- | ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `storage`              | [`src/index.ts`](src/index.ts)                         | Index keys, query cursors, stream ids, conflict and limit errors, batch accounting                                                                                                                |
+| `storage/memory`       | [`src/memory/index.ts`](src/memory/index.ts)           | `memoryStorageBackend`, `memorySecretsBackend`, `createMemoryStore`, `memoryFoundation`                                                                                                           |
+| `storage/conformance`  | [`src/conformance/index.ts`](src/conformance/index.ts) | `runStorageConformance`, `runConformanceCase`, `conformanceCases` and the harness types                                                                                                           |
+| `storage/rpc`          | [`src/rpc/index.ts`](src/rpc/index.ts)                 | `serveStorageBackend`, `storageBackendClient`, `serveSecretsBackend`, `secretsBackendClient` and the chunked JSON codec (`encodeJson`, `decodeJson`, `chunkBytes`, `joinChunks`, `maxChunkBytes`) |
+| `storage/package.json` | [`package.json`](package.json)                         | The manifest                                                                                                                                                                                      |
 
 Every error the helpers and the memory backends raise is a `ContractError` of
 `bundle/contracts`, `new ContractError(code, message, details?)`, recognized
@@ -463,6 +464,27 @@ without that choice the host starts in recovery mode
 booted over the same `store` see the same storage data; each activation
 creates a new secrets backend from `options.secrets`, so secret rows are not
 shared between hosts.
+
+## `storage/rpc`: the backends over the router
+
+Temporary: phase 4 of
+[`grpc-processes.md`](../../docs/designs/grpc-processes.md) deletes it with
+`storage.backend/v1`. It carries `storage.backend/v1` and `secrets.backend/v1`
+over the router in the shapes of "Storage until phase 4".
+
+- **Codec.** A value crosses as JSON text in UTF-8, in chunks of at most
+  `maxChunkBytes` (1 MiB) sent after its item.
+- **`serveStorageBackend(backend)` / `serveSecretsBackend(backend)`** turn a
+  `StorageBackend` / `SecretsBackend` into the service implementation;
+  **`storageBackendClient(client)` / `secretsBackendClient(client)`** turn a
+  client of the service back into the interface.
+- **Errors.** A backend's `ContractError` crosses with its code and details. The
+  client refuses a value JSON cannot hold with `invalid_input` before sending; a
+  malformed answer stream is `invalid_output`; a transport cancel, deadline or
+  unavailability becomes `cancelled`, `deadline_exceeded` or `unavailable`.
+
+The conformance kit runs over the router with the memory backend
+([`rpc-conformance.test.ts`](tests/rpc-conformance.test.ts)).
 
 ## `storage/conformance`: the conformance kit
 

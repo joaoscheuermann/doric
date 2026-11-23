@@ -25,9 +25,17 @@
       "types": "./dist/conformance/index.d.ts",
       "import": "./dist/conformance/index.js",
       "default": "./dist/conformance/index.js"
+    },
+    "./rpc": {
+      "@org/source": "./src/rpc/index.ts",
+      "types": "./dist/rpc/index.d.ts",
+      "import": "./dist/rpc/index.js",
+      "default": "./dist/rpc/index.js"
     }
   },
   "dependencies": {
+    "@bufbuild/protobuf": "^2.17.0",
+    "@connectrpc/connect": "^2.3.0",
     "bundle": "0.0.1",
     "tslib": "^2.3.0",
     "zod": "^4.4.3"
