@@ -36,7 +36,7 @@ export interface ThreadSessions {
 }
 
 /** One instance: `<bundleId>/<generation>/<incarnation>`. */
-const instanceKey = (instance: BundleInstance): string =>
+export const instanceKey = (instance: BundleInstance): string =>
   `${instance.bundleId}/${String(instance.generation)}/${String(instance.incarnation)}`;
 
 /** A registered session: its owner's key, its Thread and how to end it. */

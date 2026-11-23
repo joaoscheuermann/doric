@@ -103,12 +103,13 @@ hooks; [`peers.ts`](src/host/peers.ts) declares the `core.event-hooks/v1` ref
 and [`appends.ts`](src/host/appends.ts) folds each appended event into its
 Thread.
 
-The process entry is being added (phase 3 of
-[`docs/designs/grpc-processes.md`](../../../docs/designs/grpc-processes.md)).
+The process entry (phase 3 of
+[`docs/designs/grpc-processes.md`](../../../docs/designs/grpc-processes.md))
+is described under Process entry below.
 `createRuntimeCore` holds the domain wiring the kernel entry uses.
 `createRuntimeServices` ([`service.ts`](src/host/service.ts)) serves
 `runtime/v2`, `runtime.threads/v1`, `runtime.attachments/v1` and
-`runtime.usage/v1` over the router (`main.ts` follows); every RPC answers `unavailable`
+`runtime.usage/v1` over the router; every RPC answers `unavailable`
 before activate, and stop answers `shutting_down`. Activation registers the
 storage types, defines `runtime.hooks/v1`, folds events and runs the start
 step. Its ports (`storage/v1`, `host-config`, secrets, models catalog) go
@@ -189,6 +190,21 @@ registration, so a replay refreshes it. Cycle rule: `executor/v1` must be
 optional for `runtime` (S62 manifest), and `default` (S51) may call
 `executor.session/v1` only from its `executor/v1` handlers, never at activate.
 Open finding: `DescribeAttachment` reads the whole blob.
+
+### Process entry (S48c)
+
+The bundle has a process entry, [`src/host/main.ts`](src/host/main.ts), built
+to `dist/host/main.mjs` (about 2.1 MB), for the bundle-process runtime
+([bundle processes](../../../docs/features/bundle-processes.md)). It calls
+`runBundle` with eight services listed statically, in this order:
+`RuntimeService` (`runtime/v2`), `ThreadsService`, `AttachmentsService`,
+`UsageService`, `LeaseService`, `WorkspaceService`, `SessionService`
+(`executor.session/v1`) and `HookHandlerService` (`createHookHandlers`).
+Activate calls `runtime.activate(context, hooks)`, which registers `onGone`;
+deactivate calls `runtime.deactivate()`. This completes runtime's host part
+(S46a–S48c). The kernel entry and the manifest are unchanged until S62, which
+adds `executor.session/v1@1.0.0` to what `runtime` provides and makes
+`executor/v1` optional for `runtime`.
 
 ## Records: Projects and Threads
 

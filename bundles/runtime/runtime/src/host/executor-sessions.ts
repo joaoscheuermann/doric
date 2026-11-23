@@ -8,6 +8,7 @@ import { ContractError } from 'bundle/contracts';
 import type { BundleInstance } from 'bundle/host';
 
 import type { PromptSession } from '../contracts/executor.js';
+import { instanceKey } from './sessions.js';
 
 /**
  * What one executor call may call back: a run or a compaction hands its whole
@@ -38,10 +39,6 @@ export interface ExecutorSessions {
    */
   get(id: string, caller: BundleInstance): SessionCallbacks;
 }
-
-/** One instance: `<bundleId>/<generation>/<incarnation>`. */
-const instanceKey = (instance: BundleInstance): string =>
-  `${instance.bundleId}/${String(instance.generation)}/${String(instance.incarnation)}`;
 
 /** A registered session: its provider, the instance it is bound to once called back, and its callbacks. */
 interface HeldSession {

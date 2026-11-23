@@ -837,3 +837,15 @@ to every host part.
   manifest); `default` (S51) may call `executor.session/v1` only from its
   `executor/v1` handlers, never at activate. Open finding:
   `DescribeAttachment` reads the whole blob.
+- 2026-11-23: phase 3, slice S48c, of
+  [`docs/designs/grpc-processes.md`](../designs/grpc-processes.md): `runtime`
+  has its process entry, `src/host/main.ts` (built to `dist/host/main.mjs`,
+  about 2.1 MB), calling `runBundle` with eight services listed statically:
+  `RuntimeService` (`runtime/v2`), `ThreadsService`, `AttachmentsService`,
+  `UsageService`, `LeaseService`, `WorkspaceService`, `SessionService`
+  (`executor.session/v1`) and `HookHandlerService` (`createHookHandlers`).
+  Activate calls `runtime.activate(context, hooks)`, which registers `onGone`;
+  deactivate calls `runtime.deactivate()`. This completes runtime's host part
+  (S46a–S48c). The kernel entry and manifest are unchanged until S62, which
+  adds `executor.session/v1@1.0.0` to runtime's provides and makes
+  `executor/v1` optional for `runtime`.
