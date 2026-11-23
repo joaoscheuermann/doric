@@ -47,9 +47,6 @@ const RUNTIME_HOOKS = 'runtime.hooks/v1';
 const secretOf = (secret: SecretMessage) =>
   secretSchema.parse(toJson(SecretSchema, secret));
 
-/** The port S48 (`executor`) routes; given by the caller until then. `sandbox` is routed since S47. */
-export type ExternalPorts = Pick<RuntimePorts, 'executor'>;
-
 /**
  * `RuntimePorts` over `context.services` (each port keeps today's contract,
  * `ports.ts`):
@@ -75,7 +72,7 @@ export type ExternalPorts = Pick<RuntimePorts, 'executor'>;
  * - `generation()`: `doric.generation/v1.Describe`'s `{generation,
  *   incarnation}`; undefined when the call fails, as today.
  * - `sandbox`: `routedSandbox(context.services)` (S47).
- * - `executor`: `external`, as given.
+ * - `executor`: the given port (`routedExecutor`, S48b).
  * A routed failure rejects with `fromConnectError`'s `ContractError`. No call
  * is made until a port is used.
  */
@@ -83,7 +80,7 @@ export const routedPorts = (
   context: Pick<HostContext, 'services' | 'log' | 'registrations'>,
   storage: StorageClient,
   hooks: RuntimePorts['hooks'],
-  external: ExternalPorts,
+  executor: RuntimePorts['executor'],
 ): RuntimePorts => {
   const { services } = context;
   const secrets = () => services.use(SecretsService);
@@ -144,7 +141,7 @@ export const routedPorts = (
         return ids;
       }),
     sandbox: routedSandbox(services),
-    executor: external.executor,
+    executor,
     checkStorage: () => checkStorageHealth(storage),
     catalogSource: async (providerId) => ({
       models: () =>

@@ -5,6 +5,7 @@
 import type { DescMessage, MessageInitShape } from '@bufbuild/protobuf';
 import type { HandlerContext, ServiceImpl } from '@connectrpc/connect';
 import { callOf } from 'bundle/contracts';
+import type { HostContext } from 'bundle/host';
 import type { z } from 'zod';
 
 import {
@@ -53,8 +54,13 @@ type OpenThreadItem = MessageInitShape<typeof OpenThreadResponseSchema>;
  *   with the `endAll` reason. A `missing`/`inactive`/`pending` outcome yields
  *   that one refusal item (`{}`), then ends. While the task runs, `withThread`
  *   holds the Thread live and, with `exclusive`, the Project mutation lock;
- *   its end releases the lock, then, with `refreshHint`, refreshes the hint (a
- *   failure there is dropped; nobody is left to answer). A call
+ *   its end releases the lock, then, with `refreshHint`, refreshes the hint.
+ *   When `withThread` rejects after the session it opened has ended (the
+ *   stream already ended), the failure is logged through `log()` at `warn`,
+ *   message 'Thread session hint refresh failed', fields `{threadId, err}`,
+ *   and is not sent to the (ended) stream (S48b). A rejection before a
+ *   session opened still fails the stream. `log()` answers `undefined` before
+ *   `activate`; nothing is logged then. A call
  *   cancelled before the task starts opens no session. Domain failures pass
  *   through `routedError`.
  * - `ThreadState{threadSessionId}`: `{closing: closing(), busyCwds:
@@ -64,6 +70,7 @@ type OpenThreadItem = MessageInitShape<typeof OpenThreadResponseSchema>;
 export const routedWorkspaceService = (
   core: () => RuntimeCore,
   sessions: ThreadSessions,
+  log: () => HostContext['log'] | undefined,
 ): ServiceImpl<typeof WorkspaceService> => {
   /**
    * Runs `work` on the calling prompt's bound workspace, outside the call, and
@@ -144,7 +151,17 @@ export const routedWorkspaceService = (
                 sink.next({ status: { case: outcome.status, value: {} } });
               sink.end();
             },
-            (error: unknown) => sink.end(error),
+            (error: unknown) => {
+              // The session's stream already ended: nobody is left to answer.
+              if (opened !== undefined) {
+                log()?.warn('Thread session hint refresh failed', {
+                  threadId,
+                  err: error,
+                });
+                return;
+              }
+              sink.end(error);
+            },
           );
         return {
           dispose: () => {

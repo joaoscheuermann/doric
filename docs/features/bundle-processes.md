@@ -816,3 +816,24 @@ to every host part.
   out-of-bounds scope makes `use` throw `ContractError` `invalid_scope` and no
   call is made. Under `track(…, { scope })` the first call carries the scope;
   replays send none. `createTestRouter`'s `use` behaves the same.
+- 2026-11-23: phase 3, slice S48b, of
+  [`docs/designs/grpc-processes.md`](../designs/grpc-processes.md): `runtime`
+  calls `executor/v1` through the router (`routed-executor.ts`) and provides
+  `executor.session/v1` (`session.ts`); the in-process executor port is gone.
+  Each executor call sends the prompt's scope via `UseOptions.scope` and opens
+  a session (random UUID) bound to the executor's provider bundle, read once
+  from `doric.catalog/v1` `Get` and cached (failures not cached; no provider:
+  `unavailable` before any call); the session ends when the call settles and
+  is refused to other bundles and, once an instance has called back, to other
+  instances. `Record` reads the whole stream first (malformed:
+  `invalid_input`), then runs detached; a storage failure answers
+  `unavailable`; `Record` on a checkpoint or rewind session answers
+  `unsupported_operation`. `ReadHistory`, `TakeSteers` and
+  `DescribeAttachment` stay tied to the call; the history format arrives only
+  in `ReadHistory`'s first item. `Formats` is cached per executor instance via
+  a tracked registration (a replay refreshes it). The workspace service logs a
+  hint-refresh failure after a session ends at `warn`, closing the S47b open
+  finding. Cycle rule: `executor/v1` must be optional for `runtime` (S62
+  manifest); `default` (S51) may call `executor.session/v1` only from its
+  `executor/v1` handlers, never at activate. Open finding:
+  `DescribeAttachment` reads the whole blob.

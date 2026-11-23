@@ -9,8 +9,10 @@ import { StorageService } from 'bundle/contracts/gen/doric/storage/v1/storage_pb
 import { storageClient } from 'storage/rpc';
 
 import type { DoricConfiguration } from '../../src/contracts/configuration.js';
+import { createExecutorSessions } from '../../src/host/executor-sessions.js';
 import type { RuntimePorts } from '../../src/host/ports.js';
 import { routedPorts } from '../../src/host/routed.js';
+import { routedExecutor } from '../../src/host/routed-executor.js';
 import {
   assertFails,
   callsOf,
@@ -31,12 +33,12 @@ const portsOf = async (
   t: Parameters<typeof contextHarness>[0],
   options: HarnessOptions = {},
 ) => {
-  const { calls, context, external } = await contextHarness(t, options);
+  const { calls, context } = await contextHarness(t, options);
   const ports = routedPorts(
     context,
     storageClient(context.services.use(StorageService)),
     noHooks,
-    external,
+    routedExecutor(context, createExecutorSessions()),
   );
 
   return { calls, ports };
@@ -49,7 +51,10 @@ const configured: DoricConfiguration = {
       {
         id: 'openrouter',
         kind: 'openrouter',
-        configuration: { endpoint: 'https://openrouter.ai/api/v1', token: TOKEN },
+        configuration: {
+          endpoint: 'https://openrouter.ai/api/v1',
+          token: TOKEN,
+        },
         models: [{ name: 'deepseek/deepseek-v4', reasonings: [] }],
       },
       {
@@ -83,7 +88,12 @@ describe('routedPorts', () => {
   });
 
   test('28: credentials.byId of a missing id rejects with credential_missing; byUnclaimedKind sends exclude', async (t) => {
-    const secret = { id: OTHER, kind: 'API_TOKEN', name: 'GitHub', secret: 's' };
+    const secret = {
+      id: OTHER,
+      kind: 'API_TOKEN',
+      name: 'GitHub',
+      secret: 's',
+    };
     const { calls, ports } = await portsOf(t, {
       byKind: (kind, exclude) =>
         kind === 'API_TOKEN' && !exclude.includes(OTHER) ? secret : undefined,
@@ -137,7 +147,11 @@ describe('routedPorts', () => {
     const { calls, ports } = await portsOf(t, {
       models: {
         openrouter: [
-          { id: 'deepseek/deepseek-v4', name: 'DeepSeek', contextWindow: 128000 },
+          {
+            id: 'deepseek/deepseek-v4',
+            name: 'DeepSeek',
+            contextWindow: 128000,
+          },
           { id: 'tiny/model' },
         ],
       },

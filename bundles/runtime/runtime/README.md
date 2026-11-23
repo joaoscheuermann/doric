@@ -137,7 +137,7 @@ releases. `replay_failed` travels as `INTERNAL`.
 The sandbox port also goes through the router: `routedSandbox`
 ([`routed-sandbox.ts`](src/host/routed-sandbox.ts)) calls `sandbox/v1` by
 lease id, and the domain is unchanged (`ExternalPorts` keeps only the
-executor, routed in S48). `runtime.lease/v1`
+executor, routed in S48b). `runtime.lease/v1`
 ([`lease.ts`](src/host/rpc/lease.ts)) serves its 11 RPCs. Lease operations
 run in the caller's call, so its deadline, cancellation and trace reach
 `sandbox/v1`; cancelling `Start` kills the process. Callers never see lease
@@ -163,11 +163,32 @@ call. `ThreadState` reads the caller's session; an unknown session answers
 drain take the Project lock; open session streams then fail
 `FAILED_PRECONDITION` `shutting_down`. Deleting or terminating a Project with
 an exclusive session open waits for it through the Project lock. There is no
-`withThreadSession` client helper yet (S54). Open: a hint-refresh failure after
-a session ends is not logged yet (S48 adds a logger). Lease open findings: over HTTP/2 an `unsupported_operation`
+`withThreadSession` client helper yet (S54). A hint-refresh failure after a
+session ends is logged at `warn` (S48b). Lease open findings: over HTTP/2 an `unsupported_operation`
 from sandbox `Start` arrives on the result instead of rejecting the start; an
 `Exec` result (output as text and bytes) can exceed 4 MiB; `PutFile` buffers
 the whole file without a cap.
+
+Since S48b the executor port also goes through the router: `routedExecutor`
+([`routed-executor.ts`](src/host/routed-executor.ts)) calls `executor/v1`, and
+the in-process executor port is gone. Each executor call sends the prompt's
+scope through `UseOptions.scope` and opens an executor session (a random UUID)
+bound to the executor's provider bundle, which is read once from
+`doric.catalog/v1` `Get` and cached (a failed read is not cached; no provider
+answers `unavailable` before any call). The session ends when the call
+settles. `runtime` provides `executor.session/v1`
+([`session.ts`](src/host/rpc/session.ts)) for those sessions: a session is
+refused to other bundles and, once an instance has called back, to other
+instances. `Record` reads the whole stream first (a malformed item answers
+`invalid_input`), then writes detached from the call; a storage failure
+answers `unavailable`, and `Record` on a checkpoint or rewind session answers
+`unsupported_operation`. `ReadHistory`, `TakeSteers` and `DescribeAttachment`
+stay tied to the call; the history format arrives only in `ReadHistory`'s
+first item. `Formats` is cached per executor instance through a tracked
+registration, so a replay refreshes it. Cycle rule: `executor/v1` must be
+optional for `runtime` (S62 manifest), and `default` (S51) may call
+`executor.session/v1` only from its `executor/v1` handlers, never at activate.
+Open finding: `DescribeAttachment` reads the whole blob.
 
 ## Records: Projects and Threads
 
@@ -1226,6 +1247,10 @@ The storage types `runtime.project/v1`, `runtime.thread/v1`,
 bundles provide.
 
 ### `executor/v1`
+
+The in-process shape below is the kernel entry's; the bundle process calls
+`executor/v1` through the router with `executor.session/v1` (S48b, see Parts
+and entry points).
 
 One prompt run; cardinality `one`; provided by the
 [`default`](../default/README.md) bundle ([`executor.ts`](src/contracts/executor.ts)).

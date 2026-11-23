@@ -148,8 +148,12 @@ export interface Executor {
     },
     call?: CallArg,
   ): Promise<HistoryPatch | undefined>;
-  /** History formats this executor reads. */
-  formats(call?: CallArg): readonly string[];
+  /**
+   * History formats this executor reads. A routed executor answers
+   * asynchronously (executor/v1 1.6.0); an in-process one may still answer at
+   * once. Callers `await` it. Rejects with the call's failure.
+   */
+  formats(call?: CallArg): readonly string[] | Promise<readonly string[]>;
   /**
    * On-demand compaction of an idle Thread: condenses the oldest safe span
    * into one summary message and records it. call.scope carries the

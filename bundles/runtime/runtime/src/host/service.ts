@@ -8,6 +8,7 @@ import { OnHostStopHookInputSchema } from 'bundle/contracts/gen/doric/platform/a
 import { type HookHandlers, type HostContext, onHostStart } from 'bundle/host';
 import { OnEventAppendedHookInputSchema } from 'core/contracts/gen/doric/core/event_hooks/v1/event_hooks_pb.js';
 
+import type { SessionService } from '../contracts/gen/doric/executor/session/v1/session_pb.js';
 import type { AttachmentsService } from '../contracts/gen/doric/runtime/attachments/v1/attachments_pb.js';
 import type { LeaseService } from '../contracts/gen/doric/runtime/lease/v1/lease_pb.js';
 import type { ThreadsService } from '../contracts/gen/doric/runtime/threads/v1/threads_pb.js';
@@ -18,18 +19,20 @@ import { onEventAppended } from './appends.js';
 import type { ArchiveSchedule } from './domain/archiver.js';
 import type { Bindings } from './domain/bindings.js';
 import { createNotices } from './domain/notices.js';
+import { createExecutorSessions } from './executor-sessions.js';
 import { createRuntimeCore, type RuntimeCore, runtimeStores } from './index.js';
 import {
-  type ExternalPorts,
   routedPorts,
   routedRegistrations,
   routedRuntimeHooks,
 } from './routed.js';
+import { routedExecutor } from './routed-executor.js';
 import { routedAttachmentsService } from './rpc/attachments.js';
 import { detached, SHUTTING_DOWN } from './rpc/errors.js';
 import { installRoutedHandover } from './rpc/handover.js';
 import { routedLeaseService } from './rpc/lease.js';
 import { routedRuntimeService } from './rpc/runtime.js';
+import { routedSessionService } from './rpc/session.js';
 import { routedThreadsService } from './rpc/threads.js';
 import { routedUsageService } from './rpc/usage.js';
 import { routedWorkspaceService } from './rpc/workspace.js';
@@ -49,11 +52,11 @@ export interface RuntimeImplementations {
   readonly lease: ServiceImpl<typeof LeaseService>;
   /** `runtime.workspace/v1` (S47b). */
   readonly workspace: ServiceImpl<typeof WorkspaceService>;
+  /** `executor.session/v1` (S48). */
+  readonly session: ServiceImpl<typeof SessionService>;
 }
 
 export interface RuntimeServicesOptions {
-  /** The ports S47/S48 own, built from the activated context (tests pass in-process fakes). */
-  readonly external: (context: HostContext) => ExternalPorts;
   /** Test hooks, as `provideRuntime` takes them. */
   readonly bindings?: Bindings;
   readonly archiveSchedule?: ArchiveSchedule;
@@ -122,6 +125,8 @@ export const createRuntimeServices = (
   let removeGone: (() => void) | undefined;
   /** The Thread sessions `runtime.workspace/v1` opens (S47b); empty until then. */
   const sessions = createThreadSessions();
+  /** The executor sessions of running `executor/v1` calls (S48b). */
+  const executorSessions = createExecutorSessions();
   const core = (): RuntimeCore => {
     if (bound === undefined)
       throw new ContractError('unavailable', 'runtime is not activated.');
@@ -140,7 +145,8 @@ export const createRuntimeServices = (
       usage: routedUsageService(core),
       threads: routedThreadsService(core),
       lease: routedLeaseService(core, sessions),
-      workspace: routedWorkspaceService(core, sessions),
+      workspace: routedWorkspaceService(core, sessions, () => log),
+      session: routedSessionService(executorSessions),
     },
     activate: async (context, hooks) => {
       if (activated) throw new TypeError('runtime is already activated.');
@@ -158,7 +164,7 @@ export const createRuntimeServices = (
         context,
         storage,
         runtimeHooks.hooks,
-        options.external(context),
+        routedExecutor(context, executorSessions),
       );
       const notices = createNotices(ports.log);
       const stores = runtimeStores(storage, ports, notices.publisher.event);

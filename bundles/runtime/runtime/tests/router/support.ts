@@ -10,9 +10,11 @@
 //   `doric.startup/v1` and `doric.generation/v1`, recording fakes.
 // - `sandbox/v1` (S47a), a fake provider by lease id (`./sandbox.ts`) over
 //   the domain tests' `SandboxProviderOptions`.
-// `executor` is the in-process fake the domain tests use, given as
-// `external` until S48 routes it. `core`'s calls to the hook
-// handler service arrive through `router.client` with the caller `core`.
+// - `executor/v1` (S48b), a fake provider over the domain tests' scripted
+//   executor (`./executor.ts`) that calls back `executor.session/v1`, and
+//   `doric.catalog/v1.Get`, naming its provider.
+// `core`'s calls to the hook handler service arrive through `router.client`
+// with the caller `core`.
 
 import assert from 'node:assert/strict';
 import type { TestContext } from 'node:test';
@@ -25,7 +27,11 @@ import {
   toJson,
 } from '@bufbuild/protobuf';
 import { type Any, anyPack, ValueSchema } from '@bufbuild/protobuf/wkt';
-import { ConnectError, type ServiceImpl } from '@connectrpc/connect';
+import {
+  type Client,
+  ConnectError,
+  type ServiceImpl,
+} from '@connectrpc/connect';
 import {
   type Caller,
   type CallScope,
@@ -48,6 +54,7 @@ import {
   OnHostStartHookInputSchema,
   OnHostStopHookInputSchema,
 } from 'bundle/contracts/gen/doric/platform/app/hooks/v1/hooks_pb.js';
+import { CatalogService } from 'bundle/contracts/gen/doric/platform/catalog/v1/catalog_pb.js';
 import { GenerationService } from 'bundle/contracts/gen/doric/platform/generation/v1/generation_pb.js';
 import {
   LogRequestSchema,
@@ -63,7 +70,7 @@ import {
   type HostContext,
   type ServiceEntry,
 } from 'bundle/host';
-import { createTestRouter, createTestServices } from 'bundle/testing';
+import { createTestRouter } from 'bundle/testing';
 import { OnEventAppendedHookInputSchema } from 'core/contracts/gen/doric/core/event_hooks/v1/event_hooks_pb.js';
 import {
   DoricConfigurationSchema,
@@ -72,7 +79,8 @@ import {
 import { serveStorage } from 'storage/rpc';
 
 import type { DoricConfiguration } from '../../src/contracts/configuration.js';
-import { ExecutorV1 } from '../../src/contracts/executor.js';
+import type { Executor } from '../../src/contracts/executor.js';
+import { SessionService } from '../../src/contracts/gen/doric/executor/session/v1/session_pb.js';
 import { ExecutorService } from '../../src/contracts/gen/doric/executor/v1/executor_pb.js';
 import { AttachmentsService } from '../../src/contracts/gen/doric/runtime/attachments/v1/attachments_pb.js';
 import { LeaseService } from '../../src/contracts/gen/doric/runtime/lease/v1/lease_pb.js';
@@ -81,7 +89,7 @@ import { UsageService } from '../../src/contracts/gen/doric/runtime/usage/v1/usa
 import { RuntimeService } from '../../src/contracts/gen/doric/runtime/v2/runtime_pb.js';
 import { WorkspaceService } from '../../src/contracts/gen/doric/runtime/workspace/v1/workspace_pb.js';
 import { SandboxService } from '../../src/contracts/gen/doric/sandbox/v1/sandbox_pb.js';
-import type { ExternalPorts } from '../../src/host/routed.js';
+import { historyType, threadType } from '../../src/contracts/storage.js';
 import { createRuntimeServices } from '../../src/host/service.js';
 import { defaultConfiguration, epoch } from '../domain/support/harness.js';
 import {
@@ -91,8 +99,12 @@ import {
   stores,
 } from '../store/support.js';
 import { testExecution } from '../support/execution.js';
-import { executorProvider, type Script } from '../support/executor.js';
-import { type SandboxRecord, sandboxProvider } from '../support/sandbox.js';
+import type { Script } from '../support/executor.js';
+import {
+  executorCaller,
+  type FakeExecutorOptions,
+  fakeExecutor,
+} from './executor.js';
 import {
   type FakeSandboxProviderOptions,
   fakeSandboxProvider,
@@ -293,8 +305,21 @@ export interface HarnessOptions {
   readonly models?: Readonly<Record<string, readonly JsonValue[]>>;
   /** The fake `sandbox/v1` provider's sandbox, acquisition and hooks. */
   readonly sandbox?: Omit<FakeSandboxProviderOptions, 'record' | 'log'>;
-  /** One prompt run of the external executor; finishes with 'done' by default. */
+  /** One prompt run of the executor; finishes with 'done' by default. */
   readonly execute?: Script;
+  /** What the executor's `Formats` answers; the test format by default. */
+  readonly formats?: readonly string[];
+  /** The scripted executor's `compact`. */
+  readonly compact?: Executor['compact'];
+  /** `executor/v1` methods the test answers in place of the scripted executor. */
+  readonly executorOverrides?: FakeExecutorOptions['overrides'];
+  /**
+   * The bundle `doric.catalog/v1.Get` names as the provider of
+   * `executor/v1`; `default` by default, `null` for none.
+   */
+  readonly executorProvider?: string | null;
+  /** `absent` serves no `ExecutorService` at all; `routed` (the default) serves the fake. */
+  readonly executor?: 'routed' | 'absent';
 }
 
 /** Every llms kind names its credential in a `secret` field called `token`. */
@@ -319,40 +344,88 @@ export const requires = [
   SandboxService.typeName,
 ];
 
-/**
- * `executor` over the domain tests' in-process fake, beside the sandbox
- * record the routed fake shares.
- */
-const externalPorts = (options: HarnessOptions) => {
-  const sandbox = sandboxProvider(options.sandbox);
-  const side = createTestServices({
-    bundle: { id: 'runtime' },
-    provide: [
-      sandbox.definition,
-      executorProvider(options.execute ?? (async () => 'done')),
-    ],
-  });
-  const external: ExternalPorts = {
-    executor: (scope) => side.services.use(ExecutorV1, scope),
-  };
+/** One `registrations.track` call the bundle made. */
+interface Tracked {
+  readonly ref: DescService;
+  readonly register: (client: unknown) => Promise<unknown>;
+  readonly options:
+    | ({ readonly onReplayed?: (result: unknown) => void } & Record<
+        string,
+        unknown
+      >)
+    | undefined;
+}
 
-  return { external, record: sandbox.record, dispose: () => side.dispose() };
+/**
+ * A memory backend whose storage rejects the calls `fails` picks (method
+ * name and first argument), as a failing database write would.
+ */
+export const failingBackend = (
+  fails: (method: string, input: unknown) => boolean,
+): Backend => {
+  const base = memoryBackend();
+  const storage = new Proxy(base.storage, {
+    get(target, property, receiver) {
+      const value = Reflect.get(target, property, receiver) as unknown;
+      if (typeof value !== 'function') return value;
+      return (...args: unknown[]) => {
+        if (fails(String(property), args[0]))
+          return Promise.reject(new Error('The storage write failed.'));
+        return (value as (...input: unknown[]) => unknown).apply(target, args);
+      };
+    },
+  });
+
+  return { ...base, name: base.name, storage, close: () => base.close() };
+};
+
+/** Whether `batch` (a `storage.commit` argument) puts a document of `type` matching `value`. */
+export const putsOf = (
+  batch: unknown,
+  type: string,
+  value: (document: Record<string, unknown>) => boolean,
+): boolean =>
+  (
+    (batch as { put?: readonly { type: string; value: unknown }[] } | undefined)
+      ?.put ?? []
+  ).some(
+    (put) => put.type === type && value(put.value as Record<string, unknown>),
+  );
+
+/** The storage types of a Thread record and of its history parts. */
+export const storageTypes = {
+  thread: threadType.type,
+  history: historyType.type,
 };
 
 /** The recording fakes of the bundle's dependencies, `storage/v1` included. */
 const fakesOf = (
   options: HarnessOptions,
   backend: Backend,
-  sandboxRecord: SandboxRecord,
+  session: () => Client<typeof SessionService>,
 ) => {
   const calls: Recorded[] = [];
+  const executor = fakeExecutor(
+    {
+      ...(options.execute === undefined ? {} : { execute: options.execute }),
+      ...(options.formats === undefined ? {} : { formats: options.formats }),
+      ...(options.compact === undefined ? {} : { compact: options.compact }),
+      ...(options.executorOverrides === undefined
+        ? {}
+        : { overrides: options.executorOverrides }),
+    },
+    session,
+  );
+  const executorProviderId =
+    options.executorProvider === undefined
+      ? 'default'
+      : options.executorProvider;
   const runs: RecordedRun[] = [];
   const record = (method: string, request: JsonValue) => {
     calls.push({ method, request });
   };
   const sandbox = fakeSandboxProvider({
     ...options.sandbox,
-    record: sandboxRecord,
     log: record,
   });
   const configuration =
@@ -372,6 +445,35 @@ const fakesOf = (
 
   const fakes: ServiceEntry[] = [
     sandbox.entry,
+    ...(options.executor === 'absent' ? [] : [executor.entry]),
+    partial(CatalogService, {
+      get: () => {
+        record('catalog.get', {});
+
+        return {
+          catalogSnapshot: {
+            generation: 1,
+            contracts:
+              executorProviderId === null
+                ? []
+                : [
+                    {
+                      id: 'executor/v1',
+                      environment: 'host',
+                      cardinality: 'one',
+                      providers: [
+                        {
+                          bundleId: executorProviderId,
+                          version: '1.6.0',
+                          bundleVersion: '0.0.0',
+                        },
+                      ],
+                    },
+                  ],
+          },
+        };
+      },
+    }),
     partial(StorageService, {
       ...storage,
       // A measured disk with room to spare, as the kernel harness answers:
@@ -538,7 +640,7 @@ const fakesOf = (
     }),
   ];
 
-  return { calls, runs, fakes, sandbox };
+  return { calls, runs, fakes, sandbox, executor };
 };
 
 /**
@@ -547,11 +649,12 @@ const fakesOf = (
  */
 export const harness = (options: HarnessOptions = {}) => {
   const backend = options.backend ?? memoryBackend();
-  const external = externalPorts(options);
-  const { calls, runs, fakes, sandbox } = fakesOf(
+  const sessionClient = (caller: Caller = executorCaller) =>
+    router.client(SessionService, { caller });
+  const { calls, runs, fakes, sandbox, executor } = fakesOf(
     options,
     backend,
-    external.record,
+    () => sessionClient(),
   );
   const router = createTestRouter({
     fakes,
@@ -560,7 +663,6 @@ export const harness = (options: HarnessOptions = {}) => {
   });
   const hooks = createHookHandlers();
   const runtime = createRuntimeServices({
-    external: () => external.external,
     // Archive sweeps never fire in these cases.
     archiveSchedule: () => () => undefined,
   });
@@ -570,6 +672,11 @@ export const harness = (options: HarnessOptions = {}) => {
    * activated context's `instances` (the test router sends no `InstanceGone`).
    */
   const goneHandlers = new Set<(instance: BundleInstance) => void>();
+  /**
+   * The registrations the bundle tracked, captured by wrapping the activated
+   * context's `registrations` (the test router never replays them).
+   */
+  const tracked: Tracked[] = [];
   const definition = {
     services: [
       [RuntimeService, runtime.implementations.runtime],
@@ -578,6 +685,7 @@ export const harness = (options: HarnessOptions = {}) => {
       [ThreadsService, runtime.implementations.threads],
       [LeaseService, runtime.implementations.lease],
       [WorkspaceService, runtime.implementations.workspace],
+      [SessionService, runtime.implementations.session],
       [HookHandlerService, hooks.implementation],
     ] as ServiceEntry[],
     activate: (activated: HostContext) => {
@@ -594,7 +702,23 @@ export const harness = (options: HarnessOptions = {}) => {
         },
       };
 
-      return runtime.activate({ ...activated, instances }, hooks);
+      const registrations: HostContext['registrations'] = {
+        ...activated.registrations,
+        track: (ref, register, trackOptions) => {
+          tracked.push({
+            ref,
+            register: register as Tracked['register'],
+            options: trackOptions as Tracked['options'],
+          });
+
+          return activated.registrations.track(ref, register, trackOptions);
+        },
+      };
+
+      return runtime.activate(
+        { ...activated, instances, registrations },
+        hooks,
+      );
     },
     deactivate: () => runtime.deactivate(),
   };
@@ -606,9 +730,29 @@ export const harness = (options: HarnessOptions = {}) => {
     runs,
     backend,
     seed,
-    sandbox: external.record,
+    sandbox: sandbox.record,
     /** The fake `sandbox/v1` provider: its leases and the operations it ran. */
     sandboxProvider: sandbox,
+    /** The fake `executor/v1` provider: the calls it received and made back. */
+    executor,
+    /** A client of the bundle's `executor.session/v1`; `default` (generation 1) by default. */
+    session: (caller?: Caller) => sessionClient(caller),
+    /**
+     * Replays every registration the bundle tracked with `ref`, as the SDK
+     * does on `ProviderChanged`: calls its `register` again with a client of
+     * `ref`, then its `onReplayed` with the answer.
+     */
+    replay: async (ref: DescService) => {
+      assert.ok(context !== undefined, 'replay before activate');
+      for (const registration of tracked) {
+        if (registration.ref.typeName !== ref.typeName) continue;
+        const { onReplayed, ...useOptions } = registration.options ?? {};
+        const result = await registration.register(
+          context.services.use(registration.ref, useOptions),
+        );
+        onReplayed?.(result);
+      }
+    },
     /** The context `activate` received, once it ran. */
     context: () => context,
     /** Activates the definition; resolves once `activate` resolved. */
@@ -651,7 +795,6 @@ export const harness = (options: HarnessOptions = {}) => {
     logs: router.logs,
     stop: async () => {
       await router.control.stop();
-      await external.dispose();
       if (options.backend === undefined) await backend.close();
     },
   };
@@ -668,8 +811,9 @@ export const contextHarness = async (
   options: HarnessOptions = {},
 ) => {
   const backend = options.backend ?? memoryBackend();
-  const external = externalPorts(options);
-  const { calls, fakes, sandbox } = fakesOf(options, backend, external.record);
+  const { calls, fakes, sandbox, executor } = fakesOf(options, backend, () =>
+    router.client(SessionService, { caller: executorCaller }),
+  );
   const router = createTestRouter({
     fakes,
     requires,
@@ -677,7 +821,6 @@ export const contextHarness = async (
   });
   t.after(async () => {
     await router.control.stop();
-    await external.dispose();
     if (options.backend === undefined) await backend.close();
   });
   const context = await within(
@@ -688,7 +831,8 @@ export const contextHarness = async (
   return {
     calls,
     context,
-    external: external.external,
+    /** The fake `executor/v1` provider. */
+    executor,
     /** The fake `sandbox/v1` provider. */
     sandboxProvider: sandbox,
     control: router.control,

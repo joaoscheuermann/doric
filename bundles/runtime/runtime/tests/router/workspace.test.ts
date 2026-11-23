@@ -29,16 +29,19 @@ import {
   collect,
   contractErrorOf,
   eventually,
+  failingBackend,
   type Gate,
   gate,
   type Harness,
   handleHostStop,
   harness,
   projectState,
+  putsOf,
   rejectionOf,
   seedThread,
   settle,
   started,
+  storageTypes,
   within,
 } from './support.js';
 
@@ -856,5 +859,92 @@ describe('runtime.workspace/v1', () => {
       assert.equal(grpc, Code.NotFound, `${what}: ${error.message}`);
       assert.equal(error.code, 'unknown_session', what);
     }
+  });
+});
+
+describe('runtime.workspace/v1: the hint refresh after a session (S48b, S47b carry-over)', () => {
+  /** The hint-refresh warnings `log` recorded. */
+  const hintWarnings = (h: Harness) =>
+    h.logs.filter(
+      ({ level, message }) =>
+        level === 'warn' && message === 'Thread session hint refresh failed',
+    );
+
+  test('26: a hint write that fails after the session ended is logged at warn with threadId and err; the ended stream had no error', async (t) => {
+    let failing = false;
+    const backend = failingBackend(
+      (method, input) =>
+        failing &&
+        method === 'commit' &&
+        putsOf(
+          input,
+          storageTypes.thread,
+          (document) => document.cwdRepo === 'github',
+        ),
+    );
+    t.after(() => backend.close());
+    const hinted = hintedSandbox();
+    const h = await started(t, {
+      sandbox: { sandbox: hinted.sandbox },
+      backend,
+    });
+    const project = await readyProject(h);
+    const thread = await newThread(h, project.id);
+
+    const refreshed = await session(h, {
+      threadId: thread.id,
+      exclusive: true,
+      refreshHint: true,
+    });
+    hinted.addRepository();
+    failing = true;
+    h.gone(opener);
+    await within(refreshed.items.done, 'the ended OpenThread');
+
+    assert.equal(refreshed.items.error(), undefined);
+    await eventually(
+      () => hintWarnings(h).length > 0,
+      'the hint refresh warning',
+    );
+    await settle();
+    const warnings = hintWarnings(h);
+    assert.equal(warnings.length, 1);
+    assert.equal(warnings[0]?.fields?.threadId, thread.id);
+    assert.ok(warnings[0]?.fields?.err !== undefined, 'err is logged');
+    assert.equal(
+      (await threadRecord(h, thread.id)).cwdRepo,
+      undefined,
+      'the hint write failed',
+    );
+  });
+
+  test('27: a withThread failure before any session opened still fails the stream with it, and nothing is logged', async (t) => {
+    let failing: string | undefined;
+    const backend = failingBackend(
+      (method, input) =>
+        method === 'get' &&
+        failing !== undefined &&
+        (input as { type?: unknown; id?: unknown } | undefined)?.type ===
+          storageTypes.thread &&
+        (input as { id?: unknown }).id === failing,
+    );
+    t.after(() => backend.close());
+    const h = await started(t, { backend });
+    const project = await readyProject(h);
+    const thread = await newThread(h, project.id);
+
+    failing = thread.id;
+    const { items } = open(h, {
+      threadId: thread.id,
+      exclusive: true,
+      refreshHint: true,
+    });
+    await within(items.done, 'the failed OpenThread');
+    failing = undefined;
+
+    assert.deepEqual(items.items, []);
+    assert.ok(items.error() instanceof ConnectError, String(items.error()));
+    await settle();
+    assert.deepEqual(hintWarnings(h), []);
   });
 });
