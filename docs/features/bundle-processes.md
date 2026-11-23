@@ -1027,3 +1027,24 @@ after a 5 s grace; a failure after the cancel answers `run_cancelled` or
   `BYTES_LIMIT`, `binary` on a NUL byte); before activation its methods fail
   `unavailable`. Known differences until S62: the over-size attachment message
   and `runtime`'s whole-file `ReadFileBytes`; RK36 is deferred to S62.
+- 2026-11-23: phase 3, slice S54a, of
+  [`docs/designs/grpc-processes.md`](../designs/grpc-processes.md):
+  `runtime.lease/v1` 1.5.0 answers a `started` item first on `Start` once the
+  process started (output produced before it is held and sent right after; a
+  refused head sends none); `runtime/contracts` exports `withThreadSession`,
+  which opens `runtime.workspace/v1.OpenThread`, runs a task on `ready`,
+  answers `missing`, `inactive` or `pending` without running it, and ends the
+  session in a `finally`.
+- 2026-11-23: phase 3, slice S54b, of
+  [`docs/designs/grpc-processes.md`](../designs/grpc-processes.md): `terminal`
+  runs as its own process (`src/host/main.ts`, `createTerminalProcessHost`)
+  serving `terminal/v1` 1.3.0 (shape unchanged), its tool and its
+  `runtime.hooks/v1` handler. A terminal opens a Thread session with
+  `withThreadSession`, calls `runtime.lease/v1.Start` with its
+  `threadSessionId`, ends the session on `started`, and keeps the `Start`
+  stream, opened `detached`, for the terminal's life; terminals end with the
+  instance. Redactions come from `secrets/v1.WatchRedactions`, not reopened on
+  failure. `Run` on an inactive Thread fails `internal` "Thread is inactive.";
+  without live terminals it fails `unsupported_operation` "Live terminals are
+  unavailable.". `createTestRouter` now ends a cancelled streaming handler with
+  `return()`, so its `finally` runs, as the real transport does.

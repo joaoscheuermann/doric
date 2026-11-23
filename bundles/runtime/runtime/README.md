@@ -53,7 +53,7 @@ bundles.
 | `version`         | `3.0.0`                                                                                                                                                                                                                                                                                                                                                                                                    |
 | `engines.doric`   | `^1.0.0`                                                                                                                                                                                                                                                                                                                                                                                                   |
 | `description`     | Project and Thread model, queue, recovery, delegation and lease coordination.                                                                                                                                                                                                                                                                                                                              |
-| `provides`        | `runtime/v2@2.0.0`, `runtime.threads/v1@1.8.0`, `runtime.workspace/v1@1.2.0`, `runtime.lease/v1@1.3.0`, `runtime.attachments/v1@1.0.0`, `runtime.hooks/v1@1.2.0`, `runtime.usage/v1@1.0.0`, `runtime.records/v1@1.0.0`, `runtime.prompt-finished/v1@1.0.0`, `runtime.project/v1@1.1.0`, `runtime.thread/v1@1.3.0`, `runtime.history/v1@1.0.0`, `runtime.migration/v1@1.0.0`, `runtime.attachment/v1@1.0.0` |
+| `provides`        | `runtime/v2@2.0.0`, `runtime.threads/v1@1.8.0`, `runtime.workspace/v1@1.2.0`, `runtime.lease/v1@1.5.0`, `runtime.attachments/v1@1.0.0`, `runtime.hooks/v1@1.2.0`, `runtime.usage/v1@1.0.0`, `runtime.records/v1@1.0.0`, `runtime.prompt-finished/v1@1.0.0`, `runtime.project/v1@1.1.0`, `runtime.thread/v1@1.3.0`, `runtime.history/v1@1.0.0`, `runtime.migration/v1@1.0.0`, `runtime.attachment/v1@1.0.0` |
 | `requires`        | `storage/v1@^1.1.0`, `events/v1@^1.0.0`, `hooks/v1@^1.0.0`, `core.event-hooks/v1@^1.0.0`, `log/v1@^1.0.0`, `secrets/v1@^1.0.0`, `models/v1@^1.0.0`, `host-config/v1@^1.0.0`, `executor/v1@^1.4.0`, `sandbox/v1@^1.0.0`                                                                                                                                                                                     |
 | `optional`        | none                                                                                                                                                                                                                                                                                                                                                                                                       |
 | `desktopScope`    | `runtime/v2`, `runtime.threads/v1`, `runtime.lease/v1` and `runtime.attachments/v1` each take `projectId`, `threadId` and `promptId` from a window's call scope                                                                                                                                                                                                                                            |
@@ -1111,6 +1111,11 @@ type LeaseOutcome<T> =
   lease yet). `ssh` also answers `unavailable` when the sandbox gives no SSH
   access. A `withLease` task's own rejection propagates
   ([`service.ts`](src/host/domain/service.ts)).
+- The routed `Start` (1.5.0) answers a `started` item first, once the process
+  started; output the process produced before it is held and sent right
+  after. A refused head sends no `started`. A caller that started the process
+  in a Thread session may end the session on `started`; the process keeps
+  running while the `Start` stream is open.
 
 ### `runtime.attachments/v1`
 
@@ -1410,6 +1415,10 @@ for every acquisition
 
 ## Other exports of `runtime/contracts`
 
+- **Thread sessions**: `withThreadSession` opens
+  `runtime.workspace/v1.OpenThread`, runs its task on the `ready` item, answers
+  `missing`, `inactive` or `pending` without running the task, and ends the
+  session (cancels the stream) in a `finally`.
 - **Names** ([`model.ts`](src/contracts/model.ts)): `maximumNameLength` (80),
   `normalizeName` (trim), `isValidName` (no NUL, 1–80 code points),
   `nameFromPrompt` (trimmed, NUL replaced by U+FFFD, first 80 code points);

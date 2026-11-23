@@ -52,6 +52,22 @@ the bundle CLI and is not a package export.
   registration, the tool and the redaction watch. The same file exports
   `createTerminalHost`, the provider, the closing handler and the dispose
   without the kernel wiring.
+- **Process host** ([`src/host/main.ts`](src/host/main.ts)):
+  `createTerminalProcessHost` runs the host part as its own process (phase 3,
+  slice S54b, of
+  [`grpc-processes.md`](../../../docs/designs/grpc-processes.md#sandbox-leases)),
+  serving `terminal/v1` 1.3.0 (the shape is unchanged; `git` and `transport`
+  use it), the `terminal` tool and the `runtime.hooks/v1` handler. A terminal
+  opens a Thread session with `withThreadSession` of `runtime/contracts`,
+  calls `runtime.lease/v1.Start` with its `threadSessionId`, ends the session
+  on the `started` item, and keeps the `Start` stream, opened `detached` so it
+  outlives the handler call, for the terminal's life. The redaction list
+  follows `secrets/v1.WatchRedactions`, which is not reopened after a failure.
+  `run` on an inactive Thread fails `internal` `Thread is inactive.`; when the
+  sandbox refuses `Start` with `unsupported_operation` (no live processes),
+  `run` and `create` fail `unsupported_operation`
+  `Live terminals are unavailable.`. Terminals end with
+  the instance.
 - **Client** ([`src/client/index.ts`](src/client/index.ts)): `activate` creates
   the window's terminal API, output watches and store over `terminal/v1`,
   defines six elements through `ui/v1` (`terminal-new-button`,

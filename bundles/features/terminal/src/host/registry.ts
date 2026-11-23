@@ -100,8 +100,17 @@ export const createTerminalRegistry = (
     remove(session);
     return true;
   };
+  /**
+   * Registers a session (`starting`), starts its process with
+   * `options.sandbox.start` and, once that resolved, marks it `running`.
+   * Resolves `{terminal, result}`; `result` never rejects (a failed process
+   * is reason `failed`, a stopped one `terminated`, a timed-out one
+   * `timeout`). Rejects with `start`'s error after removing the session, or
+   * with `Error('Live terminals are unavailable.')` when `sandbox.start` is
+   * absent.
+   */
   const start = async (options: {
-    readonly sandbox: Sandbox;
+    readonly sandbox: Pick<Sandbox, 'start'>;
     readonly projectId: string;
     readonly threadId: string;
     readonly origin: 'agent' | 'user';

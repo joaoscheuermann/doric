@@ -3417,7 +3417,9 @@ declared in `requires` fails with `undeclared_requirement` (platform
 contracts, whose id starts with `doric.`, are exempt, as in the real router);
 a declared service
 nobody serves fails with `unavailable`; a call before `activate` or after
-`control.stop()` fails with `unavailable`. It sends no `ProviderChanged` and
+`control.stop()` fails with `unavailable`. A cancelled streaming handler is
+ended with `return()`, so its `finally` runs, as the real transport ends the
+stream. It sends no `ProviderChanged` and
 no `InstanceGone`. Its `use` takes `options.scope` as the host SDK's does.
 
 `runConformance` ([`conformance/index.ts`](src/testing/conformance/index.ts))

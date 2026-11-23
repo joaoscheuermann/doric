@@ -13,6 +13,7 @@ import type {
   TerminalInput,
   TerminalResult,
 } from '../src/contracts/index.js';
+import { kernelTerminalToolPorts } from '../src/host/ports.js';
 import { createTool, type TerminalOutput } from '../src/host/tool.js';
 
 /*
@@ -57,9 +58,11 @@ const bound = (
   });
   const tool = createTool({
     ...(options.traceDir === undefined ? {} : { traceDir: options.traceDir }),
-    terminals: () => terminal,
   })
-    .bind(harness.services)
+    .bind({
+      ...kernelTerminalToolPorts(harness.services),
+      run: (input, call) => terminal.run(input, call),
+    })
     .toTool(harness.call({ projectId: 'p', threadId: 't', promptId: 'q' }));
   return { tool, runs };
 };

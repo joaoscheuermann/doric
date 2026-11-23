@@ -2,12 +2,11 @@ import { randomUUID } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
-import type { Call, Services } from 'bundle/contracts';
+import type { Call } from 'bundle/contracts';
 import { defineTool, type ToolDefinitionObject } from 'tool';
 import { z } from 'zod';
 
-import { type Terminal, TerminalV1 } from '../contracts/index.js';
-import { RuntimeWorkspaceV1 } from './peers.js';
+import type { TerminalToolPorts } from './ports.js';
 
 /*
  * Moved from the `files` bundle (`src/host/tools/terminal.ts`) with its
@@ -101,8 +100,6 @@ type Input = z.output<typeof input>;
 
 interface Options {
   readonly traceDir?: string;
-  /** `terminal/v1`; defaults to this bundle's own provider. */
-  readonly terminals?: (services: Services, call: Call) => Terminal;
 }
 
 interface Execution {
@@ -115,28 +112,28 @@ interface Execution {
   readonly reason?: 'exited' | 'timeout' | 'terminated' | 'failed';
 }
 
-/** Creates the provider-neutral sandbox terminal tool. */
+/**
+ * The `terminal` tool. `execute(input, call, ports)` resolves the working
+ * directory against `await ports.cwd(call)` and runs
+ * `ports.run({command, cwd, timeoutMs: min(timeout_ms ?? 120000, 600000),
+ * background?, pty?}, call)`; answers `{terminal_id, background: true}` or
+ * the compacted result. Rejects with the ports' errors unchanged.
+ */
 export const createTool = (
   options: Options = {},
-): ToolDefinitionObject<typeof input, typeof output> =>
+): ToolDefinitionObject<typeof input, typeof output, TerminalToolPorts> =>
   defineTool({
     name: 'terminal',
     description,
     input,
     output,
-    execute: async (input, call, services) =>
-      execute(
-        await services.use(RuntimeWorkspaceV1, call.scope).cwd(call),
-        services,
-        call,
-        options,
-        input,
-      ),
+    execute: async (input, call, ports: TerminalToolPorts) =>
+      execute(await ports.cwd(call), ports, call, options, input),
   });
 
 const execute = async (
   cwd: string,
-  services: Services,
+  ports: TerminalToolPorts,
   call: Call,
   options: Options,
   input: Input,
@@ -154,9 +151,7 @@ const execute = async (
     MAX_TIMEOUT_MS,
   );
 
-  const terminals =
-    options.terminals?.(services, call) ?? services.use(TerminalV1, call.scope);
-  const tracked = await terminals.run(
+  const tracked = await ports.run(
     {
       command: input.command,
       cwd: workingDirectory,
