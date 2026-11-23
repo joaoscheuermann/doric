@@ -24,6 +24,11 @@ import {
 import { type Call, deadlineOf } from '../../src/contracts/call.js';
 import { ContractError, isContractError } from '../../src/contracts/error.js';
 import { ConformanceService } from '../../src/contracts/gen/doric/conformance/v1/conformance_pb.js';
+import {
+  ModelsService,
+  type StreamRequest,
+  StreamResponseSchema,
+} from '../../src/contracts/gen/doric/models/v1/models_pb.js';
 import { StartupService } from '../../src/contracts/gen/doric/platform/startup/v1/startup_pb.js';
 import { SettingsService } from '../../src/contracts/gen/doric/settings/v1/settings_pb.js';
 import { ToolsService } from '../../src/contracts/gen/doric/tools/v1/tools_pb.js';
@@ -1092,6 +1097,238 @@ describe('createTestRouter: control', () => {
     await within(router.control.generationChanged({}), 'after activate');
     await router.control.stop();
     await within(router.control.generationChanged({}), 'after stop');
+  });
+});
+
+/** What a handler of a cancelled call saw: its signal, and whether it ended. */
+interface Held {
+  signal?: AbortSignal;
+  /** The handler's `finally` ran. */
+  finished: boolean;
+  /** The request messages the handler read. */
+  read: number;
+}
+
+const held = (): Held => ({ finished: false, read: 0 });
+
+/**
+ * A bundle whose `Count` answers one item, then waits for its call to be
+ * cancelled; `state` records what it saw.
+ */
+const holdingCount = (state: Held): ServiceEntry =>
+  partial(ConformanceService, {
+    count: async function* (_request, context) {
+      state.signal = context.signal;
+
+      try {
+        yield { index: 0 };
+        await aborted(context.signal);
+      } finally {
+        state.finished = true;
+      }
+    },
+  });
+
+/** A promise that never settles: a request stream the caller keeps open. */
+const never = (): Promise<never> => new Promise<never>(() => undefined);
+
+/** Asserts the handler saw its call cancelled and ended, within a short bound. */
+const assertCancelled = async (state: Held): Promise<void> => {
+  await until(
+    () => state.signal?.aborted === true,
+    "the handler's context.signal to abort",
+    1_000,
+  );
+  await until(() => state.finished, "the handler's finally to run", 1_000);
+};
+
+/** A router serving `entry`, activated. */
+const serving = async (entry: ServiceEntry) => {
+  const router = createTestRouter();
+  await router.activate<readonly DescService[]>({
+    services: [entry],
+    activate: () => {},
+  });
+
+  return router;
+};
+
+describe('createTestRouter: a cancelled call reaches the handler', () => {
+  test('server streaming: one item read, then the signal aborted with no read pending', async () => {
+    const state = held();
+    const router = await serving(holdingCount(state));
+    const controller = new AbortController();
+    const iterator = router
+      .client(ConformanceService)
+      .count({ n: 2 }, { signal: controller.signal })
+      [Symbol.asyncIterator]();
+
+    const first = await within(iterator.next(), 'the first item');
+    assert.equal(first.done, false);
+    assert.equal(first.value?.index, 0);
+
+    controller.abort();
+
+    await assertCancelled(state);
+    await router.control.stop();
+  });
+
+  test('server streaming: one item read, a read pending, then the signal aborted', async () => {
+    const state = held();
+    const router = await serving(holdingCount(state));
+    const controller = new AbortController();
+    const iterator = router
+      .client(ConformanceService)
+      .count({ n: 2 }, { signal: controller.signal })
+      [Symbol.asyncIterator]();
+
+    await within(iterator.next(), 'the first item');
+    const pending = iterator.next().then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+    await sleep(20);
+    controller.abort();
+
+    await within(pending, 'the pending read to settle');
+    await assertCancelled(state);
+    await router.control.stop();
+  });
+
+  test('server streaming: one item read, then return() on the iterator', async () => {
+    const state = held();
+    const router = await serving(holdingCount(state));
+    const iterator = router
+      .client(ConformanceService)
+      .count({ n: 2 })
+      [Symbol.asyncIterator]();
+
+    await within(iterator.next(), 'the first item');
+    await within(
+      iterator.return?.() ?? Promise.resolve(undefined),
+      'return() to settle',
+    );
+
+    await assertCancelled(state);
+    await router.control.stop();
+  });
+
+  test('server streaming: one item read, the signal aborted, then return() on the iterator', async () => {
+    const state = held();
+    const router = await serving(holdingCount(state));
+    const controller = new AbortController();
+    const iterator = router
+      .client(ConformanceService)
+      .count({ n: 2 }, { signal: controller.signal })
+      [Symbol.asyncIterator]();
+
+    await within(iterator.next(), 'the first item');
+    controller.abort();
+    await within(
+      (iterator.return?.() ?? Promise.resolve(undefined)).catch(
+        () => undefined,
+      ),
+      'return() to settle',
+    );
+
+    await assertCancelled(state);
+    await router.control.stop();
+  });
+
+  test('client streaming: one message read, then the signal aborted', async () => {
+    const state = held();
+    const router = await serving(
+      partial(ConformanceService, {
+        sum: async (requests, context) => {
+          state.signal = context.signal;
+
+          try {
+            await requests[Symbol.asyncIterator]().next();
+            state.read += 1;
+            await aborted(context.signal);
+
+            return { total: 0, count: state.read };
+          } finally {
+            state.finished = true;
+          }
+        },
+      }),
+    );
+    const controller = new AbortController();
+    const requests = async function* () {
+      yield { value: 1 };
+      await never();
+    };
+    const response = router
+      .client(ConformanceService)
+      .sum(requests(), { signal: controller.signal })
+      .then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+
+    await until(() => state.read === 1, 'the handler to read one message');
+    controller.abort();
+
+    await within(response, 'the call to settle');
+    await assertCancelled(state);
+    await router.control.stop();
+  });
+
+  /** A bundle whose bidi `Stream` answers one event, then waits for cancel. */
+  const holdingStream = (state: Held): ServiceEntry =>
+    partial(ModelsService, {
+      stream: async function* (_requests, context) {
+        state.signal = context.signal;
+
+        try {
+          yield create(StreamResponseSchema);
+          await aborted(context.signal);
+        } finally {
+          state.finished = true;
+        }
+      },
+    });
+
+  /** A request stream the caller keeps open without sending. */
+  const openRequests = (): AsyncIterable<StreamRequest> => ({
+    [Symbol.asyncIterator]: () => ({ next: never }),
+  });
+
+  test('bidi streaming: one item read, then the signal aborted with no read pending', async () => {
+    const state = held();
+    const router = await serving(holdingStream(state));
+    const controller = new AbortController();
+    const iterator = router
+      .client(ModelsService)
+      .stream(openRequests(), { signal: controller.signal })
+      [Symbol.asyncIterator]();
+
+    const first = await within(iterator.next(), 'the first item');
+    assert.equal(first.done, false);
+
+    controller.abort();
+
+    await assertCancelled(state);
+    await router.control.stop();
+  });
+
+  test('bidi streaming: one item read, then return() on the iterator', async () => {
+    const state = held();
+    const router = await serving(holdingStream(state));
+    const iterator = router
+      .client(ModelsService)
+      .stream(openRequests())
+      [Symbol.asyncIterator]();
+
+    await within(iterator.next(), 'the first item');
+    await within(
+      iterator.return?.() ?? Promise.resolve(undefined),
+      'return() to settle',
+    );
+
+    await assertCancelled(state);
+    await router.control.stop();
   });
 });
 

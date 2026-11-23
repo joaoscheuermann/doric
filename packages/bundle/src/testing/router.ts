@@ -684,14 +684,36 @@ const answered = async (respond: () => unknown): Promise<unknown> => {
   }
 };
 
-/** The responses of a streaming handler, each taken inside its call. */
+/**
+ * The responses of a streaming handler, each taken inside its call. When
+ * the call's signal aborts, the handler's iterator is `return()`ed, as the
+ * host SDK's loop ends it: Connect's in-memory transport leaves this
+ * generator paused at its `yield` when no read is pending, so the handler's
+ * `finally` would otherwise never run.
+ */
 async function* streamed(
   call: Call,
   respond: () => unknown,
 ): AsyncGenerator<unknown> {
+  let cancel: (() => void) | undefined;
+
   try {
     const responses = (await respond()) as AsyncIterable<unknown>;
     const iterator = responses[Symbol.asyncIterator]();
+
+    cancel = () => {
+      // The call is cancelled: no reader is left to receive an error the
+      // handler's `finally` throws.
+      void runInCall(call, async () => iterator.return?.()).catch(
+        () => undefined,
+      );
+    };
+
+    if (call.signal.aborted) {
+      cancel();
+    } else {
+      call.signal.addEventListener('abort', cancel, { once: true });
+    }
 
     for (;;) {
       const next = await runInCall(call, () => iterator.next());
@@ -704,6 +726,10 @@ async function* streamed(
     }
   } catch (error) {
     throw toConnectError(toContractError(error));
+  } finally {
+    if (cancel !== undefined) {
+      call.signal.removeEventListener('abort', cancel);
+    }
   }
 }
 
