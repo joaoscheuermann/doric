@@ -436,6 +436,131 @@ describe('createTestRouter: fakes and context.services.use', () => {
     assert.equal(fakeSeen[0]?.deadline, 0);
   });
 
+  test('use with a scope, outside a handler, gives the fake that scope; without one the fake sees none', async () => {
+    const fakeSeen: Seen[] = [];
+    const router = createTestRouter({
+      fakes: [
+        partial(SettingsService, {
+          get: (_request, context) => {
+            fakeSeen.push(seen(context));
+
+            return { value: someValue() };
+          },
+        }),
+      ],
+    });
+    const scope = { projectId: 'p1', threadId: 't1', promptId: 'r1' };
+
+    await router.activate<readonly DescService[]>({
+      activate: async (context) => {
+        await context.services
+          .use(SettingsService, { scope })
+          .get({ id: 'space/v1' });
+        await context.services.use(SettingsService).get({ id: 'space/v1' });
+      },
+    });
+
+    assert.equal(fakeSeen.length, 2);
+    assert.deepEqual(fakeSeen[0]?.scope, scope);
+    assert.equal(fakeSeen[1]?.scope, undefined);
+  });
+
+  test("use with a scope inside a handler replaces the handler's scope; the deadline and the cancellation still come from the handler's call", async () => {
+    const fakeSeen: Seen[] = [];
+    const handlerSeen: Seen[] = [];
+    let fakeSignal: AbortSignal | undefined;
+    const router = createTestRouter({
+      fakes: [
+        partial(SettingsService, {
+          get: async (_request, context) => {
+            fakeSeen.push(seen(context));
+            fakeSignal = callOf(context).signal;
+            await aborted(fakeSignal);
+            throw new ContractError('unavailable', 'cancelled');
+          },
+        }),
+      ],
+    });
+    const replaced = { projectId: 'p1', threadId: 't1', promptId: 'r1' };
+    let host: HostContext | undefined;
+
+    await router.activate<readonly DescService[]>({
+      services: [
+        partial(ConformanceService, {
+          echo: async (request, context) => {
+            handlerSeen.push(seen(context));
+            assert.ok(host !== undefined);
+            await host.services
+              .use(SettingsService, { scope: replaced })
+              .get({ id: 'space/v1' })
+              .catch(() => undefined);
+
+            return { text: request.text };
+          },
+        }),
+      ],
+      activate: (context) => {
+        host = context;
+      },
+    });
+
+    const cancel = new AbortController();
+    const inFlight = router
+      .client(ConformanceService, { scope: { windowKey: 'w1' } })
+      .echo({ text: 'a' }, { timeoutMs: 2_000, signal: cancel.signal })
+      .then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+
+    await until(() => fakeSignal !== undefined, 'the fake to be called');
+
+    const [handler] = handlerSeen;
+    const [fake] = fakeSeen;
+    assert.ok(handler !== undefined && fake !== undefined);
+    assert.deepEqual(handler.scope, { windowKey: 'w1' });
+    assert.deepEqual(fake.scope, replaced);
+    assert.ok(handler.deadline > 0);
+    assert.equal(fake.deadline, handler.deadline);
+    assert.equal(fakeSignal?.aborted, false);
+
+    cancel.abort();
+
+    await until(() => fakeSignal?.aborted === true, 'the fake to be cancelled');
+    await within(inFlight, 'the cancelled call to settle');
+  });
+
+  test('use with an out-of-bounds scope throws ContractError invalid_scope and makes no call', async () => {
+    let reached = false;
+    const router = createTestRouter({
+      fakes: [
+        partial(SettingsService, {
+          get: () => {
+            reached = true;
+
+            return { value: someValue() };
+          },
+        }),
+      ],
+    });
+    let host: HostContext | undefined;
+
+    await router.activate<readonly DescService[]>({
+      activate: (context) => {
+        host = context;
+      },
+    });
+
+    assert.ok(host !== undefined);
+    const services = host.services;
+    assertContractThrow(
+      () => services.use(SettingsService, { scope: { '1bad': 'x' } }),
+      'invalid_scope',
+    );
+    await sleep(20);
+    assert.equal(reached, false);
+  });
+
   test('with requires given, an undeclared use fails PERMISSION_DENIED undeclared_requirement, even when faked', async () => {
     let reached = false;
     const router = createTestRouter({

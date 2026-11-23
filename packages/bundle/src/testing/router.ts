@@ -64,14 +64,15 @@ export interface TestRouterOptions {
    * A fake's handler runs with a `HandlerContext` whose `callOf` answers the
    * `Call` of the request: `caller` is the bundle under test
    * (`{ bundleId: instance.bundleId, version: '0.0.0', generation:
-   * instance.generation }`); `scope` the scope of the call it was made from
-   * (absent outside a handler, in `activate` for example, or when that call
-   * had none); `trace` a child of that call's trace (a new trace outside a
-   * handler); `signal` aborted when the caller cancels, at the deadline, and
-   * on {@link TestRouterControl.stop}; `deadlineOf` the deadline the call
-   * carried, 0 when none. A fake that throws a `ContractError` fails the call
-   * with it (`fromConnectError` reads the same Doric code); any other value
-   * fails it as `internal`.
+   * instance.generation }`); `scope` the `scope` of the
+   * `context.services.use` options when given, else the scope of the call it
+   * was made from (absent outside a handler, in `activate` for example, or
+   * when that call had none); `trace` a child of that call's trace (a new
+   * trace outside a handler); `signal` aborted when the caller cancels, at
+   * the deadline, and on {@link TestRouterControl.stop}; `deadlineOf` the
+   * deadline the call carried, 0 when none. A fake that throws a
+   * `ContractError` fails the call with it (`fromConnectError` reads the same
+   * Doric code); any other value fails it as `internal`.
    */
   readonly fakes?: readonly ServiceEntry[];
   /**
@@ -333,13 +334,14 @@ export const createTestRouter = (
   // `track` makes its first call and tracks it without a replay, and the
   // `onGone` handlers never run.
   const replays = createReplays({
-    transport: () =>
+    transport: (useOptions) =>
       hopTransport(useTarget, () => {
         const parent = currentCall();
+        const scope = useOptions.scope ?? parent?.scope;
 
         return {
           caller: bundleCaller,
-          ...(parent?.scope === undefined ? {} : { scope: parent.scope }),
+          ...(scope === undefined ? {} : { scope }),
           ...(parent === undefined ? {} : { parent }),
         };
       }),

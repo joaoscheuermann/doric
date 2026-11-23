@@ -481,7 +481,6 @@ class Outbox implements AsyncIterable<ConnectRequest> {
   }
 }
 
-
 const messageOf = (error: unknown): string =>
   error instanceof Error ? error.message : String(error);
 
@@ -594,6 +593,7 @@ class HostLink {
             ? {}
             : { provider: options.provider }),
           ...(options.target === undefined ? {} : { target: options.target }),
+          ...(options.scope === undefined ? {} : { scope: options.scope }),
         }),
       replayDone: (contractId, instance) =>
         this.send({

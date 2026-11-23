@@ -2777,6 +2777,7 @@ interface UseOptions<S extends DescService = DescService> {
   readonly provider?: string; // doric-provider, for a many contract
   readonly target?: string; // doric-target, <bundleId>/<generation>/<incarnation>
   readonly resume?: ResumeRequests<S>; // per server-streaming method: the request that reopens it after the last item
+  readonly scope?: CallScope; // sent as doric-scope-bin on every call, in place of the parent call's scope
 }
 ```
 
@@ -2800,7 +2801,13 @@ pass one, but its `httpPort` is ignored. The SDK closes it after `deactivate`.
 
 `context.services.use(ref, options)` answers a Connect client of `ref` over the
 router transport; a call made inside a handler inherits that call's deadline,
-scope, trace and signal. A server-streaming method marked resumable that ends
+scope, trace and signal. `options.scope` replaces the parent call's scope
+(deadline, cancellation and trace still come from the parent call), so a
+client created outside any handler call, in detached work, can send one, for
+example `{ projectId, threadId, promptId }`; a scope outside
+`callScopeSchema`'s bounds makes `use` throw `ContractError` `invalid_scope`
+and no call is made. Under `track(…, { scope })` the first call carries the
+scope and replays send none. A server-streaming method marked resumable that ends
 with `generation_lost` is opened again (`reopenResumable`, after
 `resumableDelays`: 100 ms, doubling up to 5 s while it answers `unavailable`),
 with `options.resume`'s request for the method built from the last item, or
@@ -3410,7 +3417,7 @@ contracts, whose id starts with `doric.`, are exempt, as in the real router);
 a declared service
 nobody serves fails with `unavailable`; a call before `activate` or after
 `control.stop()` fails with `unavailable`. It sends no `ProviderChanged` and
-no `InstanceGone`.
+no `InstanceGone`. Its `use` takes `options.scope` as the host SDK's does.
 
 `runConformance` ([`conformance/index.ts`](src/testing/conformance/index.ts))
 registers the protocol conformance cases as `node:test` tests against a

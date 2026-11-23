@@ -11,6 +11,7 @@
 // spawned (A67).
 
 import assert from 'node:assert/strict';
+import http2 from 'node:http2';
 import test, { describe, type TestContext } from 'node:test';
 
 import type { DescService } from '@bufbuild/protobuf';
@@ -25,6 +26,7 @@ import {
   type Transport,
 } from '@connectrpc/connect';
 import {
+  connectNodeAdapter,
   createGrpcTransport,
   Http2SessionManager,
 } from '@connectrpc/connect-node';
@@ -34,7 +36,12 @@ import {
   ToolHandlerService,
   ToolsService,
 } from '../../src/contracts/gen/doric/tools/v1/tools_pb.js';
-import { targetHeader } from '../../src/contracts/metadata.js';
+import type { CallScope } from '../../src/contracts/call.js';
+import {
+  scopeFromHeader,
+  scopeHeader,
+  targetHeader,
+} from '../../src/contracts/metadata.js';
 import { fromConnectError } from '../../src/contracts/status.js';
 import { createCatalogIndex } from '../../src/platform/catalog-index.js';
 import {
@@ -51,7 +58,9 @@ import {
   type Timings,
   timings,
 } from '../../src/platform/supervisor/timings.js';
+import { createHopCall } from '../../src/runtime/call.js';
 import type { RegistrationReplayReport } from '../../src/runtime/diagnostics.js';
+import { createRouterTransport } from '../../src/sdk/host/client.js';
 import {
   type BundleInstance,
   type HostContext,
@@ -1028,6 +1037,92 @@ describe("the host SDK's replay", () => {
       { method: 'Register', target: 'core/1/2' },
       { method: 'List', target: undefined },
     ]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The router transport's scope (S48a)
+
+/**
+ * An HTTP/2 server serving `tools/v1` `List` that records the
+ * `doric-scope-bin` of each call, decoded; closed after the test.
+ */
+const scopeRecorder = async (
+  t: TestContext,
+): Promise<{
+  readonly url: string;
+  readonly scopes: (CallScope | undefined)[];
+}> => {
+  const scopes: (CallScope | undefined)[] = [];
+  const server = http2.createServer(
+    connectNodeAdapter({
+      routes: (router) => {
+        router.service(ToolsService, {
+          list: (_request, context) => {
+            const value = context.requestHeader.get(scopeHeader);
+
+            scopes.push(value === null ? undefined : scopeFromHeader(value));
+
+            return { tools: [] };
+          },
+        });
+      },
+    }),
+  );
+  const sessions = new Set<http2.ServerHttp2Session>();
+
+  server.on('session', (session) => {
+    sessions.add(session);
+    session.on('close', () => sessions.delete(session));
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+
+  t.after(
+    () =>
+      new Promise<void>((resolve) => {
+        for (const session of sessions) {
+          session.destroy();
+        }
+
+        server.close(() => resolve());
+      }),
+  );
+
+  const address = server.address();
+  assert.ok(address !== null && typeof address === 'object');
+
+  return { url: `http://127.0.0.1:${address.port}`, scopes };
+};
+
+describe("the router transport's doric-scope-bin", () => {
+  test('scope replaces the scope of the parent; without it the parent scope is sent', async (t) => {
+    const { url, scopes } = await scopeRecorder(t);
+    const sessionManager = new Http2SessionManager(url);
+    t.after(() => sessionManager.abort());
+
+    const parent = createHopCall({
+      caller: { bundleId: 'app', version: '1.0.0', generation: 1 },
+      useScope: { windowKey: 'w1' },
+      generationSignal: new AbortController().signal,
+    });
+    const replaced = { projectId: 'p1', threadId: 't1', promptId: 'r1' };
+
+    await createClient(
+      ToolsService,
+      createRouterTransport({
+        url,
+        token: 'token',
+        parent,
+        scope: replaced,
+        sessionManager,
+      }),
+    ).list({});
+    await createClient(
+      ToolsService,
+      createRouterTransport({ url, token: 'token', parent, sessionManager }),
+    ).list({});
+
+    assert.deepEqual(scopes, [replaced, { windowKey: 'w1' }]);
   });
 });
 

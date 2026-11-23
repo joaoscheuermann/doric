@@ -5,6 +5,7 @@ import type { DescService, JsonValue } from '@bufbuild/protobuf';
 import type { Client } from '@connectrpc/connect';
 
 import type { Log } from '../../contracts/basic/log.js';
+import type { CallScope } from '../../contracts/call.js';
 import type { GenerationEvent } from '../../platform/router/control.js';
 import type { ResumeRequests } from '../../runtime/resumable.js';
 import type { HostAssets } from './assets.js';
@@ -42,6 +43,18 @@ export interface UseOptions<S extends DescService = DescService> {
    * received; a method without one reopens with its original request.
    */
   readonly resume?: ResumeRequests<S>;
+  /**
+   * The scope every call of this client carries as `doric-scope-bin`, in
+   * place of the scope of the handler's call it is made from
+   * (`currentCall()`); deadline, signal and trace are still inherited from
+   * that call. For a host part that calls on behalf of a prompt from work no
+   * handler runs (`runtime`'s executor calls). Absent: the parent's scope, as
+   * before. A scope outside `callScopeSchema`'s bounds makes `use` throw
+   * `ContractError('invalid_scope')` (INVALID_ARGUMENT) without creating the
+   * client. Ignored by `HostRegistrations.track` replays (they keep the
+   * options they were tracked with).
+   */
+  readonly scope?: CallScope;
 }
 
 /** The contracts a host part calls, over the router listener. */
@@ -51,11 +64,12 @@ export interface HostServices {
    * (`createRouterTransport` with the instance's URL and token, no `parent`,
    * and `options`' `provider` and `target`): each call carries the
    * instance's token, and a call made inside a handler inherits that call's
-   * deadline, scope, trace and signal (`currentCall()`). Creating the client
-   * makes no call and never throws; a call fails as the router or the
-   * provider ends it (`UNIMPLEMENTED`, `PERMISSION_DENIED`, …), with a
-   * `ConnectError` whose Doric code `fromConnectError` reads. Usable from
-   * `activate` until the process exits, `deactivate` included.
+   * deadline, scope (unless `options.scope` replaces it), trace and signal
+   * (`currentCall()`). Creating the client makes no call and throws only for
+   * an out-of-bounds `options.scope` (`invalid_scope`); a call fails as the
+   * router or the provider ends it (`UNIMPLEMENTED`, `PERMISSION_DENIED`,
+   * …), with a `ConnectError` whose Doric code `fromConnectError` reads.
+   * Usable from `activate` until the process exits, `deactivate` included.
    *
    * While the SDK replays the registrations of `ref`'s contract to a new
    * provider instance (`ProviderChanged`, {@link HostRegistrations}), a new

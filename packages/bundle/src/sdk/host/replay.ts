@@ -8,6 +8,8 @@ import { type DescService, getOption, hasOption } from '@bufbuild/protobuf';
 import { type Client, createClient, type Transport } from '@connectrpc/connect';
 
 import type { Log } from '../../contracts/basic/log.js';
+import { type CallScope, callScopeSchema } from '../../contracts/call.js';
+import { ContractError } from '../../contracts/error.js';
 import {
   contract as contractOption,
   hooks as hooksOption,
@@ -151,6 +153,9 @@ export const createReplays = (options: ReplaysOptions): Replays => {
         trackOptions: TrackOptions<R> = {},
       ) => {
         let current = await register(use<S>(ref, trackOptions));
+        // A replay runs on the control stream, not for the call `scope` was
+        // given for: it keeps the other options and drops `scope`.
+        const { scope: _scope, ...replayOptions } = useOptionsOf(trackOptions);
         const entry: Tracked = {
           contractId: contractIdOf(ref),
           provider: trackOptions.provider,
@@ -158,7 +163,7 @@ export const createReplays = (options: ReplaysOptions): Replays => {
             const result = await register(
               createClient(
                 ref,
-                options.transport({ ...useOptionsOf(trackOptions), target }),
+                options.transport({ ...replayOptions, target }),
               ),
             );
 
@@ -227,13 +232,33 @@ export const createReplays = (options: ReplaysOptions): Replays => {
   };
 };
 
-/** `provider` and `target` of `options`, without the other fields. */
+/**
+ * `provider`, `target` and `scope` of `options`, without the other fields;
+ * a `ContractError` `invalid_scope` when `scope` breaks `callScopeSchema`.
+ */
 const useOptionsOf = <S extends DescService>(
   options: UseOptions<S>,
 ): UseOptions => ({
   ...(options.provider === undefined ? {} : { provider: options.provider }),
   ...(options.target === undefined ? {} : { target: options.target }),
+  ...(options.scope === undefined
+    ? {}
+    : { scope: checkedScope(options.scope) }),
 });
+
+/** `scope`, frozen; a `ContractError` `invalid_scope` when out of bounds. */
+const checkedScope = (scope: CallScope): CallScope => {
+  const parsed = callScopeSchema.safeParse({ ...scope });
+
+  if (!parsed.success) {
+    throw new ContractError(
+      'invalid_scope',
+      `The scope breaks the scope bounds: ${parsed.error.message}`,
+    );
+  }
+
+  return Object.freeze(parsed.data);
+};
 
 /**
  * The id of the contract that declares `service`: the file option

@@ -14,7 +14,7 @@ import {
   type Http2SessionManager,
 } from '@connectrpc/connect-node';
 
-import { type Call, deadlineOf } from '../../contracts/call.js';
+import { type Call, type CallScope, deadlineOf } from '../../contracts/call.js';
 import { ContractError } from '../../contracts/error.js';
 import {
   authorizationHeader,
@@ -53,6 +53,12 @@ export interface RouterTransportOptions {
    */
   readonly target?: string;
   /**
+   * Set as `doric-scope-bin` on every call, whether or not there is a
+   * parent, in place of the parent's scope; the rest of the stamp is
+   * unchanged. Undefined: the parent's scope.
+   */
+  readonly scope?: CallScope;
+  /**
    * The HTTP/2 sessions to the router, shared with the control stream; a
    * manager of its own when undefined.
    */
@@ -67,8 +73,8 @@ export interface RouterTransportOptions {
  * - `authorization: Bearer <token>`;
  * - `grpc-timeout` for the earliest of the call's `timeoutMs` and the
  *   parent's deadline (`deadlineOf`), and none when neither has one;
- * - `doric-scope-bin` with the parent's scope (`scopeHeaderValue`), and none
- *   when it has no scope or there is no parent;
+ * - `doric-scope-bin` with `options.scope`, else the parent's scope
+ *   (`scopeHeaderValue`), and none when that is absent or empty;
  * - `traceparent` with the parent's trace id and a new span id, or a new
  *   trace without a parent;
  * - `doric-provider` and `doric-target` when the options set them;
@@ -106,12 +112,14 @@ export const createRouterTransport = (
       header.set(targetHeader, options.target);
     }
 
-    if (parent === undefined) {
-      return next(request);
+    const scope = options.scope ?? parent?.scope;
+
+    if (scope !== undefined && Object.keys(scope).length > 0) {
+      header.set(scopeHeader, scopeHeaderValue(scope));
     }
 
-    if (parent.scope !== undefined && Object.keys(parent.scope).length > 0) {
-      header.set(scopeHeader, scopeHeaderValue(parent.scope));
+    if (parent === undefined) {
+      return next(request);
     }
 
     const deadline = deadlineOf(parent);

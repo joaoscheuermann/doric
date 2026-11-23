@@ -806,3 +806,13 @@ to every host part.
   an exclusive session open waits for it through the Project lock. No
   `withThreadSession` client helper yet (S54). Open finding: a hint-refresh
   failure after a session ends is not logged yet (S48 adds a logger).
+- 2026-11-23: phase 3, slice S48a, of
+  [`docs/designs/grpc-processes.md`](../designs/grpc-processes.md): the host
+  SDK's `context.services.use(ref, options)` takes `options.scope`, so a client
+  created outside any handler call (detached work, such as `runtime`'s executor
+  calls carrying `{projectId, threadId, promptId}`) can send a scope. The router
+  transport sends it as `doric-scope-bin` in place of the parent call's scope;
+  deadline, cancellation and trace still come from the parent call. An
+  out-of-bounds scope makes `use` throw `ContractError` `invalid_scope` and no
+  call is made. Under `track(…, { scope })` the first call carries the scope;
+  replays send none. `createTestRouter`'s `use` behaves the same.
