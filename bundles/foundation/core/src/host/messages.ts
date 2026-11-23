@@ -77,16 +77,13 @@ export const optionMessage = (
  * their default emitted as 1.x rows hold them), after a check that
  * `value.typeUrl` names `desc` and that protovalidate accepts the message.
  * Throws `ContractError` `invalid_input` with details `{ field: what,
- * typeUrl }` or the violations otherwise. With `emitImplicit` false, fields
- * at their default are omitted (protobuf-es `toJson` defaults), as an event
- * body holds them.
+ * typeUrl }` or the violations otherwise.
  */
 export const jsonOfAny = (
   value: Any | undefined,
   desc: DescMessage,
   types: Registry,
   what: string,
-  emitImplicit = true,
 ): JsonValue => {
   if (value === undefined || !anyIs(value, desc)) {
     throw new ContractError(
@@ -139,7 +136,7 @@ export const jsonOfAny = (
 
   return toJson(desc, message, {
     registry: types,
-    alwaysEmitImplicit: emitImplicit,
+    alwaysEmitImplicit: true,
   });
 };
 

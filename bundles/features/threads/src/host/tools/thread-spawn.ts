@@ -1,39 +1,10 @@
-import { type Call, isContractError, type Services } from 'bundle/contracts';
-import {
-  type AgentDefinition,
-  agentNamePattern,
-  DefaultAgentsV1,
-} from 'default/contracts';
+import { isContractError } from 'bundle/contracts';
+import { agentNamePattern } from 'default/contracts';
 import { reasoningEfforts, type SpawnOptions } from 'runtime/contracts';
 import { defineTool } from 'tool';
 import { z } from 'zod';
 
-import { threadsOf } from '../threads.js';
-
-/** default.agents/v1.resolve; maps the absent contract to the unavailable error, rethrows every other error unchanged. */
-const resolveAgent = async (
-  services: Services,
-  call: Call,
-  name: string,
-): Promise<AgentDefinition> => {
-  try {
-    return await services
-      .use(DefaultAgentsV1, call.scope)
-      .resolve({ name }, call);
-  } catch (error) {
-    if (
-      isContractError(error) &&
-      error.code === 'unavailable' &&
-      typeof error.details === 'object' &&
-      error.details !== null &&
-      'contract' in error.details &&
-      error.details.contract === DefaultAgentsV1.id
-    ) {
-      throw new Error('Agent types are unavailable in this runtime.');
-    }
-    throw error;
-  }
-};
+import type { ThreadToolPorts } from '../threads.js';
 
 export const tool = defineTool({
   name: 'thread-spawn',
@@ -55,11 +26,11 @@ export const tool = defineTool({
     })
     .strict(),
   output: z.string(),
-  execute: async (input, call, services) => {
+  execute: async (input, call, ports: ThreadToolPorts) => {
     const agent =
       input.agent === undefined
         ? undefined
-        : await resolveAgent(services, call, input.agent);
+        : await ports.resolveAgent(input.agent, call);
     const model = input.model ?? agent?.model;
     const effort = input.effort ?? agent?.effort;
 
@@ -80,12 +51,7 @@ export const tool = defineTool({
 
     try {
       return JSON.stringify(
-        await threadsOf(services, call).spawn(
-          input.prompt,
-          input.title,
-          options,
-          call,
-        ),
+        await ports.controls(call).spawn(input.prompt, input.title, options),
       );
     } catch (error) {
       // A model from the agent's definition: the reader also needs the agent.

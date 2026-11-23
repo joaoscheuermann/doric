@@ -2,7 +2,7 @@ import type { ThreadEventView } from 'runtime/contracts';
 import { defineTool } from 'tool';
 import { z } from 'zod';
 
-import { threadsOf } from '../threads.js';
+import type { ThreadToolPorts } from '../threads.js';
 
 /** How much of one event a digest line carries. */
 const summaryLimit = 400;
@@ -52,13 +52,10 @@ export const tool = defineTool({
     })
     .strict(),
   output: z.string(),
-  execute: async (input, call, services) => {
-    const page = await threadsOf(services, call).events(
-      input.threadId,
-      input.afterSequence ?? 0,
-      input.limit ?? 20,
-      call,
-    );
+  execute: async (input, call, ports: ThreadToolPorts) => {
+    const page = await ports
+      .controls(call)
+      .events(input.threadId, input.afterSequence ?? 0, input.limit ?? 20);
 
     return JSON.stringify({
       events: page.events.map(digest),

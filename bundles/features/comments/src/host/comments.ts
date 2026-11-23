@@ -19,10 +19,9 @@ import {
   ContractError,
   defineMethod,
   defineService,
-  EventsV1,
   type Services,
 } from 'bundle/contracts';
-import { RuntimeThreadsV1, type ThreadEvent } from 'runtime/contracts';
+import type { ThreadEvent } from 'runtime/contracts';
 
 import {
   COMMENT_ID_PATTERN,
@@ -38,6 +37,8 @@ import {
   commentsMethods,
   commentsResolvedEvent,
 } from '../contracts/index.js';
+import { type CommentsPorts, kernelCommentsPorts } from './ports.js';
+import { commentsAddedOf, commentsResolvedOf } from './rows.js';
 
 /** A record without the keys whose value is `undefined`: absent means absent. */
 const definedFields = <T extends object>(value: T): T =>
@@ -106,12 +107,11 @@ const fold = (events: readonly ThreadEvent[]): Comment[] => {
 
   for (const entry of events) {
     if (entry.type === commentsAddedEvent.type) {
-      const parsed = commentsAddedEvent.payload.safeParse(entry.event);
+      const parsed = commentsAddedOf(entry.event);
 
-      if (!parsed.success || comments.has(parsed.data.commentId)) continue;
+      if (parsed === undefined || comments.has(parsed.commentId)) continue;
 
-      const { commentId, target, text, author, createdAt, inReplyTo } =
-        parsed.data;
+      const { commentId, target, text, author, createdAt, inReplyTo } = parsed;
 
       comments.set(
         commentId,
@@ -126,16 +126,16 @@ const fold = (events: readonly ThreadEvent[]): Comment[] => {
         }),
       );
     } else if (entry.type === commentsResolvedEvent.type) {
-      const parsed = commentsResolvedEvent.payload.safeParse(entry.event);
+      const parsed = commentsResolvedOf(entry.event);
 
-      if (!parsed.success) continue;
+      if (parsed === undefined) continue;
 
-      const current = comments.get(parsed.data.commentId);
+      const current = comments.get(parsed.commentId);
 
       if (current !== undefined) {
         comments.set(current.commentId, {
           ...current,
-          resolved: parsed.data.resolved,
+          resolved: parsed.resolved,
         });
       }
     }
@@ -146,17 +146,15 @@ const fold = (events: readonly ThreadEvent[]): Comment[] => {
 
 /** The comments one Thread's log holds, only rows of the given Project. */
 const threadComments = async (
-  services: Services,
+  ports: CommentsPorts,
   call: Call,
   projectId: string,
   threadId: string,
 ): Promise<Comment[]> => {
-  const log = await services
-    .use(RuntimeThreadsV1)
-    .threadEvents({ id: threadId, afterSequence: 0 }, call);
+  const events = await ports.threadEvents(threadId, call);
 
   return fold(
-    (log?.events ?? []).filter(
+    events.filter(
       (entry) => entry.projectId === projectId && entry.threadId === threadId,
     ),
   );
@@ -168,20 +166,18 @@ const threadComments = async (
  * is the order `projectThreads` answers.
  */
 const scopeComments = async (
-  services: Services,
+  ports: CommentsPorts,
   call: Call,
   scope: ReadScope,
 ): Promise<Comment[]> => {
   if (scope.threadId !== undefined) {
-    return threadComments(services, call, scope.projectId, scope.threadId);
+    return threadComments(ports, call, scope.projectId, scope.threadId);
   }
 
-  const threads = await services
-    .use(RuntimeThreadsV1)
-    .projectThreads(scope.projectId, call);
+  const threadIds = await ports.projectThreadIds(scope.projectId, call);
   const perThread = await Promise.all(
-    threads.map((thread) =>
-      threadComments(services, call, scope.projectId, thread.id),
+    threadIds.map((threadId) =>
+      threadComments(ports, call, scope.projectId, threadId),
     ),
   );
 
@@ -219,7 +215,7 @@ const malformedSeat = ({ turn, block, at, item }: CommentAnchor): boolean => {
  * makes a retried flush safe. A reply is normalized to the thread's root.
  */
 export const addComment = async (
-  services: Services,
+  ports: CommentsPorts,
   call: Call,
   input: CommentAddInput,
 ): Promise<Comment> => {
@@ -256,7 +252,7 @@ export const addComment = async (
   const existing =
     input.commentId === undefined && input.inReplyTo === undefined
       ? []
-      : await threadComments(services, call, projectId, threadId);
+      : await threadComments(ports, call, projectId, threadId);
 
   const written = existing.find(
     (comment) => comment.commentId === input.commentId,
@@ -292,8 +288,7 @@ export const addComment = async (
   });
 
   // The append is the write: a refused append leaves nothing behind.
-  await services.use(EventsV1).append(
-    commentsAddedEvent,
+  await ports.appendAdded(
     definedFields({
       commentId: comment.commentId,
       target: comment.target,
@@ -314,14 +309,14 @@ export const addComment = async (
  * written, so the event lands next to its `added` row.
  */
 export const resolveComment = async (
-  services: Services,
+  ports: CommentsPorts,
   call: Call,
   input: CommentResolveInput,
 ): Promise<Comment | undefined> => {
   const { projectId, threadId } = writeScope(call);
-  const current = (
-    await threadComments(services, call, projectId, threadId)
-  ).find((comment) => comment.commentId === input.commentId);
+  const current = (await threadComments(ports, call, projectId, threadId)).find(
+    (comment) => comment.commentId === input.commentId,
+  );
 
   if (current === undefined) return undefined;
 
@@ -329,29 +324,45 @@ export const resolveComment = async (
   // that asks for the state the comment already has writes nothing.
   if (current.resolved === input.resolved) return current;
 
-  await services
-    .use(EventsV1)
-    .append(
-      commentsResolvedEvent,
-      { commentId: current.commentId, resolved: input.resolved },
-      call,
-    );
+  await ports.appendResolved(
+    { commentId: current.commentId, resolved: input.resolved },
+    call,
+  );
 
   return { ...current, resolved: input.resolved };
 };
 
 /** The comment of the call's Thread with this id, if the log holds it. */
 export const findComment = async (
-  services: Services,
+  ports: CommentsPorts,
   call: Call,
   commentId: string,
 ): Promise<Comment | undefined> => {
   const { projectId, threadId } = writeScope(call);
 
-  return (await threadComments(services, call, projectId, threadId)).find(
+  return (await threadComments(ports, call, projectId, threadId)).find(
     (comment) => comment.commentId === commentId,
   );
 };
+
+/**
+ * `comments/v1.list` (moved out of `commentsService`): the comments of the
+ * call's read scope — the Thread's own when the scope names one, else every
+ * Thread of the Project in `projectThreadIds` order, each in log order —
+ * whose kind is `input.kind` (when given) and whose target's
+ * `(kind, id, revision)` is `input.target`'s (when given). `invalid_scope`
+ * without a `projectId`; the ports' errors otherwise.
+ */
+export const listComments = async (
+  ports: CommentsPorts,
+  call: Call,
+  input: CommentListInput,
+): Promise<readonly Comment[]> =>
+  (await scopeComments(ports, call, readScope(call))).filter(
+    (comment) =>
+      (input.kind === undefined || comment.target.kind === input.kind) &&
+      (input.target === undefined || sameTarget(comment.target, input.target)),
+  );
 
 export const commentsService = () =>
   defineService(CommentsV1, {
@@ -359,27 +370,22 @@ export const commentsService = () =>
       expose: 'desktop',
       ...commentsMethods.add,
       execute: (input: CommentAddInput, call: Call, services: Services) =>
-        addComment(services, call, input),
+        addComment(kernelCommentsPorts(services), call, input),
     }),
     list: defineMethod({
       expose: 'desktop',
       ...commentsMethods.list,
-      execute: async (
+      execute: (
         input: CommentListInput,
         call: Call,
         services: Services,
       ): Promise<readonly Comment[]> =>
-        (await scopeComments(services, call, readScope(call))).filter(
-          (comment) =>
-            (input.kind === undefined || comment.target.kind === input.kind) &&
-            (input.target === undefined ||
-              sameTarget(comment.target, input.target)),
-        ),
+        listComments(kernelCommentsPorts(services), call, input),
     }),
     resolve: defineMethod({
       expose: 'desktop',
       ...commentsMethods.resolve,
       execute: (input: CommentResolveInput, call: Call, services: Services) =>
-        resolveComment(services, call, input),
+        resolveComment(kernelCommentsPorts(services), call, input),
     }),
   });

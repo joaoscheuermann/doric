@@ -994,3 +994,20 @@ after a 5 s grace; a failure after the cancel answers `run_cancelled` or
   `default`'s routed tools carry the call signal and make one `tools/v1.Check`
   per tool call; `Checkpoint`/`Rewind` still cancel by abort. Known gap: no
   runtime caller aborts a compaction yet (`runner.ts:1231-1238`).
+- 2026-11-23: phase 3, slice S52a, of
+  [`docs/designs/grpc-processes.md`](../designs/grpc-processes.md): `comments`
+  runs on its own host process (`createCommentsHost`, `src/host/main.ts`) with
+  routed ports over `events/v1`, `runtime.threads/v1` and `tools/v1`; it
+  serves `comments/v1` and the `comment_reply` tool and registers the loose
+  events `comments.added/v1` and `comments.resolved/v1` with no sink. The
+  registry and the tool share `CommentsPorts` with the kernel. The fold reads
+  both stored encodings (today's JSON and the message JSON routed appends
+  write, `rows.ts`), which coexist from S62 until phase 4. `core`'s
+  `events/v1` append stores bodies with implicit fields kept
+  (`alwaysEmitImplicit: true`).
+- 2026-11-23: phase 3, slice S52b, of
+  [`docs/designs/grpc-processes.md`](../designs/grpc-processes.md): `threads`
+  runs on its own host process (`src/host/main.ts`) and registers its eight
+  tools over `runtime.threads/v1` and optional `default.agents/v1`; any
+  `unavailable` from the agent lookup answers "Agent types are unavailable in
+  this runtime."

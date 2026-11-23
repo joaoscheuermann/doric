@@ -1,7 +1,7 @@
 import { defineTool } from 'tool';
 import { z } from 'zod';
 
-import { threadsOf } from '../threads.js';
+import type { ThreadToolPorts } from '../threads.js';
 
 export const tool = defineTool({
   name: 'thread-restart',
@@ -18,12 +18,8 @@ export const tool = defineTool({
     })
     .strict(),
   output: z.string(),
-  execute: async (input, call, services) =>
+  execute: async (input, call, ports: ThreadToolPorts) =>
     JSON.stringify(
-      await threadsOf(services, call).restart(
-        input.threadId,
-        input.prompt,
-        call,
-      ),
+      await ports.controls(call).restart(input.threadId, input.prompt),
     ),
 });

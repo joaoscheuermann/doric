@@ -2,9 +2,10 @@
 // `../events.test.ts` onto `createCoreServices` and `createTestRouter`
 // (without its static check of the shipped composition, which stays there).
 // Payloads are `google.protobuf.Any`s of the code-built test messages; the
-// stored body is the message's JSON (protobuf-es `toJson`: JSON names, zero
-// fields omitted) after `type`. `core.event-hooks/v1` firing on a committed
-// append is proved through `hooks/v1` in `./hooks.test.ts` (S40b).
+// stored body is the message's JSON (protobuf-es `toJson`: JSON names,
+// fields at their default kept, `alwaysEmitImplicit: true`) after `type`.
+// `core.event-hooks/v1` firing on a committed append is proved through
+// `hooks/v1` in `./hooks.test.ts` (S40b).
 
 import assert from 'node:assert/strict';
 import test from 'node:test';
@@ -224,8 +225,35 @@ void test('the row keeps only the keys its sink names, in the sink order', async
 
     assert.equal(
       JSON.stringify(page.entries[0]?.value),
-      '{"promptId":"q-1","threadId":"t-1","type":"notes.added/v1","event":{"type":"notes.added/v1","noteId":"ok"}}',
+      '{"promptId":"q-1","threadId":"t-1","type":"notes.added/v1","event":{"type":"notes.added/v1","noteId":"ok","token":""}}',
     );
+  } finally {
+    await core.close();
+  }
+});
+
+void test('a stored body keeps a field at its default value, as the spec’s JSON rule emits implicit fields (S52a)', async () => {
+  const core = await served();
+
+  try {
+    await registered(core);
+    // `token` left at its default (`""`), as a `CommentsResolved` reopen
+    // leaves `resolved` at `false`: the stored body still names it.
+    await events(core, 'notes', scope).append({
+      type: 'notes.added/v1',
+      payload: added({ noteId: 'n-1', token: '' }),
+    });
+
+    const page = await readStream(core, 'notes.thread-events/t-1');
+    const value = page.entries[0]?.value as
+      | { readonly event?: Record<string, unknown> }
+      | undefined;
+
+    assert.deepEqual(value?.event, {
+      type: 'notes.added/v1',
+      noteId: 'n-1',
+      token: '',
+    });
   } finally {
     await core.close();
   }

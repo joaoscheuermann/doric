@@ -540,8 +540,8 @@ after a failure); kinds and reference sources are released on `InstanceGone`;
 removing nothing; `WatchRedactions` yields the list, then each change, queued on
 every open stream before a write answers; `AddRedaction` refuses an empty
 secret. Events: `Register` refuses a payload message with a field named `type`;
-`Sink` binds an events stream; `Append` stores `{ type, ...payload JSON }` (zero
-values omitted), redacted, committed through the storage facade as core, then
+`Sink` binds an events stream; `Append` stores `{ type, ...payload JSON }`
+(implicit, default-valued fields kept: `alwaysEmitImplicit: true`), redacted, committed through the storage facade as core, then
 runs `core.event-hooks/v1` (defined by core at `activate`) detached from the call.
 Tools are keyed by name and Project: a registration in an overlapping Project by
 another bundle fails `duplicate_tool`; the newest instance of a bundle serves its

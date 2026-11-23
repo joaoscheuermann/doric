@@ -13,6 +13,7 @@ import { defineTool } from 'tool';
 import { z } from 'zod';
 
 import { addComment, findComment, resolveComment } from '../comments.js';
+import type { CommentsPorts } from '../ports.js';
 
 /** The tool name the model calls. */
 export const COMMENT_REPLY_TOOL = 'comment_reply';
@@ -55,13 +56,13 @@ export const output = z
 
 export type CommentReplyOutput = z.output<typeof output>;
 
-export const tool = defineTool({
+export const tool = defineTool<typeof input, typeof output, CommentsPorts>({
   name: COMMENT_REPLY_TOOL,
   description,
   input,
   output,
-  execute: async (payload, call, services) => {
-    const asked = await findComment(services, call, payload.comment_id);
+  execute: async (payload, call, ports) => {
+    const asked = await findComment(ports, call, payload.comment_id);
 
     if (asked === undefined) {
       throw new ContractError(
@@ -73,7 +74,7 @@ export const tool = defineTool({
     const root =
       asked.inReplyTo === undefined
         ? asked
-        : await findComment(services, call, asked.inReplyTo);
+        : await findComment(ports, call, asked.inReplyTo);
 
     if (root === undefined) {
       throw new ContractError(
@@ -82,7 +83,7 @@ export const tool = defineTool({
       );
     }
 
-    const reply = await addComment(services, call, {
+    const reply = await addComment(ports, call, {
       target: root.target,
       text: payload.text,
       author: AGENT_AUTHOR,
@@ -92,7 +93,7 @@ export const tool = defineTool({
     const resolved =
       payload.resolve === true
         ? (
-            (await resolveComment(services, call, {
+            (await resolveComment(ports, call, {
               commentId: root.commentId,
               resolved: true,
             })) ?? root

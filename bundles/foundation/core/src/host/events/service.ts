@@ -210,7 +210,7 @@ export const createEventsService = (
         });
       }
 
-      const json = jsonOfAny(payload, desc, types(), 'payload', false);
+      const json = jsonOfAny(payload, desc, types(), 'payload');
       const event = redactJson(
         { type, ...(json as object) },
         await redactions(call),

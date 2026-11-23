@@ -58,6 +58,15 @@ The bundle has two parts and no settings, slots, skills, routes or UI.
   package does not export the host entry, and nothing outside `src/host/`
   imports these names; the tests import only `activate`
   ([`tests/support/harness.ts`](tests/support/harness.ts)).
+- **Process entry** ([`src/host/main.ts`](src/host/main.ts)), for the
+  bundle-process runtime
+  ([bundle processes](../../../docs/features/bundle-processes.md)).
+  `createCommentsHost` serves `comments/v1` and the `comment_reply` tool over
+  routed ports of `events/v1`, `runtime.threads/v1` and `tools/v1`
+  ([`src/host/routed.ts`](src/host/routed.ts)), and registers
+  `comments.added/v1` and `comments.resolved/v1` as loose events with no sink.
+  The registry and the tool take the same `CommentsPorts`
+  ([`src/host/ports.ts`](src/host/ports.ts)) as the kernel part.
 
 ## Contracts used
 
@@ -227,6 +236,10 @@ Every read takes a Thread's whole log through `runtime.threads/v1`
   holds, and is ignored otherwise.
 - A row whose payload breaks its event schema is skipped, without failing the
   read.
+- A row is read in either stored encoding: today's JSON, or the message JSON
+  that a routed `events/v1` append writes (implicit fields kept). Both coexist
+  in the log from S62 until phase 4
+  ([`src/host/rows.ts`](src/host/rows.ts)).
 - A Thread the runtime does not know reads as no comments.
 
 Nothing is held in the process: a restarted host, a fresh activation, a

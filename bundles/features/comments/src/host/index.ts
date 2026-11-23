@@ -11,6 +11,7 @@ import {
   commentsResolvedEvent,
 } from '../contracts/index.js';
 import { commentsService } from './comments.js';
+import { kernelRegistrable } from './ports.js';
 import { COMMENT_REPLY_ORDER, tool } from './tools/comment-reply.js';
 
 export const activate = ({ services }: HostContext): void => {
@@ -23,9 +24,10 @@ export const activate = ({ services }: HostContext): void => {
 
   // The global model-visible position, the next free band after
   // `papercraft_preview` (1700).
-  services
-    .use(ToolsV1)
-    .register(tool, { alwaysAvailable: true, order: COMMENT_REPLY_ORDER });
+  services.use(ToolsV1).register(kernelRegistrable(tool), {
+    alwaysAvailable: true,
+    order: COMMENT_REPLY_ORDER,
+  });
 };
 
 export {

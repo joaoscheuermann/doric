@@ -182,6 +182,16 @@ Sources: [thread-delegation](src/skills/thread-delegation/SKILL.md),
 [thread-steering](src/skills/thread-steering/SKILL.md). None sets
 `allowed-tools`.
 
+### Process entry
+
+The bundle also has a process entry, [`src/host/main.ts`](src/host/main.ts),
+for the bundle-process runtime
+([bundle processes](../../../docs/features/bundle-processes.md)). It registers
+the same eight tools over routed `runtime.threads/v1` and the optional
+`default.agents/v1` ([src/host/routed.ts](src/host/routed.ts)). Any
+`unavailable` from the agent lookup answers "Agent types are unavailable in
+this runtime."
+
 ## Client part
 
 ### Activation
