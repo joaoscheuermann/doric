@@ -36,6 +36,7 @@ import {
   type ProjectBytesReader,
   type StyleAsset,
 } from './css.js';
+import { moduleNative, type NativePackages } from './native.js';
 import { isRelative, packageOf } from './paths.js';
 import type { SandboxBundler } from './sandbox.js';
 
@@ -194,8 +195,10 @@ export const compileComponent = async (
   bundler?: SandboxBundler,
   readBytes?: ProjectBytesReader,
   isRepositoryRoot?: (dir: string) => Promise<boolean>,
+  /** esbuild and Tailwind; `moduleNative` when absent (S57 D4). */
+  native: NativePackages = moduleNative,
 ): Promise<CompiledComponent> => {
-  const { build, version } = await import('esbuild');
+  const { build, version } = native.esbuild();
   const cached = sourceCache(read);
   const sandboxed =
     bundler === undefined
@@ -229,6 +232,7 @@ export const compileComponent = async (
     sources: bundled.sources,
     globalCss: bundled.globalCss,
     componentCss: bundled.componentCss,
+    native,
   }).catch((error: unknown) => {
     throw compileFailure(input.path, error);
   });

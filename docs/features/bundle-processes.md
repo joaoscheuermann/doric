@@ -1073,6 +1073,17 @@ after a 5 s grace; a failure after the cancel answers `run_cancelled` or
   answering `unavailable` counts as no sessions. Methods fail `unavailable`
   "git is not activated." before activation. The kernel entry stays until
   S62.
+- 2026-11-23: phase 3, slice S57a, of
+  [`docs/designs/grpc-processes.md`](../designs/grpc-processes.md) (version
+  6.18): `papercraft`'s kernel runs on ports and gains no process. The cores
+  `projectReaders`, `jobRunnerOver`, `createProgramOperations` and
+  `createLibraryOperations` take `PapercraftPorts`, built by
+  `kernelPapercraftPorts`; the existing functions wrap them. `esbuild`,
+  `tailwindcss` and `@tailwindcss/oxide` load lazily through
+  `nativeOf`/`moduleNative` (`createRequire`), never a value `import()` under
+  `src/host/`. The skill is read in `activate` (`readSkillBesideModule`), the
+  runner lazily (`readRunnerBesideModule`, failure remembered). The process
+  comes in S57b.
 - 2026-11-23: phase 3, slice S56, of
   [`docs/designs/grpc-processes.md`](../designs/grpc-processes.md): `openui`
   runs as its own process (`src/host/main.ts`, `createOpenuiHost`) serving

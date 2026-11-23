@@ -77,6 +77,16 @@ into `client/frames/<name>.js`
 the host and, bundled into the runner, inside the sandbox: they read Project
 files only through a `SourceReader` handed to them.
 
+The host loads `esbuild`, `tailwindcss` and `@tailwindcss/oxide` lazily with
+`require` ([`src/host/native.ts`](src/host/native.ts), `nativeOf` and
+`moduleNative`), never with a value `import()`: esbuild cannot be bundled and
+oxide's `.node` file fails the host build. A runner job rejects with the load
+error when esbuild cannot load. The runner script is read on first use
+(`readRunnerBesideModule`), and a failed read is remembered. The operations
+take their kernel services as ports
+([`src/host/ports.ts`](src/host/ports.ts), `PapercraftPorts`,
+`kernelPapercraftPorts`).
+
 ## Contracts provided
 
 All are exported from `papercraft/contracts`
@@ -349,7 +359,9 @@ pinned comments. Load it before writing a papercraft fence.", and the body of
 [`src/host/skills/papercraft.md`](src/host/skills/papercraft.md): the fence and
 its identity, the patch rule, `Export`, data and local state, repository
 libraries, how to write schema files, and how to answer comments. It tells the
-agent to load `openui` first. A registration that throws leaves the skill out
+agent to load `openui` first. The body is read in `activate`, not at import
+([`src/host/skill.ts`](src/host/skill.ts), `readSkillBesideModule`). A
+registration that throws leaves the skill out, without retry
 ([`src/host/index.ts`](src/host/index.ts)). The body is at most 8,000
 characters ([`tests/skill.test.ts`](tests/skill.test.ts)).
 

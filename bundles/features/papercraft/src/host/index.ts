@@ -8,8 +8,6 @@
 // `comments/v1`, consumed through structural copies of their contracts so
 // this bundle never imports theirs at compile time.
 
-import { readFileSync } from 'node:fs';
-
 import {
   type Cleanup,
   type Disposable,
@@ -24,23 +22,16 @@ import { cwdEvent } from '../contracts/index.js';
 import { createLibraryHooks } from './library.js';
 import { createPrograms } from './programs.js';
 import { sandboxJobRunner } from './sandbox.js';
-
-/** D28's `papercraft` skill; its body is the committed text. */
-const skill = {
-  name: 'papercraft',
-  description:
-    'Previews repository components and exports live in the conversation: OpenUI Lang programs in papercraft fences, with the repository library, Export and pinned comments. Load it before writing a papercraft fence.',
-  allowedTools: ['comment_reply'],
-  body: readFileSync(
-    new URL('./skills/papercraft.md', import.meta.url),
-    'utf8',
-  ).trim(),
-};
-
-/** D28's options: after `openui`'s 3400, listed and loaded on demand. */
-const skillOptions = { order: 3410, alwaysAvailable: false } as const;
+import {
+  PAPERCRAFT_SKILL_OPTIONS,
+  papercraftSkillOf,
+  readSkillBesideModule,
+} from './skill.js';
 
 export const activate = ({ services }: HostContext): Cleanup => {
+  // D28's `papercraft` skill, read beside this module at activation (S57 D5).
+  const skill = papercraftSkillOf(readSkillBesideModule());
+
   // Papercraft fences (D10, D14): the programs service over the sandbox, its
   // binding read from the Thread's `papercraft.cwd/v1` events.
   const programs = createPrograms(services, {
@@ -70,7 +61,9 @@ export const activate = ({ services }: HostContext): Cleanup => {
   // fails (`unavailable_tool`) leaves it out (PC33).
   let registered: Disposable | undefined;
   try {
-    registered = services.use(SkillsV1).register(skill, skillOptions);
+    registered = services
+      .use(SkillsV1)
+      .register(skill, PAPERCRAFT_SKILL_OPTIONS);
   } catch {
     registered = undefined;
   }

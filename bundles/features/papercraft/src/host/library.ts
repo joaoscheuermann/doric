@@ -5,17 +5,51 @@
 
 import { createHash } from 'node:crypto';
 
-import { ContractError, EventsV1, type Services } from 'bundle/contracts';
-import {
-  type CwdChanged,
-  type PromptStarted,
-  RuntimeThreadsV1,
-  type ThreadEvent,
-} from 'runtime/contracts';
+import { type Call, ContractError, type Services } from 'bundle/contracts';
+import type { CwdChanged, PromptStarted } from 'runtime/contracts';
 
 import { cwdEvent } from '../contracts/index.js';
 import type { LibraryComponent } from '../sandbox/protocol.js';
-import type { LastAnswer, MemoEntry, ProgramsHost } from './programs.js';
+import {
+  kernelPapercraftPorts,
+  type PapercraftPorts,
+  type PapercraftRow,
+} from './ports.js';
+import type {
+  LastAnswer,
+  MemoEntry,
+  ProgramOperations,
+  ProgramsHost,
+} from './programs.js';
+
+/** The hook fields the library entry reads. */
+export type PromptStartedFields = Pick<
+  PromptStarted,
+  'projectId' | 'threadId' | 'promptId' | 'cwd'
+>;
+export type CwdChangedFields = Pick<
+  CwdChanged,
+  'projectId' | 'threadId' | 'promptId' | 'cwd'
+>;
+
+/**
+ * D10/D28's per-Thread entries over `ports` (no `services.provide`). Behaviour unchanged: `promptStarted` reads the rows
+ * after the cursor (with `call`), appends `papercraft.cwd/v1` when `cwd` differs from the last binding (with `call`),
+ * once the skill is loaded gives the library instruct when its digest changed (with `call`; a refused or rejected
+ * instruct records nothing), then starts `programs.libraryFor` without awaiting it. `cwdChanged` does steps 1–3 only
+ * when the input has a `promptId`. Both never reject. `cwdAt` reads past the cursor (with `call`) when needed; never
+ * rejects.
+ */
+export interface LibraryOperations {
+  promptStarted(input: PromptStartedFields, call?: Call): Promise<void>;
+  cwdChanged(input: CwdChangedFields, call?: Call): Promise<void>;
+  bindingAt(threadId: string, turnSequence: number): string | undefined;
+  cwdAt(
+    scope: { readonly projectId: string; readonly threadId: string },
+    turnSequence: number,
+    call?: Call,
+  ): Promise<string | undefined>;
+}
 
 /** The reason the library instruct is given under (D28). */
 export const LIBRARY_REASON = 'library';
@@ -70,7 +104,7 @@ const record = (value: unknown): Record<string, unknown> | undefined =>
     : undefined;
 
 /** Applies the events read after the cursor: cwd pairs, the skill load, rewinds. */
-const apply = (entry: ThreadEntry, events: readonly ThreadEvent[]): void => {
+const apply = (entry: ThreadEntry, events: readonly PapercraftRow[]): void => {
   for (const { sequence, type, event } of events) {
     const body = record(event);
 
@@ -106,29 +140,11 @@ const apply = (entry: ThreadEntry, events: readonly ThreadEvent[]): void => {
   }
 };
 
-/**
- * Creates the hooks over one programs host and provides its
- * `papercraft.programs/v1`, whose `library` binds through them; each call
- * holds its own entries.
- */
-export const createLibraryHooks = (
-  services: Services,
-  programs: ProgramsHost,
-): LibraryHooks => {
+export const createLibraryOperations = (
+  ports: Pick<PapercraftPorts, 'threads' | 'appendCwd'>,
+  programs: Pick<ProgramOperations, 'libraryFor' | 'lastAnswerOf' | 'memoOf'>,
+): LibraryOperations => {
   const entries = new Map<string, ThreadEntry>();
-
-  // The hooks hold the bindings `papercraft.programs/v1.library` reads, so
-  // they serve it. A second set of hooks over the same services (a host
-  // restarted over a live log) leaves the first provider in place.
-  try {
-    services.provide(programs.service);
-  } catch (error) {
-    if (
-      !(error instanceof ContractError && error.code === 'provider_conflict')
-    ) {
-      throw error;
-    }
-  }
 
   const entryOf = (threadId: string): ThreadEntry => {
     let entry = entries.get(threadId);
@@ -141,11 +157,13 @@ export const createLibraryHooks = (
   };
 
   /** Reads and applies the events after the cursor; rejects when the read fails. */
-  const read = (threadId: string, entry: ThreadEntry): Promise<void> => {
+  const read = (
+    threadId: string,
+    entry: ThreadEntry,
+    call: Call | undefined,
+  ): Promise<void> => {
     const next = entry.reading.then(async () => {
-      const log = await services
-        .use(RuntimeThreadsV1)
-        .threadEvents({ id: threadId, afterSequence: entry.cursor });
+      const log = await ports.threads.eventsAfter(threadId, entry.cursor, call);
 
       if (log === undefined) return;
       apply(entry, log.events);
@@ -174,13 +192,14 @@ export const createLibraryHooks = (
       readonly cwd: string;
     },
     job: boolean,
+    call: Call | undefined,
   ): Promise<void> => {
     const { projectId, threadId, promptId, cwd } = input;
     const entry = entryOf(threadId);
 
     // 1. The events after the cursor; a failed read ends the hook.
     try {
-      await read(threadId, entry);
+      await read(threadId, entry, call);
     } catch {
       return;
     }
@@ -188,9 +207,7 @@ export const createLibraryHooks = (
     // 2. The cwd event, when the directory differs from the last binding.
     if (cwd !== entry.bindings.at(-1)?.cwd) {
       try {
-        await services
-          .use(EventsV1, { projectId, threadId, promptId })
-          .append(cwdEvent, { cwd });
+        await ports.appendCwd({ projectId, threadId, promptId }, cwd, call);
       } catch {
         // `lastCwd` changes only through events read: the next hook appends.
       }
@@ -213,13 +230,16 @@ export const createLibraryHooks = (
 
       if (digest !== entry.lastInstruct?.digest) {
         try {
-          const given = await services.use(RuntimeThreadsV1).instruct({
-            id: threadId,
-            prompt: text.text,
-            reason: LIBRARY_REASON,
-            promptId,
-            retain: true,
-          });
+          const given = await ports.threads.instruct(
+            {
+              id: threadId,
+              prompt: text.text,
+              reason: LIBRARY_REASON,
+              promptId,
+              retain: true,
+            },
+            call,
+          );
 
           // A refused instruct records nothing, so the next hook tries again.
           if (given.status === 'steered' || given.status === 'queued') {
@@ -236,24 +256,49 @@ export const createLibraryHooks = (
   };
 
   return {
-    promptStarted: (input) => hook(input, true),
-    cwdChanged: async (input) => {
+    promptStarted: (input, call) => hook(input, true, call),
+    cwdChanged: async (input, call) => {
       const { promptId } = input;
       if (promptId === undefined) return;
 
-      await hook({ ...input, promptId }, false);
+      await hook({ ...input, promptId }, false, call);
     },
     bindingAt,
-    cwdAt: async ({ threadId }, turnSequence) => {
+    cwdAt: async ({ threadId }, turnSequence, call) => {
       const entry = entryOf(threadId);
 
       if (turnSequence > entry.cursor) {
-        await read(threadId, entry).catch(() => undefined);
+        await read(threadId, entry, call).catch(() => undefined);
       }
 
       return bindingAt(threadId, turnSequence);
     },
   };
+};
+
+/**
+ * Creates the hooks over one programs host and provides its
+ * `papercraft.programs/v1`, whose `library` binds through them; each call
+ * holds its own entries.
+ */
+export const createLibraryHooks = (
+  services: Services,
+  programs: ProgramsHost,
+): LibraryHooks => {
+  // The hooks hold the bindings `papercraft.programs/v1.library` reads, so
+  // they serve it. A second set of hooks over the same services (a host
+  // restarted over a live log) leaves the first provider in place.
+  try {
+    services.provide(programs.service);
+  } catch (error) {
+    if (
+      !(error instanceof ContractError && error.code === 'provider_conflict')
+    ) {
+      throw error;
+    }
+  }
+
+  return createLibraryOperations(kernelPapercraftPorts(services), programs);
 };
 
 /** D8's line for a schema folder a repository rule hides (D28). */

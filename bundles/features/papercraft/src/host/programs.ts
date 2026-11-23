@@ -15,7 +15,6 @@ import {
 
 import {
   type ExportAnswer,
-  FilesV1,
   type LibraryAnswer,
   type ModuleEntries,
   type ModuleRef,
@@ -38,8 +37,10 @@ import {
   windowServes,
 } from './compile.js';
 import { compileStyles, type StyleAsset } from './css.js';
-import { probeBytes, probeRepositoryRoot, probeSource } from './files.js';
+import { projectReaders } from './files.js';
+import { moduleNative, type NativePackages } from './native.js';
 import { projectPath } from './paths.js';
+import { kernelPapercraftPorts, type PapercraftFiles } from './ports.js';
 import { type SandboxBundler, sandboxBundleOf } from './sandbox.js';
 
 /** One file of a module, as the memo holds it. */
@@ -100,6 +101,40 @@ export interface ProgramsDeps {
   ) => Promise<string | undefined>;
   /** The clock of the 5-minute hold; `Date.now` when absent. */
   readonly now?: () => number;
+  /** esbuild and Tailwind; `moduleNative` when absent. */
+  readonly native?: NativePackages;
+}
+
+/** One file of a memo module as `Read` streams it: `path` is `<dir>/<file>`, `sha256` of `bytes`. */
+export interface ModuleFileBytes {
+  readonly path: string;
+  readonly sha256: string;
+  readonly bytes: Uint8Array;
+}
+
+/**
+ * The programs host without a service definition: memo, per-Project queue and failure rules unchanged (D14, D16).
+ * - `library`: `invalid_scope` ('papercraft.programs/v1 needs a Project and Thread scope.') without `projectId` and
+ *   `threadId` in `call.scope`; else `deps.cwdAt` then `none` or `libraryFor`. Never rejects for a library problem.
+ * - `export`: same scope rule; reads the source with `call` (`projectReaders(files, {projectId, call})`), runs the
+ *   bundle job through `deps.runJob`; answers `ready`/`failed` (≤ 4,096 characters).
+ * - `moduleFiles`: same scope rule; the files of the memo module whose `ref.dir` is `dir` in the call's Project, in
+ *   path order (touching it); `not_found` "No module <dir> is in the host memo." when none.
+ * - `libraryFor`, `lastAnswerOf`, `memoOf`: as today; the library job reads with no call (detached, D2).
+ */
+export interface ProgramOperations {
+  library(
+    input: { readonly turnSequence: number },
+    call: Call,
+  ): Promise<LibraryAnswer>;
+  export(
+    input: { readonly path: string; readonly name?: string },
+    call: Call,
+  ): Promise<ExportAnswer>;
+  moduleFiles(dir: string, call: Call): readonly ModuleFileBytes[];
+  libraryFor(projectId: string, cwd: string): Promise<LibraryAnswer>;
+  lastAnswerOf(projectId: string, cwd: string): LastAnswer | undefined;
+  memoOf(projectId: string, root: string): MemoEntry | undefined;
 }
 
 export interface ProgramsHost {
@@ -214,15 +249,13 @@ const scopeOf = (call: Call): { projectId: string; threadId: string } => {
   return { projectId, threadId };
 };
 
-/**
- * Creates the programs host over `services` and `deps`. Each call makes an
- * independent memo and queue: two hosts share nothing. Never throws.
- */
-export const createPrograms = (
-  services: Services,
+/** Creates the operations over `files`; independent memo and queue per call; no I/O; never throws. */
+export const createProgramOperations = (
+  files: PapercraftFiles,
   deps: ProgramsDeps,
-): ProgramsHost => {
+): ProgramOperations => {
   const now = deps.now ?? Date.now;
+  const native = deps.native ?? moduleNative;
   /** Least recently used first: a use moves its key to the end. */
   const memo = new Map<string, MemoEntry>();
   const lastRoots = new Map<string, string>();
@@ -342,7 +375,7 @@ export const createPrograms = (
       return first;
     }
 
-    const { build } = await import('esbuild');
+    const { build } = native.esbuild();
     const unserved: string[] = [];
     for (const specifier of first.windowSpecifiers) {
       if (!(await windowServes(build, specifier))) unserved.push(specifier);
@@ -358,7 +391,7 @@ export const createPrograms = (
     projectId: string,
     styles: Record<string, string>,
   ) => {
-    const files = () => services.use(FilesV1, { projectId });
+    const at = { projectId };
     const read: Record<string, string | null> = {};
 
     return {
@@ -366,7 +399,7 @@ export const createPrograms = (
         const known = styles[path];
         if (known !== undefined) return known;
 
-        const outcome = await files().content({ path });
+        const outcome = await files.content(path, at);
         if (outcome.status !== 'ready') {
           throw new Error(
             `The Project sandbox is not ready to read "${path}" (${outcome.status}).`,
@@ -384,12 +417,12 @@ export const createPrograms = (
       },
       readBytes: async (path: string): Promise<Uint8Array | undefined> => {
         const outcome = await Promise.resolve()
-          .then(() => files().content({ path, encoding: 'base64' }))
+          .then(() => files.readBytes(path, at))
           .catch(() => undefined);
         const value = outcome?.status === 'ready' ? outcome.value : undefined;
         const bytes =
           value?.status === 'read' && !value.truncated
-            ? Buffer.from(value.content, 'base64')
+            ? value.bytes
             : undefined;
         read[path] = bytes === undefined ? null : sha256(bytes);
 
@@ -404,7 +437,7 @@ export const createPrograms = (
     projectId: string,
     output: Extract<LibraryOutput, { status: 'built' }>,
   ): Promise<MemoEntry> => {
-    const { build } = await import('esbuild');
+    const { build } = native.esbuild();
     const js =
       output.hostSpecifiers.length === 0
         ? output.js
@@ -416,6 +449,7 @@ export const createPrograms = (
       sources: new Map(Object.entries(output.sources)),
       globalCss: output.globalCss,
       componentCss: output.componentCss,
+      native,
     });
 
     return {
@@ -651,13 +685,16 @@ export const createPrograms = (
           };
     };
 
+    const readers = projectReaders(files, { projectId, call });
+
     try {
       const compiled = await compileComponent(
-        (file) => probeSource(services, call, file),
+        (file) => readers.source(file),
         { path, ...(input.name === undefined ? {} : { entry: input.name }) },
         bundler,
-        (file) => probeBytes(services, call, file),
-        (dir) => probeRepositoryRoot(services, call, dir),
+        readers.bytes,
+        readers.isRepositoryRoot,
+        native,
       );
       const module = moduleOf(
         builtFiles(compiled.js, compiled.css, compiled.assets),
@@ -673,54 +710,69 @@ export const createPrograms = (
     }
   };
 
-  /* `read`. */
+  /* `moduleFiles`. */
 
-  const read = (dir: string, call: Call): ModuleEntries => {
+  const moduleFiles = (dir: string, call: Call): readonly ModuleFileBytes[] => {
     const { projectId } = scopeOf(call);
     const prefix = `${projectId}\0`;
     const key = [...memo.entries()].find(
       ([name, entry]) =>
         name.startsWith(prefix) && entry.module?.ref.dir === dir,
     )?.[0];
-    const files = key === undefined ? undefined : touch(key)?.module?.files;
+    const found = key === undefined ? undefined : touch(key)?.module?.files;
 
-    if (files === undefined) {
+    if (found === undefined) {
       throw new ContractError(
         'not_found',
         `No module ${dir} is in the host memo.`,
       );
     }
 
-    return {
-      entries: files.map((file) => ({
-        path: `${dir}/${file.path}`,
-        sha256: file.sha256,
-        base64: Buffer.from(file.bytes).toString('base64'),
-      })),
-    };
+    return found.map((file) => ({
+      path: `${dir}/${file.path}`,
+      sha256: file.sha256,
+      bytes: file.bytes,
+    }));
   };
+
+  return {
+    library: async (input, call) => {
+      const scope = scopeOf(call);
+      const cwd = await deps.cwdAt(scope, input.turnSequence);
+
+      return cwd === undefined
+        ? { status: 'none' }
+        : libraryFor(scope.projectId, cwd);
+    },
+    export: exportModule,
+    moduleFiles,
+    libraryFor,
+    lastAnswerOf: (projectId, cwd) => lastAnswers.get(cwdKey(projectId, cwd)),
+    memoOf: (projectId, root) => memo.get(memoKey(projectId, 'library', root)),
+  };
+};
+
+/**
+ * Creates the programs host over `services` and `deps`. Each call makes an
+ * independent memo and queue: two hosts share nothing. Never throws.
+ */
+export const createPrograms = (
+  services: Services,
+  deps: ProgramsDeps,
+): ProgramsHost => {
+  const operations = createProgramOperations(
+    kernelPapercraftPorts(services).files,
+    deps,
+  );
 
   const service = defineService(PapercraftProgramsV1, {
     library: defineMethod({
       ...papercraftProgramsMethods.library,
-      execute: async (
-        input: { readonly turnSequence: number },
-        call: Call,
-      ): Promise<LibraryAnswer> => {
-        const scope = scopeOf(call);
-        const cwd = await deps.cwdAt(scope, input.turnSequence);
-
-        return cwd === undefined
-          ? { status: 'none' }
-          : libraryFor(scope.projectId, cwd);
-      },
+      execute: operations.library,
     }),
     export: defineMethod({
       ...papercraftProgramsMethods.export,
-      execute: (
-        input: { readonly path: string; readonly name?: string },
-        call: Call,
-      ): Promise<ExportAnswer> => exportModule(input, call),
+      execute: operations.export,
     }),
     read: defineMethod({
       ...papercraftProgramsMethods.read,
@@ -728,14 +780,20 @@ export const createPrograms = (
         input: { readonly dir: string },
         call: Call,
       ): Promise<ModuleEntries> =>
-        Promise.resolve().then(() => read(input.dir, call)),
+        Promise.resolve().then(() => ({
+          entries: operations.moduleFiles(input.dir, call).map((file) => ({
+            path: file.path,
+            sha256: file.sha256,
+            base64: Buffer.from(file.bytes).toString('base64'),
+          })),
+        })),
     }),
   });
 
   return {
     service,
-    libraryFor,
-    lastAnswerOf: (projectId, cwd) => lastAnswers.get(cwdKey(projectId, cwd)),
-    memoOf: (projectId, root) => memo.get(memoKey(projectId, 'library', root)),
+    libraryFor: operations.libraryFor,
+    lastAnswerOf: operations.lastAnswerOf,
+    memoOf: operations.memoOf,
   };
 };

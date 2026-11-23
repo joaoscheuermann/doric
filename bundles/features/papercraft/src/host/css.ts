@@ -45,6 +45,7 @@ import { readFile } from 'node:fs/promises';
 import { dirname, posix } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { moduleNative, type NativePackages } from './native.js';
 import {
   exportTarget,
   isRecord,
@@ -459,11 +460,10 @@ export const compileStyles = async (input: {
   readonly globalCss?: readonly string[];
   /** The Project stylesheets the components import, in import order. */
   readonly componentCss?: readonly string[];
+  /** `compile` and `Scanner`; `moduleNative` when absent (S57 D4). */
+  readonly native?: NativePackages;
 }): Promise<CompiledStyles> => {
-  const [{ compile }, { Scanner }] = await Promise.all([
-    import('tailwindcss'),
-    import('@tailwindcss/oxide'),
-  ]);
+  const { compile, Scanner } = (input.native ?? moduleNative).tailwind();
   const warnings = new Set<string>();
 
   let globals = [...(input.globalCss ?? [])];

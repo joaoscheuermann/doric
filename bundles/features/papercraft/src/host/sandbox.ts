@@ -32,6 +32,11 @@ import {
 } from '../sandbox/protocol.js';
 import type { BundledComponent } from './bundle.js';
 import { ensureIgnoreFiles } from './ignore.js';
+import { moduleNative, type NativePackages } from './native.js';
+import { kernelPapercraftPorts, type PapercraftLease } from './ports.js';
+
+/** The runner file relative to the bundle directory; what `host.assets` must match (S62). */
+export const PAPERCRAFT_RUNNER_PATH = 'dist/sandbox/runner.mjs';
 
 /** The part of a leased sandbox a bundle uses. */
 export type RunnerSandbox = Pick<
@@ -271,15 +276,21 @@ export const sandboxBundleOf = (output: RunnerOutput): SandboxBundle => {
   };
 };
 
+/** The runner as `RunnerScript` (bytes, first 16 hex of their SHA-256). Pure; never throws. */
+export const runnerScriptOf = (bytes: Uint8Array): RunnerScript => ({
+  bytes,
+  hash: createHash('sha256').update(bytes).digest('hex').slice(0, 16),
+});
+
 let defaultRunner: Promise<RunnerScript | undefined> | undefined;
 
-/** The runner this host's build wrote; `undefined` in a build without one. */
-const loadRunner = (): Promise<RunnerScript | undefined> => {
+/**
+ * Kernel: `../sandbox/runner.mjs` read beside this module (`dist/sandbox/runner.mjs` in a built or staged bundle), once
+ * per process at the first call; a failed read answers `undefined` on this and every later call. Reads nothing at import.
+ */
+export const readRunnerBesideModule = (): Promise<RunnerScript | undefined> => {
   defaultRunner ??= readFile(new URL('../sandbox/runner.mjs', import.meta.url))
-    .then((bytes) => ({
-      bytes,
-      hash: createHash('sha256').update(bytes).digest('hex').slice(0, 16),
-    }))
+    .then(runnerScriptOf)
     .catch(() => undefined);
 
   return defaultRunner;
@@ -293,7 +304,7 @@ export const sandboxBundler =
   (
     services: Services,
     call: Call,
-    runner: () => Promise<RunnerScript | undefined> = loadRunner,
+    runner: () => Promise<RunnerScript | undefined> = readRunnerBesideModule,
   ): SandboxBundler =>
   async (request) => {
     const script = await runner();
@@ -323,14 +334,17 @@ export type SandboxJob =
   | Omit<RunnerInput, 'esbuild' | 'version'>;
 
 /**
- * Runs jobs in the sandbox of a Project, over its current lease
- * (`runtime.lease/v1.withLease`, which never acquires one): `ProgramsDeps.runJob`.
- * No lease answers `unavailable` with "the Project has no sandbox lease".
+ * `ProgramsDeps.runJob` over `lease`: `runner()` (`undefined` → `unavailable` "this host was built without the sandbox
+ * runner"), the esbuild `version` from `native`, then the job in the Project's sandbox through `lease.run`; a lease
+ * state other than `ready` → `unavailable` "the Project has no sandbox lease (<status>)". The job steps are today's
+ * (`ensureIgnoreFiles`, runner copy, input, `node runner.mjs` within 120 s, output read, folder removed). Rejects only
+ * with `lease.run`'s rejection.
  */
-export const sandboxJobRunner =
+export const jobRunnerOver =
   (
-    services: Services,
-    runner: () => Promise<RunnerScript | undefined> = loadRunner,
+    lease: PapercraftLease,
+    runner: () => Promise<RunnerScript | undefined>,
+    native: NativePackages,
   ) =>
   async (
     projectId: string,
@@ -345,25 +359,24 @@ export const sandboxJobRunner =
       };
     }
 
-    const { version } = await import('esbuild');
-    const outcome = await services
-      .use(RuntimeLeaseV1, { projectId })
-      .withLease(
-        (sandbox): Promise<LibraryOutput | RunnerOutput> =>
-          job.kind === 'library'
-            ? libraryInSandbox(
-                sandbox,
-                { ...job, esbuild: SANDBOX_ESBUILD, version },
-                script,
-                projectId,
-              )
-            : bundleOutputInSandbox(
-                sandbox,
-                { ...job, esbuild: SANDBOX_ESBUILD, version },
-                script,
-                projectId,
-              ),
-      );
+    const { version } = native.esbuild();
+    const outcome = await lease.run(
+      projectId,
+      (sandbox): Promise<LibraryOutput | RunnerOutput> =>
+        job.kind === 'library'
+          ? libraryInSandbox(
+              sandbox,
+              { ...job, esbuild: SANDBOX_ESBUILD, version },
+              script,
+              projectId,
+            )
+          : bundleOutputInSandbox(
+              sandbox,
+              { ...job, esbuild: SANDBOX_ESBUILD, version },
+              script,
+              projectId,
+            ),
+    );
 
     return outcome.status === 'ready'
       ? outcome.value
@@ -372,3 +385,17 @@ export const sandboxJobRunner =
           reason: `the Project has no sandbox lease (${outcome.status})`,
         };
   };
+
+/**
+ * Runs jobs in the sandbox of a Project, over its current lease
+ * (`runtime.lease/v1.withLease`, which never acquires one): `ProgramsDeps.runJob`.
+ * No lease answers `unavailable` with "the Project has no sandbox lease".
+ */
+export const sandboxJobRunner = (
+  services: Services,
+  runner: () => Promise<RunnerScript | undefined> = readRunnerBesideModule,
+): ((
+  projectId: string,
+  job: SandboxJob,
+) => Promise<LibraryOutput | RunnerOutput>) =>
+  jobRunnerOver(kernelPapercraftPorts(services).lease, runner, moduleNative);
