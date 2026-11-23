@@ -25,12 +25,16 @@ const containerFrom = (
 });
 
 /**
- * Reads one sandbox's resources through its provider. A provider that offers no
- * reading, or that fails, leaves the sandbox a working sandbox: the monitor
- * answers `unavailable` rather than letting a read bring a Project down.
+ * Reads one sandbox's resources through its provider: `stats()`'s reading as
+ * `{status: 'ready', at, …}`, or `{status: 'unavailable', at}` when the
+ * sandbox has no `stats`, it answers undefined, or it throws. A provider that
+ * offers no reading, or that fails, leaves the sandbox a working sandbox: the
+ * monitor answers `unavailable` rather than letting a read bring a Project
+ * down. `at` is `now` (default the current time), never the provider's.
+ * Never rejects.
  */
 export const readSandboxResources = async (
-  sandbox: Sandbox,
+  sandbox: Pick<Sandbox, 'stats'>,
   now?: Date,
 ): Promise<ContainerResources> => {
   const at = (now ?? new Date()).toISOString();

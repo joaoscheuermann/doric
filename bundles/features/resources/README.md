@@ -176,6 +176,23 @@ and `readSandboxResources`:
 - `readSandboxResources(sandbox: Sandbox, now?: Date): Promise<ContainerResources>`
   — one sandbox reading, as described under [`project()`](#project).
 
+### Process entry (S50b)
+
+The bundle also has a process entry, [`src/host/main.ts`](src/host/main.ts),
+built to `dist/host/main.mjs`, for the bundle-process runtime
+([bundle processes](../../../docs/features/bundle-processes.md)). It calls
+`runBundle` with `ResourcesService` (`resources/v1`) listed statically. Every
+method fails `unavailable` before activation.
+
+- `Host` answers the machine reading.
+- `Project` sends one `runtime.lease/v1` `Stats` and answers `ready` with the
+  reading, or `{ status }` for a lease status (`pending`, `unavailable`,
+  `expired`, `missing`). Any other failure rejects with its code: a runtime
+  that is down is not hidden.
+
+The kernel entry and the manifest are unchanged until S62, which requires
+`runtime.lease/v1@^1.4.0`.
+
 ## Client part
 
 ### Activation

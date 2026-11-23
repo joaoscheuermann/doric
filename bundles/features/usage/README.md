@@ -181,6 +181,28 @@ workspace's contracts module ([`src/client/api/workspace.ts`](src/client/api/wor
 the `usage/v1` service of [`src/host/usage.ts`](src/host/usage.ts). The part
 keeps no state.
 
+### Process entry (S50c)
+
+The bundle also has a process entry, [`src/host/main.ts`](src/host/main.ts),
+built to `dist/host/main.mjs`, for the bundle-process runtime
+([bundle processes](../../../docs/features/bundle-processes.md)). It calls
+`runBundle` with `UsageService` (`usage/v1`) listed statically, over
+`runtime.usage/v1`, `runtime.threads/v1`, `host-config/v1` and `models/v1`.
+Every method fails `unavailable` before activation; routed failures keep their
+codes.
+
+- `Thread` answers `{}` when there is no stored usage; otherwise it fills a
+  missing context window from the model catalog, only with a whole number. A
+  failed `ContextWindow` read is ignored.
+- `CompactionTarget` answers the stored `pressurePercent`, or the default 80.
+- `SetCompactionTarget` replaces the host configuration with only
+  `execution.contextCompaction.pressurePercent` changed. It answers the new
+  value on `replaced` and the previous one on `invalid` or `rejected`; a
+  `host-config/v1` answer without a configuration fails `invalid_output`.
+
+The `usage/v1` proto header says version 1.1.0. The kernel entry and the
+manifest are unchanged until S62, which provides `usage/v1@1.1.0`.
+
 ## Client part
 
 [`src/client/index.ts`](src/client/index.ts): `activate` creates one

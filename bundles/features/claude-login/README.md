@@ -183,6 +183,27 @@ callback server. That happens when a newer `start` replaces it, when its timer
 fires, when the signal of the `finish` waiting on it aborts, and when the
 bundle deactivates. A cancelled sign-in stores nothing.
 
+### Process entry (S50b)
+
+The bundle also has a process entry, [`src/host/main.ts`](src/host/main.ts),
+built to `dist/host/main.mjs`, for the bundle-process runtime
+([bundle processes](../../../docs/features/bundle-processes.md)). It calls
+`runBundle` with `LoginService` (`claude.login/v1`) listed statically. The
+sign-in logic lives in `createLoginSessions`; the kernel `loginService`
+delegates to it, so its behaviour is unchanged.
+
+- Before activation the routed service fails `unavailable` with "The Claude
+  sign-in is not ready."; deactivation cancels a waiting sign-in.
+- `Finish` stores the authorization through `secrets/v1`: `Create`; on
+  `credential_name_taken` it lists the credentials and updates the
+  `API_TOKEN` credential named `Claude`, or rethrows when there is none. An
+  answer without `credentialDescription` fails `invalid_output`.
+- The callback server listens on port 54545, falling back to 54546. `Finish`
+  can wait up to 10 minutes; the process transport (S60) must not shorten it.
+
+The kernel entry and the manifest are unchanged until S62, which provides
+`claude.login/v1@1.1.0`; `secrets/v1` stays required.
+
 ## Client part
 
 [`src/client/index.ts`](src/client/index.ts) `activate` uses `ui/v1` and

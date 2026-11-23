@@ -15,7 +15,8 @@
     "src/contracts/**/*.ts",
     "src/client/api/**/*.ts",
     "src/client/domain/**/*.ts",
-    "tests/*.ts"
+    "tests/*.ts",
+    "tests/support/**/*.ts"
   ],
   "references": [
     {

@@ -28,6 +28,7 @@ The reader needs to see how hard the agent's environment is working: how much CP
 
 - The `resources` bundle, version 1.1.5, provides `resources/v1@1.0.0`. It requires `runtime.lease/v1`, `ui/v1`, `regions/v1`, `workspace.selection/v1` and `runtime.records/v1`, and the desktop may call `resources/v1` with the scope keys `projectId`, `threadId` and `promptId` ([manifest.json](../../bundles/features/resources/manifest.json)). The bundle's [README](../../bundles/features/resources/README.md) describes the bundle, its contract and its development commands.
 - The host part provides `resources/v1`; the client part defines the element `<resources-monitor>` and adds it to the account status ([src/host/index.ts](../../bundles/features/resources/src/host/index.ts), [src/client/index.ts](../../bundles/features/resources/src/client/index.ts)).
+- A process entry, [src/host/main.ts](../../bundles/features/resources/src/host/main.ts), serves `resources/v1` in a bundle process (slice S50b of [grpc-processes](../designs/grpc-processes.md)); a failed `Project` read that is not a lease status rejects with its code. The manifest is unchanged until S62.
 
 ### The `resources/v1` contract
 

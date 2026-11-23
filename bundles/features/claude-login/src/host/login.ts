@@ -242,97 +242,155 @@ const storeAuthorization = async (
 };
 
 /**
- * The `claude.login/v1` service and the cleanup that cancels a waiting
- * sign-in when the bundle deactivates. The waiting sign-in lives in this
- * factory, so each activation gets its own.
+ * One Claude sign-in at a time, shared by the kernel service and the routed
+ * one. No I/O until `start`.
  */
-export const loginService = (deps: ClaudeLoginDeps = {}) => {
+export interface ClaudeLoginSessions {
+  /**
+   * As `claude.login/v1.Start`:
+   * - cancels a waiting sign-in (its `finish` then fails `claude_login_aborted`);
+   * - binds the loopback callback (port 54545, else 54546 when busy);
+   * - answers the `https:` authorization URL, with the sign-in waiting until
+   *   `finish`, a newer `start`, `cancel`, or `deps.timeoutMs`.
+   *
+   * Failures:
+   * - `claude_login_failed` when the authorization cannot be prepared (nothing
+   *   waits);
+   * - `claude_login_aborted` when `signal` is aborted once it is prepared (it
+   *   is cancelled and nothing waits).
+   */
+  start(signal: AbortSignal): Promise<ClaudeLoginStart>;
+  /**
+   * As `claude.login/v1.Finish`: waits for the waiting sign-in's callback,
+   * then calls `store(authorization)` once and answers what it answers. The
+   * sign-in no longer waits afterwards, whatever the outcome.
+   *
+   * Failures:
+   * - `claude_login_not_started`: none waits;
+   * - `claude_login_busy`: another `finish` waits on it;
+   * - `claude_login_aborted`: `signal` aborted (this cancels the sign-in), a
+   *   newer `start`, `cancel` or the timeout ended it; `store` is then never
+   *   called;
+   * - `claude_login_failed`: the authorization failed;
+   * - `store`'s rejection, unchanged.
+   *
+   * The authorization value is passed only to `store`; it is never logged or
+   * answered.
+   */
+  finish<C>(
+    signal: AbortSignal,
+    store: (authorization: string) => Promise<C>,
+  ): Promise<C>;
+  /** Cancels the waiting sign-in, if any; its callback server closes. Idempotent. */
+  cancel(): void;
+}
+
+/** Creates the sessions with `deps`' seams (each defaults to the real OAuth piece). */
+export const createLoginSessions = (
+  deps: ClaudeLoginDeps = {},
+): ClaudeLoginSessions => {
   const resolved = depsOf(deps);
   /** The sign-in waiting for the browser, when one is. */
   let pending: Pending | undefined;
 
   /** Cancels a sign-in: the authorization aborts and its server closes. */
-  const cancel = (session: Pending): void => {
+  const cancelSession = (session: Pending): void => {
     clearTimeout(session.timer);
     session.controller.abort();
     if (pending === session) pending = undefined;
   };
 
+  return {
+    start: async (signal) => {
+      if (pending !== undefined) cancelSession(pending);
+      const controller = new AbortController();
+      let started: Awaited<ReturnType<typeof begin>>;
+      try {
+        started = await begin(resolved, controller);
+      } catch (error) {
+        controller.abort();
+        throw failed(error);
+      }
+      if (signal.aborted) {
+        controller.abort();
+        throw aborted();
+      }
+      const session: Pending = {
+        controller,
+        authorization: started.authorization,
+        timer: setTimeout(() => cancelSession(session), resolved.timeoutMs),
+        finishing: false,
+      };
+      session.timer.unref?.();
+      pending = session;
+      return { url: started.url };
+    },
+    finish: async (signal, store) => {
+      const session = pending;
+      if (session === undefined) {
+        throw new ContractError(
+          'claude_login_not_started',
+          'No Claude sign-in is waiting; start one first.',
+        );
+      }
+      if (session.finishing) {
+        throw new ContractError(
+          'claude_login_busy',
+          'A Claude sign-in is already in progress.',
+        );
+      }
+      session.finishing = true;
+      const onAbort = (): void => cancelSession(session);
+      signal.addEventListener('abort', onAbort, { once: true });
+      let authorization: string;
+      try {
+        authorization = await session.authorization;
+      } catch (error) {
+        if (signal.aborted || session.controller.signal.aborted) {
+          throw aborted();
+        }
+        throw failed(error);
+      } finally {
+        signal.removeEventListener('abort', onAbort);
+        clearTimeout(session.timer);
+        if (pending === session) pending = undefined;
+      }
+      // A cancel that arrived with the callback still stores nothing.
+      if (signal.aborted) throw aborted();
+      return store(authorization);
+    },
+    cancel: () => {
+      if (pending !== undefined) cancelSession(pending);
+    },
+  };
+};
+
+/**
+ * The `claude.login/v1` service and the cleanup that cancels a waiting
+ * sign-in when the bundle deactivates. The waiting sign-in lives in this
+ * factory, so each activation gets its own.
+ */
+export const loginService = (deps: ClaudeLoginDeps = {}) => {
+  const sessions = createLoginSessions(deps);
+
   const service = defineService(ClaudeLoginV1, {
     start: defineMethod({
       expose: 'desktop',
       ...claudeLoginMethods.start,
-      execute: async (
-        _input: readonly [],
-        call: Call,
-      ): Promise<ClaudeLoginStart> => {
-        if (pending !== undefined) cancel(pending);
-        const controller = new AbortController();
-        let started: Awaited<ReturnType<typeof begin>>;
-        try {
-          started = await begin(resolved, controller);
-        } catch (error) {
-          controller.abort();
-          throw failed(error);
-        }
-        if (call.signal.aborted) {
-          controller.abort();
-          throw aborted();
-        }
-        const session: Pending = {
-          controller,
-          authorization: started.authorization,
-          timer: setTimeout(() => cancel(session), resolved.timeoutMs),
-          finishing: false,
-        };
-        session.timer.unref?.();
-        pending = session;
-        return { url: started.url };
-      },
+      execute: (_input: readonly [], call: Call): Promise<ClaudeLoginStart> =>
+        sessions.start(call.signal),
     }),
     finish: defineMethod({
       expose: 'desktop',
       ...claudeLoginMethods.finish,
-      execute: async (_input: readonly [], call: Call, services) => {
-        const session = pending;
-        if (session === undefined) {
-          throw new ContractError(
-            'claude_login_not_started',
-            'No Claude sign-in is waiting; start one first.',
-          );
-        }
-        if (session.finishing) {
-          throw new ContractError(
-            'claude_login_busy',
-            'A Claude sign-in is already in progress.',
-          );
-        }
-        session.finishing = true;
-        const onAbort = (): void => cancel(session);
-        call.signal.addEventListener('abort', onAbort, { once: true });
-        let authorization: string;
-        try {
-          authorization = await session.authorization;
-        } catch (error) {
-          if (call.signal.aborted || session.controller.signal.aborted) {
-            throw aborted();
-          }
-          throw failed(error);
-        } finally {
-          call.signal.removeEventListener('abort', onAbort);
-          clearTimeout(session.timer);
-          if (pending === session) pending = undefined;
-        }
-        // A cancel that arrived with the callback still stores nothing.
-        if (call.signal.aborted) throw aborted();
-        return storeAuthorization(services, call, authorization);
-      },
+      execute: (_input: readonly [], call: Call, services) =>
+        sessions.finish(call.signal, (authorization) =>
+          storeAuthorization(services, call, authorization),
+        ),
     }),
   });
 
-  const cleanup: Cleanup = () => {
-    if (pending !== undefined) cancel(pending);
-  };
+  const cleanup: Cleanup = () => sessions.cancel();
 
   return { service, cleanup };
 };

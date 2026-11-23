@@ -1,4 +1,4 @@
-// `usage/v1` (host, 1.0.0): a Thread's usage projection with its context
+// `usage/v1` (host, 1.1.0): a Thread's usage projection with its context
 // capacity filled from the live model catalog, the read behind
 // `GET /threads/:id/usage` and the footer's usage summary; on-demand
 // compaction and the compaction line. The `usage` bundle provides it.

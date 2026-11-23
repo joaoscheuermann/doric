@@ -891,3 +891,29 @@ to every host part.
   registers the `web` tool with `tools/v1` (`alwaysAvailable`, order 700),
   passing provider rejections through. The kernel entry is unchanged until
   S62, which requires `tools/v1@^1.5.0`.
+- 2026-11-23: phase 3, slice S50c, of
+  [`docs/designs/grpc-processes.md`](../designs/grpc-processes.md): `usage` has
+  its process entry, `src/host/main.ts` (built to `dist/host/main.mjs`),
+  calling `runBundle` with `UsageService` (`usage/v1`) listed statically, over
+  `runtime.usage/v1`, `runtime.threads/v1`, `host-config/v1` and `models/v1`.
+  Every method fails `unavailable` before activation; routed failures keep
+  their codes. `SetCompactionTarget` changes only
+  `execution.contextCompaction.pressurePercent`, and a `host-config/v1` answer
+  without a configuration fails `invalid_output`. The `usage/v1` proto header
+  says 1.1.0; the kernel entry and the manifest are unchanged until S62, which
+  provides `usage/v1@1.1.0`.
+- 2026-11-23: phase 3, slice S50b, of
+  [`docs/designs/grpc-processes.md`](../designs/grpc-processes.md):
+  `claude-login` and `resources` have process entries, `src/host/main.ts`
+  (built to `dist/host/main.mjs`), each calling `runBundle` with its service
+  listed statically and failing `unavailable` before activation.
+  `LoginService` (`claude.login/v1`) delegates to `createLoginSessions`, as the
+  kernel `loginService` now does; deactivation cancels a waiting sign-in;
+  `Finish` stores through `secrets/v1` (`Create`, or on `credential_name_taken`
+  `List` and `Update` of the `API_TOKEN` credential named `Claude`) and may wait
+  up to 10 minutes, which the S60 transport must not shorten.
+  `ResourcesService` (`resources/v1`) answers `Project` from one
+  `runtime.lease/v1` `Stats`; a lease status is answered as `{ status }`, and
+  any other failure rejects with its code so a down runtime is not hidden. The
+  kernel entries and manifests are unchanged until S62, which provides
+  `claude.login/v1@1.1.0` and requires `runtime.lease/v1@^1.4.0`.
