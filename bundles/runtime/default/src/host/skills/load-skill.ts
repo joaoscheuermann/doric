@@ -1,14 +1,14 @@
 import { posix } from 'node:path';
 
-import type { Call, Services } from 'bundle/contracts';
+import type { Call } from 'bundle/contracts';
 import type { ProviderMessage } from 'llms';
-import { RuntimeLeaseV1 } from 'runtime/contracts';
 import { defineTool, excerpt, type Tool } from 'tool';
 import { z } from 'zod';
 
 import { skillSourcesMethods } from '../../contracts/index.js';
+import type { SkillReadPorts } from '../ports.js';
 import { loadedSkills } from './loaded.js';
-import { type CatalogSkill, skillBody, skillSources } from './sources.js';
+import { type CatalogSkill, skillBody } from './sources.js';
 
 /** The longest result `load_skill` returns, before the `excerpt` marker. */
 const LOADED_SKILL_MAX_CHARS = 64_000;
@@ -17,7 +17,7 @@ const LOADED_SKILL_MAX_CHARS = 64_000;
 const read = async (
   { origin }: CatalogSkill,
   call: Call,
-  services: Services,
+  ports: SkillReadPorts,
 ): Promise<readonly string[]> => {
   switch (origin.kind) {
     case 'bundle':
@@ -25,13 +25,11 @@ const read = async (
     case 'workspace':
       return [
         `From the workspace: \`${origin.path}\`. Paths in it are relative to \`${posix.dirname(origin.path)}\`.`,
-        skillBody(
-          await services.use(RuntimeLeaseV1).readFile(origin.path, call),
-        ),
+        skillBody(await ports.lease.readFile(origin.path, call)),
       ];
     case 'source': {
       // The source bounds the read; the prompt's signal ends it.
-      const source = skillSources(services).find(
+      const source = (await ports.skillSources(call)).find(
         ({ bundleId }) => bundleId === origin.bundleId,
       );
       if (source === undefined)
@@ -96,7 +94,7 @@ export const loadSkillTool = (
   listed: () => ReadonlyMap<string, CatalogSkill>,
   history: () => readonly ProviderMessage[],
   call: Call,
-  services: Services,
+  ports: SkillReadPorts,
 ): Tool =>
   defineTool({
     name: LOAD_SKILL_TOOL,
@@ -111,13 +109,13 @@ export const loadSkillTool = (
       .strict(),
     output: z.string(),
     strict: true,
-    execute: async ({ name }) => {
+    execute: async ({ name }, _call, deps: SkillReadPorts) => {
       const skills = listed();
       const skill = skills.get(name);
       if (skill === undefined) throw unknownSkill(name, skills);
       let parts: readonly string[];
       try {
-        parts = await read(skill, call, services);
+        parts = await read(skill, call, deps);
       } catch (cause) {
         throw new Error(
           `The skill ${name} could not be loaded: ${cause instanceof Error ? cause.message : String(cause)}`,
@@ -138,5 +136,5 @@ export const loadSkillTool = (
         : fresh;
     },
   })
-    .bind(services)
+    .bind(ports)
     .toTool(call);

@@ -18,6 +18,7 @@ import {
   legacyHistoryFormat,
   rewind,
 } from './history.js';
+import { kernelBeforeModelRequest, kernelPorts } from './ports.js';
 import { createRunVariables } from './prompts/variables.js';
 
 /**
@@ -34,13 +35,21 @@ export const createExecutor = (
   builtInAgents: readonly AgentSummary[],
 ) => {
   const runVariables = createRunVariables(now);
+  const beforeModelRequest = kernelBeforeModelRequest(hooks);
 
   return defineService(ExecutorV1.id, {
     run: defineMethod({
       input: executorMethods.run.input,
       output: executorMethods.run.output,
       execute: (input, call, services) =>
-        runPrompt(input, call, services, hooks, runVariables, builtInAgents),
+        runPrompt(
+          input,
+          call,
+          kernelPorts(services),
+          beforeModelRequest,
+          runVariables,
+          builtInAgents,
+        ),
     }),
     checkpoint: defineMethod({
       input: executorMethods.checkpoint.input,
@@ -60,7 +69,8 @@ export const createExecutor = (
     compact: defineMethod({
       input: executorMethods.compact.input,
       output: executorMethods.compact.output,
-      execute: (input, call, services) => compactThread(input, call, services),
+      execute: (input, call, services) =>
+        compactThread(input, call, kernelPorts(services)),
     }),
   });
 };
@@ -68,7 +78,7 @@ export const createExecutor = (
 /** What a caller of `activate` may set; `now` defaults to `() => new Date()`. */
 export interface ActivateOptions {
   readonly now?: () => Date;
-  /** The built-in agent files. Default: `builtInAgentFiles`. */
+  /** The built-in agent files. Default: `builtInAgentFiles()`. */
   readonly builtInAgents?: readonly AgentFile[];
 }
 
@@ -84,7 +94,9 @@ export const activate = (
   { services }: HostContext,
   options: ActivateOptions = {},
 ): void => {
-  const builtIn = loadBuiltInAgents(options.builtInAgents ?? builtInAgentFiles);
+  const builtIn = loadBuiltInAgents(
+    options.builtInAgents ?? builtInAgentFiles(),
+  );
   const hooks = services.use(HooksV1);
 
   services.provide(agentsService(builtIn));

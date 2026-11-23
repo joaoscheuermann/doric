@@ -931,3 +931,13 @@ to every host part.
   `unavailable`, and the owner's `tool_error` is kept. `createToolHandlers`
   answers `Check` with the tool's `check` or the zod fallback. Manifests move
   to `tools/v1@1.6.0` in S62.
+- 2026-11-23: phase 3, slice S51c, of
+  [`docs/designs/grpc-processes.md`](../designs/grpc-processes.md): in
+  `runtime/default`, the kernel `Services` give way to a port object
+  (`DefaultPorts`, `kernelPorts`, `kernelBeforeModelRequest` in
+  `src/host/ports.ts`), and `load_skill` is bound to the ports. Prompt
+  templates and built-in agent files are read on first use through one
+  process-wide asset source (`src/host/assets.ts`: `defaultAssetPaths`,
+  `useAssetTexts`, `assetText`, `loadAssetTexts`; `lazyTemplate`), so no
+  module reads a file at import. `thread_execution_unavailable` is now a
+  `ContractError` with the same code and message. No other behavior change.

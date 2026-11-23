@@ -1,6 +1,6 @@
 import type { AgentSummary } from '../../contracts/index.js';
 import {
-  loadTemplate,
+  lazyTemplate,
   renderBlock,
   renderSection,
 } from '../prompts/templates.js';
@@ -30,14 +30,14 @@ const CHANGED_NAMES = [
 ];
 
 /** The `# Agents` section of the system prompt. */
-const catalogTemplate = loadTemplate(
-  new URL('../prompts/agents.md', import.meta.url),
+const catalogTemplate = lazyTemplate(
+  'src/host/prompts/agents.md',
   CATALOG_NAMES,
 );
 
 /** A mid-run "Agents changed" message. */
-const changedTemplate = loadTemplate(
-  new URL('../prompts/agents-changed.md', import.meta.url),
+const changedTemplate = lazyTemplate(
+  'src/host/prompts/agents-changed.md',
   CHANGED_NAMES,
 );
 
@@ -78,7 +78,7 @@ const fitRows = (template: string, agents: readonly AgentSummary[]) => {
 export const agentCatalog = (agents: readonly AgentSummary[]): string =>
   agents.length === 0
     ? ''
-    : renderBlock(catalogTemplate, fitRows(catalogTemplate, agents));
+    : renderBlock(catalogTemplate(), fitRows(catalogTemplate(), agents));
 
 /**
  * The body of an "Agents changed" message (no envelope), by `name`: the
@@ -103,8 +103,8 @@ export const agentCatalogChange = (
   });
   const removed = previous.filter(({ name }) => !names.has(name));
   if (added.length === 0 && removed.length === 0) return undefined;
-  return renderBlock(changedTemplate, {
-    added: added.length === 0 ? undefined : fitRows(changedTemplate, added),
+  return renderBlock(changedTemplate(), {
+    added: added.length === 0 ? undefined : fitRows(changedTemplate(), added),
     removed: removed.length === 0 ? undefined : { agents: removed },
   });
 };

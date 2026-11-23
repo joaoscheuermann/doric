@@ -1,20 +1,12 @@
 import { posix } from 'node:path';
 
-import {
-  type Call,
-  LogV1,
-  type Services,
-  type SkillRecord,
-  SkillsV1,
-} from 'bundle/contracts';
-import { RuntimeLeaseV1, RuntimeWorkspaceV1 } from 'runtime/contracts';
+import type { Call, SkillRecord } from 'bundle/contracts';
 
 import {
   type SkillSourceEntry,
-  type SkillSources,
-  SkillSourcesV1,
   skillSourcesMethods,
 } from '../../contracts/index.js';
+import type { DefaultPorts, SkillPorts, SkillSource } from '../ports.js';
 
 /** The folder of workspace skills, relative to the Thread's working directory. */
 const WORKSPACE_SKILLS_DIR = '.agents/skills';
@@ -30,9 +22,6 @@ const WORKSPACE_SCAN_TIMEOUT_MS = 5000;
 
 /** How long one skill source's `list` may take: the limit of the scan. */
 const SOURCE_LIST_TIMEOUT_MS = WORKSPACE_SCAN_TIMEOUT_MS;
-
-/** The id of the working directory's skills (`cwd/<name>`): no source takes it. */
-const WORKSPACE_SOURCE_ID = 'cwd';
 
 /** Where a catalog skill comes from, and what `load_skill` needs to read it. */
 type SkillOrigin =
@@ -77,12 +66,6 @@ export interface RunSkills {
   readonly server: readonly CatalogSkill[];
 }
 
-/** One provider of `default.skill-sources/v1`, named by its bundle id. */
-export interface SkillSource {
-  readonly bundleId: string;
-  readonly api: SkillSources;
-}
-
 /** What one skill source offered to one read. */
 export interface SourceSkills {
   readonly bundleId: string;
@@ -109,9 +92,9 @@ exit 0`;
 
 const bundleSkills = async (
   call: Call,
-  services: Services,
+  ports: Pick<DefaultPorts, 'skills'>,
 ): Promise<Pick<RunSkills, 'alwaysAvailable' | 'builtIn'>> => {
-  const registered = await services.use(SkillsV1).list(call);
+  const registered = await ports.skills.list(call);
   const alwaysAvailable: AlwaysAvailableSkill[] = [];
   const builtIn: CatalogSkill[] = [];
   for (const { skill, alwaysAvailable: always } of registered) {
@@ -125,10 +108,10 @@ const bundleSkills = async (
 const workspaceSkills = async (
   cwd: string,
   call: Call,
-  services: Services,
+  ports: Pick<DefaultPorts, 'lease'>,
 ): Promise<readonly CatalogSkill[]> => {
   const directory = posix.join(cwd, WORKSPACE_SKILLS_DIR);
-  const { exitCode, stdout } = await services.use(RuntimeLeaseV1).exec(
+  const { exitCode, stdout } = await ports.lease.exec(
     {
       cmd: ['sh', '-c', scanScript, 'sh', directory],
       timeoutMs: WORKSPACE_SCAN_TIMEOUT_MS,
@@ -154,20 +137,6 @@ const workspaceSkills = async (
   return skills;
 };
 
-/**
- * The providers of `default.skill-sources/v1` now, in provider order, but
- * the one whose bundle id is `cwd`: a snapshot, taken for one call.
- */
-export const skillSources = (services: Services): readonly SkillSource[] => {
-  const found: SkillSource[] = [];
-  services
-    .whenAvailable(SkillSourcesV1, (api, { bundleId }) => {
-      if (bundleId !== WORKSPACE_SOURCE_ID) found.push({ bundleId, api });
-    })
-    .dispose();
-  return found;
-};
-
 /** The bundle ids each prompt's Call has already warned about. */
 const warned = new WeakMap<Call, Set<string>>();
 
@@ -176,21 +145,13 @@ const warnLeftOut = (
   bundleId: string,
   reason: string,
   call: Call,
-  services: Services,
+  ports: Pick<DefaultPorts, 'log'>,
 ): void => {
   const seen = warned.get(call) ?? new Set<string>();
   warned.set(call, seen);
   if (seen.has(bundleId)) return;
   seen.add(bundleId);
-  try {
-    const logged: unknown = services
-      .use(LogV1)
-      .warn('Skill source left out', { bundleId, reason }, call);
-    // A log that fails leaves the skills as they are.
-    if (logged instanceof Promise) logged.catch(() => undefined);
-  } catch {
-    // A log that fails leaves the skills as they are.
-  }
+  ports.log.warn('Skill source left out', { bundleId, reason }, call);
 };
 
 /** `answer`, or a rejection once `ms` milliseconds pass without one. */
@@ -232,7 +193,7 @@ const listSource = async (
   { bundleId, api }: SkillSource,
   cwd: string,
   call: Call,
-  services: Services,
+  ports: Pick<DefaultPorts, 'log'>,
 ): Promise<SourceSkills> => {
   let answer: unknown;
   try {
@@ -242,13 +203,13 @@ const listSource = async (
       bundleId,
       error instanceof Error ? error.message : String(error),
       call,
-      services,
+      ports,
     );
     return { bundleId, skills: undefined };
   }
   const parsed = skillSourcesMethods.list.output.safeParse(answer);
   if (!parsed.success) {
-    warnLeftOut(bundleId, parsed.error.message, call, services);
+    warnLeftOut(bundleId, parsed.error.message, call, ports);
     return { bundleId, skills: undefined };
   }
   return {
@@ -272,12 +233,12 @@ const listSource = async (
 export const readRunSkills = async (
   cwd: string,
   call: Call,
-  services: Services,
+  ports: SkillPorts,
 ): Promise<RunSkills> => {
   const [bundle, workspace, sources] = await Promise.all([
-    bundleSkills(call, services),
-    readWorkspaceSkills(cwd, call, services),
-    readSourceSkills(cwd, call, services),
+    bundleSkills(call, ports),
+    readWorkspaceSkills(cwd, call, ports),
+    readSourceSkills(cwd, call, ports),
   ]);
   return {
     ...bundle,
@@ -294,10 +255,10 @@ export const readRunSkills = async (
 export const readWorkspaceSkills = (
   cwd: string,
   call: Call,
-  services: Services,
+  ports: Pick<DefaultPorts, 'lease'>,
 ): Promise<readonly CatalogSkill[]> =>
   // Best effort: a sandbox that cannot answer offers no skill.
-  workspaceSkills(cwd, call, services).catch(() => []);
+  workspaceSkills(cwd, call, ports).catch(() => []);
 
 /**
  * The skills of every `default.skill-sources/v1` provider (but `cwd`), in
@@ -306,16 +267,16 @@ export const readWorkspaceSkills = (
  * what fails the contract's schema offers `skills: undefined` this time, and
  * is logged through `log/v1` once per `call`. Never rejects.
  */
-export const readSourceSkills = (
+export const readSourceSkills = async (
   cwd: string,
   call: Call,
-  services: Services,
-): Promise<readonly SourceSkills[]> =>
-  Promise.all(
-    skillSources(services).map((source) =>
-      listSource(source, cwd, call, services),
-    ),
+  ports: Pick<DefaultPorts, 'skillSources' | 'log'>,
+): Promise<readonly SourceSkills[]> => {
+  const sources = await ports.skillSources(call);
+  return Promise.all(
+    sources.map((source) => listSource(source, cwd, call, ports)),
   );
+};
 
 /**
  * The Thread's working directory now, from RuntimeWorkspaceV1.cwd(call).
@@ -323,10 +284,10 @@ export const readSourceSkills = (
  */
 export const currentCwd = async (
   call: Call,
-  services: Services,
+  ports: Pick<DefaultPorts, 'cwd'>,
 ): Promise<string | undefined> => {
   try {
-    return await services.use(RuntimeWorkspaceV1).cwd(call);
+    return await ports.cwd(call);
   } catch {
     // No provider, or one that cannot answer: the directory is unknown.
     return undefined;

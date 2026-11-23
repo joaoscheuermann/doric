@@ -4,6 +4,7 @@ import test from 'node:test';
 import type { Call } from 'bundle/contracts';
 import { createTestServices } from 'bundle/testing';
 
+import { kernelPorts } from '../src/host/ports.js';
 import { skillCatalog } from '../src/host/skills/catalog.js';
 import { loadSkillTool } from '../src/host/skills/load-skill.js';
 import { readRunSkills, readSourceSkills } from '../src/host/skills/sources.js';
@@ -72,7 +73,9 @@ const world = (sources: Readonly<Record<string, FakeSkillSource>>) => {
     services.call({ projectId, threadId, promptId: id });
   /** The catalog of one read of the run's skills in `/workspace`. */
   const catalog = async (call: Call = prompt()) =>
-    skillCatalog(await readRunSkills('/workspace', call, services.services));
+    skillCatalog(
+      await readRunSkills('/workspace', call, kernelPorts(services.services)),
+    );
   return {
     services,
     calls,
@@ -93,7 +96,7 @@ const world = (sources: Readonly<Record<string, FakeSkillSource>>) => {
           () => listed,
           () => [],
           call,
-          services.services,
+          kernelPorts(services.services),
         ).execute({ name }),
       );
     },
@@ -239,7 +242,7 @@ void test('S6 logs a source that keeps failing once per prompt, however often th
 
   await locators(first);
   await locators(first);
-  await readSourceSkills('/workspace', first, services.services);
+  await readSourceSkills('/workspace', first, kernelPorts(services.services));
 
   assert.deepEqual(warned(), ['broken']);
 

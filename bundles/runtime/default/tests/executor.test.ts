@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { AgentErrorObject } from 'agent';
-import { type CallScope, HooksV1 } from 'bundle/contracts';
+import { type CallScope, HooksV1, isContractError } from 'bundle/contracts';
 import { createTestServices } from 'bundle/testing';
 import type { ProviderMessage, ProviderRequest } from 'llms';
 import type { CwdRepo, ExecutorThread, InputSource } from 'runtime/contracts';
@@ -409,6 +409,28 @@ for (const { what, stored, issue } of [
     );
   });
 }
+
+void test('C4 refuses a Thread whose stored execution is unavailable with a ContractError thread_execution_unavailable, warning once and asking no model', async () => {
+  const harness = harnessOf(twoProviders());
+  const stored = { providerId: 'gone', model: 'second/model' };
+
+  const error: unknown = await harness.runThread('prompt', stored).then(
+    () => undefined,
+    (thrown: unknown) => thrown,
+  );
+
+  assert.ok(isContractError(error), `a ContractError, got ${String(error)}`);
+  assert.equal(error.code, 'thread_execution_unavailable');
+  assert.equal(
+    error.message,
+    unavailableMessage(stored.model, stored.providerId),
+  );
+  assert.equal(harness.requests.length, 0);
+  assert.equal(
+    harness.services.logs.filter(({ level }) => level === 'warn').length,
+    1,
+  );
+});
 
 void test('T-17 runs a Thread stored without an effort without one, though the default names one', async () => {
   const harness = harnessOf(twoProviders());

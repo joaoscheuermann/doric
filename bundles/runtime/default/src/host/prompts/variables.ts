@@ -1,6 +1,7 @@
-import type { Call, Services } from 'bundle/contracts';
+import type { Call } from 'bundle/contracts';
 import type { ConfigurationProfile } from 'host-config/contracts';
-import { RuntimeLeaseV1 } from 'runtime/contracts';
+
+import type { DefaultPorts } from '../ports.js';
 
 /**
  * The standard values the default system prompt renders, by the names
@@ -71,7 +72,7 @@ export const promptVariables: (input: {
 /**
  * Reads one run's prompt variables for the Thread's Project `projectId`, from
  * the configuration's `profile` (absent: no name, host zone), under the run's
- * `call` and `services`. Reads the clock once per call.
+ * `call` and `ports`. Reads the clock once per call.
  *
  * `os` is absent when there is no `runtime.lease/v1` provider, when
  * `describe` or `exec` rejects (or throws), or when the probe exits non-zero,
@@ -82,7 +83,7 @@ export type RunVariables = (
   projectId: string,
   profile: ConfigurationProfile | undefined,
   call: Call,
-  services: Services,
+  ports: Pick<DefaultPorts, 'lease'>,
 ) => Promise<PromptVariables>;
 
 /** The `os` value of a probe's stdout, or undefined when a line is missing or empty. */
@@ -108,9 +109,8 @@ export const createRunVariables: (now: () => Date) => RunVariables = (now) => {
   const readOs = async (
     projectId: string,
     call: Call,
-    services: Services,
+    { lease }: Pick<DefaultPorts, 'lease'>,
   ): Promise<string | undefined> => {
-    const lease = services.use(RuntimeLeaseV1);
     const { id } = await lease.describe(call);
     const key = JSON.stringify([projectId, id]);
     const cached = cache.get(key);
@@ -125,10 +125,10 @@ export const createRunVariables: (now: () => Date) => RunVariables = (now) => {
     return os;
   };
 
-  return async (projectId, profile, call, services) => {
+  return async (projectId, profile, call, ports) => {
     const at = now();
     // Best effort: a sandbox that cannot answer has no `os`.
-    const os = await readOs(projectId, call, services).catch(() => undefined);
+    const os = await readOs(projectId, call, ports).catch(() => undefined);
     return promptVariables({ profile, now: at, os });
   };
 };

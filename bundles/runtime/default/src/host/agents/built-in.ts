@@ -1,5 +1,4 @@
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
+import { assetText, builtInAgentPaths } from '../assets.js';
 
 /**
  * One agent definition file. `path` names the file in error messages; its
@@ -11,27 +10,9 @@ export interface AgentFile {
   readonly text: string;
 }
 
-/** The names of the agents shipped with the bundle, in order: `./<name>.md` each. */
-const BUILT_IN_AGENT_NAMES: readonly string[] = [
-  'triage',
-  'search',
-  'spec',
-  'review',
-  'plan',
-  'contracts',
-  'tests',
-  'implementation',
-  'cleanup',
-  'docs',
-];
-
 /**
- * The definitions shipped with the bundle: `./<name>.md` next to this module,
- * read with `readFileSync` at import (a missing file fails the import).
+ * The definitions shipped with the bundle, in order: `src/host/agents/<name>.md`, read through `assetText` on
+ * each call (no read at import).
  */
-export const builtInAgentFiles: readonly AgentFile[] = BUILT_IN_AGENT_NAMES.map(
-  (name) => {
-    const path = fileURLToPath(new URL(`./${name}.md`, import.meta.url));
-    return { path, text: readFileSync(path, 'utf8') };
-  },
-);
+export const builtInAgentFiles = (): readonly AgentFile[] =>
+  builtInAgentPaths.map((path) => ({ path, text: assetText(path) }));

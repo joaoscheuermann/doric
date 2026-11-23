@@ -4,6 +4,7 @@ import test from 'node:test';
 import { createTestServices } from 'bundle/testing';
 
 import { systemPromptWith } from '../src/host/executor.js';
+import { kernelPorts } from '../src/host/ports.js';
 import {
   type CatalogState,
   skillCatalog,
@@ -336,7 +337,7 @@ void test('L1 names a bundle skill by its name, a workspace skill cwd/<directory
   const call = services.call({ projectId, threadId, promptId });
 
   const catalog = skillCatalog(
-    await readRunSkills('/workspace', call, services.services),
+    await readRunSkills('/workspace', call, kernelPorts(services.services)),
   );
 
   assert.deepEqual(

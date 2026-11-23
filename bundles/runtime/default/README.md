@@ -48,7 +48,8 @@ The package exports `./contracts` ([`src/contracts/index.ts`](src/contracts/inde
 
 The bundle has no desktop part. The build copies every `.md` file below
 `src/host` into `dist/host`, since the host part reads its templates and agent
-files at import ([`packages/bundle/src/build/cli.ts`](../../../packages/bundle/src/build/cli.ts)).
+files at run time; no module reads a file at import, each text is read on first
+use through one process-wide asset source ([`src/host/assets.ts`](src/host/assets.ts)) ([`packages/bundle/src/build/cli.ts`](../../../packages/bundle/src/build/cli.ts)).
 
 A skill is a direct subdirectory of `src/skills` that holds a `SKILL.md`;
 `coding-workflow` is the only one. The build reads its YAML frontmatter,
@@ -76,12 +77,11 @@ through `skills/v1` for the bundle
    which receives the hook handle, the clock (`() => new Date()`) and the
    built-in agents.
 
-The built-in agent files are read with `readFileSync` when the host part is
-imported, before `activate`: a file that is missing fails the import of the
-part, and the loader quarantines the bundle with the code `invalid_part`
-([`src/host/agents/built-in.ts`](src/host/agents/built-in.ts)). When
+The built-in agent files are read on first use through the asset source, not
+at import: a file that is missing throws an `Error` naming its path when it is
+first read ([`src/host/agents/built-in.ts`](src/host/agents/built-in.ts)). When
 `activate` throws, the loader quarantines the bundle with the code
-`activate_failed`. Either way it logs `Bundle quarantined` with the reasons
+`activate_failed` and logs `Bundle quarantined` with the reasons
 ([`packages/bundle/src/runtime/activation.ts`](../../../packages/bundle/src/runtime/activation.ts)),
 and `executor/v1` is without a provider. The shipped host composition lists
 `executor/v1` under `required.contracts`, so the host logs

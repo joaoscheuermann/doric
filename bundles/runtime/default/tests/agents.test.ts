@@ -1057,7 +1057,7 @@ void test('AG11 a valid injected built-in agent activates and is listed as built
 void test('AG12 the shipped built-in agents activate and are listed in workflow order, each resolving to the common block then its own step', async () => {
   const { agents } = agentServices({
     cwd: null,
-    builtInAgents: builtInAgentFiles,
+    builtInAgents: builtInAgentFiles(),
   });
   const shipped = [
     {

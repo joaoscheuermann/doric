@@ -469,7 +469,7 @@ export interface HarnessOptions {
   readonly sources?: Readonly<Record<string, FakeSkillSource>>;
   /** The bundle's clock. Default: always `harnessNow`. */
   readonly now?: () => Date;
-  /** The built-in agent files `activate` loads. Default: none (`[]`), so tests see only the agents they inject; pass `builtInAgentFiles` for the shipped ones. */
+  /** The built-in agent files `activate` loads. Default: none (`[]`), so tests see only the agents they inject; pass `builtInAgentFiles()` for the shipped ones. */
   readonly builtInAgents?: readonly AgentFile[];
   /** A `runtime.workspace/v1` provider; without it the contract is unprovided. */
   readonly workspace?: FakeWorkspace;

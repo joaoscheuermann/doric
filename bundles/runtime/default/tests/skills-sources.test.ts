@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import { createTestServices } from 'bundle/testing';
 
+import { kernelPorts } from '../src/host/ports.js';
 import {
   frontmatterSummary,
   readRunSkills,
@@ -71,7 +72,7 @@ const read = async (
   const result = await readRunSkills(
     cwd,
     services.call(scope),
-    services.services,
+    kernelPorts(services.services),
   );
   return { result, calls };
 };

@@ -3,6 +3,8 @@ import { fileURLToPath } from 'node:url';
 
 import Mustache, { type RenderOptions, type TemplateSpans } from 'mustache';
 
+import { assetText } from '../assets.js';
+
 /**
  * The values a template renders, by name. A name the view lacks renders as
  * the empty string; a `#` section on it renders nothing; a `^` section on it
@@ -93,6 +95,26 @@ export const checkTemplate = (
  */
 export const loadTemplate = (url: URL, names: readonly string[]): string =>
   checkTemplate(readFileSync(url, 'utf8'), names, fileURLToPath(url));
+
+/**
+ * A template read on first use: `checkTemplate(assetText(path), names, path)`, cached until the installed texts
+ * change. Throws what `assetText` and `checkTemplate` throw, at the call, never at import.
+ */
+export const lazyTemplate = (
+  path: string,
+  names: readonly string[],
+): (() => string) => {
+  let source: string | undefined;
+  let checked = '';
+  return () => {
+    const text = assetText(path);
+    if (text !== source) {
+      checked = checkTemplate(text, names, path);
+      source = text;
+    }
+    return checked;
+  };
+};
 
 /** Renders values as written: prompts are read by a model, not a browser. */
 const options: RenderOptions = { escape: String };

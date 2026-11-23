@@ -1,7 +1,8 @@
-import type { Call, Services } from 'bundle/contracts';
+import type { Call } from 'bundle/contracts';
 
 import type { AgentSummary } from '../../contracts/index.js';
 import { bundleInstruction } from '../envelope.js';
+import type { AgentPorts } from '../ports.js';
 import { currentCwd } from '../skills/sources.js';
 import { agentCatalogChange } from './catalog.js';
 import { effectiveAgents, readWorkspaceAgents } from './definitions.js';
@@ -26,11 +27,17 @@ export interface LiveAgents {
  * Starts from the system prompt's agents (`cwd = thread.cwd`); no call
  * before the first `refresh`.
  */
+/** The run's agents when it starts. */
+export interface LiveAgentsStart {
+  readonly cwd: string;
+  readonly agents: readonly AgentSummary[];
+}
+
 export const liveAgents = (
-  start: { readonly cwd: string; readonly agents: readonly AgentSummary[] },
+  start: LiveAgentsStart,
   builtIn: readonly AgentSummary[],
   call: Call,
-  services: Services,
+  ports: AgentPorts,
 ): LiveAgents => {
   let cwd = start.cwd;
   let agents = start.agents;
@@ -40,12 +47,12 @@ export const liveAgents = (
   let running: Promise<unknown> = Promise.resolve();
 
   const check = async (): Promise<string | undefined> => {
-    const now = await currentCwd(call, services);
+    const now = await currentCwd(call, ports);
     if (now !== undefined && now !== cwd) {
       cwd = now;
       agents = effectiveAgents(
         builtIn,
-        await readWorkspaceAgents(now, call, services),
+        await readWorkspaceAgents(now, call, ports),
       );
     }
     const message = agentCatalogChange(baseline, agents);

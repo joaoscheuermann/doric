@@ -4,7 +4,7 @@ import type { RetainedReplacement } from '../compaction/rewrite.js';
 import { bundleInstruction } from '../envelope.js';
 import { retainedKey } from '../history.js';
 import {
-  loadTemplate,
+  lazyTemplate,
   renderBlock,
   renderSection,
 } from '../prompts/templates.js';
@@ -63,8 +63,8 @@ const LOADED_SKILLS_NAMES = [
 ];
 
 /** The body of the loaded-skills message. */
-const template = loadTemplate(
-  new URL('../prompts/loaded-skills.md', import.meta.url),
+const template = lazyTemplate(
+  'src/host/prompts/loaded-skills.md',
   LOADED_SKILLS_NAMES,
 );
 
@@ -84,12 +84,17 @@ const fencedTexts = (content: string): string[] => {
 };
 
 /** What ends the text of an entry a loaded-skills message cut: the end of an empty cut entry's text. */
-const cutMarker = fencedTexts(
-  renderSection(template, 'entries', [{ fence: '```', text: '', cut: true }]),
-)[0];
-if (cutMarker === undefined) {
-  throw new Error('loaded-skills.md renders no fenced entry.');
-}
+const cutMarker = (): string => {
+  const marker = fencedTexts(
+    renderSection(template(), 'entries', [
+      { fence: '```', text: '', cut: true },
+    ]),
+  )[0];
+  if (marker === undefined) {
+    throw new Error('loaded-skills.md renders no fenced entry.');
+  }
+  return marker;
+};
 
 /** A fence one backtick longer than the longest run in `text` (at least three). */
 const fenceFor = (text: string): string =>
@@ -122,8 +127,9 @@ const toolOutput = (content: string): string | undefined => {
 /** The fenced entries of a loaded-skills message, in their order. */
 const entries = (content: string): readonly LoadedSkill[] =>
   fencedTexts(content).flatMap((text) => {
-    const cut = text.endsWith(cutMarker);
-    const skill = skillOf(cut ? text.slice(0, -cutMarker.length) : text, cut);
+    const marker = cutMarker();
+    const cut = text.endsWith(marker);
+    const skill = skillOf(cut ? text.slice(0, -marker.length) : text, cut);
     return skill === undefined ? [] : [skill];
   });
 
@@ -175,7 +181,7 @@ const loadedEntry = ({ text, cut }: LoadedSkill): LoadedEntry => {
   const cutting = cut || text.length > LOADED_SKILL_MAX_CHARS_PER_ENTRY;
   const kept = cutting ? text.slice(0, LOADED_SKILL_MAX_CHARS_PER_ENTRY) : text;
   return {
-    fence: fenceFor(cutting ? `${kept}${cutMarker}` : kept),
+    fence: fenceFor(cutting ? `${kept}${cutMarker()}` : kept),
     text: kept,
     cut: cutting,
   };
@@ -219,7 +225,7 @@ export const loadedSkillsReplacement = (
     seen.add(skill.locator);
     const entry = loadedEntry(skill);
     fitted.push(entry);
-    used += renderSection(template, 'entries', [entry]).length;
+    used += renderSection(template(), 'entries', [entry]).length;
   }
   // The greedy pass: every other entry, while it fits.
   for (const skill of span) {
@@ -227,7 +233,7 @@ export const loadedSkillsReplacement = (
     if (seen.has(locator) || again.has(locator)) continue;
     seen.add(locator);
     const entry = loadedEntry(skill);
-    const length = renderSection(template, 'entries', [entry]).length;
+    const length = renderSection(template(), 'entries', [entry]).length;
     if (used + length <= totalMaxChars) {
       fitted.push(entry);
       used += length;
@@ -238,7 +244,7 @@ export const loadedSkillsReplacement = (
   if (fitted.length === 0 && omitted.length === 0) {
     return at === undefined ? undefined : { key: loadedSkillsKey };
   }
-  const body = renderBlock(template, {
+  const body = renderBlock(template(), {
     entries: fitted,
     omitted: omitted.length === 0 ? undefined : { skills: omitted },
   });

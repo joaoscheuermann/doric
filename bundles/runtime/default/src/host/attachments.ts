@@ -4,15 +4,9 @@ import type {
   ProviderMessage,
   ProviderRequest,
 } from 'llms';
-import {
-  type AttachmentContent,
-  attachmentReferences,
-} from 'runtime/contracts';
+import { attachmentReferences } from 'runtime/contracts';
 
-/** Reads one attachment the prompt's Project holds; undefined when it holds none. */
-export type AttachmentReader = (
-  id: string,
-) => Promise<AttachmentContent | undefined>;
+import type { ImageReader, ResolvedImage } from './ports.js';
 
 /**
  * The history stays text: a reader's image is the reference line their prompt
@@ -26,7 +20,7 @@ export type AttachmentReader = (
  */
 const resolveMessage = async (
   message: ProviderMessage,
-  read: AttachmentReader,
+  read: ImageReader,
   readsImages: boolean,
 ): Promise<ProviderMessage> => {
   if (
@@ -55,7 +49,7 @@ const resolveMessage = async (
     parts.push({ type: 'text', text: `${pending}[Image: ${content.name}]` });
     parts.push({
       type: 'image',
-      imageUrl: `data:${content.mediaType};base64,${content.bytes}`,
+      imageUrl: content.imageUrl,
     });
     pending = '';
   }
@@ -79,7 +73,7 @@ const withImageNotes = (text: string): string => {
 
 const resolveRequest = async <Request extends ProviderRequest<unknown>>(
   request: Request,
-  read: AttachmentReader,
+  read: ImageReader,
   readsImages: boolean,
 ): Promise<Request> => ({
   ...request,
@@ -98,11 +92,11 @@ const resolveRequest = async <Request extends ProviderRequest<unknown>>(
  */
 export const withAttachments = (
   provider: LlmProvider,
-  read: AttachmentReader,
+  read: ImageReader,
   readsImages = true,
 ): LlmProvider => {
-  const cache = new Map<string, Promise<AttachmentContent | undefined>>();
-  const cached: AttachmentReader = (id) => {
+  const cache = new Map<string, Promise<ResolvedImage | undefined>>();
+  const cached: ImageReader = (id) => {
     let content = cache.get(id);
     if (content === undefined) {
       content = read(id);

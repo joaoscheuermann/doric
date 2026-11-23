@@ -1,6 +1,7 @@
-import type { Call, Services } from 'bundle/contracts';
+import type { Call } from 'bundle/contracts';
 
 import { bundleInstruction } from '../envelope.js';
+import type { SkillPorts } from '../ports.js';
 import {
   type CatalogState,
   type SkillCatalog,
@@ -42,14 +43,17 @@ export interface LiveCatalog {
  * skills = readRunSkills result, catalog = skillCatalog(skills)); no call
  * until the first refresh.
  */
+/** The run's catalog when it starts. */
+export interface LiveCatalogStart {
+  readonly cwd: string;
+  readonly skills: RunSkills;
+  readonly catalog: SkillCatalog;
+}
+
 export const liveCatalog = (
-  start: {
-    readonly cwd: string;
-    readonly skills: RunSkills;
-    readonly catalog: SkillCatalog;
-  },
+  start: LiveCatalogStart,
   call: Call,
-  services: Services,
+  ports: SkillPorts,
 ): LiveCatalog => {
   let cwd = start.cwd;
   let { workspace, server } = start.skills;
@@ -68,12 +72,12 @@ export const liveCatalog = (
   let running: Promise<unknown> = Promise.resolve();
 
   const check = async (): Promise<string | undefined> => {
-    const now = await currentCwd(call, services);
+    const now = await currentCwd(call, ports);
     if (now !== undefined && now !== cwd) {
       cwd = now;
-      workspace = await readWorkspaceSkills(now, call, services);
+      workspace = await readWorkspaceSkills(now, call, ports);
     }
-    const read = await readSourceSkills(cwd, call, services);
+    const read = await readSourceSkills(cwd, call, ports);
     sources = new Map(
       read.map(({ bundleId, skills }) => [
         bundleId,

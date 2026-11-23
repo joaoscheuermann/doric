@@ -1,7 +1,5 @@
-import type { Call, Services } from 'bundle/contracts';
-import { ModelsV1 } from 'bundle/contracts';
+import type { Call } from 'bundle/contracts';
 import {
-  ConfigurationV1,
   type ConfigurationValue,
   defaultContextCompaction,
 } from 'host-config/contracts';
@@ -25,6 +23,7 @@ import { CompactionError } from './compaction/errors.js';
 import { projection } from './compaction/project.js';
 import { createSummarizer } from './compaction/summarize.js';
 import { readMessages, readMeta, saved } from './history.js';
+import type { DefaultPorts } from './ports.js';
 import {
   loadedSkillsMaxChars,
   loadedSkillsReplacement,
@@ -102,7 +101,7 @@ const summarizerFor = async (
   thread: ExecutorThread,
   configuration: ConfigurationValue,
   call: Call,
-  services: Services,
+  ports: Pick<DefaultPorts, 'languageModel'>,
   summaryMaxChars: number,
 ): Promise<ReturnType<typeof executionSummarizer>> => {
   const execution = resolveThreadExecution(thread, configuration);
@@ -111,14 +110,12 @@ const summarizerFor = async (
       `The model "${execution.model}" on provider "${execution.providerId}" is not available for this thread.`,
     );
   }
-  const { languageModel } = await services
-    .use(ModelsV1)
-    .resolve(
-      { providerId: execution.providerId, model: execution.model },
-      call,
-    );
+  const provider = await ports.languageModel(
+    { providerId: execution.providerId, model: execution.model },
+    call,
+  );
   return executionSummarizer({
-    provider: languageModel as unknown as LlmProvider,
+    provider,
     model: execution.model,
     summaryMaxChars,
   });
@@ -133,9 +130,9 @@ const summarizerFor = async (
 export const compactThread = async (
   { thread, session, policy }: ExecutorCompactionInput,
   call: Call,
-  services: Services,
+  ports: Pick<DefaultPorts, 'configuration' | 'languageModel'>,
 ): Promise<ExecutorCompactionResult> => {
-  const { configuration } = await services.use(ConfigurationV1).current(call);
+  const configuration = await ports.configuration(call);
   const config = compactionConfig(configuration);
   if (!config.enabled) {
     return { status: 'refused', reason: 'disabled' };
@@ -155,7 +152,7 @@ export const compactThread = async (
       thread,
       configuration,
       call,
-      services,
+      ports,
       policy.summaryMaxChars,
     ).then((summarizer) =>
       summarizer.summarize(

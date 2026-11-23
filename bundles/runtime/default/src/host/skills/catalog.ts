@@ -1,7 +1,7 @@
 import { excerpt } from 'tool';
 
 import {
-  loadTemplate,
+  lazyTemplate,
   renderBlock,
   renderSection,
 } from '../prompts/templates.js';
@@ -48,14 +48,14 @@ const CHANGED_NAMES = [
 ];
 
 /** The `# Skills` section of the system prompt. */
-const catalogTemplate = loadTemplate(
-  new URL('../prompts/skills-catalog.md', import.meta.url),
+const catalogTemplate = lazyTemplate(
+  'src/host/prompts/skills-catalog.md',
   CATALOG_NAMES,
 );
 
 /** A mid-run "Skills changed" message. */
-const changedTemplate = loadTemplate(
-  new URL('../prompts/skills-changed.md', import.meta.url),
+const changedTemplate = lazyTemplate(
+  'src/host/prompts/skills-changed.md',
   CHANGED_NAMES,
 );
 
@@ -208,7 +208,7 @@ export const skillCatalog = (skills: RunSkills): SkillCatalog => {
     const candidate = { name, body };
     if (
       overflow.length === 0 &&
-      renderSection(catalogTemplate, 'skills', [...fit, candidate]).length <=
+      renderSection(catalogTemplate(), 'skills', [...fit, candidate]).length <=
         ALWAYS_AVAILABLE_MAX_CHARS
     )
       fit.push(candidate);
@@ -244,14 +244,14 @@ export const skillCatalog = (skills: RunSkills): SkillCatalog => {
     .filter(({ entries }) => entries.length > 0)
     .map(({ entries, budget, ...kind }) => ({
       ...kind,
-      ...fitList(catalogTemplate, entries, budget),
+      ...fitList(catalogTemplate(), entries, budget),
     }));
 
   return {
     section:
       fit.length === 0 && lists.length === 0
         ? ''
-        : renderBlock(catalogTemplate, {
+        : renderBlock(catalogTemplate(), {
             alwaysAvailable: fit.length === 0 ? undefined : { skills: fit },
             toLoad: lists.length === 0 ? undefined : { lists },
           }),
@@ -333,7 +333,7 @@ export const skillCatalogChange = (
     .filter(({ entries }) => entries.length > 0)
     .map(({ budget, ...list }) => ({
       ...list,
-      ...fitList(changedTemplate, list.entries, budget),
+      ...fitList(changedTemplate(), list.entries, budget),
     }));
   const gone = [...state.listed]
     .filter(([, skill]) => removed.has(identity(skill)))
@@ -357,7 +357,7 @@ export const skillCatalogChange = (
   if (lists.length === 0 && gone.length === 0) return { state: next };
   return {
     state: next,
-    message: renderBlock(changedTemplate, {
+    message: renderBlock(changedTemplate(), {
       added: lists.length === 0 ? undefined : { lists },
       removed:
         gone.length === 0

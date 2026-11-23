@@ -2,20 +2,9 @@ import { createAgent, createToolCallStorage } from 'agent';
 
 type AgentOptions = Parameters<typeof createAgent>[0];
 
-import {
-  type Call,
-  type HookHandle,
-  LogV1,
-  ModelsV1,
-  type RegisteredTool,
-  type Services,
-  ToolsV1,
-} from 'bundle/contracts';
-import {
-  ConfigurationV1,
-  defaultMaxToolResultChars,
-} from 'host-config/contracts';
-import type { LlmProvider, ProviderMessage } from 'llms';
+import { type Call, ContractError } from 'bundle/contracts';
+import { defaultMaxToolResultChars } from 'host-config/contracts';
+import type { ProviderMessage } from 'llms';
 import { createMessageStorage } from 'messages';
 import {
   type ExecutorRunInput,
@@ -26,12 +15,11 @@ import {
 import {
   type BoundTool,
   createToolStorage,
-  isBoundTool,
   ToolErrorObject,
   type ToolStorage,
 } from 'tool';
 
-import type { AgentSummary, DefaultHooksV1 } from '../contracts/index.js';
+import type { AgentSummary } from '../contracts/index.js';
 import { agentCatalog } from './agents/catalog.js';
 import { effectiveAgents, readWorkspaceAgents } from './agents/definitions.js';
 import { liveAgents } from './agents/live.js';
@@ -41,9 +29,10 @@ import { isContextOverflowError } from './compaction/project.js';
 import { coalesced } from './deltas.js';
 import { input } from './envelope.js';
 import { readMessages, readMeta, retainedKey, saved } from './history.js';
+import type { BeforeModelRequest, DefaultPorts } from './ports.js';
 import {
   checkTemplate,
-  loadTemplate,
+  lazyTemplate,
   render,
   renderBlock,
 } from './prompts/templates.js';
@@ -68,27 +57,27 @@ import { resolveToolConfigs } from './tool-config.js';
 // redacts, sanitizes, persists and publishes, and keeps the persistence retry.
 // The run writes through `coalesced`, so streamed deltas reach the log merged.
 
-/** `prompts/system.md`, checked at import against `promptVariableNames`; rendered per run. */
-const systemTemplate = loadTemplate(
-  new URL('./prompts/system.md', import.meta.url),
+/** `prompts/system.md`, read and checked against `promptVariableNames` on first use; rendered per run. */
+const systemTemplate = lazyTemplate(
+  'src/host/prompts/system.md',
   promptVariableNames,
 );
 
-/** `prompts/agent.md`, checked at import against the two names it may cite. */
-const agentTemplate = loadTemplate(
-  new URL('./prompts/agent.md', import.meta.url),
-  ['name', 'instructions'],
-);
+/** `prompts/agent.md`, read and checked on first use against the two names it may cite. */
+const agentTemplate = lazyTemplate('src/host/prompts/agent.md', [
+  'name',
+  'instructions',
+]);
 
 /**
  * The "# Agent: <name>" section for a Thread running as `agent`, without a
- * leading or trailing newline: `agentTemplate` with the agent's name and its
+ * leading or trailing newline: `agentTemplate()` with the agent's name and its
  * instructions, themselves rendered with the run's `variables`. Throws
  * `checkTemplate`'s Error, named `agent <name>`, when the instructions cite a
  * name outside `promptVariableNames`, use a partial or do not parse.
  */
 const agentSection = (agent: SpawnAgent, variables: PromptVariables): string =>
-  renderBlock(agentTemplate, {
+  renderBlock(agentTemplate(), {
     name: agent.name,
     instructions: render(
       checkTemplate(
@@ -102,7 +91,7 @@ const agentSection = (agent: SpawnAgent, variables: PromptVariables): string =>
 
 /**
  * The default agent's system prompt for `variables`:
- * `renderBlock(systemTemplate, variables)` when `section` is '', else that
+ * `renderBlock(systemTemplate(), variables)` when `section` is '', else that
  * text plus `\n\n${section}`. Used for human chats and delegated child chats
  * alike. Pure; does not throw.
  */
@@ -110,7 +99,7 @@ export const systemPromptWith = (
   variables: PromptVariables,
   section: string,
 ): string => {
-  const system = renderBlock(systemTemplate, variables);
+  const system = renderBlock(systemTemplate(), variables);
   return section === '' ? system : `${system}\n\n${section}`;
 };
 
@@ -238,16 +227,6 @@ const readable = (
     modalities.includes(modality),
   );
 
-/** The tools of the prompt's generation; each must be one `defineTool` bound. */
-const boundTools = (tools: readonly RegisteredTool[]): readonly BoundTool[] =>
-  tools.map(({ tool }) => {
-    if (!isBoundTool(tool))
-      throw new TypeError(
-        `Tool "${tool.name}" was not defined with defineTool.`,
-      );
-    return tool;
-  });
-
 /**
  * Runs one prompt input, retaining provider-ready history for its Thread
  * through the runtime's session. Every tool the bundles registered is offered,
@@ -263,7 +242,7 @@ const boundTools = (tools: readonly RegisteredTool[]): readonly BoundTool[] =>
  * retained "Loaded skills" message and makes the next check compare with the
  * system prompt's lists again.
  * Before every model request the system prompt passes through
- * `onBeforeModelRequestHook`, under the prompt's call. A standing
+ * `beforeModelRequest`, under the prompt's call. A standing
  * instruction (a retained bundle steer) is recorded in `meta.retained` when
  * the run stores it, so compaction keeps it.
  * The run's prompt variables are read once at its start, through `variables`,
@@ -280,7 +259,7 @@ const boundTools = (tools: readonly RegisteredTool[]): readonly BoundTool[] =>
  * `response.started` events and its automatic compaction; manual compaction
  * (`compactThread`) resolves the same way. A Thread whose stored execution is
  * unavailable logs one warning and rejects, before any model request, with an
- * Error whose own `code` is `thread_execution_unavailable`. A Thread running
+ * `ContractError` whose `code` is `thread_execution_unavailable`. A Thread running
  * as an agent gets its `agentSection` before `# Agents`, is not offered the
  * coding workflow skill (`CODING_WORKFLOW_SKILL`), and on invalid
  * instructions rejects with `agentSection`'s Error before its first model
@@ -289,8 +268,8 @@ const boundTools = (tools: readonly RegisteredTool[]): readonly BoundTool[] =>
 export const runPrompt = async (
   { thread, job, session }: ExecutorRunInput,
   call: Call,
-  services: Services,
-  hooks: HookHandle<typeof DefaultHooksV1>,
+  ports: DefaultPorts,
+  beforeModelRequest: BeforeModelRequest,
   variables: RunVariables,
   builtInAgents: readonly AgentSummary[],
 ): Promise<Readonly<Pick<ExecutorRunResult, 'text'>>> => {
@@ -306,22 +285,18 @@ export const runPrompt = async (
   let { checkpoints, retained } = await readMeta(session.history);
   const boundary = checkpoints[job.id];
   const resume = boundary !== undefined && stored.length > boundary;
-  const { configuration } = await services.use(ConfigurationV1).current(call);
+  const configuration = await ports.configuration(call);
   const execution = resolveThreadExecution(thread, configuration);
   if (execution.status === 'unavailable') {
     const { providerId, model, issue } = execution;
-    services
-      .use(LogV1)
-      .warn(
-        'Thread execution unavailable',
-        { threadId: thread.id, providerId, model, issue },
-        call,
-      );
-    throw Object.assign(
-      new Error(
-        `The model "${model}" on provider "${providerId}" is not available for this thread. Choose another model in the conversation footer.`,
-      ),
-      { code: 'thread_execution_unavailable' as const },
+    ports.log.warn(
+      'Thread execution unavailable',
+      { threadId: thread.id, providerId, model, issue },
+      call,
+    );
+    throw new ContractError(
+      'thread_execution_unavailable',
+      `The model "${model}" on provider "${providerId}" is not available for this thread. Choose another model in the conversation footer.`,
     );
   }
   const { model, effort } = execution;
@@ -329,14 +304,13 @@ export const runPrompt = async (
     thread.projectId,
     configuration.profile,
     call,
-    services,
+    ports,
   );
   const compaction = compactionConfig(configuration);
-  // `list` answers a promise when tools/v1 is in another process.
-  const tools = boundTools(await services.use(ToolsV1).list(call));
+  const tools = await ports.tools(call);
   const [read, workspaceAgents] = await Promise.all([
-    readRunSkills(thread.cwd, call, services),
-    readWorkspaceAgents(thread.cwd, call, services),
+    readRunSkills(thread.cwd, call, ports),
+    readWorkspaceAgents(thread.cwd, call, ports),
   ]);
   // A Thread running as an agent is not offered the coding workflow: its
   // agent's instructions are its workflow.
@@ -350,19 +324,15 @@ export const runPrompt = async (
           ),
         };
   const catalog = skillCatalog(skills);
-  const live = liveCatalog(
-    { cwd: thread.cwd, skills, catalog },
-    call,
-    services,
-  );
+  const live = liveCatalog({ cwd: thread.cwd, skills, catalog }, call, ports);
   const agents = effectiveAgents(builtInAgents, workspaceAgents);
   const agentsLive = liveAgents(
     { cwd: thread.cwd, agents },
     builtInAgents,
     call,
-    services,
+    ports,
   );
-  const { languageModel } = await services.use(ModelsV1).resolve(
+  const textProvider = await ports.languageModel(
     {
       providerId: execution.providerId,
       model,
@@ -370,21 +340,21 @@ export const runPrompt = async (
     },
     call,
   );
-  const textProvider = languageModel as unknown as LlmProvider;
   // What the model reads, as its provider's live catalog says; a catalog
   // that does not say leaves the run as if it reads everything.
-  const modalities = await services
-    .use(ModelsV1)
-    .inputModalities({ providerId: execution.providerId, model }, call);
+  const modalities = await ports.inputModalities(
+    { providerId: execution.providerId, model },
+    call,
+  );
   // The run reads attachments through its session; compaction keeps the
   // reference lines as text, so a summary never carries image bytes.
-  const attachment = session.attachment?.bind(session);
+  const images = ports.images(session);
   const provider =
-    attachment === undefined
+    images === undefined
       ? textProvider
       : withAttachments(
           textProvider,
-          attachment,
+          images,
           modalities === undefined || modalities.includes('image'),
         );
   const messages = createMessageStorage(repaired(stored));
@@ -434,9 +404,7 @@ export const runPrompt = async (
     provider,
     model,
     effort: effort as AgentOptions['effort'],
-    system: async () =>
-      (await hooks.onBeforeModelRequestHook.execute({ system: base }, call))
-        .system,
+    system: () => beforeModelRequest(base, call),
     tools: offeringSkills(
       createToolStorage(
         (() => {
@@ -452,7 +420,7 @@ export const runPrompt = async (
               () => live.listed(),
               () => messages.list(),
               call,
-              services,
+              ports,
             ),
           ];
         })(),

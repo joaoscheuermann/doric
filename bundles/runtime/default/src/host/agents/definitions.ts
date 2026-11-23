@@ -5,10 +5,8 @@ import {
   ContractError,
   defineMethod,
   defineService,
-  type Services,
 } from 'bundle/contracts';
 import {
-  RuntimeLeaseV1,
   reasoningEfforts,
   spawnInstructionsMaxLength,
   type ThreadAgentSource,
@@ -21,6 +19,7 @@ import {
   DefaultAgentsV1,
   defaultAgentsMethods,
 } from '../../contracts/index.js';
+import { type AgentPorts, kernelPorts } from '../ports.js';
 import { checkTemplate } from '../prompts/templates.js';
 import { promptVariableNames } from '../prompts/variables.js';
 import { currentCwd, frontmatterField, skillBody } from '../skills/sources.js';
@@ -181,10 +180,10 @@ export interface ScannedAgent {
 const workspaceAgents = async (
   cwd: string,
   call: Call,
-  services: Services,
+  ports: Pick<AgentPorts, 'lease'>,
 ): Promise<readonly ScannedAgent[]> => {
   const directory = posix.join(cwd, WORKSPACE_AGENTS_DIR);
-  const { exitCode, stdout } = await services.use(RuntimeLeaseV1).exec(
+  const { exitCode, stdout } = await ports.lease.exec(
     {
       cmd: ['sh', '-c', scanScript, 'sh', directory],
       timeoutMs: WORKSPACE_SCAN_TIMEOUT_MS,
@@ -229,9 +228,9 @@ const workspaceAgents = async (
 export const readWorkspaceAgents = (
   cwd: string,
   call: Call,
-  services: Services,
+  ports: AgentPorts,
 ): Promise<readonly ScannedAgent[]> =>
-  workspaceAgents(cwd, call, services).catch(() => []);
+  workspaceAgents(cwd, call, ports).catch(() => []);
 
 /**
  * The agents in effect: a workspace entry (valid or not) hides the built-in
@@ -256,7 +255,7 @@ const resolveWorkspaceAgent = async (
   name: string,
   cwd: string,
   call: Call,
-  services: Services,
+  ports: AgentPorts,
 ): Promise<AgentDefinition> => {
   const path = posix.join(cwd, WORKSPACE_AGENTS_DIR, `${name}.md`);
   const invalid = (reason: string): ContractError =>
@@ -267,7 +266,7 @@ const resolveWorkspaceAgent = async (
     );
   let text: string;
   try {
-    text = await services.use(RuntimeLeaseV1).readFile(path, call);
+    text = await ports.lease.readFile(path, call);
   } catch {
     throw invalid('the file cannot be read');
   }
@@ -277,57 +276,67 @@ const resolveWorkspaceAgent = async (
 };
 
 /**
- * The `default.agents/v1` service over the loaded built-ins. No method is
- * exposed. `list` answers the built-ins only when the working directory is
- * unknown, else the agents in effect with the workspace scan. `resolve` makes
- * the same choice: a workspace agent is read whole from
- * `<cwd>/.agents/agents/<name>.md` and checked again (invalid or unreadable →
- * `invalid_definition`, even when a built-in of that name exists); a built-in
- * comes from `builtIn`; any other name fails as `not_found`.
+ * `default.agents/v1`'s two operations over the loaded built-ins, for both entries. `list` answers the built-ins
+ * only when the working directory is unknown, else the agents in effect with the workspace scan. `resolve` makes
+ * the same choice: a workspace agent is read whole from `<cwd>/.agents/agents/<name>.md` and checked again
+ * (invalid or unreadable → `invalid_definition`, even when a built-in of that name exists); a built-in comes from
+ * `builtIn`; any other name fails as `not_found`.
  */
-export const agentsService = (builtIn: readonly AgentDefinition[]) => {
+export const agentsMethods = (builtIn: readonly AgentDefinition[]) => {
   const builtInSummaries = builtIn.map(summaryOf);
-  const scan = async (call: Call, services: Services) => {
-    const cwd = await currentCwd(call, services);
+  const scan = async (call: Call, ports: AgentPorts) => {
+    const cwd = await currentCwd(call, ports);
     return cwd === undefined
       ? { workspace: [] }
-      : { cwd, workspace: await readWorkspaceAgents(cwd, call, services) };
+      : { cwd, workspace: await readWorkspaceAgents(cwd, call, ports) };
   };
 
+  return {
+    list: async (
+      call: Call,
+      ports: AgentPorts,
+    ): Promise<readonly AgentSummary[]> =>
+      effectiveAgents(builtInSummaries, (await scan(call, ports)).workspace),
+    resolve: async (
+      name: string,
+      call: Call,
+      ports: AgentPorts,
+    ): Promise<AgentDefinition> => {
+      const { cwd, workspace } = await scan(call, ports);
+      if (cwd !== undefined && workspace.some((agent) => agent.name === name)) {
+        return resolveWorkspaceAgent(name, cwd, call, ports);
+      }
+      const definition = builtIn.find((agent) => agent.name === name);
+      if (definition !== undefined) return definition;
+      const agents = effectiveAgents(builtInSummaries, workspace).map(
+        (agent) => agent.name,
+      );
+      throw new ContractError(
+        'not_found',
+        `Agent "${name}" is not defined. ${
+          agents.length === 0
+            ? 'No agent is defined.'
+            : `Defined agents: ${agents.join(', ')}.`
+        }`,
+        { name, agents },
+      );
+    },
+  };
+};
+
+/** The `default.agents/v1` service over the loaded built-ins (the kernel entry): {@link agentsMethods} over `kernelPorts`. No method is exposed. */
+export const agentsService = (builtIn: readonly AgentDefinition[]) => {
+  const methods = agentsMethods(builtIn);
   return defineService(DefaultAgentsV1, {
     list: defineMethod({
       ...defaultAgentsMethods.list,
-      execute: async (_input, call, services) =>
-        effectiveAgents(
-          builtInSummaries,
-          (await scan(call, services)).workspace,
-        ),
+      execute: (_input, call, services) =>
+        methods.list(call, kernelPorts(services)),
     }),
     resolve: defineMethod({
       ...defaultAgentsMethods.resolve,
-      execute: async ({ name }, call, services) => {
-        const { cwd, workspace } = await scan(call, services);
-        if (
-          cwd !== undefined &&
-          workspace.some((agent) => agent.name === name)
-        ) {
-          return resolveWorkspaceAgent(name, cwd, call, services);
-        }
-        const definition = builtIn.find((agent) => agent.name === name);
-        if (definition !== undefined) return definition;
-        const agents = effectiveAgents(builtInSummaries, workspace).map(
-          (agent) => agent.name,
-        );
-        throw new ContractError(
-          'not_found',
-          `Agent "${name}" is not defined. ${
-            agents.length === 0
-              ? 'No agent is defined.'
-              : `Defined agents: ${agents.join(', ')}.`
-          }`,
-          { name, agents },
-        );
-      },
+      execute: ({ name }, call, services) =>
+        methods.resolve(name, call, kernelPorts(services)),
     }),
   });
 };
