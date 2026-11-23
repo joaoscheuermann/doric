@@ -1,6 +1,16 @@
-import type { BoundTool, ToolConfig } from 'tool';
+import type { ToolConfig } from 'tool';
 
 import type { ConfigInput } from './schema.js';
+
+/** The part of a tool its configuration fields are checked against. */
+export interface ToolFields {
+  readonly name: string;
+  readonly settings: readonly {
+    readonly key: string;
+    readonly default?: string;
+    readonly required?: boolean;
+  }[];
+}
 
 /**
  * The values one tool reads: its declared fields, each taken from the persisted
@@ -9,7 +19,7 @@ import type { ConfigInput } from './schema.js';
  * so a field a newer bundle removed never reaches a tool.
  */
 export const resolveToolConfig = (
-  factory: BoundTool,
+  factory: ToolFields,
   values: Readonly<Record<string, string>> | undefined,
 ): ToolConfig => {
   const resolved: Record<string, string> = {};
@@ -34,7 +44,7 @@ export const resolveToolConfig = (
  * prompt runs. A tool with no declared settings resolves to an empty object.
  */
 export const resolveToolConfigs = (
-  tools: readonly BoundTool[],
+  tools: readonly ToolFields[],
   configuration: ConfigInput,
 ): ReadonlyMap<string, ToolConfig> =>
   new Map(
@@ -51,7 +61,7 @@ export const resolveToolConfigs = (
  */
 export const requireToolConfigs = (
   configuration: ConfigInput,
-  tools: readonly BoundTool[],
+  tools: readonly ToolFields[],
 ): void => {
   for (const factory of tools)
     resolveToolConfig(factory, configuration.tools?.[factory.name]);

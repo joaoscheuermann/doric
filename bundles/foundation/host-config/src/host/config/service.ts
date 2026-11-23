@@ -1,9 +1,7 @@
 import type { CatalogResult, CredentialKind, Models } from 'bundle/contracts';
 import { readModelProperties } from 'core/contracts';
-import type { BoundTool } from 'tool';
 
 import type { ConfigReplaceResult } from '../../contracts/index.js';
-import type { CredentialService } from '../credentials/service.js';
 import {
   type ConfigInput,
   ConfigInputSchema,
@@ -11,7 +9,7 @@ import {
   providerCredentials,
 } from './schema.js';
 import type { ConfigStore } from './store.js';
-import { requireToolConfigs } from './tool-config.js';
+import { requireToolConfigs, type ToolFields } from './tool-config.js';
 
 /**
  * A configuration whose credential references are not usable. It is caller
@@ -46,12 +44,25 @@ export interface ConfigService {
 
 export interface ConfigServiceOptions {
   readonly store: ConfigStore;
-  /** The loaded credential service (`credential_activation`). */
-  readonly credentials: () => Promise<CredentialService>;
-  /** The tools of the active bundle generation (`tools/v1.list`). */
-  readonly tools: () => readonly BoundTool[];
+  /**
+   * The credentials a replacement is checked against: only `find(id)?.kind`
+   * is read. Called once per replacement; a rejection answers `rejected`.
+   * (`CredentialService` still satisfies it.)
+   */
+  readonly credentials: () => Promise<CredentialLookup>;
+  /**
+   * The tools whose fields a replacement must satisfy, read once per
+   * replacement; a rejection answers `rejected`. A synchronous answer is
+   * accepted as before.
+   */
+  readonly tools: () => readonly ToolFields[] | Promise<readonly ToolFields[]>;
   /** `models/v1`: kinds, catalog reads and the provider builds of a configuration. */
   readonly models: Pick<Models, 'catalog' | 'kind' | 'prepare'>;
+}
+
+/** The part of the credential service a replacement reads. */
+interface CredentialLookup {
+  find(id: string): { readonly kind: CredentialKind } | undefined;
 }
 
 const invalidMessage = 'The Doric configuration is invalid.';
@@ -134,8 +145,10 @@ export const createConfigService = ({
             listed.has(p.kind),
           );
 
+          const listedTools = await tools();
+
           try {
-            requireToolConfigs(filled, tools());
+            requireToolConfigs(filled, listedTools);
           } catch (error) {
             throw new ConfigToolError(
               error instanceof Error
@@ -202,7 +215,7 @@ const catalogListedKinds = async (
  */
 const requireCredentials = (
   configuration: ConfigInput,
-  credentials: CredentialService,
+  credentials: CredentialLookup,
 ): void => {
   for (const provider of configuration.providers)
     for (const { field, id } of providerCredentials(provider))
@@ -228,7 +241,7 @@ const requireCredentials = (
 };
 
 const requireKind = (
-  credentials: CredentialService,
+  credentials: CredentialLookup,
   id: string | undefined,
   kind: CredentialKind,
   label: string,

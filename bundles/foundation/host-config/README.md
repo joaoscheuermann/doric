@@ -58,6 +58,32 @@ the next host start ([`manager.ts`](../../../packages/bundle/src/process/manager
 names `host-config/v1` under `required.contracts`, so the host does not start
 without it.
 
+### Process entry (S45b)
+
+The bundle also has a process entry, [`src/host/main.ts`](src/host/main.ts),
+built to `dist/host/main.mjs`, for the bundle-process runtime
+([bundle processes](../../../docs/features/bundle-processes.md)). It calls
+`runBundle` with `HostConfigService` (`host-config/v1`),
+`ReferenceSourceService` and `HookHandlerService` listed statically, and
+depends on `@connectrpc/connect`. The kernel entry and the manifest are
+unchanged until S62. In this entry:
+
+- `host-config.configuration/v1` is a settings space registered with
+  `settings/v1` at activate. It is read through `settings/v1` `Entry` and
+  written through `Set` with the value's keys sorted and `tools` always set;
+  empty `models` and `reasonings` read back as `[]`.
+- It answers the `secrets/v1` reference-source `List` (registered through
+  `RegisterReferences`) with the credential ids the stored configuration
+  references plus those of any `Replace` in flight, so a credential cannot be
+  deleted mid-write. A direct `settings/v1.Set` by another bundle is not
+  checked (accepted).
+- `Replace` calls are serialized in request order, and `Replace` checks
+  `tools` under the caller's scope, Project tools included.
+- Its start step (`onHostStart`) sets the stage, logs, reads `Current`, calls
+  models `Prepare` with the snapshot and logs the "activated" line; it runs for
+  real only from S61/S62.
+- Before activate, every RPC answers `unavailable`.
+
 ### Package
 
 [`package.json`](package.json) names the package `host-config` (version

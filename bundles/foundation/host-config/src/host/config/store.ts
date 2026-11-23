@@ -1,4 +1,4 @@
-import type { Settings, SettingsEntry } from 'bundle/contracts';
+import type { Settings } from 'bundle/contracts';
 import { providerKind } from 'llms';
 
 import type { ConfigurationSettings } from '../configuration.js';
@@ -23,6 +23,13 @@ interface Options {
 }
 
 type ProviderInput = ConfigInput['providers'][number];
+
+/** One stored entry of the configuration space. */
+interface SpaceEntry {
+  readonly value: ConfigInput;
+  readonly revision: number;
+  readonly updatedAt: string;
+}
 
 const byId = (left: { id: string }, right: { id: string }): number =>
   left.id.localeCompare(right.id);
@@ -65,7 +72,7 @@ const provider = (stored: ProviderInput): ProviderInput => {
  * so the two bodies stay identical byte for byte. A stored profile passes
  * through as kept, and a configuration without one answers none.
  */
-const fromSettings = (entry: SettingsEntry<ConfigInput>): DoricConfig => {
+const fromSettings = (entry: SpaceEntry): DoricConfig => {
   const value = entry.value;
 
   return {
@@ -102,6 +109,34 @@ const toSettings = (config: ConfigInput): ConfigInput => ({
   tools: config.tools ?? {},
 });
 
+/** The configuration space as a store reads and writes it. */
+export interface ConfigSpace {
+  /** The stored entry; rejects as the provider does (`settings_missing`, …). */
+  entry(): Promise<SpaceEntry>;
+  /** Writes `value` and answers the entry the write produced. */
+  set(value: ConfigInput): Promise<SpaceEntry>;
+}
+
+/**
+ * `createConfigStore`'s rules over any space:
+ * - `load` answers `fromSettings(await space.entry())`;
+ * - `replace` writes `toSettings(config)` and answers `fromSettings` of the
+ *   written entry.
+ *
+ * Neither tracks references; the routed source reads them itself.
+ * `createConfigStore` is this function over the kernel `settings/v1`, plus
+ * `track` on load.
+ */
+export const createSpaceConfigStore = (space: ConfigSpace): ConfigStore => ({
+  async load() {
+    return fromSettings(await space.entry());
+  },
+
+  async replace(config) {
+    return fromSettings(await space.set(toSettings(config)));
+  },
+});
+
 /**
  * The singleton configuration as one `settings/v1` space. A replacement is one
  * settings write, serialized with credential writes by the provider, and its
@@ -111,15 +146,20 @@ export const createConfigStore = ({
   settings,
   definition,
   track,
-}: Options): ConfigStore => ({
-  async load() {
-    const config = fromSettings(await settings.entry(definition));
+}: Options): ConfigStore => {
+  const store = createSpaceConfigStore({
+    entry: () => settings.entry(definition),
+    set: (value) => settings.set(definition, value),
+  });
 
-    track(config.configuration);
-    return config;
-  },
+  return {
+    async load() {
+      const config = await store.load();
 
-  async replace(config) {
-    return fromSettings(await settings.set(definition, toSettings(config)));
-  },
-});
+      track(config.configuration);
+      return config;
+    },
+
+    replace: store.replace,
+  };
+};

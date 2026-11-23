@@ -720,3 +720,16 @@ to every host part.
   over `doric.startup/v1`; it runs for real only from S61/S62).
   `createTestRouter` exempts platform contracts (`doric.*`) from `requires`,
   as the real router does.
+- 2026-11-23: phase 3, slice S45b, of
+  [`docs/designs/grpc-processes.md`](../designs/grpc-processes.md):
+  `host-config` gets a process entry, `src/host/main.ts` (built to
+  `dist/host/main.mjs`), running `runBundle` with `HostConfigService`
+  (`host-config/v1`), `ReferenceSourceService` and `HookHandlerService`
+  listed statically. Its settings space is registered with `settings/v1` at
+  activate, read through `Entry` and written through `Set`; its reference
+  source answers the stored configuration's credential ids plus those of any
+  `Replace` in flight (a direct `settings/v1.Set` by another bundle is not
+  checked, accepted); `Replace` calls are serialized and check tools under the
+  caller's scope; every RPC answers `unavailable` before activate; the start
+  step runs for real only from S61/S62. The kernel entry and manifest are
+  unchanged until S62; new dependency `@connectrpc/connect`.

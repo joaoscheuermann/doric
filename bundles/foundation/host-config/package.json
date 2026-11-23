@@ -32,6 +32,7 @@
   },
   "dependencies": {
     "@bufbuild/protobuf": "^2.17.0",
+    "@connectrpc/connect": "^2.3.0",
     "bundle": "0.0.1",
     "core": "0.0.1",
     "llms": "0.0.1",
