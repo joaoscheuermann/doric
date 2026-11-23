@@ -320,6 +320,14 @@ export interface HarnessOptions {
   readonly executorProvider?: string | null;
   /** `absent` serves no `ExecutorService` at all; `routed` (the default) serves the fake. */
   readonly executor?: 'routed' | 'absent';
+  /** S51e: the fake executor opens `WatchCancel` in its scripted `Run` and `Compact` (`FakeExecutorOptions`). */
+  readonly executorWatchCancel?: boolean;
+  /** S51e: awaited before the fake executor opens `WatchCancel`. */
+  readonly executorWatchCancelAfter?: () => Promise<void>;
+  /** S51e: `RuntimeServicesOptions.executorCancelGraceMs`; the 5 s constant by default. */
+  readonly executorCancelGraceMs?: number;
+  /** Services the bundle of `contextHarness` serves (it serves none by default). */
+  readonly services?: readonly ServiceEntry[];
 }
 
 /** Every llms kind names its credential in a `secret` field called `token`. */
@@ -413,6 +421,12 @@ const fakesOf = (
       ...(options.executorOverrides === undefined
         ? {}
         : { overrides: options.executorOverrides }),
+      ...(options.executorWatchCancel === undefined
+        ? {}
+        : { watchCancel: options.executorWatchCancel }),
+      ...(options.executorWatchCancelAfter === undefined
+        ? {}
+        : { watchCancelAfter: options.executorWatchCancelAfter }),
     },
     session,
   );
@@ -665,6 +679,9 @@ export const harness = (options: HarnessOptions = {}) => {
   const runtime = createRuntimeServices({
     // Archive sweeps never fire in these cases.
     archiveSchedule: () => () => undefined,
+    ...(options.executorCancelGraceMs === undefined
+      ? {}
+      : { executorCancelGraceMs: options.executorCancelGraceMs }),
   });
   let context: HostContext | undefined;
   /**
@@ -824,7 +841,12 @@ export const contextHarness = async (
     if (options.backend === undefined) await backend.close();
   });
   const context = await within(
-    router.activate({ activate: () => undefined }),
+    router.activate({
+      ...(options.services === undefined
+        ? {}
+        : { services: [...options.services] }),
+      activate: () => undefined,
+    }),
     'activate',
   );
 

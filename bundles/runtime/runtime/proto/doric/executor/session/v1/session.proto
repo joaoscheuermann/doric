@@ -3,10 +3,13 @@
 // `runtime` opens one session per run, compaction, checkpoint or rewind, with
 // a random 128-bit id, the Thread, the prompt and the call's lifetime, and
 // passes its id to the executor; the session ends when that executor call
-// ends. A session is bound to the provider bundle of `executor/v1` and, at
-// its first callback, to the calling instance. An id that is unknown or
-// ended, a caller of another bundle and, after the first callback, a caller
-// of another instance get `NOT_FOUND`, reason `unknown_session`.
+// ends. `runtime` cancels a run or a compaction through its session
+// (`WatchCancel`), not by cancelling the `Run` or `Compact` call, and ends the
+// session only once that call ended. A session is bound to the provider
+// bundle of `executor/v1` and, at its first callback, to the calling
+// instance. An id that is unknown or ended, a caller of another bundle and,
+// after the first callback, a caller of another instance get `NOT_FOUND`,
+// reason `unknown_session`.
 //
 // History parts travel as chunked JSON: the UTF-8 JSON text of a part's
 // value, in `bytes` chunks of at most 1 MiB whose concatenation is the text.
@@ -49,7 +52,29 @@ service SessionService {
   // Describes one attachment of the Thread's Project, without its bytes;
   // absent when the Project holds none by that id.
   rpc DescribeAttachment(DescribeAttachmentRequest) returns (DescribeAttachmentResponse);
+  // Tells the executor that `runtime` cancelled the work of this session's
+  // executor call (the reader stopped or paused the prompt, a steer
+  // redirected it, its Thread or Project closes, storage is full). Answers
+  // one empty item once the session is cancelled — at once when it already
+  // was — and then ends; ends with no item when the session ends without
+  // being cancelled. A callback like the others: checked and bound as
+  // `ReadHistory` is (`NOT_FOUND`, reason `unknown_session`). Not resumable:
+  // the session lives in one `runtime` instance and the stream is pinned to
+  // it. An executor opens it at most once per `Run` or `Compact`, when the
+  // call starts; the call itself is cancelled only when the executor did not
+  // end it within the cancel grace ("Executor sessions"). A checkpoint or
+  // rewind session is never cancelled: its stream ends with no item.
+  rpc WatchCancel(WatchCancelRequest) returns (stream WatchCancelResponse);
 }
+
+// Watches one session's cancellation.
+message WatchCancelRequest {
+  // The session.
+  string session_id = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+// The session was cancelled; carries nothing.
+message WatchCancelResponse {}
 
 // One input that steers a running prompt.
 message SteerInput {

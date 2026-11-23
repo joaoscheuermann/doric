@@ -93,6 +93,20 @@ and `executor/v1` is without a provider. The shipped host composition lists
 and, while a provider of `chat.views/v1` is available, registers it for
 `load_skill`; its cleanup disposes both ([`src/client/index.ts`](src/client/index.ts)).
 
+### Process entry (S51d, S51e)
+
+The host part also runs on its own bundle process: `createDefaultHost`
+([`src/host/service.ts`](src/host/service.ts)) builds the host over the
+router, and [`src/host/main.ts`](src/host/main.ts) is its process entry. Its
+ports are routed (`routedPorts`, `routedBeforeModelRequest`,
+[`src/host/routed.ts`](src/host/routed.ts)) and so are its tools
+([`src/host/routed-tools.ts`](src/host/routed-tools.ts)): a tool error is
+rebuilt from the `tool_error` details. It calls `executor.session/v1` only
+inside its `executor/v1` handlers, and sends images as `doric-attachment:`
+URLs. Each routed tool call carries the call's signal and makes one
+`tools/v1.Check` per tool call. A cancelled `Run` or `Compact` is cancelled
+through `executor.session/v1.WatchCancel` (see `runtime`'s README).
+
 ## Contracts it provides
 
 ### `executor/v1` 1.5.0

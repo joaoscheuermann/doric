@@ -16,6 +16,7 @@ import {
 } from '@bufbuild/protobuf';
 import {
   type Client,
+  Code,
   ConnectError,
   createHandlerContext,
   type ServiceImpl,
@@ -23,11 +24,14 @@ import {
 import {
   type Call,
   ContractError,
+  callOf,
+  deadlineOf,
   fromConnectError,
+  isCall,
   isContractError,
 } from 'bundle/contracts';
 import type { HostContext } from 'bundle/host';
-import { createTestRouter } from 'bundle/testing';
+import { createTestRouter, type TestClientOptions } from 'bundle/testing';
 import { decodeJson, encodeJson } from 'storage/rpc';
 
 import type { Attachment } from '../../src/contracts/attachments.js';
@@ -45,6 +49,7 @@ import {
   SteerInputSchema,
 } from '../../src/contracts/gen/doric/executor/session/v1/session_pb.js';
 import {
+  CompactRequestSchema,
   CompactResponseSchema,
   ExecutorService,
   ExecutorThreadSchema,
@@ -118,7 +123,31 @@ interface SessionState {
   steers: readonly SteerInput[];
   /** What `DescribeAttachment` answers, by id. */
   readonly attachments: Map<string, Attachment>;
+  /**
+   * S51e: how `WatchCancel` answers — `hold` (the default) until {@link cancelWatches} or the call is cancelled,
+   * `unimplemented` (UNIMPLEMENTED), or `end` (ends at once with no item).
+   */
+  watchMode: 'hold' | 'unimplemented' | 'end';
+  /** Every `WatchCancel` received: its session, handler signal and how many other session calls preceded it. */
+  readonly watches: {
+    readonly sessionId: string;
+    readonly signal: AbortSignal;
+    readonly after: number;
+  }[];
+  /** The held `WatchCancel`s, each answering its item when called. */
+  readonly held: Set<() => void>;
+  /** The trace id and deadline of each `TakeSteers` call (the hop's `Call`). */
+  readonly hops: { readonly traceId: string; readonly deadline: number }[];
 }
+
+/** The trace id of a `traceparent` (`00-<trace id>-<span id>-<flags>`). */
+const traceIdOf = (call: Call): string =>
+  call.trace.traceparent.split('-')[1] ?? '';
+
+/** Answers the item of every held `WatchCancel` (a cancel through the session). */
+const cancelWatches = (state: SessionState) => {
+  for (const answer of [...state.held]) answer();
+};
 
 const sessionFake = (state: SessionState): ServiceImpl<typeof SessionService> =>
   ({
@@ -163,8 +192,10 @@ const sessionFake = (state: SessionState): ServiceImpl<typeof SessionService> =>
 
       return {};
     },
-    takeSteers: async (request) => {
+    takeSteers: async (request, context) => {
       state.calls.push({ method: 'takeSteers', sessionId: request.sessionId });
+      const hop = callOf(context);
+      state.hops.push({ traceId: traceIdOf(hop), deadline: deadlineOf(hop) });
 
       return {
         steers: state.steers.map((steer) =>
@@ -181,6 +212,35 @@ const sessionFake = (state: SessionState): ServiceImpl<typeof SessionService> =>
 
       return attachment === undefined ? {} : { attachment };
     },
+    watchCancel: async function* (request, context) {
+      state.watches.push({
+        sessionId: request.sessionId,
+        signal: context.signal,
+        after: state.calls.length,
+      });
+      if (state.watchMode === 'unimplemented')
+        throw new ConnectError(
+          'WatchCancel is not served.',
+          Code.Unimplemented,
+        );
+      if (state.watchMode === 'end') return;
+      const cancelled = await new Promise<boolean>((resolve) => {
+        const answer = () => {
+          state.held.delete(answer);
+          resolve(true);
+        };
+        state.held.add(answer);
+        context.signal.addEventListener(
+          'abort',
+          () => {
+            state.held.delete(answer);
+            resolve(false);
+          },
+          { once: true },
+        );
+      });
+      if (cancelled) yield {};
+    },
   }) satisfies ServiceImpl<typeof SessionService>;
 
 // ---------------------------------------------------------------------------
@@ -193,6 +253,10 @@ const unexpected = (method: string) => () => {
 
 interface Served {
   readonly client: Client<typeof ExecutorService>;
+  /** A client with its own caller or scope. */
+  readonly clientOf: (
+    options: TestClientOptions,
+  ) => Client<typeof ExecutorService>;
   readonly state: SessionState;
 }
 
@@ -209,6 +273,10 @@ const serve = async (
     records: [],
     steers: [],
     attachments: new Map(),
+    watchMode: 'hold',
+    watches: [],
+    held: new Set(),
+    hops: [],
   };
   const router = createTestRouter({
     fakes: [[SessionService, sessionFake(state)]],
@@ -244,8 +312,33 @@ const serve = async (
     },
   });
 
-  return { client: router.client(ExecutorService), state };
+  return {
+    client: router.client(ExecutorService),
+    clientOf: (options) => router.client(ExecutorService, options),
+    state,
+  };
 };
+
+/** Waits until `ready()` holds; fails after 5 s. */
+const eventually = async (
+  ready: () => boolean,
+  what: string,
+): Promise<void> => {
+  const deadline = performance.now() + 5_000;
+
+  while (!ready()) {
+    if (performance.now() > deadline)
+      assert.fail(`timed out waiting for ${what}`);
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+};
+
+/** Resolves once `signal` aborted (at once when it already is). */
+const abortedOf = (signal: AbortSignal): Promise<void> =>
+  new Promise((resolve) => {
+    if (signal.aborted) resolve();
+    signal.addEventListener('abort', () => resolve(), { once: true });
+  });
 
 const drain = async <T>(items: AsyncIterable<T>): Promise<T[]> => {
   const all: T[] = [];
@@ -313,29 +406,65 @@ const recordShape = (items: readonly RecordItem[]): unknown[] => {
 // ---------------------------------------------------------------------------
 
 describe('S51b: runtime/executor', () => {
-  test('B12: Run gives the implementation the decoded thread and job, the call and a session for the request sessionId; answers {text}', async (t) => {
+  test("B12 (S51e): Run gives the implementation the decoded thread and job, a call with the handler call's caller, scope, trace and deadline whose signal aborts with the handler's, and a session for the request sessionId; answers {text}", async (t) => {
+    const caller = { bundleId: 'runtime', version: '1.0.0', generation: 1 };
+    const scope = { projectId, threadId, promptId };
     const received: {
       thread: unknown;
       job: unknown;
       call: Call;
     }[] = [];
-    const { client, state } = await serve(t, {
+    const { clientOf, state } = await serve(t, {
       run: async (input, call) => {
         received.push({ thread: input.thread, job: input.job, call });
         await input.session.steers?.();
+        if (input.job.prompt === 'hold') await abortedOf(call.signal);
 
         return { text: 'answer' };
       },
     });
+    const client = clientOf({ caller, scope });
 
-    const response = await client.run(runRequest());
+    const response = await client.run(runRequest(), { timeoutMs: 60_000 });
 
     assert.equal(response.text, 'answer');
     assert.equal(received.length, 1);
-    assert.deepEqual(plain(received[0]?.thread), plain(thread));
-    assert.deepEqual(plain(received[0]?.job), plain(job));
-    assert.ok(received[0]?.call.signal instanceof AbortSignal);
+    const [first] = received;
+    assert.ok(first !== undefined);
+    assert.deepEqual(plain(first.thread), plain(thread));
+    assert.deepEqual(plain(first.job), plain(job));
+    assert.ok(isCall(first.call), 'isCall holds');
+    assert.deepEqual(plain(first.call.caller), caller);
+    assert.deepEqual(plain(first.call.scope), scope);
+    // The session call is a hop of the handler's call: same trace, same deadline.
+    const [hop] = state.hops;
+    assert.ok(hop !== undefined);
+    assert.equal(traceIdOf(first.call), hop.traceId);
+    assert.ok(deadlineOf(first.call) > 0, 'the deadline carried');
+    assert.equal(deadlineOf(first.call), hop.deadline);
     assert.deepEqual(state.calls, [{ method: 'takeSteers', sessionId }]);
+    assert.deepEqual(
+      state.watches.map((watch) => watch.sessionId),
+      [sessionId],
+      'Run opened WatchCancel for its session',
+    );
+
+    // The implementation's signal aborts when the handler's does.
+    const controller = new AbortController();
+    const held = client.run(
+      {
+        ...runRequest(),
+        job: encode(PromptJobSchema, { ...job, prompt: 'hold' }, runtimeOneofs),
+      },
+      { signal: controller.signal },
+    );
+    held.catch(() => undefined);
+    await eventually(() => received.length === 2, 'the second run');
+    controller.abort();
+    await eventually(
+      () => received[1]?.call.signal.aborted === true,
+      "the implementation's signal aborted with the handler's",
+    );
   });
 
   test('B13: history.read joins and decodes the chunks, answers undefined for none; history.format is undefined before the first read and the head format after it', async (t) => {
@@ -655,5 +784,356 @@ describe('S51b: runtime/executor', () => {
       [['state']],
     );
     assert.equal(runs, 2, 'the implementation did not run');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// S51e (contract s51 §13.4): `Run` and `Compact` watch their session's
+// cancellation (`executor.session/v1.WatchCancel`).
+// ---------------------------------------------------------------------------
+
+const compactPolicy: CompactionPolicyValue = {
+  tailMinMessages: 4,
+  summaryMaxChars: 2000,
+};
+
+const compactRequest = (value: unknown = thread) => ({
+  sessionId,
+  thread: encode(ExecutorThreadSchema, value, runtimeOneofs),
+  policy: compactPolicy,
+});
+
+/** The gRPC code and Doric error of a failed executor call. */
+const rejectionOfRun = async (
+  promise: Promise<unknown>,
+): Promise<{ grpc: Code; error: ContractError }> => {
+  try {
+    await promise;
+  } catch (error) {
+    assert.ok(error instanceof ConnectError, String(error));
+
+    return { grpc: error.code, error: fromConnectError(error) };
+  }
+
+  assert.fail('expected the call to fail');
+};
+
+/** A served `Run`'s handler context, the request decoded from the wire as the router delivers it. */
+const directContext = (method: 'run' | 'compact') =>
+  createHandlerContext({
+    service: ExecutorService,
+    method: ExecutorService.method[method],
+    protocolName: 'test',
+    requestMethod: 'POST',
+    url: `http://test/doric.executor.v1.ExecutorService/${method}`,
+  });
+
+/** What the implementation's `call` saw: its signal's reason once aborted. */
+interface Seen {
+  call?: Call;
+  reason?: unknown;
+}
+
+describe('S51e: serveExecutor watches the session for a cancel', () => {
+  test('74 (E7): Run opens WatchCancel{sessionId} before any other session call; a Run failing invalid_input opens none; Checkpoint, Rewind and Formats open none', async (t) => {
+    const { client, state } = await serve(t, {
+      run: async (input) => {
+        await input.session.steers?.();
+
+        return { text: 'ran' };
+      },
+      checkpoint: async () => ({ format, parts: {} }),
+      rewind: async () => undefined,
+      formats: () => [format],
+    });
+
+    await client.run(runRequest());
+
+    assert.deepEqual(
+      state.watches.map(({ sessionId: id, after }) => ({ id, after })),
+      [{ id: sessionId, after: 0 }],
+      'WatchCancel first, for the request session',
+    );
+
+    await drain(client.checkpoint({ sessionId, promptId }));
+    await drain(
+      client.rewind({ sessionId, promptId, removedPromptIds: ['p1'] }),
+    );
+    await client.formats({});
+    assert.equal(state.watches.length, 1, 'no WatchCancel for the others');
+
+    const implementation = serveExecutor(
+      {
+        run: async () => ({ text: 'ran' }),
+      } as Partial<ExecutorImplementation> as ExecutorImplementation,
+      () => assert.fail('no session call for an invalid Run'),
+    );
+    const invalid = fromBinary(
+      RunRequestSchema,
+      toBinary(
+        RunRequestSchema,
+        create(RunRequestSchema, runRequest({ ...thread, state: 'paused' })),
+      ),
+    );
+    const error = await Promise.resolve()
+      .then(() => implementation.run(invalid, directContext('run')))
+      .then(
+        () => assert.fail('expected Run to fail'),
+        (failure: unknown) => failure,
+      );
+    assert.ok(isContractError(error), String(error));
+    assert.equal(error.code, 'invalid_input');
+  });
+
+  test("75 (E8): the WatchCancel item aborts the implementation's call.signal with an AbortError while the handler's stays live: a record made after it reaches the session", async (t) => {
+    const seen: Seen = {};
+    const { client, state } = await serve(t, {
+      run: async (input, call) => {
+        seen.call = call;
+        await abortedOf(call.signal);
+        seen.reason = call.signal.reason;
+        await input.session.record({ event: { type: 'after.cancel' } });
+
+        return { text: 'recorded' };
+      },
+    });
+
+    const running = client.run(runRequest());
+    running.catch(() => undefined);
+    await eventually(() => state.watches.length === 1, 'WatchCancel opened');
+    cancelWatches(state);
+
+    assert.equal((await running).text, 'recorded', 'the Run was not cancelled');
+    assert.ok(seen.reason instanceof DOMException, String(seen.reason));
+    assert.equal(seen.reason.name, 'AbortError');
+    assert.deepEqual(recordShape(state.records[0] ?? []), [
+      { head: { sessionId, format: undefined } },
+      { event: { type: 'after.cancel' } },
+    ]);
+  });
+
+  test('76 (E9): after the cancel, rejecting with call.signal.reason fails run_cancelled ("The run was cancelled."), rejecting ContractError unavailable fails run_cancelled too (C-E1), resolving answers {text}', async (t) => {
+    let outcome: 'reason' | 'unavailable' | 'resolve' = 'reason';
+    const { client, state } = await serve(t, {
+      run: async (_input, call) => {
+        await abortedOf(call.signal);
+        if (outcome === 'reason') throw call.signal.reason;
+        if (outcome === 'unavailable')
+          throw new ContractError('unavailable', 'The session is gone.');
+
+        return { text: 'resolved' };
+      },
+    });
+    const cancelled = async () => {
+      const watched = state.watches.length;
+      const running = client.run(runRequest());
+      running.catch(() => undefined);
+      await eventually(
+        () => state.watches.length === watched + 1,
+        'WatchCancel opened',
+      );
+      cancelWatches(state);
+
+      return running;
+    };
+
+    const rejected = await rejectionOfRun(cancelled());
+    assert.equal(rejected.grpc, Code.FailedPrecondition);
+    assert.equal(rejected.error.code, 'run_cancelled');
+    assert.equal(rejected.error.message, 'The run was cancelled.');
+
+    outcome = 'unavailable';
+    // C-E1: any failure after the item, a ContractError included, is the cancel.
+    const unavailable = await rejectionOfRun(cancelled());
+    assert.equal(unavailable.grpc, Code.FailedPrecondition);
+    assert.equal(unavailable.error.code, 'run_cancelled');
+    assert.equal(unavailable.error.message, 'The run was cancelled.');
+
+    outcome = 'resolve';
+    assert.equal((await cancelled()).text, 'resolved');
+  });
+
+  test('77 (E10): a session without WatchCancel (UNIMPLEMENTED), or one that ends it with no item, lets the run complete; its call.signal never aborts', async (t) => {
+    const signals: AbortSignal[] = [];
+    const { client, state } = await serve(t, {
+      run: async (_input, call) => {
+        signals.push(call.signal);
+        // Lets the failed or ended WatchCancel settle first.
+        await new Promise((resolve) => setTimeout(resolve, 50));
+
+        return { text: 'done' };
+      },
+    });
+
+    for (const mode of ['unimplemented', 'end'] as const) {
+      state.watchMode = mode;
+      assert.equal((await client.run(runRequest())).text, 'done', mode);
+    }
+
+    assert.equal(state.watches.length, 2, 'each Run tried WatchCancel');
+    assert.deepEqual(
+      signals.map((signal) => signal.aborted),
+      [false, false],
+    );
+  });
+
+  test('78 (E11): the WatchCancel call is cancelled once run settles', async (t) => {
+    const { client, state } = await serve(t, {
+      run: async () => ({ text: 'quick' }),
+    });
+
+    await client.run(runRequest());
+
+    await eventually(
+      () => state.watches[0]?.signal.aborted === true,
+      'the WatchCancel handler signal aborted',
+    );
+  });
+
+  test("85 (E15): Compact opens WatchCancel{sessionId} before any other session call (none for an invalid thread); the item aborts the implementation's call.signal (AbortError), not the handler's; a record after it reaches the session; WatchCancel is cancelled when compact settles", async (t) => {
+    const seen: Seen = {};
+    const { client, state } = await serve(t, {
+      compact: async (input, call) => {
+        await input.session.steers?.();
+        seen.call = call;
+        await abortedOf(call.signal);
+        seen.reason = call.signal.reason;
+        await input.session.record({
+          event: { type: 'compaction.failed', code: 'summarizer_failed' },
+        });
+
+        return { status: 'failed', code: 'summarizer_failed' };
+      },
+    });
+
+    const compacting = client.compact(compactRequest());
+    compacting.catch(() => undefined);
+    await eventually(() => state.watches.length === 1, 'WatchCancel opened');
+    assert.deepEqual(
+      state.watches.map(({ sessionId: id, after }) => ({ id, after })),
+      [{ id: sessionId, after: 0 }],
+    );
+    await eventually(() => seen.call !== undefined, 'compact running');
+    cancelWatches(state);
+
+    assert.deepEqual(
+      decode(CompactResponseSchema, await compacting, runtimeOneofs),
+      { status: 'failed', code: 'summarizer_failed' },
+      'the Compact call was not cancelled',
+    );
+    assert.ok(seen.reason instanceof DOMException, String(seen.reason));
+    assert.equal(seen.reason.name, 'AbortError');
+    assert.deepEqual(recordShape(state.records[0] ?? []), [
+      { head: { sessionId, format: undefined } },
+      { event: { type: 'compaction.failed', code: 'summarizer_failed' } },
+    ]);
+
+    const quick = await serve(t, {
+      compact: async () => ({ status: 'refused', reason: 'disabled' }),
+    });
+    await quick.client.compact(compactRequest());
+    await eventually(
+      () => quick.state.watches[0]?.signal.aborted === true,
+      'the WatchCancel cancelled once compact settled',
+    );
+
+    const implementation = serveExecutor(
+      {
+        compact: async () => ({ status: 'refused', reason: 'disabled' }),
+      } as Partial<ExecutorImplementation> as ExecutorImplementation,
+      () => assert.fail('no session call for an invalid Compact'),
+    );
+    const error = await Promise.resolve()
+      .then(() =>
+        implementation.compact(
+          create(CompactRequestSchema, {
+            ...compactRequest({ ...thread, state: 'paused' }),
+          }),
+          directContext('compact'),
+        ),
+      )
+      .then(
+        () => assert.fail('expected Compact to fail'),
+        (failure: unknown) => failure,
+      );
+    assert.ok(isContractError(error), String(error));
+    assert.equal(error.code, 'invalid_input');
+  });
+
+  test('86 (E16): after the item, compact rejecting with call.signal.reason fails compaction_cancelled ("The compaction was cancelled."), rejecting ContractError unavailable fails compaction_cancelled too (C-E1), resolving {status: failed, code: summarizer_failed} is answered encoded', async (t) => {
+    let outcome: 'reason' | 'unavailable' | 'resolve' = 'reason';
+    const { client, state } = await serve(t, {
+      compact: async (_input, call) => {
+        await abortedOf(call.signal);
+        if (outcome === 'reason') throw call.signal.reason;
+        if (outcome === 'unavailable')
+          throw new ContractError('unavailable', 'The session is gone.');
+
+        return { status: 'failed', code: 'summarizer_failed' };
+      },
+    });
+    const cancelled = async () => {
+      const watched = state.watches.length;
+      const compacting = client.compact(compactRequest());
+      compacting.catch(() => undefined);
+      await eventually(
+        () => state.watches.length === watched + 1,
+        'WatchCancel opened',
+      );
+      cancelWatches(state);
+
+      return compacting;
+    };
+
+    const rejected = await rejectionOfRun(cancelled());
+    assert.equal(rejected.grpc, Code.FailedPrecondition);
+    assert.equal(rejected.error.code, 'compaction_cancelled');
+    assert.equal(rejected.error.message, 'The compaction was cancelled.');
+
+    outcome = 'unavailable';
+    // C-E1: any failure after the item, a ContractError included, is the cancel.
+    const unavailable = await rejectionOfRun(cancelled());
+    assert.equal(unavailable.grpc, Code.FailedPrecondition);
+    assert.equal(unavailable.error.code, 'compaction_cancelled');
+    assert.equal(unavailable.error.message, 'The compaction was cancelled.');
+
+    outcome = 'resolve';
+    assert.deepEqual(
+      decode(CompactResponseSchema, await cancelled(), runtimeOneofs),
+      { status: 'failed', code: 'summarizer_failed' },
+    );
+  });
+
+  test('87 (E17): a session without WatchCancel (UNIMPLEMENTED) lets the compaction complete, its call.signal never aborts; Checkpoint and Rewind still open no WatchCancel', async (t) => {
+    const signals: AbortSignal[] = [];
+    const { client, state } = await serve(t, {
+      compact: async (_input, call) => {
+        signals.push(call.signal);
+        await new Promise((resolve) => setTimeout(resolve, 50));
+
+        return { status: 'refused', reason: 'nothing_to_compact' };
+      },
+      checkpoint: async () => ({ format, parts: {} }),
+      rewind: async () => undefined,
+    });
+    state.watchMode = 'unimplemented';
+
+    assert.deepEqual(
+      decode(
+        CompactResponseSchema,
+        await client.compact(compactRequest()),
+        runtimeOneofs,
+      ),
+      { status: 'refused', reason: 'nothing_to_compact' },
+    );
+    assert.equal(state.watches.length, 1, 'Compact tried WatchCancel');
+    assert.deepEqual(
+      signals.map((signal) => signal.aborted),
+      [false],
+    );
+
+    await drain(client.checkpoint({ sessionId, promptId }));
+    await drain(client.rewind({ sessionId, promptId, removedPromptIds: [] }));
+    assert.equal(state.watches.length, 1, 'none for Checkpoint and Rewind');
   });
 });

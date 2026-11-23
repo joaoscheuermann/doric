@@ -5,7 +5,13 @@
 // Thread's history, takes steering inputs and describes attachments, so
 // `runtime` keeps commit-before-publish, redaction, the storage-pause retry
 // and its aggregate atomic. A call's scope is `{ projectId, threadId,
-// promptId }` of the prompt; cancelling the call aborts the work.
+// promptId }` of the prompt. `runtime` cancels a `Run` or a `Compact` through
+// its session (`executor.session/v1.WatchCancel`) and waits for the call to
+// end, so what it records is still recorded; it cancels the call itself only
+// after the cancel grace. A `Run` that ends because it was cancelled fails
+// with reason `run_cancelled`, a `Compact` with `compaction_cancelled`; one
+// that answers anyway answers as usual. Cancelling `Checkpoint` or `Rewind`
+// cancels the call, as before.
 //
 // 1.6.0: `run`, `compact`, `checkpoint` and `rewind` take a `sessionId`
 // instead of functions; `formats` is asynchronous; `checkpoint` and `rewind`

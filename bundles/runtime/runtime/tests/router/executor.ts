@@ -65,6 +65,22 @@ export interface ExecutorCall {
   readonly request: JsonValue;
   readonly scope: CallScope | undefined;
   readonly signal: AbortSignal;
+  /** The `WatchCancel` the fake opened for this `Run` or `Compact` (`watchCancel` option); absent otherwise. */
+  watch?: CancelWatch;
+}
+
+/** One `executor.session/v1.WatchCancel` the fake opened, and what it answered. */
+export interface CancelWatch {
+  /** Aborted once the stream answered its item; the run's or compaction's signal follows it. */
+  readonly cancelled: AbortSignal;
+  /** The items the stream answered so far. */
+  readonly items: () => number;
+  /** Whether the stream ended (OK or failed). */
+  readonly done: () => boolean;
+  /** Resolves once the stream ended: `{ok: true}`, or `{ok: false, error}`. Never rejects. */
+  readonly ended: Promise<
+    { readonly ok: true } | { readonly ok: false; readonly error: unknown }
+  >;
 }
 
 /** One `executor.session/v1` call the fake made back. */
@@ -89,6 +105,14 @@ export interface FakeExecutorOptions {
   readonly compact?: Executor['compact'];
   /** Methods answered by the test in place of the scripted executor (still recorded). */
   readonly overrides?: Partial<ServiceImpl<typeof ExecutorService>>;
+  /**
+   * S51e: the fake opens `WatchCancel{sessionId}` in each scripted `Run` and `Compact` (as
+   * `serveExecutor` does) and aborts the script's signal when it answers its item; off by default (an
+   * executor that ignores the cancel). The fake never cancels the stream itself: `runtime` ends it.
+   */
+  readonly watchCancel?: boolean;
+  /** Awaited before the fake opens `WatchCancel` (the script runs meanwhile): a late watch. */
+  readonly watchCancelAfter?: () => Promise<void>;
 }
 
 type PromptScope = Required<Omit<CallScope, 'windowKey'>>;
@@ -156,6 +180,7 @@ const traced = (
   takeSteers: (request, options) => client.takeSteers(request, options),
   describeAttachment: (request, options) =>
     client.describeAttachment(request, options),
+  watchCancel: (request, options) => client.watchCancel(request, options),
 });
 
 /**
@@ -180,15 +205,52 @@ export const fakeExecutor = (
     method: ExecutorMethod,
     request: JsonValue,
     context: HandlerContext,
-  ) => {
-    calls.push({
+  ): ExecutorCall => {
+    const call: ExecutorCall = {
       method,
       request,
       scope: callOf(context).scope,
       signal: context.signal,
-    });
+    };
+    calls.push(call);
     const failure = failures.get(method)?.shift();
     if (failure !== undefined) throw failure;
+    return call;
+  };
+  /**
+   * The signal a scripted `Run` or `Compact` gets: the handler's, and — with `watchCancel` — the item of the
+   * `WatchCancel{sessionId}` it opens (recorded on `call`).
+   */
+  const signalOf = (
+    call: ExecutorCall,
+    sessionId: string,
+    context: HandlerContext,
+  ): AbortSignal => {
+    if (options.watchCancel !== true) return context.signal;
+    const cancelled = new AbortController();
+    let items = 0;
+    let done = false;
+    const ended = (async () => {
+      try {
+        await options.watchCancelAfter?.();
+        for await (const _ of session().watchCancel({ sessionId })) {
+          items += 1;
+          cancelled.abort();
+        }
+        return { ok: true } as const;
+      } catch (error) {
+        return { ok: false, error } as const;
+      } finally {
+        done = true;
+      }
+    })();
+    call.watch = {
+      cancelled: cancelled.signal,
+      items: () => items,
+      done: () => done,
+      ended,
+    };
+    return AbortSignal.any([context.signal, cancelled.signal]);
   };
   const executorOf = (context: HandlerContext) =>
     scriptedExecutor(options.execute ?? (async () => 'done'), {
@@ -199,13 +261,14 @@ export const fakeExecutor = (
 
   const implementation: ServiceImpl<typeof ExecutorService> = {
     run: async (request, context) => {
-      received(
+      const call = received(
         'run',
         decode(RunRequestSchema, request, runtimeOneofs),
         context,
       );
       if (overrides.run !== undefined)
         return await overrides.run(request, context);
+      const signal = signalOf(call, request.sessionId, context);
       const { text } = await executorOf(context).run(
         {
           thread: decodedOf(
@@ -215,7 +278,7 @@ export const fakeExecutor = (
           job: decodedOf(PromptJobSchema, request.job) as PromptJob,
           session: remote(request.sessionId),
         },
-        { signal: context.signal },
+        { signal },
       );
       return { text };
     },
@@ -246,13 +309,14 @@ export const fakeExecutor = (
       for (const { item } of historyPatchItems(patch)) yield { item };
     },
     compact: async (request, context) => {
-      received(
+      const call = received(
         'compact',
         decode(CompactRequestSchema, request, runtimeOneofs),
         context,
       );
       if (overrides.compact !== undefined)
         return await overrides.compact(request, context);
+      const signal = signalOf(call, request.sessionId, context);
       const result = await executorOf(context).compact(
         {
           thread: decodedOf(
@@ -265,7 +329,7 @@ export const fakeExecutor = (
             request.policy,
           ) as CompactionPolicyValue,
         },
-        { signal: context.signal },
+        { signal },
       );
       return encode(CompactResponseSchema, result);
     },

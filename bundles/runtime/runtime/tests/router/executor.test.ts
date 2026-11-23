@@ -17,12 +17,19 @@ import {
   fromConnectError,
   isContractError,
 } from 'bundle/contracts';
+import type { ServiceEntry } from 'bundle/host';
 import { decodeJson, encodeJson } from 'storage/rpc';
 
 import type { ConfigurationValue } from '../../src/contracts/configuration.js';
-import type { HistoryReader } from '../../src/contracts/executor.js';
+import type {
+  ExecutorCompactionResult,
+  ExecutorThread,
+  HistoryReader,
+  PromptSession,
+} from '../../src/contracts/executor.js';
 import {
   type RecordRequestSchema,
+  SessionService,
   SteerInputSchema,
 } from '../../src/contracts/gen/doric/executor/session/v1/session_pb.js';
 import { ExecutorService } from '../../src/contracts/gen/doric/executor/v1/executor_pb.js';
@@ -31,6 +38,7 @@ import { type RemotePromptSession, serveExecutor } from '../../src/executor.js';
 import { createExecutorSessions } from '../../src/host/executor-sessions.js';
 import { routedExecutor } from '../../src/host/routed-executor.js';
 import { decode, runtimeOneofs } from '../../src/host/rpc/codec.js';
+import { routedSessionService } from '../../src/host/rpc/session.js';
 import { defaultConfiguration, epoch } from '../domain/support/harness.js';
 import { messagesOf, testHistoryFormat } from '../support/executor.js';
 import { type ExecutorCall, executorCaller } from './executor.js';
@@ -48,6 +56,7 @@ import {
   projectState,
   putsOf,
   rejectionOf,
+  settle,
   started,
   storageTypes,
   within,
@@ -944,10 +953,11 @@ describe('S48b: executor/v1 through the router', () => {
     );
   });
 
-  test("20: cancelling a running prompt aborts the executor's Run; a callback with its session id afterwards fails unknown_session", async (t) => {
+  test('20 (S51e): cancelling a running prompt cancels its session; an executor that ignores it has its Run cancelled after the grace (executorCancelGraceMs: 50); a callback with its session id afterwards fails unknown_session', async (t) => {
     const held = gate();
     t.after(() => held.open());
     const h = await routed(t, {
+      executorCancelGraceMs: 50,
       execute: async (run) => {
         await holdUntil(held, run.signal);
 
@@ -959,11 +969,35 @@ describe('S48b: executor/v1 through the router', () => {
     const sessionId = await runSession(h, thread.id);
     const [run] = callsFor(h, 'run', thread.id);
     assert.ok(run !== undefined);
+    const aborted: { at?: number } = {};
+    run.signal.addEventListener(
+      'abort',
+      () => {
+        aborted.at = performance.now();
+      },
+      { once: true },
+    );
 
+    const pausedAt = performance.now();
     const paused = await h.threads().pause({ id: thread.id, promptId });
 
     assert.equal(paused.interruptResult, 'interrupted');
     await eventually(() => run.signal.aborted, "the Run's signal aborted");
+    const abortedAt = aborted.at;
+    assert.ok(abortedAt !== undefined);
+    // ≥ 50 ms, with 1 ms of timer granularity.
+    assert.ok(
+      abortedAt - pausedAt >= 49,
+      `the Run was cancelled ${(abortedAt - pausedAt).toFixed(1)} ms after the pause, not after the 50 ms grace`,
+    );
+    const timeouts = h.logs.filter(
+      ({ level, fields }) =>
+        level === 'warn' && fields?.code === 'executor_cancel_timeout',
+    );
+    assert.deepEqual(
+      timeouts.map(({ message }) => message),
+      ['The executor did not end a cancelled run.'],
+    );
     await eventually(
       async () => (await threadOf(h, thread.id)).state !== 'running',
       'the run settled',
@@ -1300,5 +1334,590 @@ describe('S48b: routedExecutor (port)', () => {
       ),
       undefined,
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// S51e (contract s51 §13): a prompt's executor call is cancelled through its
+// session (`executor.session/v1.WatchCancel`), not by cancelling the call.
+// ---------------------------------------------------------------------------
+
+/** The `executor_cancel_timeout` warnings logged so far. */
+const cancelTimeouts = (logs: Harness['logs']) =>
+  logs.filter(
+    ({ level, fields }) =>
+      level === 'warn' && fields?.code === 'executor_cancel_timeout',
+  );
+
+/** Every item of a `WatchCancel` stream; rejects with its failure. */
+const watchItems = async (h: Harness, sessionId: string, caller?: Caller) => {
+  const items: unknown[] = [];
+  for await (const item of h.session(caller).watchCancel({ sessionId })) {
+    items.push(item);
+  }
+
+  return items;
+};
+
+/** The `Timeout`s keeping the process alive now. */
+const activeTimeouts = () =>
+  process.getActiveResourcesInfo().filter((type) => type === 'Timeout').length;
+
+/** The last `agent.cancelled` event's `error` in Thread `id`'s log. */
+const cancelledError = async (h: Harness, id: string) => {
+  const cancelled = (await eventsOf(h, id))
+    .filter(({ type }) => type === 'agent.cancelled')
+    .at(-1);
+  assert.ok(cancelled !== undefined, 'an agent.cancelled event');
+
+  return (cancelled.event as { error?: Record<string, unknown> } | undefined)
+    ?.error;
+};
+
+describe('S51e: a prompt cancelled through its executor session', () => {
+  test('68 (E1): pausing a running prompt answers the executor WatchCancel item while its Run handler signal stays live; a Record made after the item is saved; the prompt ends once the Run resolved', async (t) => {
+    const held = gate();
+    const release = gate();
+    t.after(() => {
+      held.open();
+      release.open();
+    });
+    let resolved = false;
+    const h = await routed(t, {
+      executorWatchCancel: true,
+      execute: async (run) => {
+        await holdUntil(held, run.signal);
+        await run.append('after the cancel');
+        await release.promise;
+        resolved = true;
+
+        return 'done';
+      },
+    });
+    const { thread } = await readyThread(h);
+    const promptId = await prompted(h, thread.id, 'hold');
+    await runSession(h, thread.id);
+    const [run] = callsFor(h, 'run', thread.id);
+    assert.ok(run !== undefined);
+
+    const paused = await h.threads().pause({ id: thread.id, promptId });
+
+    assert.equal(paused.interruptResult, 'interrupted');
+    await eventually(
+      () => run.watch?.items() === 1,
+      "the executor's WatchCancel answered its item",
+    );
+    assert.equal(run.signal.aborted, false, "the Run's handler signal is live");
+    await eventually(
+      async () =>
+        (await storedMessages(h, thread.id)).includes('after the cancel'),
+      'the Record made after the item is saved',
+    );
+    assert.notEqual(
+      (await threadOf(h, thread.id)).result?.promptId,
+      promptId,
+      'the prompt has not ended while its Run is in flight',
+    );
+
+    release.open();
+    const result = await finished(h, thread.id, promptId);
+
+    assert.ok(resolved, 'the prompt ended after the Run resolved');
+    assert.equal(result.status, 'cancelled');
+    assert.equal(run.watch?.items(), 1, 'one item');
+  });
+
+  test('69 (E2): interrupting a running prompt whose executor then fails run_cancelled ends agent.cancelled, status cancelled, text "The prompt was interrupted."; the error is the abort reason; the session answers unknown_session only after the Run settled', async (t) => {
+    const held = gate();
+    const release = gate();
+    t.after(() => {
+      held.open();
+      release.open();
+    });
+    const h = await routed(t, {
+      executorWatchCancel: true,
+      execute: async (run) => {
+        await holdUntil(held, run.signal);
+        await release.promise;
+        throw new ContractError('run_cancelled', 'The run was cancelled.');
+      },
+    });
+    const { thread } = await readyThread(h);
+    const promptId = await prompted(h, thread.id, 'hold');
+    const sessionId = await runSession(h, thread.id);
+    const [run] = callsFor(h, 'run', thread.id);
+    assert.ok(run !== undefined);
+
+    await h.threads().pause({ id: thread.id, promptId });
+    await eventually(
+      () => run.watch?.items() === 1,
+      "the executor's WatchCancel answered its item",
+    );
+    // The session stays open while the Run is in flight.
+    assert.deepEqual(
+      (await h.session().takeSteers({ sessionId })).steers,
+      [],
+      'a callback still answers after the cancel',
+    );
+
+    release.open();
+    const result = await finished(h, thread.id, promptId);
+
+    assert.equal(result.status, 'cancelled');
+    assert.equal(result.text, 'The prompt was interrupted.');
+    const error = await cancelledError(h, thread.id);
+    assert.equal(error?.name, 'AbortError', JSON.stringify(error));
+    assert.notEqual(error?.code, 'run_cancelled');
+    await assertUnknownSession(
+      h.session().takeSteers({ sessionId }),
+      'after the Run settled',
+    );
+  });
+
+  test('70 (E3): an executor that resolves {text: "late"} after the cancel leaves the prompt cancelled, its text not "late"', async (t) => {
+    const held = gate();
+    t.after(() => held.open());
+    const returned: { at?: number } = {};
+    const h = await routed(t, {
+      executorWatchCancel: true,
+      executorCancelGraceMs: 200,
+      execute: async (run) => {
+        await holdUntil(held, run.signal);
+        returned.at = performance.now();
+
+        return 'late';
+      },
+    });
+    const { thread } = await readyThread(h);
+    const promptId = await prompted(h, thread.id, 'hold');
+    await runSession(h, thread.id);
+    const [run] = callsFor(h, 'run', thread.id);
+    assert.ok(run !== undefined);
+    const aborted: { at?: number } = {};
+    run.signal.addEventListener(
+      'abort',
+      () => {
+        aborted.at = performance.now();
+      },
+      { once: true },
+    );
+
+    await h.threads().pause({ id: thread.id, promptId });
+    await eventually(
+      () => run.watch?.items() === 1,
+      "the executor's WatchCancel answered its item",
+    );
+    const result = await finished(h, thread.id, promptId);
+
+    assert.equal(result.status, 'cancelled');
+    assert.notEqual(result.text, 'late');
+    assert.ok(returned.at !== undefined, 'the Run answered');
+    // Connect aborts a unary handler's signal when its call ends (C-E2):
+    // only an abort before the Run answered would be a cancel.
+    assert.ok(
+      aborted.at === undefined || aborted.at >= returned.at,
+      'the Run call was not cancelled before it answered',
+    );
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    assert.deepEqual(cancelTimeouts(h.logs), [], 'no executor_cancel_timeout');
+  });
+
+  test('71 (E4): a WatchCancel opened after the cancel answers its item at once; one opened on a run that finishes uncancelled ends with no item when the Run settles', async (t) => {
+    const held = gate();
+    const late = gate();
+    t.after(() => {
+      held.open();
+      late.open();
+    });
+    const h = await routed(t, {
+      executorWatchCancel: true,
+      executorWatchCancelAfter: () => late.promise,
+      execute: async (run) => {
+        await holdUntil(held, run.signal);
+
+        return 'done';
+      },
+    });
+    const { thread } = await readyThread(h);
+    const promptId = await prompted(h, thread.id, 'hold');
+    await runSession(h, thread.id);
+    const [run] = callsFor(h, 'run', thread.id);
+    assert.ok(run !== undefined);
+
+    await h.threads().pause({ id: thread.id, promptId });
+    late.open();
+
+    await eventually(
+      () => run.watch?.items() === 1,
+      'the late WatchCancel answered its item',
+      1_000,
+    );
+    assert.ok(run.watch !== undefined);
+    assert.deepEqual(await within(run.watch.ended, 'the late watch'), {
+      ok: true,
+    });
+
+    const quick = await routed(t, {
+      executorWatchCancel: true,
+      execute: async () => {
+        await settle();
+
+        return 'done';
+      },
+    });
+    const other = await readyThread(quick);
+    const quickPrompt = await prompted(quick, other.thread.id, 'go');
+    assert.equal(
+      (await finished(quick, other.thread.id, quickPrompt)).status,
+      'completed',
+    );
+    const [uncancelled] = callsFor(quick, 'run', other.thread.id);
+    assert.ok(uncancelled?.watch !== undefined);
+    assert.deepEqual(
+      await within(uncancelled.watch.ended, 'the uncancelled watch'),
+      { ok: true },
+    );
+    assert.equal(uncancelled.watch.items(), 0, 'no item');
+  });
+
+  test('72 (E5): WatchCancel with another bundle, another instance after the first callback, or an ended id fails NOT_FOUND unknown_session (T3.3)', async (t) => {
+    const held = gate();
+    t.after(() => held.open());
+    const h = await routed(t, {
+      execute: async (run) => {
+        await holdUntil(held, run.signal);
+
+        return 'done';
+      },
+    });
+    const { thread } = await readyThread(h);
+    const promptId = await prompted(h, thread.id, 'hold');
+    const sessionId = await runSession(h, thread.id);
+
+    await assertUnknownSession(
+      watchItems(h, sessionId, otherBundle),
+      'another bundle',
+    );
+    await h.session().takeSteers({ sessionId });
+    await assertUnknownSession(
+      watchItems(h, sessionId, nextGeneration),
+      'another instance after the first callback',
+    );
+
+    held.open();
+    await finished(h, thread.id, promptId);
+    await assertUnknownSession(watchItems(h, sessionId), 'an ended id');
+  });
+
+  test('73 (E6): an executor that honours the cancel within the grace logs no warning, its Run is never cancelled, and the grace timer keeps nothing alive', async (t) => {
+    const held = gate();
+    t.after(() => held.open());
+    const returned: { at?: number } = {};
+    const h = await routed(t, {
+      executorWatchCancel: true,
+      executorCancelGraceMs: 200,
+      execute: async (run) => {
+        await holdUntil(held, run.signal);
+        returned.at = performance.now();
+
+        return 'done';
+      },
+    });
+    const { thread } = await readyThread(h);
+    const promptId = await prompted(h, thread.id, 'hold');
+    await runSession(h, thread.id);
+    const [run] = callsFor(h, 'run', thread.id);
+    assert.ok(run !== undefined);
+    const aborted: { at?: number } = {};
+    run.signal.addEventListener(
+      'abort',
+      () => {
+        aborted.at = performance.now();
+      },
+      { once: true },
+    );
+    const timeoutsBefore = activeTimeouts();
+
+    await h.threads().pause({ id: thread.id, promptId });
+    await eventually(
+      () => run.watch?.items() === 1,
+      "the executor's WatchCancel answered its item",
+    );
+    await finished(h, thread.id, promptId);
+
+    assert.ok(
+      activeTimeouts() <= timeoutsBefore,
+      'no grace timer keeps the process alive after the prompt ended',
+    );
+    assert.ok(returned.at !== undefined, 'the Run resolved');
+    assert.ok(
+      aborted.at === undefined || aborted.at >= returned.at,
+      'the Run call was not cancelled before it answered',
+    );
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    assert.deepEqual(cancelTimeouts(h.logs), [], 'no executor_cancel_timeout');
+  });
+});
+
+/** A Thread of `scope` as an executor receives it. */
+const executorThreadOf = (scope: {
+  projectId: string;
+  threadId: string;
+  promptId: string;
+}): ExecutorThread => ({
+  id: scope.threadId,
+  projectId: scope.projectId,
+  name: 'Thread',
+  state: 'ready',
+  lastSequence: 1,
+  cwd: '/workspace',
+  createdAt: epoch,
+  updatedAt: epoch,
+  model: 'm-1',
+  effort: 'low',
+});
+
+/** The signal of a `compact` call argument, if any. */
+const signalOfArg = (call: unknown): AbortSignal | undefined =>
+  typeof call === 'object' && call !== null && 'signal' in call
+    ? (call as { signal?: AbortSignal }).signal
+    : undefined;
+
+/**
+ * `routedExecutor(context, sessions, {cancelGraceMs})` (50 ms unless given) over a router
+ * whose bundle serves `executor.session/v1` for `sessions`, with the fake
+ * executor's `compact`; the session `compact` is given records each event.
+ */
+const directCompaction = async (
+  t: Parameters<typeof started>[0],
+  options: Pick<HarnessOptions, 'compact' | 'executorWatchCancel'>,
+  cancelGraceMs = 50,
+) => {
+  const sessions = createExecutorSessions();
+  const harnessed = await contextHarness(t, {
+    executor: 'routed',
+    ...options,
+    services: [
+      [SessionService, routedSessionService(sessions)] as ServiceEntry,
+    ],
+  });
+  const scope = {
+    projectId: randomUUID(),
+    threadId: randomUUID(),
+    promptId: randomUUID(),
+  };
+  const executor = routedExecutor(harnessed.context, sessions, {
+    cancelGraceMs,
+  })(scope);
+  const recorded: unknown[] = [];
+  const session: PromptSession = {
+    history: { format: undefined, read: async () => undefined },
+    record: async ({ event }) => {
+      recorded.push(event);
+    },
+  };
+  const controller = new AbortController();
+  const state: { settled: boolean } = { settled: false };
+  const compacting = executor
+    .compact(
+      {
+        thread: executorThreadOf(scope),
+        session,
+        policy: { tailMinMessages: 4, summaryMaxChars: 2000 },
+      },
+      { signal: controller.signal },
+    )
+    .finally(() => {
+      state.settled = true;
+    });
+  // Observed by each test; never an unhandled rejection.
+  compacting.catch(() => undefined);
+  await eventually(
+    () => harnessed.executor.callsOf('compact').length === 1,
+    'the Compact call',
+  );
+  const [call] = harnessed.executor.callsOf('compact');
+  assert.ok(call !== undefined);
+
+  return {
+    ...harnessed,
+    call,
+    compacting,
+    controller,
+    recorded,
+    state,
+  };
+};
+
+describe('S51e: routedExecutor compact cancelled through its session (port)', () => {
+  test('82 (E12): compact aborted while Compact is in flight answers the WatchCancel item, leaves the Compact handler signal live, applies a Record made after the item, settles only after Compact did; a callback afterwards is unknown_session', async (t) => {
+    const release = gate();
+    t.after(() => release.open());
+    // A grace long enough that the waits below stay inside it (C-E3).
+    const d = await directCompaction(
+      t,
+      {
+        executorWatchCancel: true,
+        compact: async (input, call) => {
+          await holdUntil(gate(), signalOfArg(call));
+          await input.session.record({
+            event: { type: 'compaction.failed', code: 'summarizer_failed' },
+          });
+          await release.promise;
+
+          return { status: 'failed', code: 'summarizer_failed' };
+        },
+      },
+      10_000,
+    );
+
+    d.controller.abort();
+    await eventually(
+      () => d.call.watch?.items() === 1,
+      "the executor's WatchCancel answered its item",
+    );
+    assert.equal(
+      d.call.signal.aborted,
+      false,
+      "the Compact handler's signal is live",
+    );
+    await eventually(
+      () => d.recorded.length === 1,
+      'the Record made after the item is applied',
+    );
+    assert.deepEqual(d.recorded, [
+      { type: 'compaction.failed', code: 'summarizer_failed' },
+    ]);
+    await settle();
+    assert.equal(d.state.settled, false, 'compact waits for Compact');
+
+    release.open();
+    await d.compacting.catch(() => undefined);
+    await assertFails(
+      Promise.resolve().then(() =>
+        d.executor.remote(sessionIdOf(d.call)).steers?.(),
+      ),
+      'unknown_session',
+    );
+  });
+
+  test('83 (E13): after the abort, a Compact resolving {status: failed, code: summarizer_failed} resolves that result; one rejecting compaction_cancelled rejects with the signal reason', async (t) => {
+    const failed: ExecutorCompactionResult = {
+      status: 'failed',
+      code: 'summarizer_failed',
+    };
+    const resolving = await directCompaction(t, {
+      executorWatchCancel: true,
+      compact: async (_input, call) => {
+        await holdUntil(gate(), signalOfArg(call));
+
+        return failed;
+      },
+    });
+
+    resolving.controller.abort();
+    await eventually(
+      () => resolving.call.watch?.items() === 1,
+      "the executor's WatchCancel answered its item",
+    );
+    assert.deepEqual(
+      await within(resolving.compacting, 'compact'),
+      failed,
+      'the resolved result is answered',
+    );
+
+    const rejecting = await directCompaction(t, {
+      executorWatchCancel: true,
+      compact: async (_input, call) => {
+        await holdUntil(gate(), signalOfArg(call));
+        throw new ContractError(
+          'compaction_cancelled',
+          'The compaction was cancelled.',
+        );
+      },
+    });
+    const reason = new Error('the prompt was cancelled');
+
+    rejecting.controller.abort(reason);
+    await eventually(
+      () => rejecting.call.watch?.items() === 1,
+      "the executor's WatchCancel answered its item",
+    );
+    assert.equal(
+      await rejectionOf(rejecting.compacting),
+      reason,
+      'compact rejects with the signal reason',
+    );
+  });
+
+  test('84 (E14): an executor that ignores WatchCancel has its Compact cancelled >= 50 ms after the abort with one executor_cancel_timeout warning; one that honours it in time logs nothing and is never cancelled', async (t) => {
+    const ignoring = await directCompaction(t, {
+      compact: async (_input, call) => {
+        await holdUntil(gate(), signalOfArg(call));
+
+        return { status: 'refused', reason: 'nothing_to_compact' };
+      },
+    });
+    const aborted: { at?: number } = {};
+    ignoring.call.signal.addEventListener(
+      'abort',
+      () => {
+        aborted.at = performance.now();
+      },
+      { once: true },
+    );
+
+    const abortAt = performance.now();
+    ignoring.controller.abort();
+    await eventually(
+      () => ignoring.call.signal.aborted,
+      'the Compact call cancelled',
+    );
+    const cancelledAt = aborted.at;
+    assert.ok(cancelledAt !== undefined);
+    // ≥ 50 ms, with 1 ms of timer granularity.
+    assert.ok(
+      cancelledAt - abortAt >= 49,
+      `the Compact call was cancelled ${(cancelledAt - abortAt).toFixed(1)} ms after the abort, not after the 50 ms grace`,
+    );
+    await ignoring.compacting.catch(() => undefined);
+    assert.deepEqual(
+      cancelTimeouts(ignoring.logs).map(({ message }) => message),
+      ['The executor did not end a cancelled compaction.'],
+    );
+
+    const returned: { at?: number } = {};
+    const honouring = await directCompaction(t, {
+      executorWatchCancel: true,
+      compact: async (_input, call) => {
+        await holdUntil(gate(), signalOfArg(call));
+        returned.at = performance.now();
+
+        return { status: 'refused', reason: 'nothing_to_compact' };
+      },
+    });
+    const honouredAbort: { at?: number } = {};
+    honouring.call.signal.addEventListener(
+      'abort',
+      () => {
+        honouredAbort.at = performance.now();
+      },
+      { once: true },
+    );
+
+    honouring.controller.abort();
+    await eventually(
+      () => honouring.call.watch?.items() === 1,
+      "the executor's WatchCancel answered its item",
+    );
+    await honouring.compacting.catch(() => undefined);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    assert.ok(returned.at !== undefined, 'the Compact answered');
+    assert.ok(
+      honouredAbort.at === undefined || honouredAbort.at >= returned.at,
+      'the Compact call was not cancelled before it answered',
+    );
+    assert.deepEqual(cancelTimeouts(honouring.logs), []);
   });
 });

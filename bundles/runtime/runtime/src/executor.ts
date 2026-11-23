@@ -9,8 +9,15 @@ import type {
   MessageInitShape,
   MessageShape,
 } from '@bufbuild/protobuf';
-import type { Client, ServiceImpl } from '@connectrpc/connect';
-import { type Call, ContractError, callOf } from 'bundle/contracts';
+import type { Client, HandlerContext, ServiceImpl } from '@connectrpc/connect';
+import {
+  type Call,
+  ContractError,
+  callGeneration,
+  callOf,
+  deadlineOf,
+  generationOf,
+} from 'bundle/contracts';
 import { decodeJson, encodeJson } from 'storage/rpc';
 import { z } from 'zod';
 
@@ -225,6 +232,11 @@ export const historyPatchItems = (
 
 /** What an executor provider implements; each method gets `callOf` of the handler call (scope, signal, caller). */
 export interface ExecutorImplementation {
+  /**
+   * `call.signal` aborts when `runtime` cancels the run (through the session) or the `Run` call ends; the
+   * implementation stops its work on it and may still use `input.session` (record what the run left) before it
+   * settles. Everything else as before.
+   */
   run(
     input: ExecutorRunInput,
     call: Call,
@@ -242,6 +254,10 @@ export interface ExecutorImplementation {
     call: Call,
   ): Promise<HistoryPatch | undefined>;
   formats(call: Call): readonly string[] | Promise<readonly string[]>;
+  /**
+   * The same for a compaction: `call.signal` aborts when `runtime` cancels it (through the session) or the
+   * `Compact` call ends; `input.session` stays usable, so the compaction records its outcome before it settles.
+   */
   compact(
     input: ExecutorCompactionInput,
     call: Call,
@@ -261,6 +277,29 @@ export interface ExecutorImplementation {
  * - `Formats{}` → `{formats}`.
  * Failures: whatever the implementation throws, as the SDK answers it (a `ContractError` unchanged, anything else
  * `internal`); the provider maps its own errors first. No state; concurrent calls are independent.
+ *
+ * (S51e: changes the `Run` bullet and adds one; `remotePromptSession`, `historyPatchItems` and the other handlers
+ * unchanged.)
+ * - `Run{sessionId, thread, job}`: after `thread` and `job` parsed (an `invalid_input` opens nothing), opens
+ *   `WatchCancel{sessionId}` on `session()` — the first session call of the `Run` — and calls
+ *   `run({thread, job, session}, call)` without waiting for it. `call` is the handler's call (`callOf`: same caller,
+ *   scope, trace, deadline, generation) whose `signal` aborts when the handler's signal aborts or when
+ *   `WatchCancel` answered its item (reason: an `AbortError` `DOMException`, as `AbortController.abort()` gives).
+ *   The `WatchCancel` call is cancelled when `run` settles; a `WatchCancel` that fails, or ends with no item, is
+ *   ignored (the `Run` then goes on until it ends or is cancelled). `session`'s calls — the `RemotePromptSession`
+ *   callbacks — never take `call.signal`: they inherit the handler's call (scope, deadline, trace, signal), which a
+ *   cancellation through the session does not abort, so the run can still read and record after it was cancelled.
+ * - A `run` that rejects after `WatchCancel` answered, with anything — a `ContractError` included (such as the
+ *   routed model call's `internal` "This operation was aborted") — fails the `Run` with
+ *   `ContractError('run_cancelled', 'The run was cancelled.')`. A rejection before the item passes unchanged.
+ *   A `run` that resolves after the cancel answers `{text}`.
+ * - `Compact{sessionId, thread, policy}`: the same as `Run` — after `thread` and `policy` parsed it opens
+ *   `WatchCancel{sessionId}` first, gives `compact` the derived `call` (its signal aborts on the item), cancels the
+ *   stream when `compact` settles; session calls keep the handler's live signal, so the compaction's last `Record`
+ *   (`compaction.failed`/`compaction.finished`) is sent after a cancel. A `compact` that rejects after the item with
+ *   anything, a `ContractError` included, fails `ContractError('compaction_cancelled', 'The compaction was
+ *   cancelled.')`; a rejection before the item passes unchanged; a resolved result is answered `encode`d as usual.
+ * - `Checkpoint`, `Rewind`, `Formats`: no `WatchCancel`; their `call` is `callOf(context)` as before.
  */
 export const serveExecutor = (
   implementation: ExecutorImplementation,
@@ -275,6 +314,60 @@ export const serveExecutor = (
   ): unknown =>
     message === undefined ? {} : decode(schema, message, runtimeOneofs);
 
+  /**
+   * `work(call)` with `call` the handler's call whose signal also aborts on `WatchCancel{sessionId}`'s item; the
+   * stream is opened first and cancelled once `work` settled. Any rejection after the item, a
+   * `ContractError` included, becomes `cancelled()`; one before it passes unchanged.
+   */
+  const watchingCancel = async <T>(
+    sessionId: string,
+    context: HandlerContext,
+    cancelled: () => ContractError,
+    work: (call: Call) => Promise<T>,
+  ): Promise<T> => {
+    const handlerCall = callOf(context);
+    const cancel = new AbortController();
+    const watch = new AbortController();
+    /** Whether `WatchCancel` answered its item. */
+    let watched = false;
+    const items = session().watchCancel(
+      { sessionId },
+      { signal: watch.signal },
+    );
+    const watching = (async () => {
+      try {
+        // Read to the end: the stream answers one item, then ends.
+        for await (const _item of items) {
+          watched = true;
+          cancel.abort();
+        }
+      } catch {
+        // A `WatchCancel` that fails is ignored: the work goes on until it ends.
+      }
+    })();
+    // One turn so the `WatchCancel` request is sent before the work's first session call (such as `TakeSteers`),
+    // and reaches the session first. Nothing firmer exists: the stream answers nothing until the cancel, and
+    // waiting for its response headers hangs (B12).
+    await new Promise((resolve) => setImmediate(resolve));
+    // Follows the handler's signal only while `work` runs: the handler's aborts once the call ended.
+    const followHandler = () => cancel.abort(handlerCall.signal.reason);
+    if (handlerCall.signal.aborted) followHandler();
+    else
+      handlerCall.signal.addEventListener('abort', followHandler, {
+        once: true,
+      });
+    try {
+      return await work(withSignal(handlerCall, cancel.signal));
+    } catch (error) {
+      if (watched) throw cancelled();
+      throw error;
+    } finally {
+      handlerCall.signal.removeEventListener('abort', followHandler);
+      watch.abort();
+      await watching;
+    }
+  };
+
   return {
     run: async (request, context) => {
       const thread = parseInput(
@@ -287,30 +380,43 @@ export const serveExecutor = (
         promptJobSchema,
         decoded(PromptJobSchema, request.job),
       );
-      const { text } = await implementation.run(
-        { thread, job, session: remote(request.sessionId) },
-        callOf(context),
+      const { text } = await watchingCancel(
+        request.sessionId,
+        context,
+        () => new ContractError('run_cancelled', 'The run was cancelled.'),
+        (call) =>
+          implementation.run(
+            { thread, job, session: remote(request.sessionId) },
+            call,
+          ),
       );
 
       return { text };
     },
     compact: async (request, context) => {
       const { thread, policy } = executorMethods.compact.input.shape;
-      const result = await implementation.compact(
-        {
-          thread: parseInput(
-            'compact',
-            thread,
-            decoded(ExecutorThreadSchema, request.thread),
+      const input = {
+        thread: parseInput(
+          'compact',
+          thread,
+          decoded(ExecutorThreadSchema, request.thread),
+        ),
+        policy: parseInput(
+          'compact',
+          policy,
+          decoded(CompactionPolicyValueSchema, request.policy),
+        ),
+        session: remote(request.sessionId),
+      };
+      const result = await watchingCancel(
+        request.sessionId,
+        context,
+        () =>
+          new ContractError(
+            'compaction_cancelled',
+            'The compaction was cancelled.',
           ),
-          policy: parseInput(
-            'compact',
-            policy,
-            decoded(CompactionPolicyValueSchema, request.policy),
-          ),
-          session: remote(request.sessionId),
-        },
-        callOf(context),
+        (call) => implementation.compact(input, call),
       );
 
       return encode(CompactResponseSchema, result, runtimeOneofs);
@@ -345,4 +451,20 @@ export const serveExecutor = (
       formats: [...(await implementation.formats(callOf(context)))],
     }),
   };
+};
+
+/** The brand and deadline keys of a `Call` (`bundle/contracts/call.ts`'s registered symbols). */
+const callBrand = Symbol.for('doric.call');
+const callDeadline = Symbol.for('doric.call.deadline');
+
+/**
+ * A frozen copy of `call` with `signal` replaced, branded as `createHopCall` brands a call, so `isCall` holds and
+ * `deadlineOf`/`generationOf` answer as for `call`.
+ */
+const withSignal = (call: Call, signal: AbortSignal): Call => {
+  const copy: Call = { ...call, signal };
+  Object.defineProperty(copy, callBrand, { value: true });
+  Object.defineProperty(copy, callDeadline, { value: deadlineOf(call) });
+  Object.defineProperty(copy, callGeneration, { value: generationOf(call) });
+  return Object.freeze(copy);
 };

@@ -951,3 +951,21 @@ to every host part.
   `runtime/executor` (`remotePromptSession`, `historyPatchItems`,
   `serveExecutor`) for executor bundles, and `routedExecutor` rebuilds a
   ProviderError-shaped error from `provider_error`.
+- 2026-11-23: phase 3, slice S51d, of
+  [`docs/designs/grpc-processes.md`](../designs/grpc-processes.md): `default`
+  runs on its own host process (`createDefaultHost`, `src/host/main.ts`) with
+  routed ports (`routedPorts`, `routedBeforeModelRequest`) and routed tools,
+  which rebuild the tool error from `tool_error`; it calls
+  `executor.session/v1` only inside its executor handlers and sends images as
+  `doric-attachment:` URLs.
+- 2026-11-23: phase 3, slice S51e, of
+  [`docs/designs/grpc-processes.md`](../designs/grpc-processes.md):
+  `executor.session/v1` gains `WatchCancel({ sessionId })` (version stays
+  1.0.0). `routedExecutor` no longer aborts `Run`/`Compact` on cancel: it
+  marks the session cancelled, waits, and after 5 s (`executorCancelGraceMs`)
+  aborts and logs `executor_cancel_timeout`. `serveExecutor` aborts the
+  implementation's signal on `WatchCancel`; any failure after the cancel
+  answers the free codes `run_cancelled` / `compaction_cancelled`.
+  `default`'s routed tools carry the call signal and make one `tools/v1.Check`
+  per tool call; `Checkpoint`/`Rewind` still cancel by abort. Known gap: no
+  runtime caller aborts a compaction yet (`runner.ts:1231-1238`).

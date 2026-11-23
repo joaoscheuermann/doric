@@ -60,6 +60,8 @@ export interface RuntimeServicesOptions {
   /** Test hooks, as `provideRuntime` takes them. */
   readonly bindings?: Bindings;
   readonly archiveSchedule?: ArchiveSchedule;
+  /** Tests only: `routedExecutor`'s `cancelGraceMs`. */
+  readonly executorCancelGraceMs?: number;
 }
 
 /** runtime's routed services and the steps that bind them to the instance. */
@@ -164,7 +166,13 @@ export const createRuntimeServices = (
         context,
         storage,
         runtimeHooks.hooks,
-        routedExecutor(context, executorSessions),
+        routedExecutor(
+          context,
+          executorSessions,
+          options.executorCancelGraceMs === undefined
+            ? {}
+            : { cancelGraceMs: options.executorCancelGraceMs },
+        ),
       );
       const notices = createNotices(ports.log);
       const stores = runtimeStores(storage, ports, notices.publisher.event);

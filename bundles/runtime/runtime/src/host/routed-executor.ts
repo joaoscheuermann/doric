@@ -18,6 +18,7 @@ import {
 } from '../contracts/gen/doric/executor/v1/executor_pb.js';
 import type {
   ExecutorSessions,
+  OpenedExecutorSession,
   SessionCallbacks,
 } from './executor-sessions.js';
 import type { RuntimePorts } from './ports.js';
@@ -27,6 +28,18 @@ import { historyPatchOf } from './rpc/history.js';
 
 /** The contract the executor port calls. */
 const EXECUTOR_CONTRACT = 'executor/v1';
+
+/**
+ * How long `run` waits, after the prompt's signal aborted, for the executor to end `Run` by itself before it
+ * cancels the `Run` call: 5 s. A constant of `runtime` (as the supervision timings are, D14), below the 10 s stop
+ * timeout so a cancelled run still ends before a stopping `runtime` is killed.
+ */
+export const executorCancelGraceMs = 5_000;
+
+export interface RoutedExecutorOptions {
+  /** Replaces {@link executorCancelGraceMs}; tests only. */
+  readonly cancelGraceMs?: number;
+}
 
 /**
  * `RuntimePorts['executor']` over `executor/v1` (`ExecutorService`) through
@@ -72,12 +85,38 @@ const EXECUTOR_CONTRACT = 'executor/v1';
  * object with string `provider`, `code` and `message` rejects with an `Error` whose `name` is `'ProviderError'`,
  * `message` the data's message and own `data` the details' object — the shape of llms' `ProviderErrorObject`, so the
  * prompt's `agent.failed` event reads (`errorInfo`) as it did in process. Every other failure as before.
+ *
+ * (S51e: changes the `run` bullet; every other method as before.)
+ * - `run({thread, job, session}, call)` → `Run{sessionId, thread, job}` made with a signal of its own, not
+ *   `call.signal`. When `call.signal` aborts (or is aborted already) while `Run` is in flight:
+ *   1. the session is cancelled (`OpenedExecutorSession.cancel()`), so the executor's `WatchCancel` answers;
+ *   2. callbacks keep working and the session stays open until `Run` settles; `run` settles only then;
+ *   3. when `Run` has not settled `cancelGraceMs` after the abort, the `Run` call is cancelled and
+ *      `context.log.warn('The executor did not end a cancelled run.', {code: 'executor_cancel_timeout'})` is
+ *      written once; the session ends when the cancelled call settles (a later callback: `unknown_session`).
+ *   Once `call.signal` aborted, `run` rejects with `call.signal.reason` whatever `Run` answered — `{text}`
+ *   included — so `agent.cancelled`'s `error` is the prompt's abort reason, as in process; a session failure
+ *   still wins in the runner (`session.failure ?? error`, `runner.ts:546`). The grace timer is cleared when `Run`
+ *   settles and is `unref`ed.
+ * - `compact({thread, session, policy}, call)` → `Compact{sessionId, thread, policy}`, cancelled the same way
+ *   (steps 1–3, the same grace and warning, message 'The executor did not end a cancelled compaction.', code
+ *   `executor_cancel_timeout`). Once `call.signal` aborted: a `Compact` that resolves is parsed and answered as
+ *   before (a `{status: 'failed', code}` included — as in process, where the compaction answers after its abort);
+ *   one that rejects rejects with `call.signal.reason` (the session's failure still wins in the runner,
+ *   `runner.ts:1248-1251`). `checkpoint` and `rewind` keep cancel-by-abort.
+ * - Without `call` (or a `CallOptions` with no signal), as before. An executor that never opens `WatchCancel`
+ *   (or one whose stream failed) is cancelled at the grace: the run's last `Record` may then be lost, as before.
+ * - Instance gone or drained: a `Run` pinned to a lost instance fails `generation_lost` (or `unavailable`) as
+ *   before; the session ends when it settles; a pending grace timer is cleared. A drain of `default` keeps the
+ *   `Run` and its `WatchCancel` on the draining instance (both pinned), so a cancel during a drain still arrives.
  */
 export const routedExecutor = (
-  context: Pick<HostContext, 'services' | 'registrations'>,
+  context: Pick<HostContext, 'services' | 'registrations' | 'log'>,
   sessions: ExecutorSessions,
+  options: RoutedExecutorOptions = {},
 ): RuntimePorts['executor'] => {
-  const { services, registrations } = context;
+  const { services, registrations, log } = context;
+  const graceMs = options.cancelGraceMs ?? executorCancelGraceMs;
   /** The provider bundle of `executor/v1`, read at the first session. */
   const provider = cached(() =>
     routed(async () => {
@@ -113,16 +152,52 @@ export const routedExecutor = (
   /** Runs `work` with a session open for `callbacks`, ended once `work` settled. */
   const withSession = <T>(
     callbacks: SessionCallbacks,
-    work: (sessionId: string) => Promise<T>,
+    work: (opened: OpenedExecutorSession) => Promise<T>,
   ): Promise<T> =>
     routed(async () => {
       const opened = sessions.open(await provider.get(), callbacks);
       try {
-        return await work(opened.id);
+        return await work(opened);
       } finally {
         opened.end();
       }
     });
+
+  /**
+   * Makes `request` with a signal of its own: when `call`'s signal aborts, `opened` is cancelled and the request is
+   * cancelled only `graceMs` later (one `executor_cancel_timeout` warning, `message`). Once `call`'s signal aborted,
+   * a failure is answered as its reason. Without a signal, as before.
+   */
+  const cancelledThroughSession = async <T>(
+    opened: OpenedExecutorSession,
+    call: CallArg | undefined,
+    message: string,
+    request: (options: { readonly signal?: AbortSignal }) => Promise<T>,
+  ): Promise<T> => {
+    const signal = call?.signal;
+    if (signal === undefined) return request({});
+    const own = new AbortController();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const onAbort = () => {
+      opened.cancel();
+      timer = setTimeout(() => {
+        log.warn(message, { code: 'executor_cancel_timeout' });
+        own.abort(signal.reason);
+      }, graceMs);
+      timer.unref();
+    };
+    if (signal.aborted) onAbort();
+    else signal.addEventListener('abort', onAbort, { once: true });
+    try {
+      return await request({ signal: own.signal });
+    } catch (error) {
+      if (signal.aborted) throw signal.reason;
+      throw error;
+    } finally {
+      clearTimeout(timer);
+      signal.removeEventListener('abort', onAbort);
+    }
+  };
 
   return (scope) => {
     const client = () => services.use(ExecutorService, { scope });
@@ -134,24 +209,37 @@ export const routedExecutor = (
     return {
       run: ({ thread, job, session }, call) =>
         withProviderErrors(
-          withSession(session, async (sessionId) => {
-            const { text } = await client().run(
-              {
-                sessionId,
-                thread: threadOf(thread),
-                job: encode(PromptJobSchema, job, runtimeOneofs),
-              },
-              optionsOf(call),
+          withSession(session, async (opened) => {
+            const answered = await cancelledThroughSession(
+              opened,
+              call,
+              'The executor did not end a cancelled run.',
+              (options) =>
+                client().run(
+                  {
+                    sessionId: opened.id,
+                    thread: threadOf(thread),
+                    job: encode(PromptJobSchema, job, runtimeOneofs),
+                  },
+                  options,
+                ),
             );
-            return { text };
+            if (call?.signal?.aborted) throw call.signal.reason;
+            return { text: answered.text };
           }),
         ),
       compact: ({ thread, session, policy }, call) =>
         withProviderErrors(
-          withSession(session, async (sessionId) => {
-            const response = await client().compact(
-              { sessionId, thread: threadOf(thread), policy },
-              optionsOf(call),
+          withSession(session, async (opened) => {
+            const response = await cancelledThroughSession(
+              opened,
+              call,
+              'The executor did not end a cancelled compaction.',
+              (options) =>
+                client().compact(
+                  { sessionId: opened.id, thread: threadOf(thread), policy },
+                  options,
+                ),
             );
             const parsed = executorMethods.compact.output.safeParse(
               decode(CompactResponseSchema, response, runtimeOneofs),
@@ -165,7 +253,7 @@ export const routedExecutor = (
           }),
         ),
       checkpoint: ({ history, promptId }, call) =>
-        withSession({ history }, async (sessionId) => {
+        withSession({ history }, async ({ id: sessionId }) => {
           const patch = await historyPatchOf(
             client().checkpoint({ sessionId, promptId }, optionsOf(call)),
           );
@@ -177,7 +265,7 @@ export const routedExecutor = (
           return patch;
         }),
       rewind: ({ history, promptId, removedPromptIds }, call) =>
-        withSession({ history }, (sessionId) =>
+        withSession({ history }, ({ id: sessionId }) =>
           historyPatchOf(
             client().rewind(
               { sessionId, promptId, removedPromptIds: [...removedPromptIds] },

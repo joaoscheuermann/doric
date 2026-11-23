@@ -531,7 +531,12 @@ describe('runtime.threads/v1', () => {
   test("34: Queue, QueuedPrompt, EditQueued (revision conflict), RemoveQueued, Pause and ResumeQueue answer what the kernel's answer", async (t) => {
     const routedHeld = gate();
     const kernelHeld = gate();
-    const h = await started(t, { execute: holding(routedHeld) });
+    // Pause cancels the held run's session; the fake honours it as a real executor would, so the
+    // run ends now rather than after the 5 s cancel grace (S51e).
+    const h = await started(t, {
+      execute: holding(routedHeld),
+      executorWatchCancel: true,
+    });
     const kernel = createHarness({ execute: holding(kernelHeld) });
     t.after(() => kernel.dispose());
     const { thread } = await readyThread(h);

@@ -52,6 +52,10 @@ import { routedItems } from './streams.js';
  * - `DescribeAttachment{sessionId, id}`: `{attachment: {id, name, mediaType,
  *   size}}` of `attachment?.(id)` without `bytes`; `{}` when it answers
  *   `undefined` or the session has no `attachment` (D8: the blob is read).
+ * - `WatchCancel{sessionId}` (server streaming): `sessions.waitCancel(sessionId, callerInstanceOf(context),
+ *   context.signal)`; `'cancelled'` → one item `{}`, then the stream ends OK; `'ended'` → ends OK with no item. The
+ *   caller cancelling the stream (or its instance gone) ends the wait and nothing else. `unknown_session` as the
+ *   other methods (before any item).
  */
 export const routedSessionService = (
   sessions: ExecutorSessions,
@@ -103,6 +107,21 @@ export const routedSessionService = (
         if (attachment === undefined) return {};
         const { name, mediaType, size } = attachment;
         return { attachment: { id: attachment.id, name, mediaType, size } };
+      }),
+    watchCancel: ({ sessionId }, context) =>
+      routedItems(async function* () {
+        let outcome: 'cancelled' | 'ended';
+        try {
+          outcome = await sessions.waitCancel(
+            sessionId,
+            callerInstanceOf(context),
+            context.signal,
+          );
+        } catch (error) {
+          if (context.signal.aborted) return;
+          throw error;
+        }
+        if (outcome === 'cancelled') yield {};
       }),
   };
 };

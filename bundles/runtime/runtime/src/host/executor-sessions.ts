@@ -22,7 +22,12 @@ export type SessionCallbacks = Pick<PromptSession, 'history'> &
 export interface OpenedExecutorSession {
   /** `randomUUID()`, as Thread sessions (S47): unique for the life of the process, sent only to the executor. */
   readonly id: string;
-  /** Ends it (idempotent): later `get`s answer `unknown_session`. */
+  /**
+   * Cancels the session's work (idempotent; a no-op once ended): every `waitCancel` on it, pending or later,
+   * resolves `'cancelled'`. The session stays open — callbacks keep working — until `end()`.
+   */
+  cancel(): void;
+  /** Ends it (idempotent): later `get`s answer `unknown_session`; a pending `waitCancel` resolves `'ended'`. */
   end(): void;
 }
 
@@ -38,6 +43,17 @@ export interface ExecutorSessions {
    * bound, when `caller` is another instance. The answer never says which.
    */
   get(id: string, caller: BundleInstance): SessionCallbacks;
+  /**
+   * How session `id` stops, for `caller`, checked and bound exactly as `get` (same `unknown_session` failure,
+   * thrown synchronously before any wait; binds the session at a first use). Resolves `'cancelled'` once
+   * `cancel()` was called (at once if it already was), else `'ended'` once the session ended. `signal` aborting
+   * rejects with `signal.reason` and changes nothing. Any number of concurrent waits; none keeps the session open.
+   */
+  waitCancel(
+    id: string,
+    caller: BundleInstance,
+    signal: AbortSignal,
+  ): Promise<'cancelled' | 'ended'>;
 }
 
 /** A registered session: its provider, the instance it is bound to once called back, and its callbacks. */
@@ -45,31 +61,76 @@ interface HeldSession {
   readonly provider: string;
   bound: string | undefined;
   readonly callbacks: SessionCallbacks;
+  cancelled: boolean;
+  /** The pending `waitCancel`s, settled by `cancel()` or `end()`. */
+  readonly waiters: Set<(outcome: 'cancelled' | 'ended') => void>;
 }
 
 /** An empty registry. No I/O. */
 export const createExecutorSessions = (): ExecutorSessions => {
   const sessions = new Map<string, HeldSession>();
+  /** Checks `caller` against session `id` and binds it at a first use (see `get`). */
+  const bind = (id: string, caller: BundleInstance): HeldSession => {
+    const held = sessions.get(id);
+    const key = instanceKey(caller);
+    if (
+      held === undefined ||
+      held.provider !== caller.bundleId ||
+      (held.bound !== undefined && held.bound !== key)
+    )
+      throw new ContractError('unknown_session', `No executor session ${id}.`);
+    held.bound = key;
+    return held;
+  };
   return {
     open: (provider, callbacks) => {
       const id = randomUUID();
-      sessions.set(id, { provider, bound: undefined, callbacks });
-      return { id, end: () => sessions.delete(id) };
+      const held: HeldSession = {
+        provider,
+        bound: undefined,
+        callbacks,
+        cancelled: false,
+        waiters: new Set(),
+      };
+      sessions.set(id, held);
+      const settle = (outcome: 'cancelled' | 'ended') => {
+        for (const waiter of [...held.waiters]) waiter(outcome);
+        held.waiters.clear();
+      };
+      return {
+        id,
+        cancel: () => {
+          if (held.cancelled || sessions.get(id) !== held) return;
+          held.cancelled = true;
+          settle('cancelled');
+        },
+        end: () => {
+          if (sessions.get(id) !== held) return;
+          sessions.delete(id);
+          settle('ended');
+        },
+      };
     },
-    get: (id, caller) => {
-      const held = sessions.get(id);
-      const key = instanceKey(caller);
-      if (
-        held === undefined ||
-        held.provider !== caller.bundleId ||
-        (held.bound !== undefined && held.bound !== key)
-      )
-        throw new ContractError(
-          'unknown_session',
-          `No executor session ${id}.`,
-        );
-      held.bound = key;
-      return held.callbacks;
+    get: (id, caller) => bind(id, caller).callbacks,
+    waitCancel: (id, caller, signal) => {
+      const held = bind(id, caller);
+      if (held.cancelled) return Promise.resolve('cancelled');
+      return new Promise((resolve, reject) => {
+        if (signal.aborted) {
+          reject(signal.reason);
+          return;
+        }
+        const onAbort = () => {
+          held.waiters.delete(waiter);
+          reject(signal.reason);
+        };
+        const waiter = (outcome: 'cancelled' | 'ended') => {
+          signal.removeEventListener('abort', onAbort);
+          resolve(outcome);
+        };
+        held.waiters.add(waiter);
+        signal.addEventListener('abort', onAbort, { once: true });
+      });
     },
   };
 };

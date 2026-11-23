@@ -274,6 +274,9 @@ const workspaceHarness = async (
   const runs: ScriptedRun[] = [];
   const h = await started(t, {
     sandbox: { sandbox },
+    // A cancelled run (e.g. by TerminateProject) ends when its session is cancelled, as with a real
+    // executor, rather than after the 5 s cancel grace (S51e).
+    executorWatchCancel: true,
     execute: async (run) => {
       runs.push(run);
 
