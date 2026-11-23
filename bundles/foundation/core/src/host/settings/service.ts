@@ -30,6 +30,7 @@ import {
 } from '../../shared/settings-registry.js';
 import { assertDefinitionOwnerIn, type CoreState } from '../../shared/state.js';
 import type { CoreBinding } from '../binding.js';
+import { createInbox } from '../inbox.js';
 import { accepts, anyOfJson, jsonOfAny, optionMessage } from '../messages.js';
 import { createRegistrations, type Registrations } from '../registrations.js';
 
@@ -55,32 +56,6 @@ const NEVER_WRITTEN = new Date(0).toISOString();
 
 /** A JSON copy, as the backend would hand it back. */
 const stored = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
-
-/** The items of one open `Watch`, queued by the writes it hears. */
-const createInbox = (signal: AbortSignal) => {
-  const items: Entry[] = [];
-  let wake: (() => void) | undefined;
-
-  signal.addEventListener('abort', () => wake?.(), { once: true });
-
-  return {
-    push: (entry: Entry) => {
-      items.push(entry);
-      wake?.();
-    },
-    /** The next item, or `undefined` once `signal` aborted. */
-    next: async (): Promise<Entry | undefined> => {
-      while (items.length === 0 && !signal.aborted) {
-        await new Promise<void>((resolve) => {
-          wake = resolve;
-        });
-        wake = undefined;
-      }
-
-      return signal.aborted ? undefined : items.shift();
-    },
-  };
-};
 
 export const createSettingsService = (
   state: CoreState,
@@ -346,7 +321,7 @@ export const createSettingsService = (
     async *watch({ id }, context) {
       const call = callOf(context);
       const { space, desc } = await spaceOf(id, call);
-      const inbox = createInbox(context.signal);
+      const inbox = createInbox<Entry>(context.signal);
       const listeners = watchers.get(id) ?? new Set();
 
       watchers.set(id, listeners);

@@ -1,13 +1,15 @@
 // `core`'s data services over the router (spec
 // `docs/designs/grpc-processes.md`, section 17, "Storage until phase 4"):
-// `storage/v1` and `settings/v1` (slice S39a; `secrets/v1` and `events/v1`
-// join in S39b), served as generated services over `storage.backend/v1` and
-// `secrets.backend/v1`. Written beside the kernel entry (`./index.ts`), which
-// the running host keeps until slice S62; S41's `main.ts` lists these
-// services in `runBundle`.
+// `storage/v1`, `settings/v1`, `secrets/v1` and `events/v1`, served as
+// generated services over `storage.backend/v1` and `secrets.backend/v1`.
+// Written beside the kernel entry (`./index.ts`), which the running host
+// keeps until slice S62; S41's `main.ts` lists these services in
+// `runBundle`.
 
 import type { Registry } from '@bufbuild/protobuf';
-import { ContractError } from 'bundle/contracts';
+import { type Call, ContractError } from 'bundle/contracts';
+import { EventsService } from 'bundle/contracts/gen/doric/events/v1/events_pb.js';
+import { SecretsService } from 'bundle/contracts/gen/doric/secrets/v1/secrets_pb.js';
 import { SettingsService } from 'bundle/contracts/gen/doric/settings/v1/settings_pb.js';
 import { StorageService } from 'bundle/contracts/gen/doric/storage/v1/storage_pb.js';
 import type {
@@ -19,25 +21,28 @@ import type {
 import type { SchemaValidators } from 'bundle/runtime';
 import { serveStorage } from 'storage/rpc';
 
+import type { OnEventAppendedHookInput } from '../contracts/gen/doric/core/event_hooks/v1/event_hooks_pb.js';
 import { createCoreState } from '../shared/state.js';
 import { type CoreBinding, createBinding } from './binding.js';
+import { createEventsService } from './events/service.js';
+import { createSecretsService } from './secrets/service.js';
 import { createSettingsService } from './settings/service.js';
 import { createStorageFacade } from './storage/facade.js';
 
-/**
- * The services `createCoreServices` answers, in this order. S39b widens it
- * to `[StorageService, SettingsService, SecretsService, EventsService]`.
- */
+/** The services `createCoreServices` answers, in this order. */
 export type CoreDataServices = readonly [
   typeof StorageService,
   typeof SettingsService,
+  typeof SecretsService,
+  typeof EventsService,
 ];
 
 export interface CoreServicesOptions {
   /**
-   * The message types of settings values. `Register` of `settings/v1` looks
-   * up `messageType` here; `Set` unpacks and validates its `Any` with it. A
-   * type missing here is refused as `invalid_input`. Read at every call.
+   * The message types of settings values and event payloads. `Register` of
+   * `settings/v1` and `events/v1` look up `messageType` here; `Set` and
+   * `Append` unpack and validate their `Any` with it. A type missing here is
+   * refused as `invalid_input`. Read at every call.
    */
   readonly types: Registry;
   /**
@@ -48,12 +53,24 @@ export interface CoreServicesOptions {
   readonly validators: SchemaValidators;
   /** The clock of `settings/v1` write times (epoch ms); `Date.now` by default. */
   readonly now?: () => number;
+  /**
+   * Called once after each `events/v1.Append` committed its row, with the
+   * stream and the event type, and the `Call` of the `Append`. It is not
+   * awaited, and its throw or rejection never reaches the `Append`. This is
+   * where `core.event-hooks/v1.onEventAppendedHook` is fired once `hooks/v1`
+   * is served. Default: nothing.
+   */
+  readonly onEventAppended?: (
+    input: Pick<OnEventAppendedHookInput, 'stream' | 'type'>,
+    call: Call,
+  ) => void | Promise<void>;
 }
 
 /** `core`'s data services and the step that binds them to the instance. */
 export interface CoreServices {
   /**
-   * `[StorageService, …]` and `[SettingsService, …]`, for `runBundle`'s or
+   * `[StorageService, …]`, `[SettingsService, …]`, `[SecretsService, …]`,
+   * `[EventsService, …]`, for `runBundle`'s or
    * `createTestRouter().activate`'s `services`. Each RPC keeps today's
    * semantics and errors of the matching facade method. A `ContractError`
    * reaches the caller with its code, message and details; any other throw
@@ -76,10 +93,13 @@ export interface CoreServices {
   /**
    * Binds the services to `context`, from `BundleDefinition.activate`. From
    * then on they call `storage.backend/v1` through
-   * `storageBackendClient(context.services.use(StorageBackendService))` and
-   * `doric.catalog/v1.Get` for `provides` and active providers.
+   * `storageBackendClient(context.services.use(StorageBackendService))`,
+   * `secrets.backend/v1` through `secretsBackendClient(...)`,
+   * `doric.catalog/v1.Get` for `provides` and active providers, and each
+   * registrant's `ReferenceSourceService` (with `target` naming the
+   * registering instance). Credentials load on the first secrets call.
    *
-   * It also gives `context.instances.onGone` the registrations of both
+   * It also gives `context.instances.onGone` the registrations of all four
    * services, so an `InstanceGone` disposes every registration of that
    * instance (each dispose guarded; core's own never throw). The documents
    * it wrote stay.
@@ -136,6 +156,14 @@ export const createCoreServices = (
     storage,
     () => options.types,
   );
+  const secrets = createSecretsService(state, bind);
+  const events = createEventsService(
+    bind,
+    storage,
+    (call) => secrets.redactions(call),
+    () => options.types,
+    options.onEventAppended,
+  );
 
   return {
     services: [
@@ -144,6 +172,8 @@ export const createCoreServices = (
         serveStorage(storage, { validators: options.validators, instances }),
       ],
       [SettingsService, settings.implementation],
+      [SecretsService, secrets.implementation],
+      [EventsService, events.implementation],
     ],
     activate: (context) => {
       if (binding !== undefined) {
@@ -157,6 +187,8 @@ export const createCoreServices = (
         }
 
         settings.registrations.dropInstance(instance);
+        secrets.registrations.dropInstance(instance);
+        events.registrations.dropInstance(instance);
       });
     },
   };

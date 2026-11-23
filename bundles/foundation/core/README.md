@@ -517,14 +517,22 @@ the core's host contracts, these are `secrets/v1.registerReferences` and
 
 In a host process, `createCoreServices({ types, validators, now? })`
 ([`services.ts`](src/host/services.ts)) answers `{ services, activate(context) }`
-and serves `storage/v1` and `settings/v1` over the router beside the kernel
+and serves `storage/v1`, `settings/v1`, `secrets/v1` and `events/v1` over the router beside the kernel
 entry; calls before `activate` fail `unavailable`. Storage views are
 partitioned by the router-stamped caller generation, and types are released on
 `InstanceGone` (data kept). Settings values are protobuf messages (`Any`)
 validated with protovalidate; reads ignore fields the message lacks, and a
 never-written space answers the message's empty value (or `settings_missing`
 when that value is invalid), so a registrant applies its own defaults at
-revision 0. `secrets/v1` and `events/v1` follow.
+revision 0. Secrets load the credentials on the first call (shared, retried
+after a failure); kinds and reference sources are released on `InstanceGone`;
+`Delete` asks every live reference source first and fails with a source's error,
+removing nothing; `WatchRedactions` yields the list, then each change, queued on
+every open stream before a write answers; `AddRedaction` refuses an empty
+secret. Events: `Register` refuses a payload message with a field named `type`;
+`Sink` binds an events stream; `Append` stores `{ type, ...payload JSON }` (zero
+values omitted), redacted, committed through the storage facade as core, then
+calls the `onEventAppended` option (fire-and-forget) until `hooks/v1` is served.
 
 ### `tools/v1`
 

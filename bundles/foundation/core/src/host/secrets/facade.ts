@@ -31,12 +31,12 @@ import { collidesIn, seenBy, viewOf } from '../../shared/partition.js';
 import { type CoreState, once } from '../../shared/state.js';
 import { createSecretsCache, describe, type SecretsCache } from './cache.js';
 
-const missing = (id: string): ContractError =>
+export const missing = (id: string): ContractError =>
   new ContractError('credential_missing', `Credential ${id} is not stored.`, {
     id,
   });
 
-const invalid = (kind: CredentialKindDefinition): ContractError =>
+export const invalid = (kind: CredentialKindDefinition): ContractError =>
   new ContractError('credential_invalid', credentialFieldsMessage(kind), {
     kind: kind.id,
   });
@@ -49,13 +49,13 @@ const unknownKind = (kind: CredentialKind): ContractError =>
   );
 
 /** A registered kind, held with the generation whose registration it is (0: the platform's). */
-interface KindEntry {
+export interface KindEntry {
   readonly generation: number;
   readonly definition: CredentialKindDefinition;
 }
 
 /** The fields a row holds: an absent value is not stored at all. */
-const row = (credential: Secret): StoredSecret => ({
+export const row = (credential: Secret): StoredSecret => ({
   id: credential.id,
   kind: credential.kind,
   name: credential.name,

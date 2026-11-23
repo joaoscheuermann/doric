@@ -27,6 +27,7 @@ import { createTestServices } from 'bundle';
 import {
   type CallScope,
   ContractError,
+  type SecretsBackend,
   SecretsBackendV1,
   StorageBackendV1,
 } from 'bundle/contracts';
@@ -46,6 +47,7 @@ import {
   settings as settingsOption,
 } from 'bundle/contracts/gen/doric/platform/v1/options_pb.js';
 import { BackendService as SecretsBackendService } from 'bundle/contracts/gen/doric/secrets/backend/v1/backend_pb.js';
+import { ReferenceSourceService } from 'bundle/contracts/gen/doric/secrets/v1/secrets_pb.js';
 import { BackendService as StorageBackendService } from 'bundle/contracts/gen/doric/storage/backend/v1/backend_pb.js';
 import { StorageService } from 'bundle/contracts/gen/doric/storage/v1/storage_pb.js';
 import { ajvValidators, type BundleInstance } from 'bundle/host';
@@ -65,7 +67,10 @@ import {
   storageClient,
 } from 'storage/rpc';
 
-import { createCoreServices } from '../../src/host/services.js';
+import {
+  type CoreServicesOptions,
+  createCoreServices,
+} from '../../src/host/services.js';
 
 /** `core`'s instance on the test router. */
 export const CORE_INSTANCE: BundleInstance = {
@@ -97,6 +102,24 @@ export interface RoutedCore {
   /** The storage-backend calls core made, in order (method names). */
   readonly backendCalls: readonly string[];
   /**
+   * The credential ids the `ReferenceSourceService` fake answers, by source
+   * name (none for a source not in the map). The test router ignores
+   * `target`, so every registrant's source is answered from here.
+   */
+  readonly references: Map<string, string[]>;
+  /**
+   * Source names whose `ReferenceSourceService.List` fails with
+   * `ContractError('unavailable')`, as an unreachable instance would.
+   */
+  readonly failingSources: Set<string>;
+  /** The `ReferenceSourceService.List` requests core made (source names). */
+  readonly referenceCalls: readonly string[];
+  /**
+   * The memory secrets backend behind the `secrets.backend/v1` fake, read
+   * directly (fakes are not reachable through a router client).
+   */
+  readonly secretsBackend: SecretsBackend;
+  /**
    * Delivers `InstanceGone` of `instance` to the handlers `core` gave
    * `context.instances.onGone`, as the router would (the test router sends
    * none). Incarnation 1 unless given.
@@ -121,6 +144,7 @@ export interface ServeCoreOptions {
   readonly now?: () => number;
   /** Default: {@link testMessages}. */
   readonly types?: Registry;
+  readonly onEventAppended?: CoreServicesOptions['onEventAppended'];
 }
 
 const coreManifest = async (): Promise<Record<string, unknown>> =>
@@ -149,7 +173,8 @@ const notServed = (): never => {
 };
 
 /**
- * `createCoreServices({ types, validators: ajvValidators(), now })` served
+ * `createCoreServices({ types, validators: ajvValidators(), now,
+ * onEventAppended })` served
  * on a fresh `createTestRouter` (instance {@link CORE_INSTANCE}) with these
  * fakes, then activated:
  * - `[StorageBackendService, serveStorageBackend(memory)]`, every call
@@ -157,7 +182,9 @@ const notServed = (): never => {
  * - `[SecretsBackendService, serveSecretsBackend(memory)]`;
  * - `[CatalogService, …]`, whose `Get` answers generation
  *   {@link ACTIVE_GENERATION}, the bundles `core` (its built manifest) and
- *   `bundles`, and `core` as the host provider of `events/v1`.
+ *   `bundles`, and `core` as the host provider of `events/v1`;
+ * - `[ReferenceSourceService, …]`, answering `references` (failing for
+ *   `failingSources`).
  */
 export const serveCore = async (
   options: ServeCoreOptions = {},
@@ -220,10 +247,30 @@ export const serveCore = async (
     disable: notServed,
     resetComposition: notServed,
   };
+  const references = new Map<string, string[]>();
+  const failingSources = new Set<string>();
+  const referenceCalls: string[] = [];
+  const referenceSource: ServiceImpl<typeof ReferenceSourceService> = {
+    list: ({ source }) => {
+      referenceCalls.push(source);
+
+      if (failingSources.has(source)) {
+        throw new ContractError(
+          'unavailable',
+          `The reference source ${source} is unreachable.`,
+        );
+      }
+
+      return { credentialIds: [...(references.get(source) ?? [])] };
+    },
+  };
   const core = createCoreServices({
     types: options.types ?? testMessages(),
     validators: ajvValidators(),
     ...(options.now === undefined ? {} : { now: options.now }),
+    ...(options.onEventAppended === undefined
+      ? {}
+      : { onEventAppended: options.onEventAppended }),
   });
   const goneHandlers: ((instance: BundleInstance) => void)[] = [];
   const router = createTestRouter({
@@ -241,6 +288,7 @@ export const serveCore = async (
         serveSecretsBackend(backends.services.use(SecretsBackendV1)),
       ],
       [CatalogService, catalog],
+      [ReferenceSourceService, referenceSource],
     ],
   });
 
@@ -270,6 +318,10 @@ export const serveCore = async (
     router,
     store,
     backendCalls,
+    references,
+    failingSources,
+    referenceCalls,
+    secretsBackend: backends.services.use(SecretsBackendV1),
     storage: (bundleId, generation = bundleId === 'doric' ? 0 : 1) =>
       storageClient(
         router.client(StorageService, {
@@ -354,6 +406,8 @@ const eventMessage = (type: string) => {
  * - `notes.Added`, `(event).type = "notes.added/v1"`: `string note_id = 1`
  *   (`min_len 1`), `string token = 2`.
  * - `notes.Typed`, `(event).type = "notes.typed/v1"`: `string type = 1`.
+ * - `notes.XSent`, `(event).type = "x.sent/v1"`: `string text = 1` (the
+ *   event of a bundle named `x`, for sinks whose owner is a placeholder).
  */
 export const testMessages = (): Registry => {
   const STRING = FieldDescriptorProto_Type.STRING;
@@ -410,6 +464,11 @@ export const testMessages = (): Registry => {
         name: 'Typed',
         field: [scalar('type', 1, STRING)],
         options: eventMessage('notes.typed/v1'),
+      }),
+      create(DescriptorProtoSchema, {
+        name: 'XSent',
+        field: [scalar('text', 1, STRING)],
+        options: eventMessage('x.sent/v1'),
       }),
     ],
   });

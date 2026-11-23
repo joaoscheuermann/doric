@@ -2,19 +2,22 @@
 // `core`'s own `Call`, read by every routed service at call time.
 
 import type { JsonValue } from '@bufbuild/protobuf';
-import { ConnectError } from '@connectrpc/connect';
+import { type Client, ConnectError } from '@connectrpc/connect';
 import {
   type Call,
   fromConnectError,
+  type SecretsBackend,
   type StorageBackend,
 } from 'bundle/contracts';
 import {
   type CatalogSnapshot,
   CatalogService,
 } from 'bundle/contracts/gen/doric/platform/catalog/v1/catalog_pb.js';
+import { BackendService as SecretsBackendService } from 'bundle/contracts/gen/doric/secrets/backend/v1/backend_pb.js';
+import { ReferenceSourceService } from 'bundle/contracts/gen/doric/secrets/v1/secrets_pb.js';
 import { BackendService as StorageBackendService } from 'bundle/contracts/gen/doric/storage/backend/v1/backend_pb.js';
-import type { HostContext } from 'bundle/host';
-import { storageBackendClient } from 'storage/rpc';
+import type { HostContext, StampedCaller } from 'bundle/host';
+import { secretsBackendClient, storageBackendClient } from 'storage/rpc';
 
 import { type CatalogLookup, splitEntry } from '../shared/state.js';
 
@@ -27,6 +30,8 @@ export interface CoreCatalog extends CatalogLookup {
 /** What `activate` binds; every service reads it at call time. */
 export interface CoreBinding {
   readonly storageBackend: StorageBackend;
+  /** `secretsBackendClient(context.services.use(SecretsBackendService))`. */
+  readonly secretsBackend: SecretsBackend;
   /**
    * The catalog as `call` sees it. Cached per `call.caller.generation`, as
    * `createCoreState().catalog` is today. A failed `Get` is not kept, so the
@@ -41,6 +46,12 @@ export interface CoreBinding {
    * are `call`'s. `isCall` is true and `deadlineOf` answers `call`'s deadline.
    */
   own(call: Call): Call;
+  /**
+   * A client of the `ReferenceSourceService` of the instance `caller`
+   * (`context.services.use(ReferenceSourceService, { target })`, `target`
+   * naming that bundle, generation and incarnation).
+   */
+  referenceSource(caller: StampedCaller): Client<typeof ReferenceSourceService>;
 }
 
 const providesOf = (manifest: JsonValue | undefined): readonly string[] => {
@@ -89,6 +100,13 @@ export const createBinding = (context: HostContext): CoreBinding => {
     storageBackend: storageBackendClient(
       context.services.use(StorageBackendService),
     ),
+    secretsBackend: secretsBackendClient(
+      context.services.use(SecretsBackendService),
+    ),
+    referenceSource: (caller) =>
+      context.services.use(ReferenceSourceService, {
+        target: `${caller.bundleId}/${caller.generation}/${caller.incarnation}`,
+      }),
     catalog: (call) => {
       const generation = call.caller.generation;
       const cached = catalogs.get(generation);

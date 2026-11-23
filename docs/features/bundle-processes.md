@@ -490,6 +490,18 @@ defaults, so each registrant applies its own defaults on a never-written space
 (revision 0) when it is ported. `bundle/host` also exports `ajvValidators`, and
 `StorageFacade.defineType` may return a `Promise`.
 
+S39b adds `secrets/v1` and `events/v1` to `createCoreServices`. Secrets: the
+credentials load on the first call (shared, retried after a failure); kinds and
+reference sources register per instance and are released on `InstanceGone`;
+`Delete` asks every live reference source first and fails with a source's
+error, removing nothing; `WatchRedactions` yields the list, then each change,
+queued on every open stream before a write answers; `AddRedaction` refuses an
+empty secret (proto `min_len`). Events: `Register` refuses a payload message
+with a field named `type`; `Sink` binds an events stream; `Append` stores
+`{ type, ...payload JSON }` (zero values omitted), redacted, committed through
+the storage facade as core, then calls the `onEventAppended` option
+(fire-and-forget) until `hooks/v1` is served (S40).
+
 ## Evolution
 
 - 2026-11-22: phase 0 of
@@ -568,3 +580,7 @@ defaults, so each registrant applies its own defaults on a never-written space
   `createCoreServices` serving `storage/v1` and `settings/v1`; settings values
   as protobuf messages, with registrants applying their own defaults at
   revision 0.
+- 2026-11-22: phase 3, slice S39b, of
+  [`docs/designs/grpc-processes.md`](../designs/grpc-processes.md) (v6.12):
+  `createCoreServices` also serving `secrets/v1` and `events/v1`, with the
+  `onEventAppended` option standing in for `hooks/v1` until S40.
