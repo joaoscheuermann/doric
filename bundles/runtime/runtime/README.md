@@ -103,6 +103,23 @@ hooks; [`peers.ts`](src/host/peers.ts) declares the `core.event-hooks/v1` ref
 and [`appends.ts`](src/host/appends.ts) folds each appended event into its
 Thread.
 
+The process entry is being added (phase 3 of
+[`docs/designs/grpc-processes.md`](../../../docs/designs/grpc-processes.md)).
+`createRuntimeCore` holds the domain wiring the kernel entry uses.
+`createRuntimeServices` ([`service.ts`](src/host/service.ts)) serves
+`runtime/v2`, `runtime.attachments/v1` and `runtime.usage/v1` over the router
+(`runtime.threads/v1` and `main.ts` follow); every RPC answers `unavailable`
+before activate, and stop answers `shutting_down`. Activation registers the
+storage types, defines `runtime.hooks/v1`, folds events and runs the start
+step. Its ports (`storage/v1`, `host-config`, secrets, models catalog) go
+through the router ([`routed.ts`](src/host/routed.ts)). Requests are
+re-parsed with the zod schemas, so `invalid_input` issues match; responses
+drop undeclared keys and an unknown oneof discriminator is `invalid_output`.
+`runtime.attachments/v1.Read` answers a head, then chunks of at most 1 MiB.
+The runtime-only codes `shutting_down` and `thread_control_inactive` travel
+as `FAILED_PRECONDITION`. Domain work runs detached from the incoming call:
+its port calls carry no request trace, deadline or scope.
+
 ## Records: Projects and Threads
 
 The public records travel through every contract as loose zod objects, so a

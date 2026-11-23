@@ -23,6 +23,9 @@
       "path": "../../foundation/host-config"
     },
     {
+      "path": "../../foundation/core"
+    },
+    {
       "path": "../../../packages/bundle"
     },
     {

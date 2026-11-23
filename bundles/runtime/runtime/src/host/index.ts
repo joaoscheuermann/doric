@@ -16,6 +16,7 @@ import { type Bindings, createBindings } from './domain/bindings.js';
 import { createNotices, type Notices } from './domain/notices.js';
 import { createRedactor } from './domain/redactor.js';
 import { createWorkspaceService } from './domain/service.js';
+import type { WorkspaceService } from './domain/types.js';
 import { installHandover } from './handover.js';
 import {
   createLifecycle,
@@ -29,7 +30,7 @@ import { leaseService } from './services/lease.js';
 import { runtimeService } from './services/runtime.js';
 import { threadsService } from './services/threads.js';
 import { usageService } from './services/usage.js';
-import { createWatches } from './services/watches.js';
+import { createWatches, type Watches } from './services/watches.js';
 import { workspaceService } from './services/workspace.js';
 import type { AttachmentStore } from './store/attachments.js';
 import {
@@ -52,33 +53,39 @@ export interface RuntimeProvision {
   readonly lifecycle: RuntimeLifecycle;
 }
 
-/** The runtime's providers over its stores and ports. */
-export const provideRuntime = (
-  services: Pick<Services, 'provide'>,
-  {
-    projects,
-    threads,
-    ports,
-    bindings = createBindings(),
-    notices: injectedNotices,
-    attachments,
-    archiveSchedule,
-  }: {
-    readonly projects: ProjectStore;
-    readonly threads: ThreadStore;
-    /** The images the Threads attached; a test may leave them out. */
-    readonly attachments?: AttachmentStore;
-    readonly ports: RuntimePorts;
-    readonly notices?: Notices;
-    /** The prompt bindings; a test passes its own to observe them. */
-    readonly bindings?: Bindings;
-    /**
-     * Arms each archive sweep; the host's unref'd timer without it. A test
-     * passes one that never fires and sweeps through the service itself.
-     */
-    readonly archiveSchedule?: ArchiveSchedule;
-  },
-): RuntimeProvision => {
+/** What `provideRuntime` builds before it provides anything; the routed services share it. */
+export interface RuntimeCore {
+  readonly service: WorkspaceService;
+  readonly notices: Notices;
+  readonly watches: Watches;
+  readonly lifecycle: RuntimeLifecycle;
+  readonly bindings: Bindings;
+  readonly threads: ThreadStore;
+  readonly attachments?: AttachmentStore;
+}
+
+/**
+ * The workspace service, watches and lifecycle over `stores` and `ports`,
+ * built as `provideRuntime` builds them today. No I/O; never throws.
+ * `provideRuntime` now calls it and keeps its signature and behavior.
+ */
+export const createRuntimeCore = ({
+  projects,
+  threads,
+  ports,
+  bindings = createBindings(),
+  notices: injectedNotices,
+  attachments,
+  archiveSchedule,
+}: {
+  readonly projects: ProjectStore;
+  readonly threads: ThreadStore;
+  readonly attachments?: AttachmentStore;
+  readonly ports: RuntimePorts;
+  readonly notices?: Notices;
+  readonly bindings?: Bindings;
+  readonly archiveSchedule?: ArchiveSchedule;
+}): RuntimeCore => {
   const notices = injectedNotices ?? createNotices(ports.log);
   const redactor = createRedactor(ports.storedRedactions);
   const service = createWorkspaceService({
@@ -109,6 +116,54 @@ export const provideRuntime = (
     threads,
     projects,
     log: ports.log,
+  });
+
+  return {
+    service,
+    notices,
+    watches,
+    lifecycle,
+    bindings,
+    threads,
+    ...(attachments === undefined ? {} : { attachments }),
+  };
+};
+
+/** The runtime's providers over its stores and ports. */
+export const provideRuntime = (
+  services: Pick<Services, 'provide'>,
+  {
+    projects,
+    threads,
+    ports,
+    bindings = createBindings(),
+    notices: injectedNotices,
+    attachments,
+    archiveSchedule,
+  }: {
+    readonly projects: ProjectStore;
+    readonly threads: ThreadStore;
+    /** The images the Threads attached; a test may leave them out. */
+    readonly attachments?: AttachmentStore;
+    readonly ports: RuntimePorts;
+    readonly notices?: Notices;
+    /** The prompt bindings; a test passes its own to observe them. */
+    readonly bindings?: Bindings;
+    /**
+     * Arms each archive sweep; the host's unref'd timer without it. A test
+     * passes one that never fires and sweeps through the service itself.
+     */
+    readonly archiveSchedule?: ArchiveSchedule;
+  },
+): RuntimeProvision => {
+  const { service, notices, watches, lifecycle } = createRuntimeCore({
+    projects,
+    threads,
+    ports,
+    bindings,
+    ...(injectedNotices === undefined ? {} : { notices: injectedNotices }),
+    ...(attachments === undefined ? {} : { attachments }),
+    ...(archiveSchedule === undefined ? {} : { archiveSchedule }),
   });
 
   services.provide(runtimeService({ service, notices, watches, lifecycle }));

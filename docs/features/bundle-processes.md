@@ -733,3 +733,23 @@ to every host part.
   caller's scope; every RPC answers `unavailable` before activate; the start
   step runs for real only from S61/S62. The kernel entry and manifest are
   unchanged until S62; new dependency `@connectrpc/connect`.
+- 2026-11-23: phase 3, slice S46a, of
+  [`docs/designs/grpc-processes.md`](../designs/grpc-processes.md): the
+  runtime host's domain wiring moves into `createRuntimeCore` (kernel entry
+  unchanged); `createRuntimeServices` serves `runtime/v2`,
+  `runtime.attachments/v1` and `runtime.usage/v1` over the router
+  (`runtime.threads/v1` in S46b, `main.ts` in S48). Every RPC answers
+  `unavailable` before activate; activate registers storage types, defines
+  `runtime.hooks/v1`, folds events and runs the start step; stop answers
+  `shutting_down`. Ports (`storage/v1`, `host-config`, secrets, models
+  catalog) go through the router. The codec drops undeclared keys and answers
+  `invalid_output` for an unknown oneof discriminator; requests are re-parsed
+  with the zod schemas so `invalid_input` issues match 1.x (`CreateProject`
+  still accepts an empty name). `runtime.attachments/v1.Read` answers a head
+  then chunks of at most 1 MiB. New runtime-only codes `shutting_down` and
+  `thread_control_inactive` travel as `FAILED_PRECONDITION`. Domain work runs
+  detached from the incoming call, so its port calls carry no request trace,
+  deadline or scope (kernel parity). Accepted risks: uncapped stream buffers;
+  no 3 MiB split for `WatchProject` snapshots or single Watch events. New
+  dependencies `@connectrpc/connect` and `core`; `storage` moves to
+  dependencies.
