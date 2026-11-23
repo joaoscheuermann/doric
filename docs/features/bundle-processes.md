@@ -568,6 +568,22 @@ are required. The platform running the host-start hook and serving
 `doric.startup/v1` comes with the boot slice S61; the manifest is unchanged
 until S62.
 
+S42 makes the host SDK's `context.log` a queue
+([`log.ts`](../../packages/bundle/src/sdk/host/log.ts)) that sends records to
+`log/v1.WriteBatch` in batches of 100 or every 200 ms (5 s deadline per batch,
+one batch in flight, split where trace or scope change). A failed batch goes to
+stdout without retry; a router refusal (`undeclared_requirement`,
+`unknown_contract`) switches to stdout for the rest of the process; at 10,000
+queued records the oldest goes to stdout, so nothing is dropped. Stdout lines
+are redacted with `secrets/v1.WatchRedactions`' list. `Stop` sends what is left
+(2 s per batch within the stop budget) and every exit flushes synchronously;
+`runBundle` installs `exit`, `uncaughtException`, `unhandledRejection`,
+`SIGTERM` and `SIGINT` handlers (signals flush and re-raise).
+`BundleDefinition.logSink` lets core write in process (`core.logSink`);
+`StartBundleOptions.logTimings` and `logOutput` serve tests. Bundles that do not
+declare `log/v1` or `secrets/v1` log to stdout until S62 adds both as optional
+to every host part.
+
 ## Evolution
 
 - 2026-11-22: phase 0 of
@@ -671,3 +687,7 @@ until S62.
   [`docs/designs/grpc-processes.md`](../designs/grpc-processes.md) (v6.12):
   core's process entry `src/host/main.ts` (`dist/host/main.mjs`), its registry
   loaded at `activate` from `Descriptors`, and its own host-start handler.
+- 2026-11-23: phase 3, slice S42, of
+  [`docs/designs/grpc-processes.md`](../designs/grpc-processes.md) (v6.12, A7):
+  the host SDK's batched `context.log` queue with stdout fallback, redaction,
+  exit flushing and process handlers; `BundleDefinition.logSink`.

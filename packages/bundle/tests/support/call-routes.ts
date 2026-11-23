@@ -158,6 +158,26 @@ export const resolveSnapshotHost = (): ResolvedEnvironment =>
     }),
   ]);
 
+/**
+ * The host resolution of the log queue tests (A7, slice S42):
+ *
+ * - `core` (manifest v1): provides `log/v1` and `secrets/v1`;
+ * - `app`: provides `settings/v1`; its host part lists `log/v1` and
+ *   `secrets/v1` under `optional`;
+ * - `caller`: its host part requires `settings/v1`;
+ * - `stranger`: declares nothing.
+ */
+export const resolveLogHost = (): ResolvedEnvironment =>
+  resolveCandidates([
+    candidateV1('core', ['log/v1@1.0.0', 'secrets/v1@1.2.0']),
+    candidateV2('app', {
+      provides: ['settings/v1@1.0.0'],
+      host: { optional: ['log/v1', 'secrets/v1'] },
+    }),
+    candidateV2('caller', { host: { requires: ['settings/v1@^1.0.0'] } }),
+    candidateV2('stranger', {}),
+  ]);
+
 const resolveCandidates = (
   candidates: readonly CatalogCandidate[],
 ): ResolvedEnvironment =>

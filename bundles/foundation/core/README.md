@@ -98,7 +98,9 @@ entry, [`src/host/main.ts`](src/host/main.ts): it calls `runBundle`
 (`bundle/host`) with the nine services listed statically from
 `CoreServices.implementations`, loads its message registry at `activate` with
 `loadCatalogTypes` from `doric.catalog/v1.Descriptors` (a `Descriptors` failure
-keeps its code; a malformed set or missing import fails `invalid_output`), and
+keeps its code; a malformed set or missing import fails `invalid_output`),
+passes `logSink: core.logSink` so that its own `context.log` writes records in
+process as `log/v1.WriteBatch` from its instance would, without the router, and
 is built to `dist/host/main.mjs` beside the kernel entry. Code that two parts share is in
 `src/shared/`, and the core's own contract declarations are in
 [`src/contracts/`](src/contracts/index.ts). Every basic contract (every id

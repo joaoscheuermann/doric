@@ -85,6 +85,7 @@ import { ToolHandlerService } from 'bundle/contracts/gen/doric/tools/v1/tools_pb
 import {
   ajvValidators,
   type BundleInstance,
+  type HostContext,
   type UseOptions,
 } from 'bundle/host';
 import { createTestRouter, type TestRouter } from 'bundle/testing';
@@ -104,6 +105,7 @@ import {
 } from 'storage/rpc';
 
 import {
+  type CoreServices,
   type CoreServicesOptions,
   createCoreServices,
 } from '../../src/host/services.js';
@@ -150,6 +152,15 @@ export interface ProviderCall {
 /** `core`'s data services on one `createTestRouter`, over the memory backends. */
 export interface RoutedCore {
   readonly router: TestRouter;
+  /** The `createCoreServices` result under test, activated. */
+  readonly core: CoreServices;
+  /** The context `core.activate` received (its `services.use` as below). */
+  readonly context: HostContext;
+  /**
+   * The full names of the services `core` reached through
+   * `context.services.use`, in order, one per `use`.
+   */
+  readonly used: readonly string[];
   /** The memory store the storage backend writes (reuse it for a restart). */
   readonly store: MemoryStore;
   /**
@@ -676,6 +687,8 @@ export const serveCore = async (
       : { hookDeadlineMs: options.hookDeadlineMs }),
   });
   const goneHandlers: ((instance: BundleInstance) => void)[] = [];
+  const used: string[] = [];
+  let activated: HostContext | undefined;
   const router = createTestRouter({
     instance: CORE_INSTANCE,
     fakes: [
@@ -701,18 +714,21 @@ export const serveCore = async (
     activate: (context) => {
       const use = context.services.use.bind(context.services);
 
-      core.activate({
+      activated = {
         ...context,
         services: {
-          use: <S extends DescService>(ref: S, useOptions?: UseOptions<S>) =>
-            useOptions?.provider !== undefined &&
-            ref.typeName === ProviderService.typeName
+          use: <S extends DescService>(ref: S, useOptions?: UseOptions<S>) => {
+            used.push(ref.typeName);
+
+            return useOptions?.provider !== undefined &&
+              ref.typeName === ProviderService.typeName
               ? (providerClient(useOptions.provider) as unknown as Client<S>)
               : useOptions?.target !== undefined &&
                   (ref.typeName === ToolHandlerService.typeName ||
                     ref.typeName === HookHandlerService.typeName)
                 ? handlerClient(ref, useOptions.target)
-                : use(ref, useOptions),
+                : use(ref, useOptions);
+          },
         },
         instances: {
           onGone: (handler) => {
@@ -721,9 +737,17 @@ export const serveCore = async (
             return context.instances.onGone(handler);
           },
         },
-      });
+      };
+      core.activate(activated);
     },
   });
+
+  // Assigned by the activation above, which TypeScript does not follow.
+  const context = activated as HostContext | undefined;
+
+  if (context === undefined) {
+    throw new Error('core was not activated.');
+  }
 
   const callerOf = (bundleId: string, generation: number) => ({
     bundleId,
@@ -733,6 +757,9 @@ export const serveCore = async (
 
   return {
     router,
+    core,
+    context,
+    used,
     store,
     backendCalls,
     references,

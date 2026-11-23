@@ -88,10 +88,18 @@
 //   `{ hostId: fixtureHostId, storageGeneration: 3 }`;
 // - `identity-fails`: serves `Identity` only, which logs
 //   `identity:<caller bundle id>` and fails with `limit_exceeded`, message
-//   `fixture identity failed`.
+//   `fixture identity failed`;
+// - `log-exit`: activates, logs `count` records `record <i>` (`{ index: i }`)
+//   through `context.log`, then calls `process.exit(0)`;
+// - `log-uncaught`: activates, logs `before the throw`, then throws
+//   `fixture uncaught` from a timer;
+// - `log-rejection`: activates, logs `before the rejection`, then leaves a
+//   promise rejected with `fixture rejection` unhandled;
+// - `log-sigterm`: keeps no `SIGTERM` handler of its own; activates, logs
+//   `count` records `record <i>` and runs until a signal ends it.
 //
-// Every mode ignores `SIGTERM`, so only `SIGKILL` ends one that does not exit
-// by itself.
+// Every mode but `log-sigterm` ignores `SIGTERM`, so only `SIGKILL` ends one
+// that does not exit by itself.
 
 import { createHash } from 'node:crypto';
 import { appendFileSync, readFileSync } from 'node:fs';
@@ -279,7 +287,43 @@ const run = (
   });
 };
 
+/** Logs `count` records `record <i>` through `context.log`. */
+const logRecords = (context: HostContext): void => {
+  for (let index = 0; index < count; index += 1) {
+    context.log.info(`record ${index}`, { index });
+  }
+};
+
 switch (mode) {
+  case 'log-exit':
+    run((context) => {
+      logRecords(context);
+      process.exit(0);
+    });
+    break;
+  case 'log-uncaught':
+    run((context) => {
+      context.log.info('before the throw');
+      setTimeout(() => {
+        throw new Error('fixture uncaught');
+      }, 0);
+    });
+    break;
+  case 'log-rejection':
+    run((context) => {
+      context.log.info('before the rejection');
+      setTimeout(() => {
+        void Promise.reject(new Error('fixture rejection'));
+      }, 0);
+    });
+    break;
+  case 'log-sigterm':
+    process.removeAllListeners('SIGTERM');
+    run((context) => {
+      logRecords(context);
+      setInterval(() => {}, 1_000);
+    });
+    break;
   case 'exit-before-hello':
     process.exit(3);
     break;

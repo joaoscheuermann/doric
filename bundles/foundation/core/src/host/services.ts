@@ -6,16 +6,33 @@
 // keeps until slice S62; S41's `main.ts` lists these services in
 // `runBundle`.
 
-import { create, type Registry } from '@bufbuild/protobuf';
+import { create, type DescMethod, type Registry } from '@bufbuild/protobuf';
 import { anyPack } from '@bufbuild/protobuf/wkt';
-import { ConnectError, type ServiceImpl } from '@connectrpc/connect';
-import { ContractError, fromConnectError } from 'bundle/contracts';
+import {
+  ConnectError,
+  createContextValues,
+  createHandlerContext,
+  type ServiceImpl,
+} from '@connectrpc/connect';
+import { createAsyncIterable } from '@connectrpc/connect/protocol';
+import {
+  type Call,
+  ContractError,
+  callContextKey,
+  fromConnectError,
+} from 'bundle/contracts';
 import { EventsService } from 'bundle/contracts/gen/doric/events/v1/events_pb.js';
 import { HooksService } from 'bundle/contracts/gen/doric/hooks/v1/hooks_pb.js';
-import { LogService } from 'bundle/contracts/gen/doric/log/v1/log_pb.js';
+import {
+  LogService,
+  WriteBatchRequestSchema,
+} from 'bundle/contracts/gen/doric/log/v1/log_pb.js';
 import { ModelsService } from 'bundle/contracts/gen/doric/models/v1/models_pb.js';
 import { StartupService } from 'bundle/contracts/gen/doric/platform/startup/v1/startup_pb.js';
-import { SecretsService } from 'bundle/contracts/gen/doric/secrets/v1/secrets_pb.js';
+import {
+  SecretsService,
+  WatchRedactionsRequestSchema,
+} from 'bundle/contracts/gen/doric/secrets/v1/secrets_pb.js';
 import { SettingsService } from 'bundle/contracts/gen/doric/settings/v1/settings_pb.js';
 import { SkillsService } from 'bundle/contracts/gen/doric/skills/v1/skills_pb.js';
 import { StorageService } from 'bundle/contracts/gen/doric/storage/v1/storage_pb.js';
@@ -24,9 +41,11 @@ import type {
   BundleInstance,
   HostContext,
   HostInstances,
+  LogBatchContext,
+  LogSink,
   ServiceEntries,
 } from 'bundle/host';
-import type { SchemaValidators } from 'bundle/runtime';
+import { createHopCall, type SchemaValidators } from 'bundle/runtime';
 import { serveStorage } from 'storage/rpc';
 
 import { OnEventAppendedHookInputSchema } from '../contracts/gen/doric/core/event_hooks/v1/event_hooks_pb.js';
@@ -199,6 +218,19 @@ export interface CoreServices {
    * Throws a `TypeError` when called a second time. Otherwise never throws.
    */
   activate(context: HostContext): void;
+  /**
+   * `core`'s own `context.log` sink, in process (`runBundle`'s `logSink`).
+   * - `writeBatch` writes each record as `log/v1.WriteBatch` from `core`'s
+   *   instance would, without the router: the caller is `core`'s instance
+   *   (bundle id, version, generation), scope and trace come from the
+   *   batch context, records are redacted and written to `doric.log/v1`.
+   *   Before `activate` it rejects with `unavailable`, so those records go
+   *   to stdout.
+   * - `watchRedactions` yields the secrets service's list once loaded, then
+   *   the list after each change, as `WatchRedactions` does. Before
+   *   `activate` it fails with `unavailable`, so the queue retries.
+   */
+  readonly logSink: (context: HostContext) => LogSink;
 }
 
 /**
@@ -287,6 +319,68 @@ export const createCoreServices = (
     models: models.implementation,
   };
 
+  /**
+   * `core`'s own `Call` of a log batch: its instance as caller, the batch's
+   * trace, scope and signal.
+   */
+  const batchCall = (context: LogBatchContext): Call => {
+    const hop = createHopCall({
+      caller: { bundleId: '', version: '', generation: 0 },
+      ...(context.scope === undefined ? {} : { useScope: context.scope }),
+      arg: { signal: context.signal },
+      generationSignal: context.signal,
+    });
+    const traced =
+      context.trace === undefined
+        ? hop
+        : (Object.freeze(
+            Object.create(hop, {
+              trace: { value: context.trace, enumerable: true },
+            }),
+          ) as Call);
+
+    return bind().own(traced);
+  };
+  /** The context of an in-process call of `service`'s `method`. */
+  const inProcess = (
+    method: DescMethod,
+    signal: AbortSignal,
+    call?: Call,
+  ) =>
+    createHandlerContext({
+      service: method.parent,
+      method,
+      protocolName: 'in-process',
+      requestMethod: 'POST',
+      url: `/${method.parent.typeName}/${method.name}`,
+      requestSignal: signal,
+      ...(call === undefined
+        ? {}
+        : { contextValues: createContextValues().set(callContextKey, call) }),
+    });
+  const logSink = (): LogSink => ({
+    writeBatch: async (records, context) => {
+      const call = batchCall(context);
+
+      await implementations.log.writeBatch(
+        createAsyncIterable(
+          records.map((record) => create(WriteBatchRequestSchema, { record })),
+        ),
+        inProcess(LogService.method.writeBatch, context.signal, call),
+      );
+    },
+    watchRedactions: (signal) => ({
+      async *[Symbol.asyncIterator]() {
+        for await (const item of implementations.secrets.watchRedactions(
+          create(WatchRedactionsRequestSchema),
+          inProcess(SecretsService.method.watchRedactions, signal),
+        )) {
+          yield item.redactions ?? [];
+        }
+      },
+    }),
+  });
+
   return {
     services: [
       [StorageService, implementations.storage],
@@ -300,6 +394,7 @@ export const createCoreServices = (
       [ModelsService, implementations.models],
     ],
     implementations,
+    logSink,
     activate: (context) => {
       if (binding !== undefined) {
         throw new TypeError("core's data services are already activated.");

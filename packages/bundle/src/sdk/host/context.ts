@@ -252,8 +252,16 @@ export interface HostContext {
    */
   readonly assets: HostAssets;
   /**
-   * The log facade: synchronous, never throws, never awaited. The record
-   * carries the instance.
+   * The log facade: synchronous, never throws, never awaited. Each record is
+   * sent to `log/v1` in batches, which stamps the bundle, version,
+   * generation, scope and trace. The trace and scope are those of the
+   * level's `call` argument when it is a `Call`, else of the handler running
+   * (`currentCall()`). A record that is not sent (the batch failed,
+   * `log/v1` is unreachable or undeclared, the queue is full, the process
+   * exits) is written to stdout as one JSON line with the instance, redacted
+   * with the last `secrets/v1.WatchRedactions` list. Each record is written
+   * at least once, unless the process is killed (`SIGKILL`) or aborts in
+   * native code.
    */
   readonly log: Log;
   /**

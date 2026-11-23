@@ -2746,7 +2746,7 @@ function runBundle<const T extends readonly DescService[] = []>(
 ): void;
 function startBundle<const T extends readonly DescService[] = []>(
   definition: BundleDefinition<T>,
-  options: StartBundleOptions, // { env, exit, helloTimeoutMs?, bundleDir? }
+  options: StartBundleOptions, // { env, exit, helloTimeoutMs?, bundleDir?, logTimings?, logOutput? }
 ): Promise<RunningBundle>; // { instance, exited }
 
 interface BundleDefinition<
@@ -2756,6 +2756,7 @@ interface BundleDefinition<
   readonly httpServer?: Server; // node:http, not yet listening; for a part with host.httpPrefix
   activate(context: HostContext): Promise<void> | void;
   deactivate?(context: HostContext): Promise<void> | void;
+  readonly logSink?: (context: HostContext) => LogSink; // in-process sink, for core
 }
 
 interface HostContext {
@@ -2816,6 +2817,23 @@ name the path and the bundle). `extract(prefix?)` answers the bundle directory
 in development. `require(specifier)` loads a package, such as one with native
 code, with `createRequire` from the bundle directory. Phase 3 copies no asset
 into `dist/`; the single executable application comes in phase 7.
+
+`context.log` ([`log.ts`](src/sdk/host/log.ts)) is a queue that sends records
+to `log/v1.WriteBatch` in batches of 100 or every 200 ms, with a 5 s deadline
+per batch, one batch in flight; a batch is split where the trace or scope
+changes. A failed batch is written to stdout without retry; a router refusal
+(`undeclared_requirement` or `unknown_contract`) sends every later record to
+stdout for the rest of the process. At 10,000 queued records the oldest is
+written to stdout, so nothing is dropped. Stdout lines are redacted with the
+list of `secrets/v1.WatchRedactions`. On `Stop` what is left is sent with a
+2 s deadline per batch within the stop budget, and every exit flushes the
+queue synchronously. `runBundle` installs handlers for `exit`,
+`uncaughtException`, `unhandledRejection`, `SIGTERM` and `SIGINT`; a signal
+flushes and is raised again. `BundleDefinition.logSink` replaces the router
+sink (core writes its own records in process); `StartBundleOptions.logTimings`
+and `logOutput` let tests shorten the timings and capture the stdout lines. A
+bundle that does not declare `log/v1` or `secrets/v1` logs to stdout until S62
+adds both as optional requirements of every host part.
 
 `RegistrationTable<V>` ([`registrations.ts`](src/sdk/host/registrations.ts))
 applies the spec's key rule for registrations (A66): `new

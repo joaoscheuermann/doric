@@ -22,7 +22,6 @@ import {
   Http2SessionManager,
 } from '@connectrpc/connect-node';
 
-import type { Log, LogFields } from '../../contracts/basic/log.js';
 import { ContractError, isContractError } from '../../contracts/error.js';
 import {
   BundleHostService,
@@ -44,6 +43,14 @@ import {
   type HostGoneReason,
 } from './control.js';
 import { createGenerations, type Generations } from './generations.js';
+import {
+  createLogQueue,
+  type LogOutput,
+  type LogQueue,
+  type LogSink,
+  type LogTimings,
+  routerLogSink,
+} from './log.js';
 import { createReplays, type Replays } from './replay.js';
 import { type CallServer, createCallServer } from './serve.js';
 
@@ -94,6 +101,15 @@ export interface BundleDefinition<
    */
   readonly httpServer?: Server;
   /**
+   * The sink of `context.log`'s queue for a part that provides `log/v1`
+   * itself, so its records do not go through the router to itself. The SDK
+   * calls it once, on `Accepted`, with the context `activate` will get.
+   * Absent: `routerLogSink` over the instance's router URL and token. A
+   * throw is treated as a sink whose every call rejects: records go to
+   * stdout.
+   */
+  readonly logSink?: (context: HostContext) => LogSink;
+  /**
    * Runs once, on `Activate`. Resolving answers `ActivateResult` with code
    * 0; throwing or rejecting answers it with the error's status: a
    * `ContractError` as `toStatus` encodes it, any other value as `internal`
@@ -138,6 +154,10 @@ export interface StartBundleOptions {
    * is undefined.
    */
   readonly bundleDir?: string;
+  /** The queue's limits; default `defaultLogTimings`. Tests pass shorter. */
+  readonly logTimings?: Partial<LogTimings>;
+  /** Where unsent records go; default the process's stdout. */
+  readonly logOutput?: LogOutput;
 }
 
 /** A bundle whose Hello was accepted. */
@@ -178,10 +198,29 @@ export interface RunningBundle {
  * `StopResult` after `deactivate`, then
  * `exit(EXIT_STOPPED)`. The stream's end without `Stop` calls
  * `exit(EXIT_HOST_GONE)`.
+ *
+ * `context.log` is the queue of `createLogQueue({ instance, timings:
+ * options.logTimings, output: options.logOutput })`: records wait until
+ * `Accepted`, which starts the queue with `definition.logSink?.(context) ??
+ * routerLogSink(…)`. On `Stop` the queue's `stop()` runs after `deactivate`
+ * settled and before `httpServer` closes and `StopResult` is sent. Every
+ * call of `options.exit` is preceded by the queue's `flushSync()`: for code
+ * 0, for code 70 (the host gone, before or after `Accepted`) and for a
+ * spawn environment that does not parse.
  */
 export const startBundle = async <const T extends readonly DescService[] = []>(
   definition: BundleDefinition<T>,
   options: StartBundleOptions,
+): Promise<RunningBundle> => launchBundle(definition, options);
+
+/**
+ * `startBundle`, calling `onQueue` with `context.log`'s queue as soon as it
+ * exists (`runBundle`'s process handlers use it).
+ */
+const launchBundle = async <const T extends readonly DescService[] = []>(
+  definition: BundleDefinition<T>,
+  options: StartBundleOptions,
+  onQueue?: (queue: LogQueue) => void,
 ): Promise<RunningBundle> => {
   const services = serviceNames(definition.services ?? []);
 
@@ -206,11 +245,21 @@ export const startBundle = async <const T extends readonly DescService[] = []>(
       ? 0
       : await listenLocally(definition.httpServer);
 
+  const queue = createLogQueue({
+    instance: spawn.instance,
+    ...(options.logTimings === undefined
+      ? {}
+      : { timings: options.logTimings }),
+    ...(options.logOutput === undefined ? {} : { output: options.logOutput }),
+  });
+
+  onQueue?.(queue);
   await host.connect(
     spawn,
     services,
     httpPort,
     definition,
+    queue,
     options.helloTimeoutMs,
   );
 
@@ -224,25 +273,67 @@ export const startBundle = async <const T extends readonly DescService[] = []>(
  * the SDK exits it (code 0 after `Stop`, 70 when the host is gone). A
  * definition `startBundle` rejects with a `TypeError` ends the process as an
  * unhandled rejection (code 1).
+ *
+ * Before `startBundle` it installs these process handlers around
+ * `context.log`'s queue:
+ * - `exit`: the queue's `flushSync()`, so what waits reaches stdout;
+ * - `uncaughtException`: logs `error` `uncaught exception` with `{ error:
+ *   <message>, stack }`, then `process.exit(1)`;
+ * - `unhandledRejection`: logs `error` `unhandled rejection` with `{ error:
+ *   <message> }`, then `process.exit(1)`; a `HostGoneError` rejection of
+ *   `startBundle` itself is still swallowed;
+ * - `SIGTERM` and `SIGINT`: `flushSync()`, then each removes itself and
+ *   raises its signal again (`process.kill(process.pid, signal)`), so the
+ *   process ends as the signal's default would.
  */
 export const runBundle = <const T extends readonly DescService[] = []>(
   definition: BundleDefinition<T>,
 ): void => {
   const main = process.argv[1];
 
-  startBundle(definition, {
-    env: process.env,
-    exit: (code) => process.exit(code),
-    ...(main === undefined
-      ? {}
-      : { bundleDir: resolve(dirname(main), '..', '..') }),
-  }).catch((error: unknown) => {
+  launchBundle(
+    definition,
+    {
+      env: process.env,
+      exit: (code) => process.exit(code),
+      ...(main === undefined
+        ? {}
+        : { bundleDir: resolve(dirname(main), '..', '..') }),
+    },
+    installProcessHandlers,
+  ).catch((error: unknown) => {
     if (error instanceof HostGoneError) {
       return;
     }
 
     throw error;
   });
+};
+
+/** `runBundle`'s process handlers around `queue` (see `runBundle`). */
+const installProcessHandlers = (queue: LogQueue): void => {
+  process.on('exit', () => queue.flushSync());
+  process.on('uncaughtException', (error) => {
+    queue.log.error('uncaught exception', {
+      error: messageOf(error),
+      stack: error instanceof Error ? error.stack : undefined,
+    });
+    process.exit(1);
+  });
+  process.on('unhandledRejection', (reason) => {
+    queue.log.error('unhandled rejection', { error: messageOf(reason) });
+    process.exit(1);
+  });
+
+  for (const signal of ['SIGTERM', 'SIGINT'] as const) {
+    const raise = (): void => {
+      queue.flushSync();
+      process.off(signal, raise);
+      process.kill(process.pid, signal);
+    };
+
+    process.on(signal, raise);
+  }
 };
 
 /** The spawn variables of section 7, "Spawn", parsed. */
@@ -390,30 +481,36 @@ class Outbox implements AsyncIterable<ConnectRequest> {
   }
 }
 
-/** The log facade's fallback: one JSON line on stdout per record. */
-const stdoutLog = (instance: BundleInstance): Log => {
-  const write =
-    (level: string) =>
-    (message: string, fields?: LogFields): void => {
-      try {
-        process.stdout.write(
-          `${JSON.stringify({ ...fields, level, message, ...instance })}\n`,
-        );
-      } catch {
-        // the facade never throws
-      }
-    };
-
-  return {
-    debug: write('debug'),
-    info: write('info'),
-    warn: write('warn'),
-    error: write('error'),
-  };
-};
 
 const messageOf = (error: unknown): string =>
   error instanceof Error ? error.message : String(error);
+
+/**
+ * The sink of `context.log`'s queue: `definition.logSink`'s, else
+ * `defaultSink`'s; a sink whose every call rejects when `logSink` throws.
+ */
+const logSinkOf = <T extends readonly DescService[]>(
+  definition: BundleDefinition<T>,
+  context: HostContext,
+  defaultSink: () => LogSink,
+): LogSink => {
+  if (definition.logSink === undefined) {
+    return defaultSink();
+  }
+
+  try {
+    return definition.logSink(context);
+  } catch (error) {
+    return {
+      writeBatch: () => Promise.reject(error),
+      watchRedactions: () => ({
+        [Symbol.asyncIterator]: () => ({
+          next: () => Promise.reject(error),
+        }),
+      }),
+    };
+  }
+};
 
 /** A plain `BundleInstance` of a generated `Instance`. */
 const instanceOf = (instance: Instance): BundleInstance => ({
@@ -441,6 +538,7 @@ class HostLink {
   private accepted = false;
   private stopping = false;
   private activation: Promise<boolean> | undefined;
+  private queue: LogQueue | undefined;
   private streamDone!: Promise<void>;
   private settleHello:
     | { resolve: () => void; reject: (error: HostGoneError) => void }
@@ -467,6 +565,7 @@ class HostLink {
     this.outbox.close();
     this.call.abort();
     this.sessions?.abort();
+    this.queue?.flushSync();
     this.exitProcess(code);
     this.markExited(code);
   }
@@ -477,12 +576,14 @@ class HostLink {
     services: readonly string[],
     httpPort: number,
     definition: BundleDefinition<T>,
+    queue: LogQueue,
     helloTimeoutMs = timings.helloTimeoutMs,
   ): Promise<void> {
     this.sessions = new Http2SessionManager(spawn.routerUrl);
+    this.queue = queue;
 
     const sessionManager = this.sessions;
-    const log = stdoutLog(spawn.instance);
+    const { log } = queue;
     const replays = createReplays({
       transport: (options) =>
         createRouterTransport({
@@ -562,6 +663,12 @@ class HostLink {
       }),
       definition,
       context,
+      () =>
+        routerLogSink({
+          url: spawn.routerUrl,
+          token: spawn.token,
+          sessionManager,
+        }),
     );
 
     return hello;
@@ -580,6 +687,7 @@ class HostLink {
     responses: AsyncIterable<ConnectResponse>,
     definition: BundleDefinition<T>,
     context: HostContext,
+    defaultSink: () => LogSink,
   ): Promise<void> {
     let received = false;
 
@@ -591,7 +699,7 @@ class HostLink {
           return;
         }
 
-        this.receive(response, definition, context);
+        this.receive(response, definition, context, defaultSink);
       }
 
       this.ended('The control stream ended.');
@@ -612,6 +720,7 @@ class HostLink {
     response: ConnectResponse,
     definition: BundleDefinition<T>,
     context: HostContext,
+    defaultSink: () => LogSink,
   ): void {
     const { frame } = response;
 
@@ -619,6 +728,7 @@ class HostLink {
       if (frame.case === 'accepted') {
         this.accepted = true;
         clearTimeout(this.helloTimer);
+        this.queue?.start(logSinkOf(definition, context, defaultSink));
         this.settleHello?.resolve();
       } else if (frame.case === 'rejected') {
         this.goneBeforeAccepted(
@@ -735,6 +845,8 @@ class HostLink {
         context.log.error('deactivate failed', { error: messageOf(error) });
       }
     }
+
+    await this.queue?.stop();
 
     if (definition.httpServer?.listening === true) {
       definition.httpServer.close();

@@ -30,6 +30,7 @@ export {
   HostGoneError,
   type HostGoneReason,
 } from './control.js';
+export type { LogBatchContext, LogSink } from './log.js';
 export {
   type RegistrationConflictCode,
   type RegistrationEntry,

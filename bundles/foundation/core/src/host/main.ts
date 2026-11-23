@@ -40,6 +40,7 @@ runBundle({
     [LogService, core.implementations.log],
     [ModelsService, core.implementations.models],
   ],
+  logSink: core.logSink,
   activate: async (context) => {
     types = await loadCatalogTypes(context.services, {
       signal: context.signal,
