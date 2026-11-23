@@ -138,7 +138,10 @@ export interface Script {
     | 'http-prefix'
     | 'http-server'
     | 'serve-demo'
-    | 'watch-demo';
+    | 'watch-demo'
+    | 'describe-platform'
+    | 'serve-storage-identity'
+    | 'identity-fails';
   readonly ms?: number;
   readonly count?: number;
 }
@@ -392,21 +395,32 @@ export interface PlatformHost {
   readonly digests: Map<string, string>;
 }
 
-/** Boots a platform of `core` and `bundles`; shuts it down in `after`. */
-export const setupPlatform = async (
+export interface PlatformSetupOptions {
+  readonly timings?: Partial<Timings>;
+  readonly requiredBundles?: readonly string[];
+  /** Scripts of bundles not in `bundles`, `core` for one. */
+  readonly scripts?: Readonly<Record<string, Script>>;
+  /** `PlatformOptions.publicAddress`; no gateway when undefined. */
+  readonly publicAddress?: string;
+  /** `PlatformOptions.index`; {@link fixtureIndex} when undefined. */
+  readonly index?: CatalogIndex;
+}
+
+/** A platform whose `startPlatform` has been called, settled or not. */
+export interface BootingPlatform extends Omit<PlatformHost, 'platform'> {
+  /** What `startPlatform` answered. */
+  readonly booting: Promise<Platform>;
+}
+
+/**
+ * Calls `startPlatform` for `core` and `bundles` without waiting for it; a
+ * platform it resolves with is shut down in `after`.
+ */
+export const bootPlatform = (
   t: TestContext,
   bundles: Readonly<Record<string, FixtureBundle>>,
-  options: {
-    readonly timings?: Partial<Timings>;
-    readonly requiredBundles?: readonly string[];
-    /** Scripts of bundles not in `bundles`, `core` for one. */
-    readonly scripts?: Readonly<Record<string, Script>>;
-    /** `PlatformOptions.publicAddress`; no gateway when undefined. */
-    readonly publicAddress?: string;
-    /** `PlatformOptions.index`; {@link fixtureIndex} when undefined. */
-    readonly index?: CatalogIndex;
-  } = {},
-): Promise<PlatformHost> => {
+  options: PlatformSetupOptions = {},
+): BootingPlatform => {
   const log = fixtureLog(t);
   const resolved = resolveHost(bundles);
   const diagnostics = new DiagnosticsStore({ generation: 1 });
@@ -419,32 +433,47 @@ export const setupPlatform = async (
     ...options.scripts,
   };
   const digests = new Map<string, string>();
-  const platform = await within(
-    startPlatform({
-      index: options.index ?? fixtureIndex(),
-      ...(options.publicAddress === undefined
-        ? {}
-        : { publicAddress: options.publicAddress }),
-      resolved,
-      commandOf: commandsOf(scripts, log),
-      digestOf: (bundleId) => digests.get(bundleId) ?? '',
-      env: { PATH: process.env.PATH },
-      timings: { ...testTimings, ...options.timings },
-      diagnostics,
-      ...(options.requiredBundles === undefined
-        ? {}
-        : { required: { bundles: options.requiredBundles, contracts: [] } }),
-      exit: (code) => {
-        exits.push(code);
-      },
-      writeLog: () => {},
-    }),
-    'the platform to boot',
-  );
+  const booting = startPlatform({
+    index: options.index ?? fixtureIndex(),
+    ...(options.publicAddress === undefined
+      ? {}
+      : { publicAddress: options.publicAddress }),
+    resolved,
+    commandOf: commandsOf(scripts, log),
+    digestOf: (bundleId) => digests.get(bundleId) ?? '',
+    env: { PATH: process.env.PATH },
+    timings: { ...testTimings, ...options.timings },
+    diagnostics,
+    ...(options.requiredBundles === undefined
+      ? {}
+      : { required: { bundles: options.requiredBundles, contracts: [] } }),
+    exit: (code) => {
+      exits.push(code);
+    },
+    writeLog: () => {},
+  });
 
-  t.after(() => within(platform.shutdown(), 'the platform to shut down'));
+  t.after(async () => {
+    const platform = await booting.catch(() => undefined);
 
-  return { platform, diagnostics, log, exits, scripts, digests };
+    if (platform !== undefined) {
+      await within(platform.shutdown(), 'the platform to shut down');
+    }
+  });
+
+  return { booting, diagnostics, log, exits, scripts, digests };
+};
+
+/** Boots a platform of `core` and `bundles`; shuts it down in `after`. */
+export const setupPlatform = async (
+  t: TestContext,
+  bundles: Readonly<Record<string, FixtureBundle>>,
+  options: PlatformSetupOptions = {},
+): Promise<PlatformHost> => {
+  const { booting, ...host } = bootPlatform(t, bundles, options);
+  const platform = await within(booting, 'the platform to boot');
+
+  return { platform, ...host };
 };
 
 /** The quarantine codes the diagnostics hold for `bundleId`. */

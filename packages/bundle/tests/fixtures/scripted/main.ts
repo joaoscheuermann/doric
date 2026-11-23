@@ -67,7 +67,22 @@
 // - `watch-demo`: activates, then opens `demo.v1.DemoService`'s `Watch`
 //   `{ text: "h" }` through `context.services.use` with the `resume` request
 //   `after-<last item's text>`, and logs each item as `item:<text>`, then
-//   `watch-ended` or `watch-failed:<Doric code>`.
+//   `watch-ended` or `watch-failed:<Doric code>`;
+// - `describe-platform`: activates, then calls, through
+//   `context.services.use`, `doric.bundle/v1`'s `Describe`, logging
+//   `bundle:<bundleId>:<version>:<generation>:<environment>`;
+//   `doric.catalog/v1`'s `Get`, logging `catalog:<generation>:<bundle ids,
+//   comma-separated, in order>` and `storage:<hostId>:<storageGeneration>`
+//   or `storage:none`; and `doric.diagnostics/v1`'s `Get`, logging
+//   `diagnostics:<mode>:<generation>`. A failed call logs
+//   `<bundle|catalog|diagnostics>-failed:<Doric code>`; `described` follows
+//   the three;
+// - `serve-storage-identity`: serves `storage.backend/v1`'s `Identity` only,
+//   which logs `identity:<caller bundle id>` and answers the identity
+//   `{ hostId: fixtureHostId, storageGeneration: 3 }`;
+// - `identity-fails`: serves `Identity` only, which logs
+//   `identity:<caller bundle id>` and fails with `limit_exceeded`, message
+//   `fixture identity failed`.
 //
 // Every mode ignores `SIGTERM`, so only `SIGKILL` ends one that does not exit
 // by itself.
@@ -81,11 +96,16 @@ import { ValueSchema } from '@bufbuild/protobuf/wkt';
 import {
   ConnectError,
   createClient,
+  type HandlerContext,
   type ServiceImpl,
 } from '@connectrpc/connect';
 import { createGrpcTransport } from '@connectrpc/connect-node';
 
+import { ContractError } from '../../../src/contracts/error.js';
 import { ModelsService } from '../../../src/contracts/gen/doric/models/v1/models_pb.js';
+import { BundleService } from '../../../src/contracts/gen/doric/platform/bundle/v1/bundle_pb.js';
+import { CatalogService } from '../../../src/contracts/gen/doric/platform/catalog/v1/catalog_pb.js';
+import { DiagnosticsService } from '../../../src/contracts/gen/doric/platform/diagnostics/v1/diagnostics_pb.js';
 import { GenerationService } from '../../../src/contracts/gen/doric/platform/generation/v1/generation_pb.js';
 import {
   BundleHostService,
@@ -93,6 +113,8 @@ import {
   ConnectRequestSchema,
 } from '../../../src/contracts/gen/doric/platform/v1/control_pb.js';
 import { SettingsService } from '../../../src/contracts/gen/doric/settings/v1/settings_pb.js';
+import { BackendService } from '../../../src/contracts/gen/doric/storage/backend/v1/backend_pb.js';
+import { callOf } from '../../../src/contracts/metadata.js';
 import { fromConnectError } from '../../../src/contracts/status.js';
 import { runBundle } from '../../../src/index.js';
 import type { HostContext, ServiceEntry } from '../../../src/sdk/host/index.js';
@@ -142,6 +164,9 @@ record(
 );
 
 const register = { id: 'acme.thing/v1', messageType: 'acme.Thing' };
+
+/** The host id `serve-storage-identity` answers. */
+const fixtureHostId = '6f1c2a4e-8b3d-4c5e-9f7a-1b2c3d4e5f60';
 
 /** `g<generation>`, the tag of this process's answers. */
 const generationTag = `g${process.env.DORIC_GENERATION ?? '?'}`;
@@ -468,8 +493,89 @@ switch (mode) {
       })();
     });
     break;
+  case 'describe-platform':
+    run((context) => {
+      void describePlatform(context);
+    });
+    break;
+  case 'serve-storage-identity':
+  case 'identity-fails':
+    run(() => {}, {
+      services: [
+        [
+          BackendService,
+          {
+            identity: (_request: unknown, context: HandlerContext) => {
+              record(`identity:${callOf(context).caller.bundleId}`);
+
+              if (mode === 'identity-fails') {
+                throw new ContractError(
+                  'limit_exceeded',
+                  'fixture identity failed',
+                );
+              }
+
+              return {
+                storageIdentity: {
+                  hostId: fixtureHostId,
+                  storageGeneration: 3,
+                },
+              };
+            },
+          } as unknown as ServiceImpl<typeof BackendService>,
+        ] as ServiceEntry,
+      ],
+    });
+    break;
   default:
     run(() => {});
+}
+
+/** The Doric code of a failed call. */
+function codeOf(error: unknown): string {
+  return fromConnectError(ConnectError.from(error)).code;
+}
+
+/** The `describe-platform` mode's calls, after the activation. */
+async function describePlatform(context: HostContext): Promise<void> {
+  try {
+    const described = await context.services.use(BundleService).describe({});
+
+    record(
+      `bundle:${described.bundleId}:${described.version}:${described.generation}:${described.environment}`,
+    );
+  } catch (error) {
+    record(`bundle-failed:${codeOf(error)}`);
+  }
+
+  try {
+    const { catalogSnapshot } = await context.services
+      .use(CatalogService)
+      .get({});
+    const ids = (catalogSnapshot?.bundles ?? []).map(({ id }) => id);
+    const storage = catalogSnapshot?.storage;
+
+    record(`catalog:${catalogSnapshot?.generation}:${ids.join(',')}`);
+    record(
+      storage === undefined
+        ? 'storage:none'
+        : `storage:${storage.hostId}:${storage.storageGeneration}`,
+    );
+  } catch (error) {
+    record(`catalog-failed:${codeOf(error)}`);
+  }
+
+  try {
+    const diagnostics = await context.services
+      .use(DiagnosticsService)
+      .get({});
+
+    record(`diagnostics:${diagnostics.mode}:${diagnostics.generation}`);
+  } catch (error) {
+    record(`diagnostics-failed:${codeOf(error)}`);
+  }
+
+  record('described');
 }
 
 /**

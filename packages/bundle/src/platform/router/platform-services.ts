@@ -1,8 +1,8 @@
 // The platform contracts the host process serves in process on the router
 // listener (spec `docs/designs/grpc-processes.md`, section 1, "The host
 // process", and section 3: steps 1 to 3, then the platform's handler). In
-// phase 2 only `doric.generation/v1` and `doric.log/v1` (A65); the others
-// join in phase 3.
+// phase 2 `doric.generation/v1` and `doric.log/v1`; from phase 3 also
+// `doric.catalog/v1`, `doric.diagnostics/v1` and `doric.bundle/v1` (A65).
 
 import { randomUUID } from 'node:crypto';
 
@@ -29,8 +29,12 @@ import type {
   UniversalServerResponse,
 } from '@connectrpc/connect/protocol';
 
+import type { StorageIdentity } from '../../contracts/basic/storage.js';
 import type { Call, CallScope } from '../../contracts/call.js';
 import { ContractError, toContractError } from '../../contracts/error.js';
+import { BundleService } from '../../contracts/gen/doric/platform/bundle/v1/bundle_pb.js';
+import { CatalogService } from '../../contracts/gen/doric/platform/catalog/v1/catalog_pb.js';
+import { DiagnosticsService } from '../../contracts/gen/doric/platform/diagnostics/v1/diagnostics_pb.js';
 import {
   GenerationService,
   HoldRequestSchema,
@@ -44,6 +48,8 @@ import {
 } from '../../contracts/gen/doric/platform/log/v1/log_pb.js';
 import { callContextKey, callOf } from '../../contracts/metadata.js';
 import { toConnectError } from '../../contracts/status.js';
+import type { ResolvedEnvironment } from '../../runtime/catalog.js';
+import type { DiagnosticsStore } from '../../runtime/diagnostics.js';
 import { restoreCall } from '../../runtime/envelope/call-meta.js';
 import type { MethodInfo } from '../catalog-index.js';
 import { maxMessageBytes } from './control.js';
@@ -274,6 +280,81 @@ export const createLogService = (
     },
   },
 });
+
+export interface CatalogServiceOptions {
+  /**
+   * The resolution the host runs now: the boot's `PlatformOptions.resolved`,
+   * then each one a publish adopts (`PublishTarget.adopt`). Read at every
+   * call. Must not throw.
+   */
+  readonly resolved: () => ResolvedEnvironment;
+  /**
+   * Where the supervisor records each bundle's state and quarantine reasons
+   * (`PlatformOptions.diagnostics`). Read at every call.
+   */
+  readonly diagnostics: Pick<DiagnosticsStore, 'snapshot' | 'state'>;
+  /**
+   * The host's storage identity once the platform has read it
+   * (`storage.backend/v1.Identity` under the caller `doric`); undefined
+   * before that, or when no bundle provides `storage.backend/v1`. Must not
+   * throw.
+   */
+  readonly storage: () => StorageIdentity | undefined;
+}
+
+/**
+ * The in-process `doric.catalog/v1`. `Get` answers the snapshot of
+ * `options.resolved()`, the same value the kernel answers today
+ * (`catalogSnapshot` in `runtime/platform-providers.ts`): generation,
+ * composition, order and contracts are the resolution's; each bundle's state
+ * and reasons are the ones the diagnostics hold for its id, a bundle the
+ * diagnostics do not hold is `inactive` with the resolution's reasons; a
+ * contract's providers leave out every bundle whose state is `quarantined`;
+ * `storage` is `options.storage()`, absent while undefined. Every call reads
+ * the present state. `Get` never fails for the host's state.
+ * `Distribution`, `ReadArtifact`, `Watch`, `Disable` and `ResetComposition`
+ * end with `UNIMPLEMENTED`, reason `unknown_contract`, until the slices that
+ * serve them.
+ */
+export const createCatalogService = (
+  _options: CatalogServiceOptions,
+): PlatformServiceImpl<typeof CatalogService> => {
+  throw new Error('not implemented');
+};
+
+export interface DiagnosticsServiceOptions {
+  /** The platform's diagnostics (`PlatformOptions.diagnostics`). */
+  readonly diagnostics: Pick<DiagnosticsStore, 'snapshot' | 'report'>;
+}
+
+/**
+ * The in-process `doric.diagnostics/v1`: `Get` answers
+ * `options.diagnostics.snapshot()` as it is at the call (generation, mode,
+ * recovery reason in recovery mode, issues, bundles, recent errors at most
+ * `DIAGNOSTIC_ERRORS_PER_BUNDLE` per bundle, consumers of each contract).
+ * `Report` validates the request as the proto's rules say (`invalid_input`
+ * otherwise), records `{ bundleId, kind, message, details }` with
+ * `options.diagnostics.report` exactly as sent (`bundleId` need not be the
+ * caller), answers `ReportResponse {}`, so the next `Get` lists it. Neither
+ * fails for the content of a valid request.
+ */
+export const createDiagnosticsService = (
+  _options: DiagnosticsServiceOptions,
+): PlatformServiceImpl<typeof DiagnosticsService> => {
+  throw new Error('not implemented');
+};
+
+/**
+ * The in-process `doric.bundle/v1`. `Describe` answers the calling instance
+ * as the router stamped it (`callOf(context).caller`): `bundleId`,
+ * `version`, `generation`, and the environment `"host"`. A forged
+ * `doric-caller` header does not change it. Never fails.
+ */
+export const createBundleService = (): PlatformServiceImpl<
+  typeof BundleService
+> => {
+  throw new Error('not implemented');
+};
 
 /** The in-process handlers of the platform services, by gRPC path. */
 export const platformHandlers = (
