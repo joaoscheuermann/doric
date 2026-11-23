@@ -485,7 +485,8 @@ over the router in the shapes of "Storage until phase 4".
 
 - **`serveStorage(facade, { validators, instances? })` /
   `storageClient(client, { registrations? })`** carry `storage/v1`. The facade
-  receives the caller's full call. `DefineType` carries the type's JSON Schema as
+  receives the caller's full call; its `defineType` may return a `Promise`
+  (S39a). `DefineType` carries the type's JSON Schema as
   a `Struct` and answers a fresh `registrationId`; `Undefine` from the defining
   bundle, or `InstanceGone` of the defining instance, disposes it (an unknown id
   or another bundle's id is a no-op). The client's `defineType` returns a

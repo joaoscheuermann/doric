@@ -3,6 +3,7 @@
 // bundles under esbuild (the root `bundle` entry also carries the build
 // tooling, which does not).
 
+export { ajvValidators } from '../../process/ajv.js';
 export {
   type ResumeRequests,
   reopenResumable,

@@ -474,6 +474,22 @@ it validates arguments before the database, reads `DORIC_DATABASE_URL` at the
 first call needing it, never fails activation and records no startup stage.
 Its manifest is unchanged until S62.
 
+S39a adds `createCoreServices({ types, validators, now? })`
+(`bundles/foundation/core/src/host/services.ts`), answering
+`{ services, activate(context) }`: `storage/v1` and `settings/v1` served over
+the router beside the kernel entry (secrets and events follow in S39b, core's
+`main.ts` in S41). Calls before `activate` fail `unavailable`. Storage keeps
+ownership by namespace and provides, partitions views by the router-stamped
+caller generation, releases types on `InstanceGone` (data kept), and core calls
+its own facade as its own instance. Settings values are protobuf messages
+(`Any`) validated with protovalidate; stored JSON includes default-valued
+fields and reads ignore fields the message lacks, so 1.x rows stay readable. A
+never-written space answers the message's empty value, or `settings_missing`
+when the empty message is invalid. Decision: this differs from today's zod
+defaults, so each registrant applies its own defaults on a never-written space
+(revision 0) when it is ported. `bundle/host` also exports `ajvValidators`, and
+`StorageFacade.defineType` may return a `Promise`.
+
 ## Evolution
 
 - 2026-11-22: phase 0 of
@@ -547,3 +563,8 @@ Its manifest is unchanged until S62.
   [`docs/designs/grpc-processes.md`](../designs/grpc-processes.md) (v6.12):
   the entry `bundle/host`, and `postgres`'s host process part
   `src/host/main.ts`.
+- 2026-11-22: phase 3, slice S39a, of
+  [`docs/designs/grpc-processes.md`](../designs/grpc-processes.md) (v6.12):
+  `createCoreServices` serving `storage/v1` and `settings/v1`; settings values
+  as protobuf messages, with registrants applying their own defaults at
+  revision 0.

@@ -73,15 +73,20 @@ import {
  * scope, trace, signal and deadline (`deadlineOf(call)`).
  *
  * `defineType` registers `definition` for `call.caller` and answers the
- * `Disposable` that removes that one registration; it does no I/O and throws
- * synchronously a `ContractError` (`not_owner`, `undeclared_provide`,
- * `invalid_input`, `registration_conflict`) when it refuses. Every other
+ * `Disposable` that removes that one registration, at once or once its
+ * checks settled (the ownership checks may read `doric.catalog/v1`). It
+ * refuses with a `ContractError` (`not_owner`, `undeclared_provide`,
+ * `invalid_input`, `registration_conflict`), thrown or as a rejection. The
+ * answered `dispose` never throws. Every other
  * method keeps today's semantics and errors (the header of `storage.proto`),
  * and rejects with a `ContractError`. `core`'s `createStorage` implements
  * it; tests implement it over the memory backend.
  */
 export interface StorageFacade {
-  defineType(definition: StorageTypeDefinition, call: Call): Disposable;
+  defineType(
+    definition: StorageTypeDefinition,
+    call: Call,
+  ): Disposable | Promise<Disposable>;
   get(
     key: { readonly type: string; readonly id: string },
     call: Call,
@@ -207,8 +212,10 @@ const defineRequestOf = (definition: StorageTypeDefinition) => ({
  * `DefineType` rebuilds the definition as the envelope does —
  * `defineStorageType({ type, schema, indexes })` whose `schema` is a loose
  * object refined by `options.validators.compile(<the Struct as JSON>)`, each
- * issue reported at its path; `unique` absent stays absent — calls
- * `facade.defineType(definition, call)` and answers a new `registrationId`:
+ * issue reported at its path; `unique` absent stays absent —
+ * awaits `facade.defineType(definition, call)` and answers a new
+ * `registrationId` (when the defining instance is gone before it settled,
+ * the registration is disposed at once and the answer is still sent):
  * opaque, unique among this server's answers, never answered again. It keeps
  * the answered `Disposable` with the stamped caller (`stampedCallerOf`) until
  * one of:
@@ -240,14 +247,27 @@ export const serveStorage = (
     string,
     { readonly disposable: Disposable; readonly caller: StampedCaller }
   >();
+  // The `DefineType`s whose `facade.defineType` has not settled yet; `gone`
+  // is set when their instance's `InstanceGone` arrives meanwhile.
+  const pending = new Set<{ readonly caller: StampedCaller; gone: boolean }>();
+
+  const isOf = (
+    caller: StampedCaller,
+    instance: { bundleId: string; generation: number; incarnation: number },
+  ): boolean =>
+    caller.bundleId === instance.bundleId &&
+    caller.generation === instance.generation &&
+    caller.incarnation === instance.incarnation;
 
   options.instances?.onGone((instance) => {
+    for (const entry of pending) {
+      if (isOf(entry.caller, instance)) {
+        entry.gone = true;
+      }
+    }
+
     for (const [id, { disposable, caller }] of registrations) {
-      if (
-        caller.bundleId === instance.bundleId &&
-        caller.generation === instance.generation &&
-        caller.incarnation === instance.incarnation
-      ) {
+      if (isOf(caller, instance)) {
         registrations.delete(id);
         disposable.dispose();
       }
@@ -255,7 +275,7 @@ export const serveStorage = (
   });
 
   return {
-    defineType: ({ type, schema, indexes }, context) => {
+    defineType: async ({ type, schema, indexes }, context) => {
       const definition = definitionOf(
         type,
         schema ?? {},
@@ -263,10 +283,24 @@ export const serveStorage = (
         options.validators,
       );
       const caller = stampedCallerOf(context);
-      const disposable = facade.defineType(definition, callOf(context));
+      const entry = { caller, gone: false };
+      let disposable: Disposable;
+
+      pending.add(entry);
+
+      try {
+        disposable = await facade.defineType(definition, callOf(context));
+      } finally {
+        pending.delete(entry);
+      }
+
       const registrationId = randomUUID();
 
-      registrations.set(registrationId, { disposable, caller });
+      if (entry.gone) {
+        disposable.dispose();
+      } else {
+        registrations.set(registrationId, { disposable, caller });
+      }
 
       return { registrationId };
     },

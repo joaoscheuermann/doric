@@ -40,7 +40,7 @@ export interface CoreStateOptions {
 }
 
 /** `id@version` → [id, version]; the version is what follows the last `@`. */
-const splitEntry = (entry: string): readonly [string, string] => {
+export const splitEntry = (entry: string): readonly [string, string] => {
   const at = entry.lastIndexOf('@');
 
   return at <= 0 ? [entry, ''] : [entry.slice(0, at), entry.slice(at + 1)];
@@ -141,7 +141,34 @@ export const assertDefinitionOwner = (
     );
   }
 
-  const version = state.catalog(call, services).provides(caller).get(id);
+  return assertDefinitionOwnerIn(state.catalog(call, services), call, id, what);
+};
+
+/**
+ * {@link assertDefinitionOwner} against a catalog already read: the routed
+ * services read `doric.catalog/v1` asynchronously, then check with it.
+ */
+export const assertDefinitionOwnerIn = (
+  catalog: CatalogLookup,
+  call: Call,
+  id: string,
+  what: string,
+): string => {
+  const caller = call.caller.bundleId;
+
+  if (caller === PLATFORM) {
+    return call.caller.version;
+  }
+
+  if (namespaceOf(id) !== caller) {
+    throw new ContractError(
+      'not_owner',
+      `Bundle "${caller}" cannot define the ${what} ${id}: its namespace belongs to "${namespaceOf(id)}".`,
+      { contract: id, bundleId: caller },
+    );
+  }
+
+  const version = catalog.provides(caller).get(id);
 
   if (version === undefined) {
     throw new ContractError(

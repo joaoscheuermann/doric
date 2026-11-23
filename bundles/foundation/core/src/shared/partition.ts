@@ -41,6 +41,25 @@ export const viewOf = (call: Call, services: Services): View => {
   };
 };
 
+/**
+ * The generation view of a call served through the router. The partition is
+ * `call.caller.generation`, the router's stamp, not `generationOf(call)`
+ * (always 0 there). For a caller of generation 0 (the platform `doric`),
+ * reads see `catalog.generation`. Today's `viewOf` stays for the kernel
+ * path, the desktop part and the hooks.
+ */
+export const routedViewOf = (
+  call: Call,
+  catalog: { readonly generation: number },
+): View => {
+  const generation = call.caller.generation;
+
+  return {
+    generation,
+    reads: () => (generation === 0 ? catalog.generation : generation),
+  };
+};
+
 /** Whether a read in `view` sees an entry registered in `entryGeneration`. */
 export const seenBy = (entryGeneration: number, view: View): boolean =>
   entryGeneration === 0 || entryGeneration === view.reads();

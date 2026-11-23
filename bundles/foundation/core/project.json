@@ -86,7 +86,7 @@
         "commands": [
           "tsc -p bundles/foundation/core/tsconfig.spec.json",
           "tsc -p bundles/foundation/core/tsconfig.client-spec.json",
-          "node --test bundles/foundation/core/dist-tests/tests/*.test.js bundles/foundation/core/dist-tests/tests/desktop/*.test.js bundles/foundation/core/dist-tests/tests/client/*.test.js"
+          "node --test bundles/foundation/core/dist-tests/tests/*.test.js bundles/foundation/core/dist-tests/tests/router/*.test.js bundles/foundation/core/dist-tests/tests/desktop/*.test.js bundles/foundation/core/dist-tests/tests/client/*.test.js"
         ],
         "parallel": false
       }

@@ -515,6 +515,17 @@ the core's host contracts, these are `secrets/v1.registerReferences` and
 `navigation/v1.register`, `chain` and `subscribe`, `regions/v1.items` and
 `subscribe`, and `commands/v1.register`.
 
+In a host process, `createCoreServices({ types, validators, now? })`
+([`services.ts`](src/host/services.ts)) answers `{ services, activate(context) }`
+and serves `storage/v1` and `settings/v1` over the router beside the kernel
+entry; calls before `activate` fail `unavailable`. Storage views are
+partitioned by the router-stamped caller generation, and types are released on
+`InstanceGone` (data kept). Settings values are protobuf messages (`Any`)
+validated with protovalidate; reads ignore fields the message lacks, and a
+never-written space answers the message's empty value (or `settings_missing`
+when that value is invalid), so a registrant applies its own defaults at
+revision 0. `secrets/v1` and `events/v1` follow.
+
 ### `tools/v1`
 
 Shape ([`tools.ts`](../../../packages/bundle/src/contracts/basic/tools.ts)):
