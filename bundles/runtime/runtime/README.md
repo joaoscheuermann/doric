@@ -147,9 +147,24 @@ ids. A Thread scope that names an unknown Thread answers `unavailable` with
 `unavailable`; a sandbox without live processes answers `UNIMPLEMENTED`.
 Lease requests are checked by protovalidate only (no zod re-parse).
 Terminating a Project finishes in the background with a real `sandbox/v1`
-`Release`; callers wait for `cancelled` before deleting it. A session registry
-([`sessions.ts`](src/host/sessions.ts)) exists; sessions open with
-`runtime.workspace/v1` (S47b). Open: over HTTP/2 an `unsupported_operation`
+`Release`; callers wait for `cancelled` before deleting it.
+
+`createRuntimeServices` also serves `runtime.workspace/v1`
+([`workspace.ts`](src/host/rpc/workspace.ts), S47b). `Cwd`, `SetCwd` and
+`Location` act on the bound prompt's workspace (requests are re-parsed with
+zod); after the prompt ends they answer `thread_control_inactive`.
+`OpenThread` opens a Thread session for the calling instance in the session
+registry ([`sessions.ts`](src/host/sessions.ts)), answers `ready` (or one
+refusal item: `missing`, `inactive` or `pending`) and holds the session until
+the stream is cancelled; `withThread` runs detached, so a resume outlives the
+call. `ThreadState` reads the caller's session; an unknown session answers
+`NOT_FOUND` `unknown_session`. Sessions end when the opening instance is gone
+(`onGone`), and on stop, deactivate and drain — first, before dispose and
+drain take the Project lock; open session streams then fail
+`FAILED_PRECONDITION` `shutting_down`. Deleting or terminating a Project with
+an exclusive session open waits for it through the Project lock. There is no
+`withThreadSession` client helper yet (S54). Open: a hint-refresh failure after
+a session ends is not logged yet (S48 adds a logger). Lease open findings: over HTTP/2 an `unsupported_operation`
 from sandbox `Start` arrives on the result instead of rejecting the start; an
 `Exec` result (output as text and bytes) can exceed 4 MiB; `PutFile` buffers
 the whole file without a cap.
@@ -984,7 +999,10 @@ hint already stored. `withThread` runs `task` on one live Thread whatever the
 call's scope: `exclusive` runs it under the Project lock, `resume` brings the
 Project back from durable state first, `refreshHint` re-reads the hint after the
 task. It answers `missing` (no record), `inactive` (no runtime, closing or
-terminal) or `pending` (no lease); the task's own rejection propagates
+terminal) or `pending` (no lease); the task's own rejection propagates (this
+local shape is the kernel entry's; the routed `runtime.workspace/v1` of S47b
+runs it as an `OpenThread` session and answers `thread_control_inactive` once
+the prompt ends)
 ([`service.ts`](src/host/domain/service.ts),
 [`runner.ts`](src/host/domain/runner.ts)).
 

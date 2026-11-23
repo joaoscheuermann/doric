@@ -789,3 +789,20 @@ to every host part.
   S47b. Open findings: over HTTP/2 an `unsupported_operation` from sandbox
   `Start` arrives on the result rather than rejecting the start; an `Exec`
   result can exceed 4 MiB; `PutFile` buffers the whole file uncapped.
+- 2026-11-23: phase 3, slice S47b, of
+  [`docs/designs/grpc-processes.md`](../designs/grpc-processes.md):
+  `createRuntimeServices` also serves `runtime.workspace/v1`
+  (`src/host/rpc/workspace.ts`). `Cwd`, `SetCwd` and `Location` act on the
+  bound prompt's workspace (zod re-parse kept) and answer
+  `thread_control_inactive` after the prompt ends. `OpenThread` opens a Thread
+  session for the calling instance, answers `ready` (or one refusal item for
+  `missing`, `inactive` or `pending`) and holds it until the stream is
+  cancelled; `withThread` runs detached so a resume outlives the call.
+  `ThreadState` reads the caller's session (unknown: `NOT_FOUND`
+  `unknown_session`). Sessions end when the opening instance is gone
+  (`onGone`, step 8) and on stop, deactivate and drain, before dispose and
+  drain take the Project lock; open session streams then fail
+  `FAILED_PRECONDITION` `shutting_down`. Deleting or terminating a Project with
+  an exclusive session open waits for it through the Project lock. No
+  `withThreadSession` client helper yet (S54). Open finding: a hint-refresh
+  failure after a session ends is not logged yet (S48 adds a logger).

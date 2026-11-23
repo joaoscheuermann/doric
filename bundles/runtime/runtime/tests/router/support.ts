@@ -58,6 +58,7 @@ import { SecretsService } from 'bundle/contracts/gen/doric/secrets/v1/secrets_pb
 import { StorageService } from 'bundle/contracts/gen/doric/storage/v1/storage_pb.js';
 import {
   ajvValidators,
+  type BundleInstance,
   createHookHandlers,
   type HostContext,
   type ServiceEntry,
@@ -78,6 +79,7 @@ import { LeaseService } from '../../src/contracts/gen/doric/runtime/lease/v1/lea
 import { ThreadsService } from '../../src/contracts/gen/doric/runtime/threads/v1/threads_pb.js';
 import { UsageService } from '../../src/contracts/gen/doric/runtime/usage/v1/usage_pb.js';
 import { RuntimeService } from '../../src/contracts/gen/doric/runtime/v2/runtime_pb.js';
+import { WorkspaceService } from '../../src/contracts/gen/doric/runtime/workspace/v1/workspace_pb.js';
 import { SandboxService } from '../../src/contracts/gen/doric/sandbox/v1/sandbox_pb.js';
 import type { ExternalPorts } from '../../src/host/routed.js';
 import { createRuntimeServices } from '../../src/host/service.js';
@@ -563,6 +565,11 @@ export const harness = (options: HarnessOptions = {}) => {
     archiveSchedule: () => () => undefined,
   });
   let context: HostContext | undefined;
+  /**
+   * The `onGone` handlers the bundle registered, captured by wrapping the
+   * activated context's `instances` (the test router sends no `InstanceGone`).
+   */
+  const goneHandlers = new Set<(instance: BundleInstance) => void>();
   const definition = {
     services: [
       [RuntimeService, runtime.implementations.runtime],
@@ -570,12 +577,24 @@ export const harness = (options: HarnessOptions = {}) => {
       [UsageService, runtime.implementations.usage],
       [ThreadsService, runtime.implementations.threads],
       [LeaseService, runtime.implementations.lease],
+      [WorkspaceService, runtime.implementations.workspace],
       [HookHandlerService, hooks.implementation],
     ] as ServiceEntry[],
     activate: (activated: HostContext) => {
       context = activated;
+      const instances: HostContext['instances'] = {
+        onGone: (handler) => {
+          goneHandlers.add(handler);
+          const remove = activated.instances.onGone(handler);
 
-      return runtime.activate(activated, hooks);
+          return () => {
+            goneHandlers.delete(handler);
+            remove();
+          };
+        },
+      };
+
+      return runtime.activate({ ...activated, instances }, hooks);
     },
     deactivate: () => runtime.deactivate(),
   };
@@ -612,6 +631,20 @@ export const harness = (options: HarnessOptions = {}) => {
         ...(scope === undefined ? {} : { scope }),
         ...(caller === undefined ? {} : { caller }),
       }),
+    workspace: (scope?: CallScope, caller?: Caller) =>
+      router.client(WorkspaceService, {
+        ...(scope === undefined ? {} : { scope }),
+        ...(caller === undefined ? {} : { caller }),
+      }),
+    /** The service names the definition serves, as `main.ts` will list them. */
+    served: () =>
+      definition.services.map(([service]) => (service as DescService).typeName),
+    /** Delivers `InstanceGone` for `instance`, as the router would (G9). */
+    gone: (instance: BundleInstance) => {
+      for (const handler of [...goneHandlers]) handler(instance);
+    },
+    /** `deactivate` of the routed services, without stopping the router. */
+    deactivate: () => runtime.deactivate(),
     /** The control frames the router sends (generation events, signals). */
     control: router.control,
     hookHandler: () => router.client(HookHandlerService, { caller: core }),

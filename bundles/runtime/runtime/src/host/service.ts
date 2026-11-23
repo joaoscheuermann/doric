@@ -13,6 +13,7 @@ import type { LeaseService } from '../contracts/gen/doric/runtime/lease/v1/lease
 import type { ThreadsService } from '../contracts/gen/doric/runtime/threads/v1/threads_pb.js';
 import type { UsageService } from '../contracts/gen/doric/runtime/usage/v1/usage_pb.js';
 import type { RuntimeService } from '../contracts/gen/doric/runtime/v2/runtime_pb.js';
+import type { WorkspaceService } from '../contracts/gen/doric/runtime/workspace/v1/workspace_pb.js';
 import { onEventAppended } from './appends.js';
 import type { ArchiveSchedule } from './domain/archiver.js';
 import type { Bindings } from './domain/bindings.js';
@@ -25,12 +26,13 @@ import {
   routedRuntimeHooks,
 } from './routed.js';
 import { routedAttachmentsService } from './rpc/attachments.js';
-import { detached } from './rpc/errors.js';
+import { detached, SHUTTING_DOWN } from './rpc/errors.js';
 import { installRoutedHandover } from './rpc/handover.js';
 import { routedLeaseService } from './rpc/lease.js';
 import { routedRuntimeService } from './rpc/runtime.js';
 import { routedThreadsService } from './rpc/threads.js';
 import { routedUsageService } from './rpc/usage.js';
+import { routedWorkspaceService } from './rpc/workspace.js';
 import { createThreadSessions } from './sessions.js';
 
 /**
@@ -45,6 +47,8 @@ export interface RuntimeImplementations {
   readonly threads: ServiceImpl<typeof ThreadsService>;
   /** `runtime.lease/v1` (S47a). */
   readonly lease: ServiceImpl<typeof LeaseService>;
+  /** `runtime.workspace/v1` (S47b). */
+  readonly workspace: ServiceImpl<typeof WorkspaceService>;
 }
 
 export interface RuntimeServicesOptions {
@@ -86,15 +90,19 @@ export interface RuntimeServices {
    *    `log('info', 'Workspace reconciled', {interruptedThreads,
    *    interruptedProjects})`. A failure fails the start (sequence hook).
    * 6. `hooks.register(context, OnHostStopHookInputSchema, () =>
-   *    lifecycle.dispose())`.
-   * 7. `installRoutedHandover(context, lifecycle)` (S46b).
+   *    lifecycle.dispose())`, after `sessions.endAll(shutting_down)` (S47b).
+   * 7. `installRoutedHandover(context, lifecycle)` (S46b), whose `drain` ends
+   *    every session the same way first (S47b).
+   * 8. `context.instances.onGone((instance) =>
+   *    sessions.dropInstance(instance))` (S47b).
    * The RPCs are served once steps 1–3 are done. Steps 4–6 are awaited too;
    * a refusal rejects `activate`. Throws a `TypeError` on a second call.
    */
   activate(context: HostContext, hooks: HookHandlers): Promise<void>;
   /**
-   * From `BundleDefinition.deactivate`: `lifecycle.dispose()` (idempotent),
-   * then the core's cleanup. Never rejects.
+   * From `BundleDefinition.deactivate`: removes the `onGone` handler,
+   * `sessions.endAll(shutting_down)`, then `lifecycle.dispose()`
+   * (idempotent) and the core's cleanup. Never rejects.
    */
   deactivate(): Promise<void>;
 }
@@ -110,6 +118,8 @@ export const createRuntimeServices = (
   let log: HostContext['log'] | undefined;
   /** Removes the generation handover's handlers (step 7). */
   let removeHandover: (() => void) | undefined;
+  /** Removes the `onGone` handler that drops a gone instance's sessions (step 8). */
+  let removeGone: (() => void) | undefined;
   /** The Thread sessions `runtime.workspace/v1` opens (S47b); empty until then. */
   const sessions = createThreadSessions();
   const core = (): RuntimeCore => {
@@ -117,6 +127,11 @@ export const createRuntimeServices = (
       throw new ContractError('unavailable', 'runtime is not activated.');
     return bound;
   };
+  /** Ends every open session, its stream failing `shutting_down`: before a Project lock is taken. */
+  const endSessions = () =>
+    sessions.endAll(
+      new ContractError(SHUTTING_DOWN, 'Doric is shutting down.'),
+    );
 
   return {
     implementations: {
@@ -125,6 +140,7 @@ export const createRuntimeServices = (
       usage: routedUsageService(core),
       threads: routedThreadsService(core),
       lease: routedLeaseService(core, sessions),
+      workspace: routedWorkspaceService(core, sessions),
     },
     activate: async (context, hooks) => {
       if (activated) throw new TypeError('runtime is already activated.');
@@ -182,14 +198,27 @@ export const createRuntimeServices = (
       });
       await hooks.register(context, OnHostStopHookInputSchema, async () => {
         // Running prompts are suspended while their tool bundles are active.
+        endSessions();
         await detached(() => runtime.lifecycle.dispose());
       });
-      removeHandover = installRoutedHandover(context, runtime.lifecycle);
+      removeHandover = installRoutedHandover(context, {
+        ...runtime.lifecycle,
+        drain: (released) => {
+          endSessions();
+          return runtime.lifecycle.drain(released);
+        },
+      });
+      removeGone = context.instances.onGone((instance) =>
+        sessions.dropInstance(instance),
+      );
     },
     deactivate: async () => {
       if (bound === undefined) return;
       removeHandover?.();
       removeHandover = undefined;
+      removeGone?.();
+      removeGone = undefined;
+      endSessions();
       try {
         await bound.lifecycle.dispose();
         await bound.service.dispose();
