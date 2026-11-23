@@ -16,7 +16,7 @@ import {
   type HostRegistrations,
   type StampedCaller,
   stampedCallerOf,
-} from 'bundle';
+} from 'bundle/host';
 import {
   type Call,
   type CommitBatch,

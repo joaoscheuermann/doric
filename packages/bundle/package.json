@@ -32,6 +32,12 @@
       "import": "./dist/sdk/client/index.js",
       "default": "./dist/sdk/client/index.js"
     },
+    "./host": {
+      "@org/source": "./src/sdk/host/index.ts",
+      "types": "./dist/sdk/host/index.d.ts",
+      "import": "./dist/sdk/host/index.js",
+      "default": "./dist/sdk/host/index.js"
+    },
     "./runtime": {
       "@org/source": "./src/runtime/index.ts",
       "types": "./dist/runtime/index.d.ts",

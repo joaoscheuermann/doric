@@ -88,13 +88,15 @@ const reveal = (
 });
 
 /**
- * `secrets.backend/v1` over the `credential` table. Secrets cross the
- * contract in plaintext and are sealed in the AES-256-GCM envelope under
- * `DORIC_CREDENTIAL_KEY` inside it. The cipher is built on first use: an
- * unusable key fails every call, a missing key fails reads only while a
- * stored credential holds a secret, and writes of any secret.
+ * The secrets operations over the `credential` table, on parsed inputs: the
+ * method bodies of `secretsBackend`, shared with the host part's plain
+ * backend (`../backends.ts`). Secrets cross in plaintext and are sealed in
+ * the AES-256-GCM envelope under `DORIC_CREDENTIAL_KEY` inside. The cipher is
+ * built on first use: an unusable key fails every call, a missing key fails
+ * reads only while a stored credential holds a secret, and writes of any
+ * secret.
  */
-export const secretsBackend = (
+export const secretsOperations = (
   database: () => Database,
   environment: Environment,
 ) => {
@@ -107,68 +109,77 @@ export const secretsBackend = (
 
     return cipher.value;
   };
+
+  return {
+    list: async (): Promise<StoredSecret[]> => {
+      const key = cipherOf();
+      const rows = await table.list();
+
+      if (key === undefined && rows.some(holdsSecret)) {
+        throw keyRequired();
+      }
+
+      return rows.map((row) => reveal(row, key));
+    },
+    get: async (id: string): Promise<StoredSecret | undefined> => {
+      const key = cipherOf();
+      const row = await table.get(id);
+
+      if (row === undefined) {
+        return undefined;
+      }
+
+      if (key === undefined && holdsSecret(row)) {
+        throw keyRequired();
+      }
+
+      return reveal(row, key);
+    },
+    put: async (record: StoredSecret): Promise<void> => {
+      const secret = encrypt(cipherOf(), record.secret);
+
+      try {
+        await table.put({
+          id: record.id,
+          kind: record.kind,
+          name: record.name,
+          username: record.username ?? null,
+          email: record.email ?? null,
+          secret,
+        });
+      } catch (error) {
+        if (isNameConflict(error)) {
+          throw new ContractError(
+            'credential_name_taken',
+            `A ${record.kind} credential named "${record.name}" is already stored.`,
+          );
+        }
+
+        throw error;
+      }
+    },
+    delete: (id: string) => table.delete(id),
+  };
+};
+
+/** `secrets.backend/v1` over the `credential` table (see `secretsOperations`). */
+export const secretsBackend = (
+  database: () => Database,
+  environment: Environment,
+) => {
+  const operations = secretsOperations(database, environment);
   const methods = secretsBackendMethods;
 
   return defineService(SecretsBackendV1, {
-    list: defineMethod({
-      ...methods.list,
-      execute: async () => {
-        const key = cipherOf();
-        const rows = await table.list();
-
-        if (key === undefined && rows.some(holdsSecret)) {
-          throw keyRequired();
-        }
-
-        return rows.map((row) => reveal(row, key));
-      },
-    }),
-    get: defineMethod({
-      ...methods.get,
-      execute: async (id) => {
-        const key = cipherOf();
-        const row = await table.get(id);
-
-        if (row === undefined) {
-          return undefined;
-        }
-
-        if (key === undefined && holdsSecret(row)) {
-          throw keyRequired();
-        }
-
-        return reveal(row, key);
-      },
-    }),
+    list: defineMethod({ ...methods.list, execute: () => operations.list() }),
+    get: defineMethod({ ...methods.get, execute: (id) => operations.get(id) }),
     put: defineMethod({
       ...methods.put,
-      execute: async (record) => {
-        const secret = encrypt(cipherOf(), record.secret);
-
-        try {
-          await table.put({
-            id: record.id,
-            kind: record.kind,
-            name: record.name,
-            username: record.username ?? null,
-            email: record.email ?? null,
-            secret,
-          });
-        } catch (error) {
-          if (isNameConflict(error)) {
-            throw new ContractError(
-              'credential_name_taken',
-              `A ${record.kind} credential named "${record.name}" is already stored.`,
-            );
-          }
-
-          throw error;
-        }
-      },
+      execute: (record) => operations.put(record),
     }),
     delete: defineMethod({
       ...methods.delete,
-      execute: (id) => table.delete(id),
+      execute: (id) => operations.delete(id),
     }),
   });
 };

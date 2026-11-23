@@ -464,6 +464,16 @@ are no-ops) or `InstanceGone` of the defining instance disposes it. The client's
 1 MiB chunks; the facade receives the caller's full call. Phase 4 deletes it with
 `storage/v1`.
 
+S38 adds the Node-only entry `bundle/host` (`runBundle`, `HostContext`,
+`stampedCallerOf`): importing `bundle`'s root pulls the build tooling, which
+S29's host build refuses, so host parts and `storage/rpc` import from
+`bundle/host` instead (the root keeps its exports). `postgres` gains
+`src/host/main.ts`, a host part serving `storage.backend/v1` and
+`secrets.backend/v1` through `storage/rpc`, bundled into `dist/host/main.mjs`;
+it validates arguments before the database, reads `DORIC_DATABASE_URL` at the
+first call needing it, never fails activation and records no startup stage.
+Its manifest is unchanged until S62.
+
 ## Evolution
 
 - 2026-11-22: phase 0 of
@@ -533,3 +543,7 @@ are no-ops) or `InstanceGone` of the defining instance disposes it. The client's
   [`docs/designs/grpc-processes.md`](../designs/grpc-processes.md) (v6.12):
   `storage/rpc` carries `storage/v1` (`serveStorage`, `storageClient`) until
   phase 4.
+- 2026-11-22: phase 3, slice S38, of
+  [`docs/designs/grpc-processes.md`](../designs/grpc-processes.md) (v6.12):
+  the entry `bundle/host`, and `postgres`'s host process part
+  `src/host/main.ts`.

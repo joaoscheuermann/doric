@@ -43,6 +43,18 @@ both contracts; the Doric host does so in
 foundation bundle activates before the core, so `postgres` uses only `doric.*`
 contracts, which need no declaration.
 
+Beside the kernel entry, [`src/host/main.ts`](src/host/main.ts) runs the same
+backends as a host process with `runBundle` from `bundle/host`, serving
+`storage.backend/v1` and `secrets.backend/v1` through `storage/rpc`'s adapters.
+`createPostgresBackends` (exported from `postgres/testing`) checks each
+argument with the contract's zod schema (`invalid_input`) before touching the
+database. `DORIC_DATABASE_URL` is read at the first call that needs the
+database; when missing, that call fails `internal` with "DORIC_DATABASE_URL is
+required." and the next call retries. Activation never fails, and this entry
+records no startup stage. Prisma 7 with the pg adapter has no native engine, so
+the build bundles the part into `dist/host/main.mjs` (about 7 MB). The manifest
+does not name this entry yet (S62).
+
 ### Package
 
 [`package.json`](package.json) names the package `postgres` (version `0.0.1`,

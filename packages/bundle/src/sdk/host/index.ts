@@ -1,5 +1,7 @@
 // The host SDK (spec `docs/designs/grpc-processes.md`, section 10): what a
-// host part's `main.ts` imports from `bundle`.
+// host part's `main.ts` imports from `bundle/host`, a Node-only entry that
+// bundles under esbuild (the root `bundle` entry also carries the build
+// tooling, which does not).
 
 export {
   type ResumeRequests,

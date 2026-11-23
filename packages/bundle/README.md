@@ -70,6 +70,7 @@ the one `bundle/contracts` instance of a `desktopMain` generation
 | `bundle`                 | [`src/index.ts`](src/index.ts)                       | Node             | The host, build tooling, embedded foundation host parts (types), bundle tests                              |
 | `bundle/testing`         | [`src/testing/index.ts`](src/testing/index.ts)       | Node             | Bundle unit tests                                                                                          |
 | `bundle/platform`        | [`src/platform/index.ts`](src/platform/index.ts)     | Node             | The host: `startPlatform`, the catalog index and the staged-bundle readers                                 |
+| `bundle/host`            | [`src/sdk/host/index.ts`](src/sdk/host/index.ts)     | Node             | Host parts: `runBundle`, `HostContext`, `stampedCallerOf`, without the build tooling the root pulls in     |
 | `bundle/client`          | [`src/sdk/client/index.ts`](src/sdk/client/index.ts) | Browser          | Client parts: one Connect transport per client part over `fetch`, with the `doric-client-part` interceptor |
 | `bundle/externals`       | [`src/build/externals.ts`](src/build/externals.ts)   | Node and browser | Build tooling                                                                                              |
 | `bundle/contracts/gen/*` | `src/contracts/gen/*`, written by `generate-proto`   | Node and browser | Bundles that use the platform's `.proto` contracts                                                         |
