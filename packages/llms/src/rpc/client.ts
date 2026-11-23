@@ -445,9 +445,9 @@ const failureOf = (providerId: string, error: unknown): unknown => {
  *   `code` and `message` rejects (or ends the stream) with `new ProviderErrorObject(details.providerError)` — every
  *   field kept, so `packages/agent`'s retry and `isContextOverflowError` read it as in process. A call failing
  *   between bundles (`unavailable`, `generation_lost`) rejects (or ends the stream) with a retryable
- *   `ProviderErrorObject({provider: providerId, code: 'network_error', retryable: true, message})` (coordinator
- *   decision 10). Any other failure, `provider_error` with malformed details included, rejects as
- *   `fromConnectError` reads it (a `ContractError`).
+ *   `ProviderErrorObject({provider: providerId, code: 'network_error', retryable: true, message})`, so the agent's
+ *   retry runs (docs/designs/grpc-processes.md, "Model providers"). Any other failure, `provider_error` with
+ *   malformed details included, rejects as `fromConnectError` reads it (a `ContractError`).
  * - `metadata`: `{ id: providerId, name: providerId, baseUrl: '' }`; `capabilities`: every flag `true` (an
  *   operation the provider lacks fails as the provider's own error).
  */

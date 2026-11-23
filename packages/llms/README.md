@@ -81,7 +81,11 @@ The caller side is `modelsLanguageModel(models, providerId)`
 - `provider_error` with a well-formed `details.providerError` is rebuilt as a
   `ProviderErrorObject` with every field kept; `unavailable` and
   `generation_lost` become a retryable `network_error`; any other failure,
-  malformed details included, stays a `ContractError`.
+  malformed details included, stays a `ContractError`;
+- with `request.schema`, a `structured` answer that fails `schema.parse`
+  rejects as a `ProviderErrorObject` with code `invalid_structured_output`;
+- `capabilities` has every flag `true`: an operation the provider lacks fails
+  as the provider's own error.
 
 ## Quick start
 

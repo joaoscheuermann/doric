@@ -513,8 +513,9 @@ generation and incarnation), inheriting the caller's deadline; a tool the call
 does not see is `not_found`, an unreachable instance `unavailable`.
 `InstanceGone` drops the instance's tools and skills. Skills fail
 `duplicate_skill` across bundles and `unavailable_tool` for an `allowedTools`
-entry the caller does not see. `tools/v1` has no `Check` RPC; the model repair
-flow is deferred to the runtime and default slices.
+entry the caller does not see. Since S51a, `tools/v1` 1.6.0 has
+`ToolsService.Check`, relayed to the registering instance's
+`ToolHandlerService.Check`.
 
 S40b adds `hooks/v1` and `log/v1` (eight services in all), and the
 `hookDeadlineMs` option (default 10,000) replaces `onEventAppended`. `Define` is
@@ -583,6 +584,25 @@ are redacted with `secrets/v1.WatchRedactions`' list. `Stop` sends what is left
 `StartBundleOptions.logTimings` and `logOutput` serve tests. Bundles that do not
 declare `log/v1` or `secrets/v1` log to stdout until S62 adds both as optional
 to every host part.
+
+From S43 the host parts serve their contracts beside their kernel entries (see
+[Evolution](#evolution) for each slice); the parts the executor path uses
+work as follows. A thrown llms provider error crosses the router as
+`provider_error` and a thrown tool error as `tool_error`, both
+`FAILED_PRECONDITION` with every field of the error's data in
+`details.providerError` or `details.toolError`, and the caller rebuilds them.
+`tools/v1` 1.6.0 adds `ToolsService.Check`, which `core` relays to the
+registering instance's `ToolHandlerService.Check`. `runtime` exports
+`runtime/executor` (`serveExecutor`, `remotePromptSession`,
+`historyPatchItems`) for executor bundles; `default` imports it under a
+boundary exception until S62. `default`'s process entry (`src/host/main.ts`)
+serves `executor/v1` and `default.agents/v1` and defines `default.hooks/v1`;
+its model calls go through `llms/rpc`'s `modelsLanguageModel` and its tool
+calls make one `Check` before each `Execute`. A cancelled `Run` or `Compact`
+is not aborted: `runtime` signals it through
+`executor.session/v1.WatchCancel`, waits for the call, and cancels it only
+after a 5 s grace; a failure after the cancel answers `run_cancelled` or
+`compaction_cancelled`. The kernel entries stay in use until S62.
 
 ## Evolution
 
@@ -920,9 +940,10 @@ to every host part.
 - 2026-11-23: phase 3, slice S51a, of
   [`docs/designs/grpc-processes.md`](../designs/grpc-processes.md): the error
   code `tool_error` is new. A tool error (an `Error` named `ToolErrorObject`
-  with data `{ code, message, issues? }`) thrown by a host-part tool's
-  `execute` or `check` crosses the router as `tool_error`
-  (`FAILED_PRECONDITION`) with the data in `details.toolError`, without its
+  with data `{ code, message, toolName?, callId?, diagnostic?, issues? }`)
+  thrown by a host-part tool's `execute` or `check` crosses the router as
+  `tool_error` (`FAILED_PRECONDITION`) with every field of the data in
+  `details.toolError`, without its
   cause chain; plain errors stay `internal` and `ContractError`s pass through;
   `default` rebuilds the tool error in S51d. `tools/v1` is 1.6.0 with
   `ToolsService.Check`, which `core` relays to the owner's
@@ -940,7 +961,11 @@ to every host part.
   process-wide asset source (`src/host/assets.ts`: `defaultAssetPaths`,
   `useAssetTexts`, `assetText`, `loadAssetTexts`; `lazyTemplate`), so no
   module reads a file at import. `thread_execution_unavailable` is now a
-  `ContractError` with the same code and message. No other behavior change.
+  `ContractError` with the same code and message. Agent files are now read in
+  `activate` (a missing or invalid one quarantines the kernel entry with
+  `activate_failed`, and makes the process entry's `activate` reject), and a
+  template at its first render, so a missing or invalid template fails the run
+  that renders it; errors name an agent file by its bundle-relative path.
 - 2026-11-23: phase 3, slice S51b, of
   [`docs/designs/grpc-processes.md`](../designs/grpc-processes.md): `llms/rpc`
   adds `modelsLanguageModel`, an `LlmProvider` over `models/v1` that rebuilds

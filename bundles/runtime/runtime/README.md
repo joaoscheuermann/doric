@@ -192,9 +192,10 @@ first item. `Formats` is cached per executor instance through a tracked
 registration, so a replay refreshes it. Cycle rule: `executor/v1` must be
 optional for `runtime` (S62 manifest), and `default` (S51) may call
 `executor.session/v1` only from its `executor/v1` handlers, never at activate.
-A `provider_error` from the executor is rebuilt as a ProviderError-shaped error
+A `provider_error` from the executor whose `details.providerError` has string
+`provider`, `code` and `message` is rebuilt as a ProviderError-shaped error
 (`name` `'ProviderError'`, `data` the details), so the chat shows the
-provider's error. Open finding: `DescribeAttachment` reads the whole blob.
+provider's error; any other failure stays a `ContractError`. Open finding: `DescribeAttachment` reads the whole blob.
 
 Cancel (S51e): `executor.session/v1.WatchCancel({ sessionId })` (the
 contract stays 1.0.0) tells the executor its session was cancelled. On a
@@ -203,9 +204,11 @@ session cancelled, waits for the call, and after a grace of 5 s
 (`executorCancelGraceMs`) aborts it and logs `executor_cancel_timeout`.
 `serveExecutor` opens `WatchCancel` and aborts the implementation's signal;
 any failure after the cancel answers `run_cancelled` or
-`compaction_cancelled` (free codes). `Checkpoint` and `Rewind` still cancel
-by abort. Known gap: no runtime caller aborts a compaction yet
-(`runner.ts:1231-1238`).
+`compaction_cancelled` (free codes). Once the prompt's signal aborted, `run`
+rejects with the abort reason whatever `Run` answered, an answer with text
+included, so `agent.cancelled` carries the prompt's reason as in process.
+`Checkpoint` and `Rewind` still cancel by abort. Known gap: no runtime caller
+aborts a compaction yet (`src/host/domain/runner.ts:1231-1238`).
 
 ### Process entry (S48c)
 

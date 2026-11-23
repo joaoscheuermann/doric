@@ -47,9 +47,11 @@ The package exports `./contracts` ([`src/contracts/index.ts`](src/contracts/inde
 | skills    | [`src/skills/`](src/skills/coding-workflow/SKILL.md) | Ships the `coding-workflow` skill, which the loader registers through `skills/v1` for the bundle (see below).                                                                                                                                                                                                                      |
 
 The bundle has no desktop part. The build copies every `.md` file below
-`src/host` into `dist/host`, since the host part reads its templates and agent
-files at run time; no module reads a file at import, each text is read on first
-use through one process-wide asset source ([`src/host/assets.ts`](src/host/assets.ts)) ([`packages/bundle/src/build/cli.ts`](../../../packages/bundle/src/build/cli.ts)).
+`src/host` into `dist/host`
+([`packages/bundle/src/build/cli.ts`](../../../packages/bundle/src/build/cli.ts)),
+since the host part reads its templates and agent files at run time; no module
+reads a file at import, each text is read on first use through one
+process-wide asset source ([`src/host/assets.ts`](src/host/assets.ts)).
 
 A skill is a direct subdirectory of `src/skills` that holds a `SKILL.md`;
 `coding-workflow` is the only one. The build reads its YAML frontmatter,
@@ -106,6 +108,20 @@ inside its `executor/v1` handlers, and sends images as `doric-attachment:`
 URLs. Each routed tool call carries the call's signal and makes one
 `tools/v1.Check` per tool call. A cancelled `Run` or `Compact` is cancelled
 through `executor.session/v1.WatchCancel` (see `runtime`'s README).
+
+`main.ts` serves `executor/v1` and `default.agents/v1` and defines
+`default.hooks/v1`. Its `activate`, in order, reads the 17 assets of
+`defaultAssetPaths` (the seven `src/host/prompts/*.md` and the ten
+`src/host/agents/*.md`) through `context.assets.read` and installs them as the
+process's asset source, loads the built-in agents, and defines
+`default.hooks/v1`; any failure rejects `activate`, and nothing is served.
+Until `activate` resolves, every method fails `unavailable` with
+`default is not active.`. A thrown llms `ProviderErrorObject` answers
+`provider_error` with the error's data in `details.providerError`, a
+`ToolErrorObject` answers `tool_error` with its data in `details.toolError`,
+and a `ContractError` passes unchanged. The manifest has no `host.assets` yet:
+S62 adds `["src/host/prompts/*.md", "src/host/agents/*.md"]`, which the
+process needs, since `context.assets.read` refuses a path outside them.
 
 ## Contracts it provides
 
@@ -517,9 +533,11 @@ Without a provider of an optional contract, exactly this is left out
   the chat does not draw `load_skill` calls with it.
 - **`default.skill-sources/v1`**: the source skills.
 
-The code imports `runtime/contracts`, `host-config/contracts` and, as types
-only, `chat/contracts`, and the packages `agent`, `llms`, `messages`, `tool`,
-`bundle`, `mustache` and `zod`. The client part also imports `react` and, from
+The code imports `runtime/contracts`, `runtime/executor` (a boundary
+exception until S62, `tests/boundary-exceptions.json`), `host-config/contracts`
+and, as types only, `chat/contracts`, and the packages `agent`, `llms`
+(`llms/rpc` included), `messages`, `tool`, `bundle`, `@connectrpc/connect`,
+`mustache` and `zod`. The client part also imports `react` and, from
 `desktop`, `desktop/ui/collapsible-block`, `desktop/ui/error-notice`,
 `desktop/ui/react-element` and, as types only, `desktop/reads`. `desktop` and
 `react` are development dependencies: the client build leaves `react` and
@@ -699,15 +717,17 @@ envelope that wraps every input and the bundle's own instructions in
 [`envelope.ts`](src/host/envelope.ts) ([Input envelope](#input-envelope)).
 [`src/host/prompts/templates.ts`](src/host/prompts/templates.ts):
 
-- `loadTemplate(url, names)` reads a template synchronously when its module
-  is imported, removes exactly one trailing newline and checks it: every
+- `lazyTemplate(path, names)` reads a template through the asset source
+  ([`assets.ts`](src/host/assets.ts)) when it is first rendered, not at
+  import (again when the installed texts change), removes exactly one
+  trailing newline and checks it: every
   `name`, `&`, `#` and `^` tag, at any depth, must cite one of `names`,
   compared whole (`user.name` included); comments and delimiter changes are
   allowed. It throws `Template "<file>" cites undeclared name "<name>".`,
   `Template "<file>" includes partial "<name>"; partials are not supported.`
-  or `Template "<file>": <parse error>`, or the file system's error for a
-  missing file, so the module fails to import and the part is quarantined
-  with `invalid_part`.
+  or `Template "<file>": <parse error>`, or the asset source's error for a
+  missing file, at that render, so the run that renders it fails.
+  `loadTemplate(url, names)`, which reads at import, is no longer used.
 - `render` renders with no HTML escaping, through a per-call option that
   leaves mustache's global state unchanged; a missing name renders empty.
 - `renderBlock` renders a template and removes one leading and one trailing
@@ -773,7 +793,7 @@ a <key> value.` while it builds the agent: after the system prompt and the
   [Execution](../../runtime/runtime/README.md#execution-provider-model-and-effort)).
 - When that execution is unavailable, the run logs one warning `Thread
 execution unavailable` with `{ threadId, providerId, model, issue }` and
-  rejects before any model request with an `Error` whose `code` is
+  rejects before any model request with a `ContractError` whose `code` is
   `thread_execution_unavailable` and whose message is `The model "<model>" on
 provider "<providerId>" is not available for this thread. Choose another
 model in the conversation footer.`
@@ -1283,8 +1303,8 @@ the schema and the initial configuration, with `maxTurns`, are in
 
 | Failure                                                        | Result                                                                                          |
 | -------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| Invalid built-in agent                                         | Activation throws; the bundle provides nothing.                                                 |
-| Missing or invalid template                                    | The module fails to import; the part is quarantined with `invalid_part`.                        |
+| Missing or invalid built-in agent file                         | `activate` rejects, naming the file by its bundle-relative path; the kernel entry is quarantined with `activate_failed`, and the process entry serves nothing. |
+| Missing or invalid template                                    | The run that first renders it fails.                                                            |
 | Unavailable Thread execution                                   | Warning logged; `run` rejects with `code: 'thread_execution_unavailable'`.                      |
 | Tool not made with `defineTool`, unmet tool setting            | `run` rejects before the model is called.                                                       |
 | Invalid agent instructions on the Thread                       | `run` rejects before its first model request.                                                   |
