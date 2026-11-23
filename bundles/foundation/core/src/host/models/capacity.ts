@@ -1,4 +1,4 @@
-import type { ProviderCache } from './providers.js';
+import type { ConfiguredProvider, ProviderCache } from './providers.js';
 import type { KindRegistry } from './registry.js';
 
 /*
@@ -26,6 +26,34 @@ interface CatalogModelRequest {
 }
 
 /**
+ * The one configured provider whose kind is in `capacityKinds` and that is
+ * `providerId`, or, without one, lists the model; `undefined` unless exactly one.
+ */
+export const capacityCandidate = <P extends ConfiguredProvider>(
+  capacityKinds: ReadonlySet<string>,
+  configured: readonly P[],
+  request: CatalogModelRequest,
+): P | undefined => {
+  const candidates = configured.filter(
+    (provider) =>
+      capacityKinds.has(provider.kind) &&
+      (request.providerId === undefined
+        ? provider.models?.includes(request.model) === true
+        : provider.id === request.providerId),
+  );
+
+  return candidates.length === 1 ? candidates[0] : undefined;
+};
+
+/** The capacity when finite and above 0, else `undefined`. */
+export const positiveCapacity = (
+  capacity: number | undefined,
+): number | undefined =>
+  capacity !== undefined && Number.isFinite(capacity) && capacity > 0
+    ? capacity
+    : undefined;
+
+/**
  * The model's entry in the catalog of exactly one candidate provider: the
  * configured providers whose kind reports `catalogCapacity()` and that are
  * `providerId`, or, without one, list the model. `undefined` otherwise; never
@@ -43,20 +71,16 @@ const catalogModel = async (
         .filter((entry) => entry.catalogCapacity)
         .map(({ kind }) => kind.id),
     );
-    const candidates = cache
-      .configured()
-      .filter(
-        (provider) =>
-          capacityKinds.has(provider.kind) &&
-          (request.providerId === undefined
-            ? provider.models?.includes(request.model) === true
-            : provider.id === request.providerId),
-      );
+    const candidate = capacityCandidate(
+      capacityKinds,
+      cache.configured(),
+      request,
+    );
 
-    if (candidates.length !== 1) return undefined;
+    if (candidate === undefined) return undefined;
 
     const source = (await cache.resolve(
-      candidates[0].id,
+      candidate.id,
     )) as unknown as ModelCatalogSource;
     return (await source.models()).find(({ id }) => id === request.model);
   } catch {
@@ -72,14 +96,10 @@ export const contextWindow = async (
   registry: KindRegistry,
   cache: ProviderCache,
   request: CatalogModelRequest,
-): Promise<number | undefined> => {
-  const capacity = (await catalogModel(registry, cache, request))
-    ?.contextWindow;
-
-  return capacity !== undefined && Number.isFinite(capacity) && capacity > 0
-    ? capacity
-    : undefined;
-};
+): Promise<number | undefined> =>
+  positiveCapacity(
+    (await catalogModel(registry, cache, request))?.contextWindow,
+  );
 
 /**
  * What the model reads, as the catalog of exactly one candidate provider

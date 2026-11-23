@@ -77,6 +77,12 @@
 //   `diagnostics:<mode>:<generation>`. A failed call logs
 //   `<bundle|catalog|diagnostics>-failed:<Doric code>`; `described` follows
 //   the three;
+// - `read-descriptors`: activates, then reads `doric.catalog/v1`'s
+//   `Descriptors` twice through `context.services.use`; for each read it
+//   logs `descriptors-chunks:<each item's chunk size, comma-separated>`,
+//   `descriptors-sha256:<hex SHA-256 of the concatenated chunks>` and
+//   `descriptors-files:<the set's file names, comma-separated, in order>`,
+//   or `descriptors-failed:<Doric code>`; `descriptors-read` follows both;
 // - `serve-storage-identity`: serves `storage.backend/v1`'s `Identity` only,
 //   which logs `identity:<caller bundle id>` and answers the identity
 //   `{ hostId: fixtureHostId, storageGeneration: 3 }`;
@@ -87,12 +93,18 @@
 // Every mode ignores `SIGTERM`, so only `SIGKILL` ends one that does not exit
 // by itself.
 
+import { createHash } from 'node:crypto';
 import { appendFileSync, readFileSync } from 'node:fs';
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 
-import { create, fromJson, type MessageInitShape } from '@bufbuild/protobuf';
-import { ValueSchema } from '@bufbuild/protobuf/wkt';
+import {
+  create,
+  fromBinary,
+  fromJson,
+  type MessageInitShape,
+} from '@bufbuild/protobuf';
+import { FileDescriptorSetSchema, ValueSchema } from '@bufbuild/protobuf/wkt';
 import {
   ConnectError,
   createClient,
@@ -498,6 +510,11 @@ switch (mode) {
       void describePlatform(context);
     });
     break;
+  case 'read-descriptors':
+    run((context) => {
+      void readDescriptors(context);
+    });
+    break;
   case 'serve-storage-identity':
   case 'identity-fails':
     run(() => {}, {
@@ -576,6 +593,34 @@ async function describePlatform(context: HostContext): Promise<void> {
   }
 
   record('described');
+}
+
+/** The `read-descriptors` mode's two reads, after the activation. */
+async function readDescriptors(context: HostContext): Promise<void> {
+  for (let read = 0; read < 2; read += 1) {
+    try {
+      const chunks: Uint8Array[] = [];
+
+      for await (const { chunk } of context.services
+        .use(CatalogService)
+        .descriptors({})) {
+        chunks.push(chunk);
+      }
+
+      const bytes = Buffer.concat(chunks);
+      const set = fromBinary(FileDescriptorSetSchema, bytes);
+
+      record(`descriptors-chunks:${chunks.map((c) => c.length).join(',')}`);
+      record(
+        `descriptors-sha256:${createHash('sha256').update(bytes).digest('hex')}`,
+      );
+      record(`descriptors-files:${set.file.map(({ name }) => name).join(',')}`);
+    } catch (error) {
+      record(`descriptors-failed:${codeOf(error)}`);
+    }
+  }
+
+  record('descriptors-read');
 }
 
 /**

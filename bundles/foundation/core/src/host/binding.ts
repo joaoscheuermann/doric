@@ -15,6 +15,7 @@ import {
   type SecretsBackend,
   type StorageBackend,
 } from 'bundle/contracts';
+import { ProviderService } from 'bundle/contracts/gen/doric/models/provider/v1/provider_pb.js';
 import {
   type CatalogSnapshot,
   CatalogService,
@@ -42,6 +43,12 @@ export interface CoreCatalog extends CatalogLookup {
    * for a snapshot without one.
    */
   readonly order: readonly string[];
+  /**
+   * The bundles that provide `contractId` in the host environment, ordered
+   * by `order` (activation order); a bundle that `order` does not list
+   * comes after, in snapshot order. Empty for an unknown contract.
+   */
+  providers(contractId: string): readonly string[];
 }
 
 /** What `activate` binds; every service reads it at call time. */
@@ -100,11 +107,22 @@ export interface CoreBinding {
     },
     call: Call,
   ): Promise<void>;
+  /**
+   * A client of `models.provider/v1` on the provider bundle `bundleId`
+   * (`context.services.use(ProviderService, { provider: bundleId })`).
+   * Creating it makes no call and never throws. A call inherits the
+   * deadline, scope, trace and signal of the call it is made in, and fails
+   * as the router ends it (`unknown_provider` when `bundleId` is not a live
+   * provider).
+   */
+  provider(bundleId: string): Client<typeof ProviderService>;
 }
 
 const providesOf = (manifest: JsonValue | undefined): readonly string[] => {
   const provides =
-    typeof manifest === 'object' && manifest !== null && !Array.isArray(manifest)
+    typeof manifest === 'object' &&
+    manifest !== null &&
+    !Array.isArray(manifest)
       ? manifest.provides
       : undefined;
 
@@ -136,6 +154,22 @@ const catalogOf = (snapshot: CatalogSnapshot | undefined): CoreCatalog => {
     order: snapshot?.order ?? [],
     provides: (bundleId) => provides.get(bundleId) ?? new Map(),
     activeProvider: (contractId) => active.get(contractId),
+    providers: (contractId) => {
+      const contract = snapshot?.contracts.find(
+        ({ id, environment }) => id === contractId && environment === 'host',
+      );
+      const order = snapshot?.order ?? [];
+      const rank = (bundleId: string) => {
+        const index = order.indexOf(bundleId);
+
+        return index < 0 ? order.length : index;
+      };
+
+      // A stable sort keeps snapshot order among the bundles `order` omits.
+      return (contract?.providers ?? [])
+        .map(({ bundleId }) => bundleId)
+        .sort((left, right) => rank(left) - rank(right));
+    },
   };
 };
 
@@ -162,6 +196,8 @@ export const createBinding = (context: HostContext): CoreBinding => {
       context.services.use(service, {
         target: `${caller.bundleId}/${caller.generation}/${caller.incarnation}`,
       }),
+    provider: (bundleId) =>
+      context.services.use(ProviderService, { provider: bundleId }),
     writeLog: async (record, call) => {
       try {
         await platformLog.write(record, { signal: call.signal });
@@ -194,16 +230,12 @@ export const createBinding = (context: HostContext): CoreBinding => {
         return cached;
       }
 
-      const pending = catalogClient
-        .get({}, { signal: call.signal })
-        .then(
-          ({ catalogSnapshot }) => catalogOf(catalogSnapshot),
-          (error: unknown) => {
-            throw error instanceof ConnectError
-              ? fromConnectError(error)
-              : error;
-          },
-        );
+      const pending = catalogClient.get({}, { signal: call.signal }).then(
+        ({ catalogSnapshot }) => catalogOf(catalogSnapshot),
+        (error: unknown) => {
+          throw error instanceof ConnectError ? fromConnectError(error) : error;
+        },
+      );
 
       catalogs.set(generation, pending);
       void pending.catch(() => {

@@ -11,6 +11,7 @@ import { defineStorageType, fromConnectError } from 'bundle/contracts';
 import { EventsService } from 'bundle/contracts/gen/doric/events/v1/events_pb.js';
 import { HooksService } from 'bundle/contracts/gen/doric/hooks/v1/hooks_pb.js';
 import { LogService } from 'bundle/contracts/gen/doric/log/v1/log_pb.js';
+import { ModelsService } from 'bundle/contracts/gen/doric/models/v1/models_pb.js';
 import { SecretsService } from 'bundle/contracts/gen/doric/secrets/v1/secrets_pb.js';
 import { SettingsService } from 'bundle/contracts/gen/doric/settings/v1/settings_pb.js';
 import { SkillsService } from 'bundle/contracts/gen/doric/skills/v1/skills_pb.js';
@@ -39,10 +40,9 @@ void test('every RPC fails with unavailable until activate ran', async () => {
   try {
     const storage = storageClient(router.client(StorageService, { caller }));
 
-    await assert.rejects(
-      storage.get({ type: 'notes.note/v1', id: 'a' }),
-      { code: 'unavailable' },
-    );
+    await assert.rejects(storage.get({ type: 'notes.note/v1', id: 'a' }), {
+      code: 'unavailable',
+    });
     storage.defineType(
       defineStorageType({
         type: 'notes.note/v1',
@@ -68,7 +68,7 @@ void test('every RPC fails with unavailable until activate ran', async () => {
   }
 });
 
-void test('tools/v1, skills/v1, hooks/v1 and log/v1 follow events/v1 and fail with unavailable until activate ran', async () => {
+void test('tools/v1, skills/v1, hooks/v1, log/v1 and models/v1 follow events/v1 and tools/v1 to log/v1 fail with unavailable until activate ran', async () => {
   const core = createCoreServices({
     types: testMessages(),
     validators: ajvValidators(),
@@ -85,6 +85,7 @@ void test('tools/v1, skills/v1, hooks/v1 and log/v1 follow events/v1 and fail wi
       SkillsService.typeName,
       HooksService.typeName,
       LogService.typeName,
+      ModelsService.typeName,
     ],
   );
 

@@ -95,6 +95,14 @@ export const createSecretsService = (
   readonly registrations: Registrations;
   /** The redaction list `events/v1.Append` redacts with; loads the cache once. */
   redactions(call: Call): Promise<readonly string[]>;
+  /**
+   * The stored secret of credential `id`, from the cache (loaded once, as
+   * every secrets call loads it), for `models/v1`'s targets. `undefined`
+   * when no credential has the id. Never rejects: a cache that cannot load
+   * answers `undefined`, as today's `storedSecret` does. Does not check
+   * the credential's kind against any caller's view.
+   */
+  secretOf(id: string, call: Call): Promise<string | undefined>;
 } => {
   const registrations = createRegistrations('secrets-');
   const sources = new Map<string, SourceEntry>();
@@ -462,5 +470,13 @@ export const createSecretsService = (
     implementation,
     registrations,
     redactions: async () => (await loaded()).view.redactions(),
+    secretOf: async (id) => {
+      try {
+        return find(await loaded(), id)?.secret;
+      } catch {
+        // A cache that cannot load is read as no stored secret.
+        return undefined;
+      }
+    },
   };
 };

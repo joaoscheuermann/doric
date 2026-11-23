@@ -140,6 +140,7 @@ export interface Script {
     | 'serve-demo'
     | 'watch-demo'
     | 'describe-platform'
+    | 'read-descriptors'
     | 'serve-storage-identity'
     | 'identity-fails';
   readonly ms?: number;

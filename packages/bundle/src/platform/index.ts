@@ -3,6 +3,7 @@
 // and the gateway. Exported from the package as `bundle/platform` (phase 3);
 // Node only, not reachable from a window.
 
+import { createFileRegistry } from '@bufbuild/protobuf';
 import { ConnectError, createClient } from '@connectrpc/connect';
 import { createAsyncIterable } from '@connectrpc/connect/protocol';
 import { createTransport } from '@connectrpc/connect/protocol-grpc';
@@ -12,6 +13,7 @@ import {
   StorageBackendV1,
 } from '../contracts/basic/storage.js';
 import { ContractError } from '../contracts/error.js';
+import { file_doric_platform_app_hooks_v1_hooks } from '../contracts/gen/doric/platform/app/hooks/v1/hooks_pb.js';
 import { file_doric_platform_bundle_v1_bundle } from '../contracts/gen/doric/platform/bundle/v1/bundle_pb.js';
 import { file_doric_platform_diagnostics_v1_diagnostics } from '../contracts/gen/doric/platform/diagnostics/v1/diagnostics_pb.js';
 import { file_doric_platform_generation_v1_generation } from '../contracts/gen/doric/platform/generation/v1/generation_pb.js';
@@ -211,11 +213,12 @@ export const startPlatform = async (
     signal: (from, topic, payload) =>
       router.sendPeerSignal(from, topic, payload),
   });
+  const routerIndex = withPlatformContracts(options.index);
   const router = await startRouter({
     ...(options.routerAddress === undefined
       ? {}
       : { address: options.routerAddress }),
-    index: withPlatformContracts(options.index),
+    index: routerIndex,
     routes: callRoutesOf(resolved),
     platformServices: [
       generation,
@@ -224,6 +227,7 @@ export const startPlatform = async (
         resolved: () => current,
         diagnostics,
         storage: () => storage,
+        index: () => routerIndex,
       }),
       createDiagnosticsService({ diagnostics }),
       createBundleService(),
@@ -390,7 +394,10 @@ export const startPlatform = async (
  * `index`, falling back to the platform contracts the router serves in
  * process (`doric.generation/v1`, `doric.log/v1`, `doric.catalog/v1`,
  * `doric.diagnostics/v1`, `doric.bundle/v1`) for what it lacks, so a bundle
- * reaches them whatever files the host indexed.
+ * reaches them whatever files the host indexed. Its `registry` holds
+ * `index`'s files, those platform files and `doric.app.hooks/v1`'s file,
+ * each with the files it imports; a file of `index` wins over a platform file
+ * of the same name.
  */
 const withPlatformContracts = (index: CatalogIndex): CatalogIndex => {
   const platform = createCatalogIndex([
@@ -401,6 +408,8 @@ const withPlatformContracts = (index: CatalogIndex): CatalogIndex => {
     file_doric_platform_diagnostics_v1_diagnostics,
     file_doric_platform_bundle_v1_bundle,
   ]);
+  // Only in the registry: `doric.app.hooks/v1` is not served in process.
+  const hooks = createCatalogIndex([file_doric_platform_app_hooks_v1_hooks]);
 
   return {
     method: (path) => index.method(path) ?? platform.method(path),
@@ -408,7 +417,11 @@ const withPlatformContracts = (index: CatalogIndex): CatalogIndex => {
       index.service(fullName) ?? platform.service(fullName),
     contract: (id) => index.contract(id) ?? platform.contract(id),
     desktopMethods: () => index.desktopMethods(),
-    registry: index.registry,
+    registry: createFileRegistry(
+      platform.registry,
+      hooks.registry,
+      index.registry,
+    ),
   };
 };
 

@@ -517,7 +517,7 @@ the core's host contracts, these are `secrets/v1.registerReferences` and
 
 In a host process, `createCoreServices({ types, validators, now?, hookDeadlineMs? })`
 ([`services.ts`](src/host/services.ts)) answers `{ services, activate(context) }`
-and serves `storage/v1`, `settings/v1`, `secrets/v1`, `events/v1`, `tools/v1`, `skills/v1`, `hooks/v1` and `log/v1` over the router beside the kernel
+and serves `storage/v1`, `settings/v1`, `secrets/v1`, `events/v1`, `tools/v1`, `skills/v1`, `hooks/v1`, `log/v1` and `models/v1` over the router beside the kernel
 entry; calls before `activate` fail `unavailable`. Storage views are
 partitioned by the router-stamped caller generation, and types are released on
 `InstanceGone` (data kept). Settings values are protobuf messages (`Any`)
@@ -553,7 +553,18 @@ decide answer is a failed handler, not a refusal). Sequence handlers have no
 deadline and the first failure fails `Run`. `WatchAvailability` streams the
 state, then each change. Log: `Write` and `WriteBatch` stamp the caller, host
 environment, scope and trace, redact secrets and write to `doric.log/v1`; a
-failed write fails the call, so the SDK falls back to stdout.
+failed write fails the call, so the SDK falls back to stdout. At `activate`
+core reads `doric.catalog/v1.Descriptors` to build its message registry.
+Models: the six operations are relayed to the bundle whose
+`models.provider/v1` reports the configured provider's kind, with the target
+(provider id, configuration without secret fields, and the secret read per
+request); `Complete` and `Stream` check the header first, then pass items
+through as they arrive, and cancelling aborts the provider call. `Resolve`
+answers only `{ providerId, model, effort }`. `Prepare` only checks and
+activates a configuration and builds no provider, so a bad configuration fails
+at first use; each call uses the configuration active at call time. An unknown
+provider or kind fails `unavailable`, a malformed configuration
+`invalid_input`.
 
 ### `tools/v1`
 

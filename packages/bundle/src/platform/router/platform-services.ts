@@ -28,6 +28,7 @@ import {
   type Interceptor,
   type ServiceImpl,
 } from '@connectrpc/connect';
+import { createAsyncIterable } from '@connectrpc/connect/protocol';
 import type {
   UniversalHandler,
   UniversalServerRequest,
@@ -70,7 +71,8 @@ import {
   type BundleStates,
   catalogSnapshot,
 } from '../../runtime/platform-providers.js';
-import type { MethodInfo } from '../catalog-index.js';
+import type { CatalogIndex, MethodInfo } from '../catalog-index.js';
+import { descriptorSetBytes } from '../descriptor-set.js';
 import { maxMessageBytes } from './control.js';
 import {
   type InstanceKey,
@@ -319,6 +321,13 @@ export interface CatalogServiceOptions {
    * throw.
    */
   readonly storage: () => StorageIdentity | undefined;
+  /**
+   * The index whose descriptors `Descriptors` answers: the router's
+   * `withPlatformContracts(options.index)`, so the set holds the staged
+   * bundles' files and the platform's own contract files
+   * (`doric.app.hooks/v1` among them). Read at every call. Must not throw.
+   */
+  readonly index: () => CatalogIndex;
 }
 
 /**
@@ -331,6 +340,9 @@ export interface CatalogServiceOptions {
  * contract's providers leave out every bundle whose state is `quarantined`;
  * `storage` is `options.storage()`, absent while undefined. Every call reads
  * the present state. `Get` never fails for the host's state.
+ * `Descriptors` streams `toBinary(FileDescriptorSetSchema, { file: <every
+ * file of index().registry, imports first> })` in chunks of at most 1 MiB,
+ * in order. An empty set answers a stream without items.
  * `Distribution`, `ReadArtifact`, `Watch`, `Disable` and `ResetComposition`
  * end with `UNIMPLEMENTED`, reason `unknown_contract`, until the slices that
  * serve them.
@@ -355,8 +367,21 @@ export const createCatalogService = (
     watch: () => notServed('Watch'),
     disable: () => notServed('Disable'),
     resetComposition: () => notServed('ResetComposition'),
+    descriptors: () => {
+      const bytes = descriptorSetBytes(options.index().registry.files);
+      const items: { chunk: Uint8Array }[] = [];
+
+      for (let at = 0; at < bytes.length; at += descriptorChunkBytes) {
+        items.push({ chunk: bytes.subarray(at, at + descriptorChunkBytes) });
+      }
+
+      return createAsyncIterable(items);
+    },
   },
 });
+
+/** The bound on `doric.catalog/v1.DescriptorsResponse.chunk`: 1 MiB. */
+const descriptorChunkBytes = 1_048_576;
 
 /** `snapshot` as the `doric.catalog/v1.CatalogSnapshot` message. */
 const snapshotMessage = (

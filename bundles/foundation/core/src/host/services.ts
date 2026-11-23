@@ -12,6 +12,7 @@ import { ContractError } from 'bundle/contracts';
 import { EventsService } from 'bundle/contracts/gen/doric/events/v1/events_pb.js';
 import { HooksService } from 'bundle/contracts/gen/doric/hooks/v1/hooks_pb.js';
 import { LogService } from 'bundle/contracts/gen/doric/log/v1/log_pb.js';
+import { ModelsService } from 'bundle/contracts/gen/doric/models/v1/models_pb.js';
 import { SecretsService } from 'bundle/contracts/gen/doric/secrets/v1/secrets_pb.js';
 import { SettingsService } from 'bundle/contracts/gen/doric/settings/v1/settings_pb.js';
 import { SkillsService } from 'bundle/contracts/gen/doric/skills/v1/skills_pb.js';
@@ -36,6 +37,7 @@ import {
   DEFAULT_HOOK_DEADLINE_MS,
 } from './hooks/service.js';
 import { createLogService } from './log/service.js';
+import { createModelsService } from './models/service.js';
 import { createSecretsService } from './secrets/service.js';
 import { createSettingsService } from './settings/service.js';
 import { createSkillsService } from './skills/service.js';
@@ -52,6 +54,7 @@ export type CoreDataServices = readonly [
   typeof SkillsService,
   typeof HooksService,
   typeof LogService,
+  typeof ModelsService,
 ];
 
 export interface CoreServicesOptions {
@@ -122,6 +125,11 @@ export interface CoreServices {
    * `ToolHandlerService` and `HookHandlerService` with `target` naming it.
    * `log/v1` writes to `doric.log/v1` and reports through
    * `doric.diagnostics/v1`.
+   *
+   * `[ModelsService, …]`: `models/v1` over the provider bundles of
+   * `models.provider/v1`, which `core` reaches through
+   * `context.services.use(ProviderService, { provider })` (see
+   * `createModelsService`).
    */
   readonly services: ServiceEntries<CoreDataServices>;
   /**
@@ -226,6 +234,7 @@ export const createCoreServices = (
     options.hookDeadlineMs ?? DEFAULT_HOOK_DEADLINE_MS,
   );
   const log = createLogService(bind, (call) => secrets.redactions(call));
+  const models = createModelsService(bind, secrets);
 
   return {
     services: [
@@ -240,6 +249,7 @@ export const createCoreServices = (
       [SkillsService, skills.implementation],
       [HooksService, hooks.implementation],
       [LogService, log.implementation],
+      [ModelsService, models.implementation],
     ],
     activate: (context) => {
       if (binding !== undefined) {

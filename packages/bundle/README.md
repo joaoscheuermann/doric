@@ -2920,7 +2920,12 @@ interface KernelPlatform extends HostPlatform {
    members when `distribution` is given and recovery members when
    `compositionOverrides` is given, `doric.diagnostics/v1`, `doric.bundle/v1`,
    `doric.log/v1`, `doric.generation/v1`, `doric.startup/v1`, and
-   `doric.network/v1` when `network` is given), and logs `Bundle quarantined`
+   `doric.network/v1` when `network` is given; over the router, platform 2.1.0
+   adds `doric.catalog/v1.Descriptors`, which streams the serialized
+   `FileDescriptorSet` of the catalog index — staged files, the platform's own
+   files and `doric.app.hooks/v1`, imports first — in chunks of at most 1 MiB,
+   equal bytes on every call; the descriptor-set helper is shared with the
+   build's `descriptors.binpb`), and logs `Bundle quarantined`
    with the reasons of each quarantined bundle.
 4. It activates the kernel partition. An installed bundle's host part is
    `<dir>/host/index.js`, which must export `activate` (`invalid_part`

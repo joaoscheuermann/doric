@@ -25,8 +25,11 @@ import {
 } from '@bufbuild/protobuf/wkt';
 import {
   type Client,
+  Code,
+  ConnectError,
   createClient,
   createRouterTransport,
+  type HandlerContext,
   type ServiceImpl,
 } from '@connectrpc/connect';
 import { createTestServices } from 'bundle';
@@ -47,6 +50,7 @@ import {
   StringRulesSchema,
 } from 'bundle/contracts/gen/buf/validate/validate_pb.js';
 import { HookHandlerService } from 'bundle/contracts/gen/doric/hooks/v1/hooks_pb.js';
+import { ProviderService } from 'bundle/contracts/gen/doric/models/provider/v1/provider_pb.js';
 import { CatalogService } from 'bundle/contracts/gen/doric/platform/catalog/v1/catalog_pb.js';
 import {
   DiagnosticsService,
@@ -74,7 +78,11 @@ import { ReferenceSourceService } from 'bundle/contracts/gen/doric/secrets/v1/se
 import { BackendService as StorageBackendService } from 'bundle/contracts/gen/doric/storage/backend/v1/backend_pb.js';
 import { StorageService } from 'bundle/contracts/gen/doric/storage/v1/storage_pb.js';
 import { ToolHandlerService } from 'bundle/contracts/gen/doric/tools/v1/tools_pb.js';
-import { ajvValidators, type BundleInstance, type UseOptions } from 'bundle/host';
+import {
+  ajvValidators,
+  type BundleInstance,
+  type UseOptions,
+} from 'bundle/host';
 import { createTestRouter, type TestRouter } from 'bundle/testing';
 import {
   createMemoryStore,
@@ -116,6 +124,22 @@ export interface InstanceHandlers {
 export interface HandlerCall {
   readonly target: string;
   readonly method: string;
+  readonly request: unknown;
+}
+
+/** A fake provider bundle's `models.provider/v1`; a method left out is `unimplemented`. */
+export type ModelProviderFake = Partial<ServiceImpl<typeof ProviderService>>;
+
+/** One `models.provider/v1` call core made, as the fake received it. */
+export interface ProviderCall {
+  /** The bundle named by `UseOptions.provider`. */
+  readonly provider: string;
+  /** The method's local name (`kind`, `complete`, `validateModel`, …). */
+  readonly method: string;
+  /**
+   * The request, or, for `Complete` and `Stream`, every item the fake has
+   * received so far (the array grows while the call runs).
+   */
   readonly request: unknown;
 }
 
@@ -180,6 +204,15 @@ export interface RoutedCore {
   /** The `doric.diagnostics/v1.Report` requests core made (fake), in order. */
   readonly reports: readonly ReportRequest[];
   /**
+   * The provider bundles of `models.provider/v1`, live: the catalog fake
+   * answers the entries present at each `Get` (a caller generation core has
+   * not seen yet reads a fresh snapshot), and a call reaches the entry
+   * present when it starts. Starts as `ServeCoreOptions.modelProviders`.
+   */
+  readonly modelProviders: Map<string, ModelProviderFake>;
+  /** Every `models.provider/v1` call, in the order the calls started. */
+  readonly providerCalls: readonly ProviderCall[];
+  /**
    * Delivers `InstanceGone` of `instance` to the handlers `core` gave
    * `context.instances.onGone`, as the router would (the test router sends
    * none). Incarnation 1 unless given.
@@ -206,6 +239,18 @@ export interface ServeCoreOptions {
   readonly types?: Registry;
   /** `CoreServicesOptions.hookDeadlineMs`; the default is 10,000. */
   readonly hookDeadlineMs?: CoreServicesOptions['hookDeadlineMs'];
+  /**
+   * Provider bundle id → its fake `models.provider/v1`. The catalog fake
+   * lists them, in this key order, as the host providers of
+   * `models.provider/v1` (bundle version '1.2.3'), adds them to `bundles`
+   * and `order` after the other bundles, and lists `core` as the provider
+   * of `models/v1`. `core`'s `context.services.use(ProviderService,
+   * { provider })` answers an in-memory client of the entry, recording each
+   * call in `providerCalls`; a provider with no entry fails with
+   * `ContractError('unknown_provider')`, a method a fake leaves out with
+   * `unimplemented`.
+   */
+  readonly modelProviders?: Readonly<Record<string, ModelProviderFake>>;
 }
 
 const coreManifest = async (): Promise<Record<string, unknown>> =>
@@ -267,49 +312,85 @@ export const serveCore = async (
     ],
   });
   const manifest = await coreManifest();
-  const bundles = Object.entries(options.bundles ?? {});
+  const modelProviders = new Map(Object.entries(options.modelProviders ?? {}));
+  const providerCalls: ProviderCall[] = [];
   const catalog: ServiceImpl<typeof CatalogService> = {
-    get: () => ({
-      catalogSnapshot: {
-        generation: ACTIVE_GENERATION,
-        composition: { core: 'core', enabled: [], providers: {} },
-        bundles: [
-          {
-            id: 'core',
-            version: String(manifest.version),
-            state: 'active',
-            manifest: manifest as never,
-          },
-          ...bundles.map(([id, provides]) => ({
-            id,
-            version: '1.2.3',
-            state: 'active',
-            manifest: {
-              manifestVersion: 1,
+    get: () => {
+      const providerIds = [...modelProviders.keys()];
+      const bundles = [
+        ...Object.entries(options.bundles ?? {}),
+        ...providerIds.map((id) => [id, ['models.provider/v1@1.4.0']] as const),
+      ];
+
+      return {
+        catalogSnapshot: {
+          generation: ACTIVE_GENERATION,
+          composition: { core: 'core', enabled: [], providers: {} },
+          bundles: [
+            {
+              id: 'core',
+              version: String(manifest.version),
+              state: 'active',
+              manifest: manifest as never,
+            },
+            ...bundles.map(([id, provides]) => ({
               id,
               version: '1.2.3',
-              provides: [...provides],
-            },
-          })),
-        ],
-        order: ['core', ...bundles.map(([id]) => id)],
-        contracts: [
-          {
-            id: 'events/v1',
-            environment: 'host',
-            cardinality: 'one',
-            providers: [
-              {
-                bundleId: 'core',
-                version: '1.0.0',
-                bundleVersion: String(manifest.version),
+              state: 'active',
+              manifest: {
+                manifestVersion: 1,
+                id,
+                version: '1.2.3',
+                provides: [...provides],
               },
-            ],
-          },
-        ],
-      },
-    }),
+            })),
+          ],
+          order: ['core', ...bundles.map(([id]) => id)],
+          contracts: [
+            {
+              id: 'events/v1',
+              environment: 'host',
+              cardinality: 'one',
+              providers: [
+                {
+                  bundleId: 'core',
+                  version: '1.0.0',
+                  bundleVersion: String(manifest.version),
+                },
+              ],
+            },
+            {
+              id: 'models/v1',
+              environment: 'host',
+              cardinality: 'one',
+              providers: [
+                {
+                  bundleId: 'core',
+                  version: '1.5.0',
+                  bundleVersion: String(manifest.version),
+                },
+              ],
+            },
+            ...(providerIds.length === 0
+              ? []
+              : [
+                  {
+                    id: 'models.provider/v1',
+                    environment: 'host',
+                    cardinality: 'many',
+                    providers: providerIds.map((bundleId) => ({
+                      bundleId,
+                      version: '1.4.0',
+                      bundleVersion: '1.2.3',
+                    })),
+                  },
+                ]),
+          ],
+        },
+      };
+    },
     distribution: notServed,
+    descriptors: notServed,
     readArtifact: notServed,
     watch: notServed,
     disable: notServed,
@@ -338,7 +419,8 @@ export const serveCore = async (
     ref: S,
     target: string,
   ): Client<S> => {
-    const kind = ref.typeName === ToolHandlerService.typeName ? 'tools' : 'hooks';
+    const kind =
+      ref.typeName === ToolHandlerService.typeName ? 'tools' : 'hooks';
     const implementation = Object.fromEntries(
       ref.methods.map((method) => [
         method.localName,
@@ -374,6 +456,114 @@ export const serveCore = async (
       ref,
       createRouterTransport((router) => {
         router.service(ref, implementation);
+      }),
+    );
+  };
+  /** An in-memory client of the live fake of `provider`, recording calls. */
+  const providerClient = (provider: string): Client<typeof ProviderService> => {
+    const fakeOf = (method: string) => {
+      const fake = modelProviders.get(provider) as
+        | Record<string, (...args: unknown[]) => unknown>
+        | undefined;
+
+      if (fake === undefined) {
+        throw toConnectError(
+          new ContractError(
+            'unknown_provider',
+            `${provider} is not a live provider of models.provider/v1.`,
+          ),
+        );
+      }
+
+      const handle = fake[method];
+
+      if (handle === undefined) {
+        throw new ConnectError(
+          `The fake ${provider} does not serve ${method}.`,
+          Code.Unimplemented,
+        );
+      }
+
+      return handle;
+    };
+    const contractError = (error: unknown) =>
+      error instanceof ContractError ? toConnectError(error) : error;
+    const implementation = Object.fromEntries(
+      ProviderService.methods.map((method) => {
+        const name = method.localName;
+
+        if (method.methodKind === 'unary') {
+          return [
+            name,
+            async (request: unknown, context: HandlerContext) => {
+              providerCalls.push({ provider, method: name, request });
+
+              try {
+                return await fakeOf(name)(request, context);
+              } catch (error) {
+                throw contractError(error);
+              }
+            },
+          ];
+        }
+
+        // `Complete` (client streaming) and `Stream` (bidi): the items are
+        // recorded as the fake reads them.
+        const recordedItems = (
+          request: AsyncIterable<unknown>,
+        ): AsyncIterable<unknown> => {
+          const items: unknown[] = [];
+
+          providerCalls.push({ provider, method: name, request: items });
+
+          return (async function* () {
+            for await (const item of request) {
+              items.push(item);
+              yield item;
+            }
+          })();
+        };
+
+        if (method.methodKind === 'client_streaming') {
+          return [
+            name,
+            async (
+              request: AsyncIterable<unknown>,
+              context: HandlerContext,
+            ) => {
+              const items = recordedItems(request);
+
+              try {
+                return await fakeOf(name)(items, context);
+              } catch (error) {
+                throw contractError(error);
+              }
+            },
+          ];
+        }
+
+        return [
+          name,
+          async function* (
+            request: AsyncIterable<unknown>,
+            context: HandlerContext,
+          ) {
+            const items = recordedItems(request);
+
+            try {
+              yield* fakeOf(name)(items, context) as AsyncIterable<unknown>;
+            } catch (error) {
+              throw contractError(error);
+            }
+          },
+        ];
+      }),
+    ) as ServiceImpl<typeof ProviderService>;
+
+    return createClient(
+      ProviderService,
+      createRouterTransport((router) => {
+        router.service(ProviderService, implementation);
       }),
     );
   };
@@ -442,11 +632,14 @@ export const serveCore = async (
         ...context,
         services: {
           use: <S extends DescService>(ref: S, useOptions?: UseOptions<S>) =>
-            useOptions?.target !== undefined &&
-            (ref.typeName === ToolHandlerService.typeName ||
-              ref.typeName === HookHandlerService.typeName)
-              ? handlerClient(ref, useOptions.target)
-              : use(ref, useOptions),
+            useOptions?.provider !== undefined &&
+            ref.typeName === ProviderService.typeName
+              ? (providerClient(useOptions.provider) as unknown as Client<S>)
+              : useOptions?.target !== undefined &&
+                  (ref.typeName === ToolHandlerService.typeName ||
+                    ref.typeName === HookHandlerService.typeName)
+                ? handlerClient(ref, useOptions.target)
+                : use(ref, useOptions),
         },
         instances: {
           onGone: (handler) => {
@@ -484,6 +677,8 @@ export const serveCore = async (
       sinks.failLog = error;
     },
     reports,
+    modelProviders,
+    providerCalls,
     storage: (bundleId, generation = bundleId === 'doric' ? 0 : 1) =>
       storageClient(
         router.client(StorageService, {

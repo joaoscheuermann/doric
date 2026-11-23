@@ -14,7 +14,7 @@ import type { KindRegistry } from './registry.js';
 export const PROVIDER_ICONS_DEADLINE_MS = 1000;
 
 /** One request's answer by icon name, before the names become SVGs. */
-interface IconAnswer {
+export interface IconAnswer {
   readonly provider?: ModelIconName;
   readonly models: readonly (ModelIconName | null)[];
 }
@@ -65,6 +65,27 @@ const targetOf = (
     .find((provider) => provider.id === request.providerId);
 };
 
+/**
+ * A record's choice for `count` models as names of the set: each model wears
+ * its own icon, else the provider's; `undefined` for no choice or another count.
+ */
+export const iconAnswerOf = (
+  choice:
+    | {
+        readonly provider?: string | null;
+        readonly models: readonly (string | null)[];
+      }
+    | undefined,
+  count: number,
+): IconAnswer | undefined => {
+  if (choice === undefined || choice.models.length !== count) return undefined;
+
+  const provider = knownIcon(choice.provider);
+  const models = choice.models.map((name) => knownIcon(name) ?? provider);
+
+  return provider === null ? { models } : { provider, models };
+};
+
 const answerOf = async (
   registry: Pick<KindRegistry, 'find'>,
   cache: Pick<ProviderCache, 'configured'>,
@@ -83,13 +104,7 @@ const answerOf = async (
     { configuration: target.configuration, models: request.models },
     deadlineMs,
   );
-  if (choice === undefined || choice.models.length !== request.models.length)
-    return none;
-
-  const provider = knownIcon(choice.provider);
-  const models = choice.models.map((name) => knownIcon(name) ?? provider);
-
-  return provider === null ? { models } : { provider, models };
+  return iconAnswerOf(choice, request.models.length) ?? none;
 };
 
 /**

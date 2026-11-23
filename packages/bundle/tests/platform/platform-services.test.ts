@@ -13,8 +13,22 @@
 import assert from 'node:assert/strict';
 import test, { describe, type TestContext } from 'node:test';
 
-import { type DescService, fromJson, toJson } from '@bufbuild/protobuf';
-import { ValueSchema } from '@bufbuild/protobuf/wkt';
+import {
+  create,
+  createFileRegistry,
+  type DescFile,
+  type DescService,
+  fromBinary,
+  fromJson,
+  toJson,
+} from '@bufbuild/protobuf';
+import {
+  type FileDescriptorProto,
+  FieldDescriptorProto_Label,
+  FieldDescriptorProto_Type,
+  FileDescriptorSetSchema,
+  ValueSchema,
+} from '@bufbuild/protobuf/wkt';
 import {
   type Client,
   Code,
@@ -38,6 +52,8 @@ import {
   CatalogService,
   type CatalogSnapshot,
 } from '../../src/contracts/gen/doric/platform/catalog/v1/catalog_pb.js';
+import { file_doric_platform_generation_v1_generation } from '../../src/contracts/gen/doric/platform/generation/v1/generation_pb.js';
+import { file_doric_platform_log_v1_log } from '../../src/contracts/gen/doric/platform/log/v1/log_pb.js';
 import {
   DiagnosticsService,
   file_doric_platform_diagnostics_v1_diagnostics,
@@ -46,7 +62,10 @@ import { file_doric_settings_v1_settings } from '../../src/contracts/gen/doric/s
 import { file_doric_storage_backend_v1_backend } from '../../src/contracts/gen/doric/storage/backend/v1/backend_pb.js';
 import { file_doric_tools_v1_tools } from '../../src/contracts/gen/doric/tools/v1/tools_pb.js';
 import { fromConnectError } from '../../src/contracts/status.js';
-import { createCatalogIndex } from '../../src/platform/catalog-index.js';
+import {
+  type CatalogIndex,
+  createCatalogIndex,
+} from '../../src/platform/catalog-index.js';
 import {
   InstanceTable,
   instanceKey,
@@ -72,6 +91,7 @@ import { resolveCallHost, resolveReplayHost } from '../support/call-routes.js';
 import {
   bootPlatform,
   type FixtureBundle,
+  fixtureIndex,
   isAlive,
   resolveHost,
   setupPlatform,
@@ -228,9 +248,11 @@ const loaded = (resolved: ResolvedEnvironment): DiagnosticsStore => {
 /** `doric.catalog/v1.Get` from the bundle `stranger`, which declares nothing. */
 const catalogGet = async (
   t: TestContext,
-  options: Parameters<typeof createCatalogService>[0],
+  options: Omit<Parameters<typeof createCatalogService>[0], 'index'>,
 ): Promise<{ readonly get: () => Promise<CatalogSnapshot> }> => {
-  const env = await setupRouter(t, [createCatalogService(options)]);
+  const env = await setupRouter(t, [
+    createCatalogService({ ...options, index: () => routerIndex }),
+  ]);
   const token = await env.start('stranger');
   const client = env.raw(CatalogService, token);
 
@@ -439,6 +461,7 @@ describe('doric.catalog/v1 methods not served yet', () => {
         resolved: () => resolved,
         diagnostics: loaded(resolved),
         storage: () => undefined,
+        index: () => routerIndex,
       }),
     ]);
     const token = await env.start('stranger');
@@ -461,6 +484,173 @@ describe('doric.catalog/v1 methods not served yet', () => {
       assert.equal(error.code, Code.Unimplemented, error.message);
       assert.equal(fromConnectError(error).code, 'unknown_contract');
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// doric.catalog/v1 Descriptors (router)
+
+/** The proto's bound on `DescriptorsResponse.chunk`: 1 MiB. */
+const maxChunkBytes = 1_048_576;
+
+/** The chunks of one `Descriptors` read and the set they concatenate to. */
+interface DescriptorsRead {
+  readonly chunks: readonly Uint8Array[];
+  readonly bytes: Uint8Array;
+  readonly files: readonly FileDescriptorProto[];
+}
+
+/** A `Descriptors` client from `stranger` over a catalog serving `index`. */
+const descriptorsOf = async (
+  t: TestContext,
+  index: CatalogIndex,
+): Promise<{ readonly read: () => Promise<DescriptorsRead> }> => {
+  const resolved = resolveCallHost();
+  const env = await setupRouter(t, [
+    createCatalogService({
+      resolved: () => resolved,
+      diagnostics: loaded(resolved),
+      storage: () => undefined,
+      index: () => index,
+    }),
+  ]);
+  const token = await env.start('stranger');
+  const client = env.raw(CatalogService, token);
+
+  return {
+    read: async () => {
+      const chunks: Uint8Array[] = [];
+
+      await within(
+        (async () => {
+          for await (const { chunk } of client.descriptors({})) {
+            chunks.push(chunk);
+          }
+        })(),
+        'Descriptors',
+      );
+
+      const bytes = Buffer.concat(chunks);
+
+      return {
+        chunks,
+        bytes,
+        files: fromBinary(FileDescriptorSetSchema, bytes).file,
+      };
+    },
+  };
+};
+
+/** Asserts that every chunk holds 1 byte to 1 MiB. */
+const assertChunkSizes = (chunks: readonly Uint8Array[]): void => {
+  for (const [position, chunk] of chunks.entries()) {
+    assert.ok(
+      chunk.length >= 1 && chunk.length <= maxChunkBytes,
+      `chunk ${position} holds ${chunk.length} bytes`,
+    );
+  }
+};
+
+/** Asserts that each file is listed once, after every file it imports. */
+const assertImportsFirst = (files: readonly FileDescriptorProto[]): void => {
+  const names = files.map(({ name }) => name);
+
+  assert.equal(new Set(names).size, names.length, `repeated: ${names}`);
+
+  for (const [position, file] of files.entries()) {
+    for (const dependency of file.dependency) {
+      const at = names.indexOf(dependency);
+
+      assert.ok(
+        at !== -1 && at < position,
+        `${file.name} imports ${dependency}, which is ${at === -1 ? 'missing' : 'after it'}`,
+      );
+    }
+  }
+};
+
+const sortedNames = (files: Iterable<{ readonly name: string }>): string[] =>
+  [...files].map(({ name }) => name).sort();
+
+/** The `.proto` names of registry files, as a FileDescriptorSet holds them. */
+const sortedProtoNames = (files: Iterable<DescFile>): string[] =>
+  [...files].map(({ proto }) => proto.name).sort();
+
+/**
+ * A file of one message with `fields` string fields whose names are 64
+ * characters long, so its descriptor outgrows 1 MiB from about 7 000 fields.
+ */
+const bulkyFile = (fields: number): DescFile => {
+  const name = 'fixture/bulky.proto';
+  const registry = createFileRegistry(
+    create(FileDescriptorSetSchema, {
+      file: [
+        {
+          name,
+          package: 'fixture.bulky',
+          syntax: 'proto3',
+          messageType: [
+            {
+              name: 'Bulky',
+              field: Array.from({ length: fields }, (_, position) => ({
+                name: `field_${String(position + 1).padStart(6, '0')}_${'x'.repeat(51)}`,
+                number: position + 1,
+                label: FieldDescriptorProto_Label.OPTIONAL,
+                type: FieldDescriptorProto_Type.STRING,
+              })),
+            },
+          ],
+        },
+      ],
+    }),
+  );
+  const file = registry.getFile(name);
+
+  assert.ok(file !== undefined, `the registry has no ${name}`);
+
+  return file;
+};
+
+describe('doric.catalog/v1 Descriptors', () => {
+  test("streams the set of every file of the index's registry, imports first, in chunks of at most 1 MiB, and two calls give equal bytes", async (t) => {
+    const catalog = await descriptorsOf(t, routerIndex);
+    const first = await catalog.read();
+    const second = await catalog.read();
+
+    assert.ok(first.chunks.length >= 1, 'Descriptors streamed no item');
+    assertChunkSizes(first.chunks);
+    assert.deepEqual(
+      sortedNames(first.files),
+      sortedProtoNames(routerIndex.registry.files),
+    );
+    assertImportsFirst(first.files);
+    assert.deepEqual(second.bytes, first.bytes);
+  });
+
+  test('splits a set of more than 1 MiB into several chunks of at most 1 MiB whose concatenation is the set', async (t) => {
+    const bulky = bulkyFile(14_000);
+    const index = createCatalogIndex([bulky, file_doric_tools_v1_tools]);
+    const catalog = await descriptorsOf(t, index);
+    const { chunks, bytes, files } = await catalog.read();
+
+    assert.ok(bytes.length > maxChunkBytes, `the set is ${bytes.length} bytes`);
+    assert.ok(chunks.length >= 2, `${chunks.length} chunk(s)`);
+    assertChunkSizes(chunks);
+    assert.deepEqual(sortedNames(files), sortedProtoNames(index.registry.files));
+    assertImportsFirst(files);
+    assert.equal(
+      files.find(({ name }) => name === bulky.proto.name)?.messageType[0]?.field
+        .length,
+      14_000,
+    );
+  });
+
+  test('an index without files answers a stream without items', async (t) => {
+    const catalog = await descriptorsOf(t, createCatalogIndex([]));
+    const { chunks, files } = await catalog.read();
+
+    assert.deepEqual(chunks, []);
+    assert.deepEqual(files, []);
   });
 });
 
@@ -747,6 +937,80 @@ describe('the platform services of startPlatform', () => {
       [fixtureStorage],
     );
     assert.equal(env.log.countOf('storage', 'identity:doric'), 1);
+  });
+
+  test("a bundle process reads doric.catalog/v1 Descriptors: the staged and platform files, imports first, in chunks of at most 1 MiB, equal bytes at each call", async (t) => {
+    const env = await setupPlatform(t, {
+      app: { mode: 'read-descriptors' },
+    });
+
+    await until(
+      () => env.log.eventsOf('app').includes('descriptors-read'),
+      'app to read the descriptors',
+      6_000,
+    );
+
+    const events = env.log
+      .eventsOf('app')
+      .filter((event) => event.startsWith('descriptors'));
+    const valuesOf = (prefix: string): string[] =>
+      events
+        .filter((event) => event.startsWith(`${prefix}:`))
+        .map((event) => event.slice(prefix.length + 1));
+
+    assert.deepEqual(valuesOf('descriptors-failed'), []);
+
+    const sizes = valuesOf('descriptors-chunks');
+    const hashes = valuesOf('descriptors-sha256');
+    const listed = valuesOf('descriptors-files');
+
+    assert.equal(sizes.length, 2, `events: ${events}`);
+    assert.equal(hashes.length, 2);
+    assert.equal(hashes[0], hashes[1]);
+    assert.equal(listed[0], listed[1]);
+
+    for (const size of (sizes[0] ?? '').split(',').map(Number)) {
+      assert.ok(size >= 1 && size <= maxChunkBytes, `a chunk of ${size}`);
+    }
+
+    const names = (listed[0] ?? '').split(',');
+    // The staged bundles' files and the platform's own contract files, each
+    // with the files it imports.
+    const staged = fixtureIndex().registry;
+    const platform = createCatalogIndex([
+      file_doric_platform_generation_v1_generation,
+      file_doric_platform_log_v1_log,
+      file_doric_platform_diagnostics_v1_diagnostics,
+      file_doric_platform_bundle_v1_bundle,
+    ]).registry;
+    const expected = new Set([
+      ...sortedProtoNames(staged.files),
+      ...sortedProtoNames(platform.files),
+    ]);
+
+    assert.equal(new Set(names).size, names.length, `repeated: ${names}`);
+
+    for (const name of expected) {
+      assert.ok(names.includes(name), `the set lacks ${name}`);
+    }
+
+    assert.ok(
+      names.includes('doric/platform/catalog/v1/catalog.proto'),
+      'the set lacks doric.catalog/v1',
+    );
+
+    for (const [position, name] of names.entries()) {
+      const file = staged.getFile(name) ?? platform.getFile(name);
+
+      for (const dependency of file?.dependencies ?? []) {
+        const at = names.indexOf(dependency.proto.name);
+
+        assert.ok(
+          at !== -1 && at < position,
+          `${name} imports ${dependency.proto.name}, which is ${at === -1 ? 'missing' : 'after it'}`,
+        );
+      }
+    }
   });
 
   test('a failing Identity makes startPlatform reject with its error, leaving nothing running', async (t) => {

@@ -1,4 +1,4 @@
-// `doric.catalog/v1` (platform 2.0.0): the resolved catalog of the host, as
+// `doric.catalog/v1` (platform 2.1.0): the resolved catalog of the host, as
 // the platform publishes it with each generation, and the recovery actions
 // that change its composition. The host process serves it on the router
 // listener; a stream it serves is not lost with a bundle.
@@ -6,6 +6,8 @@
 // 2.0.0: `get` is asynchronous; `watch` is the server stream `Watch`, whose
 // first item is the present snapshot; `artifact` is the byte stream
 // `ReadArtifact`.
+//
+// 2.1.0: `Descriptors` streams the descriptors of the catalog index.
 syntax = "proto3";
 
 package doric.platform.catalog.v1;
@@ -51,6 +53,14 @@ service CatalogService {
   rpc ResetComposition(ResetCompositionRequest) returns (ResetCompositionResponse) {
     option (doric.platform.v1.method).expose = EXPOSE_DESKTOP;
   }
+  // The descriptors of the host's catalog index: the binary
+  // `google.protobuf.FileDescriptorSet` of every file of every staged
+  // bundle's `descriptors.binpb` and of the platform's own contract files,
+  // with every file they import, each once, imports first. The bytes are the
+  // concatenation of the items' chunks. The index does not change while the
+  // host runs, so every call answers the same bytes. Never fails for the
+  // host's state.
+  rpc Descriptors(DescriptorsRequest) returns (stream DescriptorsResponse);
 }
 
 // Why a bundle is quarantined.
@@ -292,3 +302,15 @@ message ResetCompositionRequest {}
 
 // The overrides are cleared and a new generation is published.
 message ResetCompositionResponse {}
+
+// Asks the descriptors of the catalog index.
+message DescriptorsRequest {}
+
+// One item of a `Descriptors` read.
+message DescriptorsResponse {
+  // The set's next bytes, at most 1 MiB.
+  bytes chunk = 1 [(buf.validate.field).bytes = {
+    min_len: 1
+    max_len: 1048576
+  }];
+}

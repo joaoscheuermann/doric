@@ -12,8 +12,9 @@ import {
 } from 'bundle/contracts';
 
 import { contextWindow, inputModalities } from './capacity.js';
+import { preparedOf } from './configuration.js';
 import { modelIcons } from './icons.js';
-import { type ConfiguredProvider, createProviderCache } from './providers.js';
+import { createProviderCache } from './providers.js';
 import { createKindRegistry } from './registry.js';
 
 /** A stored credential's secret, or `undefined` when none is stored under the id. */
@@ -26,61 +27,6 @@ const storedSecret = async (
   } catch {
     return undefined;
   }
-};
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
-
-/**
- * The providers and the revision of what `prepare` received: a stored
- * snapshot (`{ configuration, revision, updatedAt }`) or a bare configuration
- * a replacement is about to store.
- */
-const preparedOf = (
-  input: Readonly<Record<string, unknown>>,
-): {
-  readonly providers: readonly ConfiguredProvider[];
-  readonly revision: number | undefined;
-} => {
-  const stored =
-    typeof input.revision === 'number' && isRecord(input.configuration);
-  const configuration = stored
-    ? (input.configuration as Record<string, unknown>)
-    : input;
-  const providers = configuration.providers;
-
-  if (!Array.isArray(providers)) {
-    throw new Error('The configuration lists no providers.');
-  }
-
-  return {
-    providers: providers.map((provider: unknown) => {
-      if (
-        !isRecord(provider) ||
-        typeof provider.id !== 'string' ||
-        typeof provider.kind !== 'string' ||
-        !isRecord(provider.configuration)
-      ) {
-        throw new Error('A configured provider is invalid.');
-      }
-
-      const models = Array.isArray(provider.models)
-        ? provider.models.flatMap((model: unknown) =>
-            isRecord(model) && typeof model.name === 'string'
-              ? [model.name]
-              : [],
-          )
-        : undefined;
-
-      return {
-        id: provider.id,
-        kind: provider.kind,
-        configuration: provider.configuration as Record<string, string>,
-        ...(models === undefined ? {} : { models }),
-      };
-    }),
-    revision: stored ? (input.revision as number) : undefined,
-  };
 };
 
 /**

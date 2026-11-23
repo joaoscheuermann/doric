@@ -533,6 +533,26 @@ from the `Append` call. Log `Write` and `WriteBatch` stamp the caller, host
 environment, scope and trace, redact secrets and write to `doric.log/v1`; a
 failed write fails the call, so the SDK falls back to stdout.
 
+S41a adds the platform RPC `doric.catalog/v1.Descriptors` (platform 2.1.0,
+additive; a coordinator decision). It streams the serialized
+`FileDescriptorSet` of the platform's catalog index — staged files, the
+platform's own files and `doric.app.hooks/v1`, imports first — in chunks of at
+most 1 MiB, with equal bytes on every call. A host process (core) reads it at
+`activate` to build its message registry. The descriptor-set helper is shared
+with the build; `descriptors.binpb` is unchanged.
+
+S41b makes core serve `models/v1` over the router. The six operations are
+relayed to the provider bundle whose `models.provider/v1` reports the
+configured provider's kind; the target is the provider id, the configuration
+without secret fields, and the secret read per request. `Complete` and `Stream`
+check the header first, then pass items through as they arrive; cancelling
+aborts the provider call. `Resolve` answers only `{ providerId, model, effort }`.
+`Prepare` only checks and activates a configuration and no longer builds
+providers, so a bad configuration fails at first use. Each call uses the
+configuration active at call time: a prompt spanning a configuration change no
+longer keeps its first provider (a release-notes item). An unknown provider or
+kind fails `unavailable`, a malformed configuration `invalid_input`.
+
 ## Evolution
 
 - 2026-11-22: phase 0 of
@@ -623,3 +643,12 @@ failed write fails the call, so the SDK falls back to stdout.
   [`docs/designs/grpc-processes.md`](../designs/grpc-processes.md) (v6.12):
   `createCoreServices` also serving `hooks/v1` and `log/v1`, with the
   `hookDeadlineMs` option replacing `onEventAppended`.
+- 2026-11-23: phase 3, slice S41a, of
+  [`docs/designs/grpc-processes.md`](../designs/grpc-processes.md) (v6.12):
+  the platform RPC `doric.catalog/v1.Descriptors` (platform 2.1.0), read by
+  core at `activate` for its message registry.
+- 2026-11-23: phase 3, slice S41b, of
+  [`docs/designs/grpc-processes.md`](../designs/grpc-processes.md) (v6.12):
+  core serves `models/v1` by relaying to provider bundles; `Prepare` only
+  checks and activates a configuration, and each call uses the configuration
+  active at call time.

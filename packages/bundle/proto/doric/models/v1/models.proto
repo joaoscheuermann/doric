@@ -42,8 +42,8 @@ service ModelsService {
   rpc Catalog(CatalogRequest) returns (CatalogResponse) {
     option (doric.platform.v1.method).expose = EXPOSE_DESKTOP;
   }
-  // Builds and caches every provider of a configuration; fails when one
-  // cannot be built.
+  // Checks and activates a configuration; builds no provider, so a bad
+  // configuration fails at first use.
   rpc Prepare(PrepareRequest) returns (PrepareResponse);
   // A model's context capacity from its provider's live catalog, when
   // exactly one candidate provider knows it; never fails.
@@ -161,13 +161,13 @@ message CatalogResponse {
   doric.models.provider.v1.CatalogResult catalog_result = 1 [(buf.validate.field).required = true];
 }
 
-// Builds a configuration's providers.
+// Activates a configuration.
 message PrepareRequest {
   // The models configuration.
   google.protobuf.Struct configuration = 1 [(buf.validate.field).required = true];
 }
 
-// Every provider of the configuration is built.
+// The configuration is checked and active.
 message PrepareResponse {}
 
 // Asks a model's context capacity.

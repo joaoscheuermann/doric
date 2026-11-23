@@ -11,8 +11,7 @@ import { createRequire } from 'node:module';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-import { create, type DescFile, toBinary } from '@bufbuild/protobuf';
-import { FileDescriptorSetSchema } from '@bufbuild/protobuf/wkt';
+import type { DescFile } from '@bufbuild/protobuf';
 import type { CallExpression, Node } from 'typescript';
 
 import type { Activate } from '../contracts/context.js';
@@ -24,6 +23,7 @@ import {
   type CatalogIndex,
   createCatalogIndex,
 } from '../platform/catalog-index.js';
+import { descriptorSetBytes } from '../platform/descriptor-set.js';
 import type { Descriptor, DescriptorEntry } from '../runtime/descriptor.js';
 import { descriptorSchema } from '../runtime/descriptor.js';
 import { jsonEqual } from '../runtime/json-schema.js';
@@ -412,31 +412,6 @@ const exportedFiles = async (hrefs: Iterable<string>): Promise<DescFile[]> => {
   return files;
 };
 
-/** `files` and every file they import, transitively, each once, imports first. */
-const closure = (files: readonly DescFile[]): DescFile[] => {
-  const seen = new Set<string>();
-  const ordered: DescFile[] = [];
-  const visit = (file: DescFile): void => {
-    if (seen.has(file.proto.name)) {
-      return;
-    }
-
-    seen.add(file.proto.name);
-
-    for (const dependency of file.dependencies) {
-      visit(dependency);
-    }
-
-    ordered.push(file);
-  };
-
-  for (const file of files) {
-    visit(file);
-  }
-
-  return ordered;
-};
-
 const isDescFile = (value: unknown): value is DescFile =>
   typeof value === 'object' &&
   value !== null &&
@@ -785,17 +760,12 @@ export const buildBundle = async (
 
   await writeFile(
     join(dist, 'descriptors.binpb'),
-    toBinary(
-      FileDescriptorSetSchema,
-      create(FileDescriptorSetSchema, {
-        file: closure(
-          await exportedFiles(
-            (
-              await generatedModules(join(root, 'dist', 'contracts', 'gen'))
-            ).map((path) => pathToFileURL(path).href),
-          ),
-        ).map((file) => file.proto),
-      }),
+    descriptorSetBytes(
+      await exportedFiles(
+        (await generatedModules(join(root, 'dist', 'contracts', 'gen'))).map(
+          (path) => pathToFileURL(path).href,
+        ),
+      ),
     ),
   );
   await writeFile(join(dist, 'contracts.json'), json(descriptor));
