@@ -453,6 +453,17 @@ unavailability map to `cancelled`, `deadline_exceeded` and `unavailable`. The
 conformance kit passes over the router with the memory backend. Phase 4 deletes
 the entry with `storage.backend/v1`.
 
+S37 adds `serveStorage(facade, { validators, instances? })` and
+`storageClient(client, { registrations? })` to `storage/rpc` for `storage/v1`.
+`DefineType` carries the type's JSON Schema as a `Struct` and answers a fresh
+`registrationId`; `Undefine` (only from the defining bundle; unknown or other ids
+are no-ops) or `InstanceGone` of the defining instance disposes it. The client's
+`defineType` returns a `Disposable` at once, orders later calls after pending
+`DefineType`/`Undefine`, replays definitions to a new core instance when
+`registrations` are given, and `settled()` reports refusals. Values cross in
+1 MiB chunks; the facade receives the caller's full call. Phase 4 deletes it with
+`storage/v1`.
+
 ## Evolution
 
 - 2026-11-22: phase 0 of
@@ -518,3 +529,7 @@ the entry with `storage.backend/v1`.
   [`docs/designs/grpc-processes.md`](../designs/grpc-processes.md) (v6.12):
   `storage/rpc` carries `storage.backend/v1` and `secrets.backend/v1` over the
   router until phase 4.
+- 2026-11-22: phase 3, slice S37, of
+  [`docs/designs/grpc-processes.md`](../designs/grpc-processes.md) (v6.12):
+  `storage/rpc` carries `storage/v1` (`serveStorage`, `storageClient`) until
+  phase 4.

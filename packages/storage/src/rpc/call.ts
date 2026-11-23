@@ -62,7 +62,7 @@ const transportCodes = new Map<Code, string>([
 ]);
 
 /** The `ContractError` a client call that threw `error` rejects with. */
-const clientFailure = (error: unknown): ContractError => {
+export const clientFailure = (error: unknown): ContractError => {
   if (isContractError(error)) {
     return error;
   }

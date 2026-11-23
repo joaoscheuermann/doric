@@ -40,13 +40,13 @@ Node.js (`Buffer`, `node:crypto`, and `node:test` in the kit)
 ([`package.json`](package.json)). Each entry resolves to `src/` under the
 `@org/source` condition and to the built `dist/` otherwise.
 
-| Specifier              | Source                                                 | Contents                                                                                                                                                                                          |
-| ---------------------- | ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `storage`              | [`src/index.ts`](src/index.ts)                         | Index keys, query cursors, stream ids, conflict and limit errors, batch accounting                                                                                                                |
-| `storage/memory`       | [`src/memory/index.ts`](src/memory/index.ts)           | `memoryStorageBackend`, `memorySecretsBackend`, `createMemoryStore`, `memoryFoundation`                                                                                                           |
-| `storage/conformance`  | [`src/conformance/index.ts`](src/conformance/index.ts) | `runStorageConformance`, `runConformanceCase`, `conformanceCases` and the harness types                                                                                                           |
-| `storage/rpc`          | [`src/rpc/index.ts`](src/rpc/index.ts)                 | `serveStorageBackend`, `storageBackendClient`, `serveSecretsBackend`, `secretsBackendClient` and the chunked JSON codec (`encodeJson`, `decodeJson`, `chunkBytes`, `joinChunks`, `maxChunkBytes`) |
-| `storage/package.json` | [`package.json`](package.json)                         | The manifest                                                                                                                                                                                      |
+| Specifier              | Source                                                 | Contents                                                                                                                                                                                                                           |
+| ---------------------- | ------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `storage`              | [`src/index.ts`](src/index.ts)                         | Index keys, query cursors, stream ids, conflict and limit errors, batch accounting                                                                                                                                                 |
+| `storage/memory`       | [`src/memory/index.ts`](src/memory/index.ts)           | `memoryStorageBackend`, `memorySecretsBackend`, `createMemoryStore`, `memoryFoundation`                                                                                                                                            |
+| `storage/conformance`  | [`src/conformance/index.ts`](src/conformance/index.ts) | `runStorageConformance`, `runConformanceCase`, `conformanceCases` and the harness types                                                                                                                                            |
+| `storage/rpc`          | [`src/rpc/index.ts`](src/rpc/index.ts)                 | `serveStorageBackend`, `storageBackendClient`, `serveSecretsBackend`, `secretsBackendClient`, `serveStorage`, `storageClient` and the chunked JSON codec (`encodeJson`, `decodeJson`, `chunkBytes`, `joinChunks`, `maxChunkBytes`) |
+| `storage/package.json` | [`package.json`](package.json)                         | The manifest                                                                                                                                                                                                                       |
 
 Every error the helpers and the memory backends raise is a `ContractError` of
 `bundle/contracts`, `new ContractError(code, message, details?)`, recognized
@@ -482,6 +482,16 @@ over the router in the shapes of "Storage until phase 4".
   client refuses a value JSON cannot hold with `invalid_input` before sending; a
   malformed answer stream is `invalid_output`; a transport cancel, deadline or
   unavailability becomes `cancelled`, `deadline_exceeded` or `unavailable`.
+
+- **`serveStorage(facade, { validators, instances? })` /
+  `storageClient(client, { registrations? })`** carry `storage/v1`. The facade
+  receives the caller's full call. `DefineType` carries the type's JSON Schema as
+  a `Struct` and answers a fresh `registrationId`; `Undefine` from the defining
+  bundle, or `InstanceGone` of the defining instance, disposes it (an unknown id
+  or another bundle's id is a no-op). The client's `defineType` returns a
+  `Disposable` at once and orders later calls after pending `DefineType` and
+  `Undefine`; with `registrations` it replays the definitions to a new core
+  instance; `settled()` reports refusals.
 
 The conformance kit runs over the router with the memory backend
 ([`rpc-conformance.test.ts`](tests/rpc-conformance.test.ts)).
