@@ -7,9 +7,10 @@ import type { InstanceRecord } from '../router/instances.js';
 /**
  * What the supervisor runs for a bundle, the answer of `commandOf(bundleId)`
  * (A64): `child_process.spawn(command, args, { stdio: ['ignore', 'pipe',
- * 'pipe'], env })`. The host's answers the staged `host/command.json` when it
- * exists and otherwise `<bundles dir>/<id>/host/doric-<id>` with no
- * arguments; the phase 2 tests answer `node <fixture>/main.js`.
+ * 'pipe'], env })`. The host's, `stagedCommandOf` (`platform/staged.ts`),
+ * answers the staged `host/command.json` when it exists and otherwise
+ * `<bundles dir>/<id>/host/doric-<id>` with no arguments; the phase 2 tests
+ * answer `node <fixture>/main.js`.
  */
 export interface SpawnCommand {
   readonly command: string;

@@ -1,6 +1,6 @@
 # Feature: bundle processes
 
-- Status: `accepted` (phases 0–2 built; phases 3–8 to come)
+- Status: `accepted` (phases 0–2 built; phase 3 in progress; phases 4–8 to come)
 
 ## Problem
 
@@ -375,6 +375,26 @@ Verdict on these numbers: RK4's rule fails. (a) exceeds both p99 limits,
 2.258 ms against 2 ms for one hop and 4.651 ms against 4 ms for two; (d)
 passes, 5,608 calls per second against 5,000. Under the rule the owner decides: on 2026-11-22 the owner accepted these numbers and let phase 3 start (A68); latency is optimized later, by moving bundles to Rust, and the CI step stays report-only. AC2.2 is met by this decision, and phase 2 is finished.
 
+### Phase 3
+
+Phase 3 is built in slices S29–S71. S29 adds the host build and `stage
+--dev`: `bundle build` bundles `src/host/main.ts` into `dist/host/main.mjs`
+(ESM, Node 26, `node:*` external), failing on a non-literal dynamic `import()`
+or a `.node` addon, and `stage --dev` writes each bundle's
+`host/command.json` to run it with `node`
+([`packages/bundle/README.md`](../../packages/bundle/README.md), "Build
+tooling").
+
+S30 has `bundle build` write `dist/descriptors.binpb` (the
+`FileDescriptorSet` of the bundle's generated contracts and their transitive
+imports; zero bytes without them), lets `stage` read version 2 manifests, and
+adds the `bundle/platform` entry: `startPlatform`,
+`catalogIndexFromDescriptors`, `createCatalogIndex`, `stagedCommandOf` (the
+argv of `<dir>/<id>/host/command.json`, else `<dir>/<id>/host/doric-<id>`;
+re-read per spawn; a malformed file quarantines the bundle as
+`invalid_bundle`) and `readStagedCatalogIndex` (a missing `descriptors.binpb`
+is an error).
+
 ## Evolution
 
 - 2026-11-22: phase 0 of
@@ -408,3 +428,11 @@ passes, 5,608 calls per second against 5,000. Under the rule the owner decides: 
   (v6.11): the S24 replay-hold gap is fixed with `doric-target` on replay
   calls, no proto change; the doric-host image builds again (`ca-certificates`
   and the buf files in `agent-builder`; the build needs buf.build).
+- 2026-11-22: phase 3, slice S29, of
+  [`docs/designs/grpc-processes.md`](../designs/grpc-processes.md) (v6.11):
+  the host part build into `dist/host/main.mjs` and `stage --dev` with
+  `host/command.json`.
+- 2026-11-22: phase 3, slice S30, of
+  [`docs/designs/grpc-processes.md`](../designs/grpc-processes.md) (v6.12):
+  `dist/descriptors.binpb`, version 2 manifests in `stage`, and the
+  `bundle/platform` entry with the staged catalog index and command.

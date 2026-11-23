@@ -641,6 +641,17 @@ void test('a v2 host part builds with its HOST contract and a HOST handler servi
           "import { ToolHandlerService } from '../contracts/gen/doric/tools/v1/tools_pb.js';",
           ['[ToolHandlerService, {}]'],
         ),
+        // Stand-ins so esbuild resolves main.ts's imports; the build checks
+        // the services list against the package's own generated tools.proto.
+        'src/contracts/gen/doric/tools/v1/tools_pb.ts':
+          'export const ToolHandlerService = {};\n',
+        'node_modules/bundle/package.json': JSON.stringify({
+          name: 'bundle',
+          type: 'module',
+          exports: { '.': './index.js' },
+        }),
+        'node_modules/bundle/index.js':
+          'export const runBundle = () => undefined;\n',
       },
     });
     const { descriptor } = await buildBundle(dir);
@@ -649,6 +660,7 @@ void test('a v2 host part builds with its HOST contract and a HOST handler servi
       descriptor.contracts.map(({ id, environment }) => [id, environment]),
       [['tools/v1', 'host']],
     );
+    await access(join(dir, 'dist', 'host', 'main.mjs'));
   });
 });
 

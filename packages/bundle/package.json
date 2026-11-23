@@ -44,6 +44,12 @@
       "import": "./dist/build/externals.js",
       "default": "./dist/build/externals.js"
     },
+    "./platform": {
+      "@org/source": "./src/platform/index.ts",
+      "types": "./dist/platform/index.d.ts",
+      "import": "./dist/platform/index.js",
+      "default": "./dist/platform/index.js"
+    },
     "./testing": {
       "@org/source": "./src/testing/index.ts",
       "types": "./dist/testing/index.d.ts",

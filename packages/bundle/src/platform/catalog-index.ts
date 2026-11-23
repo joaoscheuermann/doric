@@ -5,14 +5,24 @@
 // phase 3 builds it from `dist/descriptors.binpb`.
 
 import {
+  create,
+  createFileRegistry,
   createRegistry,
   type DescFile,
   type DescMethod,
   type DescService,
+  equals,
   type FileRegistry,
+  fromBinary,
   getOption,
   hasOption,
 } from '@bufbuild/protobuf';
+import {
+  type FileDescriptorProto,
+  FileDescriptorProtoSchema,
+  type FileDescriptorSet,
+  FileDescriptorSetSchema,
+} from '@bufbuild/protobuf/wkt';
 
 import {
   Cardinality,
@@ -239,6 +249,75 @@ export const createCatalogIndex = (files: Iterable<DescFile>): CatalogIndex => {
     desktopMethods: () => desktop,
     registry,
   });
+};
+
+/**
+ * The index {@link createCatalogIndex} builds, from serialized
+ * `google.protobuf.FileDescriptorSet`s instead of generated `DescFile`s: each
+ * of `sets` is the binary encoding of a set, such as a bundle's
+ * `dist/descriptors.binpb` (section 8, "Descriptors"). The files of every set
+ * are taken together, in the order of `sets` and then of each set's `file`
+ * list, which fixes `desktopMethods`' order; a file's imports are resolved
+ * among the files of all the sets. The Doric options are read from each
+ * file's options as `createCatalogIndex` reads them from a generated file, so
+ * the same `.proto` files give the same contracts, services and methods either
+ * way. Empty `sets`, or sets without files, answer an empty index.
+ *
+ * A file of one name in several sets counts once when every copy has the same
+ * `FileDescriptorProto` (equal as messages); it is a conflicting duplicate
+ * otherwise.
+ *
+ * Throws a `TypeError`: starting `descriptor set <i>:` (i from 0) when its
+ * bytes are not a valid binary `FileDescriptorSet`; naming the file, for a
+ * conflicting duplicate, for an import that no set holds, and for every rule
+ * `createCatalogIndex` holds. Pure.
+ */
+export const catalogIndexFromDescriptors = (
+  sets: readonly Uint8Array[],
+): CatalogIndex => {
+  const byName = new Map<string, FileDescriptorProto>();
+
+  for (const [position, bytes] of sets.entries()) {
+    let set: FileDescriptorSet;
+
+    try {
+      set = fromBinary(FileDescriptorSetSchema, bytes);
+    } catch (error) {
+      throw new TypeError(
+        `descriptor set ${position}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+
+    for (const proto of set.file) {
+      const known = byName.get(proto.name);
+
+      if (known === undefined) {
+        byName.set(proto.name, proto);
+      } else if (!equals(FileDescriptorProtoSchema, known, proto)) {
+        throw new TypeError(
+          `${proto.name}: two descriptor sets hold different files of this name.`,
+        );
+      }
+    }
+  }
+
+  for (const proto of byName.values()) {
+    for (const dependency of proto.dependency) {
+      if (!byName.has(dependency)) {
+        throw new TypeError(
+          `${proto.name}: imports ${dependency}, which no descriptor set holds.`,
+        );
+      }
+    }
+  }
+
+  const registry = createFileRegistry(
+    create(FileDescriptorSetSchema, { file: [...byName.values()] }),
+  );
+
+  return createCatalogIndex(
+    [...byName.keys()].flatMap((name) => registry.getFile(name) ?? []),
+  );
 };
 
 const kinds: Readonly<Record<DescMethod['methodKind'], MethodInfo['kind']>> = {

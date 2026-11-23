@@ -11,7 +11,8 @@ import { createRequire } from 'node:module';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-import type { DescFile } from '@bufbuild/protobuf';
+import { create, type DescFile, toBinary } from '@bufbuild/protobuf';
+import { FileDescriptorSetSchema } from '@bufbuild/protobuf/wkt';
 import type { CallExpression, Node } from 'typescript';
 
 import type { Activate } from '../contracts/context.js';
@@ -31,6 +32,7 @@ import {
   manifestV1Schema,
   manifestV2Schema,
   parseContractEntry,
+  parseManifest,
 } from '../runtime/manifest.js';
 import { installDomShim } from './dom-shim.js';
 import { checkRecording, recordActivation } from './record.js';
@@ -389,9 +391,15 @@ export const loadBuildIndex = async (
       )
       .map((entry) => pathToFileURL(resolveFrom.resolve(entry.module)).href),
   ];
+
+  return createCatalogIndex(await exportedFiles(new Set(modules)));
+};
+
+/** The `DescFile`s exported (`file_*`) by the modules `hrefs`, in order. */
+const exportedFiles = async (hrefs: Iterable<string>): Promise<DescFile[]> => {
   const files: DescFile[] = [];
 
-  for (const href of new Set(modules)) {
+  for (const href of hrefs) {
     const loaded = (await import(href)) as Record<string, unknown>;
 
     for (const [name, value] of Object.entries(loaded)) {
@@ -401,7 +409,32 @@ export const loadBuildIndex = async (
     }
   }
 
-  return createCatalogIndex(files);
+  return files;
+};
+
+/** `files` and every file they import, transitively, each once, imports first. */
+const closure = (files: readonly DescFile[]): DescFile[] => {
+  const seen = new Set<string>();
+  const ordered: DescFile[] = [];
+  const visit = (file: DescFile): void => {
+    if (seen.has(file.proto.name)) {
+      return;
+    }
+
+    seen.add(file.proto.name);
+
+    for (const dependency of file.dependencies) {
+      visit(dependency);
+    }
+
+    ordered.push(file);
+  };
+
+  for (const file of files) {
+    visit(file);
+  }
+
+  return ordered;
 };
 
 const isDescFile = (value: unknown): value is DescFile =>
@@ -526,6 +559,23 @@ export const checkContractEnvironment = (input: {
  * builds the desktop and client parts, dry-activates the parts, writes JSON
  * Schemas, `contracts.json` and package.json. The semver check against a
  * published baseline is not here yet: it returns with publishing (stage 11).
+ *
+ * Host part (spec §14 step 1): `dist/host/main.mjs` is deleted first, so a
+ * bundle whose `src/host/main.ts` was removed leaves no stale file; after the
+ * desktop and client parts and the version 2 environment check (so the cheap
+ * static checks of the source come first), `buildHostPart` (host.ts) builds
+ * it again when `src/host/main.ts` exists. A HostBuildError rejects as a
+ * BuildError with the same message.
+ *
+ * Descriptors (spec §8): every build writes `dist/descriptors.binpb`, the
+ * binary `google.protobuf.FileDescriptorSet` of the bundle's own `.proto`
+ * files (the generated `DescFile`s, `file_*` exports, of the `*_pb.js`
+ * modules below `<bundleDir>/dist/contracts/gen`, the modules
+ * {@link loadBuildIndex} loads first) and every file they import,
+ * transitively, each once, imports first. A bundle without
+ * `dist/contracts/gen` writes an empty set (zero bytes). The file is deleted
+ * first, so a failed build leaves no stale one. `contracts.json` is still
+ * written until phase 6.
  */
 export const buildBundle = async (
   bundleDir: string,
@@ -557,10 +607,13 @@ export const buildBundle = async (
     'skills',
     'schemas',
     'contracts.json',
+    'descriptors.binpb',
     'manifest.json',
   ]) {
     await rm(join(dist, generated), { recursive: true, force: true });
   }
+
+  await rm(join(dist, 'host', 'main.mjs'), { force: true });
 
   await copyFile(manifestPath, join(dist, 'manifest.json'));
 
@@ -675,6 +728,14 @@ export const buildBundle = async (
     );
   }
 
+  const { buildHostPart } = await import('./host.js');
+
+  try {
+    await buildHostPart({ bundleDir: root });
+  } catch (error) {
+    throw new BuildError(messageOf(error));
+  }
+
   const versions = new Map(
     manifest.provides.flatMap((entry) => {
       const contract = parseContractEntry(entry);
@@ -722,6 +783,21 @@ export const buildBundle = async (
     await writeFile(target, json(document));
   }
 
+  await writeFile(
+    join(dist, 'descriptors.binpb'),
+    toBinary(
+      FileDescriptorSetSchema,
+      create(FileDescriptorSetSchema, {
+        file: closure(
+          await exportedFiles(
+            (
+              await generatedModules(join(root, 'dist', 'contracts', 'gen'))
+            ).map((path) => pathToFileURL(path).href),
+          ),
+        ).map((file) => file.proto),
+      }),
+    ),
+  );
   await writeFile(join(dist, 'contracts.json'), json(descriptor));
   await writeFile(join(dist, 'package.json'), json({ type: 'module' }));
 
@@ -759,14 +835,30 @@ export const bundleDirectories = async (
   );
 };
 
+export interface StageOptions {
+  /**
+   * Stage for development: after copying, every bundle whose
+   * `<bundleDir>/dist/host/main.mjs` exists also gets
+   * `<dest>/<id>/host/command.json`, a JSON array
+   * `["node", "<absolute bundleDir>/dist/host/main.mjs"]` (default false).
+   */
+  readonly dev?: boolean;
+}
+
 /**
- * `stage <dest> <bundleDir...>`: replaces `<dest>/<id>` with each bundle's
- * dist. Rejects with a BuildError naming the bundle directory when its
- * `dist/manifest.json` is missing.
+ * `stage [--dev] <dest> <bundleDir...>`: replaces `<dest>/<id>` with each
+ * bundle's dist; with `options.dev`, also writes each built host part's
+ * `host/command.json` (StageOptions.dev). Rejects with a BuildError naming
+ * the bundle directory when its `dist/manifest.json` is missing.
+ *
+ * The staged `<id>` is read by `manifestVersion` with `parseManifest`
+ * (`runtime/manifest.ts`), so a version 1 or 2 manifest stages; rejects with
+ * `parseManifest`'s error on an invalid manifest.
  */
 export const stageBundles = async (
   destination: string,
   bundleDirs: readonly string[],
+  options: StageOptions = {},
 ): Promise<void> => {
   const target = resolve(destination);
 
@@ -782,7 +874,7 @@ export const stageBundles = async (
       );
     }
 
-    const manifest = manifestV1Schema.parse(await readJson(manifestPath));
+    const { manifest } = parseManifest(await readJson(manifestPath));
     const staged = join(target, manifest.id);
 
     await rm(staged, { recursive: true, force: true });
@@ -790,22 +882,35 @@ export const stageBundles = async (
       recursive: true,
       filter: (path) => !path.endsWith('.tsbuildinfo'),
     });
+
+    const main = join(dist, 'host', 'main.mjs');
+
+    if (options.dev === true && (await exists(main))) {
+      await mkdir(join(staged, 'host'), { recursive: true });
+      await writeFile(
+        join(staged, 'host', 'command.json'),
+        json(['node', main]),
+      );
+    }
   }
 };
 
 const usage =
-  'Usage: cli.js build [--development] <bundleDir> | stage <dest> <bundleDir...> | stage <dest> --all <root> | copy-md <from> <to>';
+  'Usage: cli.js build [--development] <bundleDir> | stage [--dev] <dest> <bundleDir...> | stage [--dev] <dest> --all <root> | copy-md <from> <to>';
 
 /**
  * Runs one CLI command: `build [--development] <bundleDir>`,
- * `stage <dest> <bundleDir...>`, `stage <dest> --all <root>` (every bundle
- * directory `<root>/<group>/<id>` with a `manifest.json`) or
- * `copy-md <from> <to>` (copyMarkdown).
+ * `stage [--dev] <dest> <bundleDir...>`, `stage [--dev] <dest> --all <root>`
+ * (every bundle directory `<root>/<group>/<id>` with a `manifest.json`;
+ * `--dev` sets StageOptions.dev) or `copy-md <from> <to>`
+ * (copyMarkdown).
  * Rejects with a BuildError carrying `usage` for any other arguments, and
  * with the command's own error when it fails.
  */
 export const runCli = async (args: readonly string[]): Promise<void> => {
-  const [command, ...rest] = args;
+  const [command, ...afterCommand] = args;
+  const dev = command === 'stage' && afterCommand[0] === '--dev';
+  const rest = dev ? afterCommand.slice(1) : afterCommand;
 
   if (command === 'build' && rest.length === 1) {
     await buildBundle(rest[0] as string);
@@ -823,9 +928,10 @@ export const runCli = async (args: readonly string[]): Promise<void> => {
     await stageBundles(
       rest[0] as string,
       await bundleDirectories(rest[2] as string),
+      { dev },
     );
   } else if (command === 'stage' && rest.length >= 2) {
-    await stageBundles(rest[0] as string, rest.slice(1));
+    await stageBundles(rest[0] as string, rest.slice(1), { dev });
   } else if (command === 'copy-md' && rest.length === 2) {
     await copyMarkdown(rest[0] as string, rest[1] as string);
   } else {

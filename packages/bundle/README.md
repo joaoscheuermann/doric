@@ -69,6 +69,7 @@ the one `bundle/contracts` instance of a `desktopMain` generation
 | `bundle/runtime`         | [`src/runtime/index.ts`](src/runtime/index.ts)       | Node and browser | Apps, `desktop`, embedded foundation host parts, bundle tests                                              |
 | `bundle`                 | [`src/index.ts`](src/index.ts)                       | Node             | The host, build tooling, embedded foundation host parts (types), bundle tests                              |
 | `bundle/testing`         | [`src/testing/index.ts`](src/testing/index.ts)       | Node             | Bundle unit tests                                                                                          |
+| `bundle/platform`        | [`src/platform/index.ts`](src/platform/index.ts)     | Node             | The host: `startPlatform`, the catalog index and the staged-bundle readers                                 |
 | `bundle/client`          | [`src/sdk/client/index.ts`](src/sdk/client/index.ts) | Browser          | Client parts: one Connect transport per client part over `fetch`, with the `doric-client-part` interceptor |
 | `bundle/externals`       | [`src/build/externals.ts`](src/build/externals.ts)   | Node and browser | Build tooling                                                                                              |
 | `bundle/contracts/gen/*` | `src/contracts/gen/*`, written by `generate-proto`   | Node and browser | Bundles that use the platform's `.proto` contracts                                                         |
@@ -269,6 +270,7 @@ desktop and client parts and copies the rest ([`cli.ts`](src/build/cli.ts),
 [`parts.ts`](src/build/parts.ts)). Workers, chunks and frames are the `.ts`
 files directly in their folder, each an entry; subfolders hold their modules.
 The CLI also writes `dist/manifest.json`, `dist/contracts.json`,
+`dist/descriptors.binpb`,
 `dist/schemas/<contract>.json` and `dist/package.json`, and the browser builds
 emit the fonts they import under `assets/` beside each part; those outputs are
 described in [Build tooling](#build-tooling).
@@ -3433,8 +3435,8 @@ The build CLI runs from the package's build output:
 
 ```console
 node packages/bundle/dist/build/cli.js build [--development] <bundleDir>
-node packages/bundle/dist/build/cli.js stage <dest> <bundleDir...>
-node packages/bundle/dist/build/cli.js stage <dest> --all <root>
+node packages/bundle/dist/build/cli.js stage [--dev] <dest> <bundleDir...>
+node packages/bundle/dist/build/cli.js stage [--dev] <dest> --all <root>
 node packages/bundle/dist/build/cli.js copy-md <from> <to>
 ```
 
@@ -3453,9 +3455,13 @@ function buildBundle(
   options?: BuildOptions,
 ): Promise<BuildResult>;
 function bundleDirectories(root: string): Promise<readonly string[]>;
+interface StageOptions {
+  readonly dev?: boolean;
+} // default false
 function stageBundles(
   destination: string,
   bundleDirs: readonly string[],
+  options?: StageOptions,
 ): Promise<void>;
 function runCli(args: readonly string[]): Promise<void>;
 ```
@@ -3468,7 +3474,8 @@ from the command line, a failure prints its message and sets exit code 1
 
 1. It validates `manifest.json` with `manifestV1Schema` (`Invalid manifest
 "<path>": …`), removes `dist/skills`, `dist/schemas`,
-   `dist/contracts.json` and `dist/manifest.json`, and copies the manifest.
+   `dist/contracts.json`, `dist/descriptors.binpb` and `dist/manifest.json`,
+   and copies the manifest.
 2. It validates each `src/skills/<dir>/SKILL.md` with `SkillSchema`
    (`Invalid skill "<path>": …`) and copies it to `dist/skills/`.
 3. It mirrors the Markdown below `src/host` into `dist/host`, as `copy-md`
@@ -3484,6 +3491,18 @@ from the command line, a failure prints its message and sets exit code 1
    contract's document to `dist/schemas/<id>.json`, `dist/contracts.json` and
    `dist/package.json` (`{ "type": "module" }`). A contract recorded in two
    environments with different schemas fails the build.
+7. After the manifest-version-2 environment check, it deletes a stale
+   `dist/host/main.mjs` and, when `src/host/main.ts` exists, bundles it with
+   esbuild into `dist/host/main.mjs` ([`host.ts`](src/build/host.ts)): ESM
+   for Node 26, `node:*` external, with a `createRequire` banner. A
+   non-literal dynamic `import()` anywhere, `node_modules` included, fails the
+   build listing each as `<path>:<line>`, and so does a `.node` addon.
+8. It writes `dist/descriptors.binpb`, the binary
+   `google.protobuf.FileDescriptorSet` of the bundle's own generated files
+   (the `file_*` exports of each `*_pb.js` below `dist/contracts/gen`) and
+   their transitive imports, imports first, each once; a bundle without
+   generated contracts gets zero bytes. `dist/contracts.json` is still
+   written until phase 6.
 
 ```ts
 class RecordingError extends Error {}
@@ -3542,12 +3561,15 @@ source maps in development mode, none in production.
 
 **`stage`** replaces `<dest>/<id>` with each bundle's `dist`, leaving out
 `*.tsbuildinfo` files; it fails naming the bundle directory when
-`dist/manifest.json` is missing. With `--all <root>` it stages every
+`dist/manifest.json` is missing, and reads the manifest by its
+`manifestVersion` (`parseManifest`), so version 2 manifests stage. With `--all <root>` it stages every
 `<root>/<group>/<id>` that holds a `manifest.json`, in code-unit path order
 (`bundleDirectories`). It replaces only the directories of the bundles it
 stages: any other directory below `<dest>` stays
 ([`cli.ts`](src/build/cli.ts)). `doric-host` stages every bundle into
-`app/backend/doric-host/dist/bundles`.
+`app/backend/doric-host/dist/bundles`. With `--dev`, each bundle with a built
+`dist/host/main.mjs` also gets `<dest>/<id>/host/command.json`, `["node",
+"<abs bundleDir>/dist/host/main.mjs"]`.
 
 **`copy-md`** removes every `.md` below `<to>`, then copies each `.md` below
 `<from>` to the same relative path; other files are kept, a missing `<from>`

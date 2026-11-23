@@ -1,7 +1,7 @@
 // The platform of a host (spec `docs/designs/grpc-processes.md`, sections 1,
 // 6, 7 and 11): the router listener, the supervisor of the bundle processes
-// and the gateway. Not exported from the package until
-// phase 3 (`./platform`).
+// and the gateway. Exported from the package as `bundle/platform` (phase 3);
+// Node only, not reachable from a window.
 
 import { file_doric_platform_generation_v1_generation } from '../contracts/gen/doric/platform/generation/v1/generation_pb.js';
 import { file_doric_platform_log_v1_log } from '../contracts/gen/doric/platform/log/v1/log_pb.js';
@@ -33,9 +33,15 @@ import { startSupervisor } from './supervisor/supervisor.js';
 import type { Timings } from './supervisor/timings.js';
 
 export {
+  type CatalogIndex,
+  catalogIndexFromDescriptors,
+  createCatalogIndex,
+} from './catalog-index.js';
+export {
   defaultPublicAddress,
   PublicListenerBindingError,
 } from './gateway/index.js';
+export { readStagedCatalogIndex, stagedCommandOf } from './staged.js';
 export type { PublishResult } from './supervisor/publish.js';
 export type { SpawnCommand } from './supervisor/spawn.js';
 
@@ -52,7 +58,8 @@ export interface PlatformOptions {
   /**
    * The methods the router serves (`createCatalogIndex`). The methods of
    * the platform contracts served in process (`doric.generation/v1`,
-   * `doric.log/v1`) are served whether or not it holds them. The gateway
+   * `doric.log/v1`, `doric.catalog/v1`, `doric.diagnostics/v1`,
+   * `doric.bundle/v1`) are served whether or not it holds them. The gateway
    * serves the `DESKTOP` methods of it that a resolution provides
    * (`servedMethods`), and transcodes their JSON with its descriptors.
    */
@@ -149,17 +156,26 @@ export interface Platform {
 
 /**
  * Binds the router, with the routes of `resolved` (`callRoutesOf`) and the
- * platform services `doric.generation/v1` and `doric.log/v1`, starts the
- * supervisor and boots `resolved` (the
- * supervisor's `boot`); then, with {@link PlatformOptions.publicAddress},
- * starts the gateway (`startGateway`) on `resolved` and `options.index`,
- * relaying to the router; resolves once every scheduled bundle is `active`
- * or quarantined and the public listener listens. Rejects with the
- * router's `RouterBindingError` when the router address cannot be bound,
- * and with `PublicListenerBindingError` when the public address cannot,
- * after shutting down what started; nothing is left running either way. A
- * required bundle quarantined during the boot does not reject: the host
- * reads the diagnostics, as today's boot fails at the stage `bundle_load`.
+ * platform services `doric.generation/v1`, `doric.log/v1`,
+ * `doric.catalog/v1`, `doric.diagnostics/v1` and `doric.bundle/v1`. Starts
+ * the supervisor and boots `resolved` (the supervisor's `boot`). Once the
+ * boot has settled, when `resolved` lists a provider of
+ * `storage.backend/v1` that is active, reads the host's storage identity
+ * once with its `Identity`, under the caller `doric` (as the kernel's
+ * `storageIdentity` does); from then on `doric.catalog/v1.Get` answers it
+ * in `storage`. Without such a provider nothing is read and `storage` stays
+ * absent. Then, with {@link PlatformOptions.publicAddress}, starts the
+ * gateway (`startGateway`) on `resolved` and `options.index`, relaying to
+ * the router. Resolves once every scheduled bundle is `active` or
+ * quarantined, the identity is read (when there is a provider), and the
+ * public listener listens. Rejects, after shutting down what started
+ * (nothing is left running): with the router's `RouterBindingError` when
+ * the router address cannot be bound; with the `ContractError` of the
+ * `Identity` call when it fails; with `PublicListenerBindingError` when the
+ * public address cannot be bound. A required bundle quarantined during the
+ * boot does not reject: the host reads the diagnostics, as today's boot
+ * fails at the stage `bundle_load`. A publish never reads the identity
+ * again.
  */
 export const startPlatform = async (
   options: PlatformOptions,

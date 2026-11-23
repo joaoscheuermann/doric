@@ -7,6 +7,7 @@ export {
   buildBundle,
   bundleDirectories,
   runCli,
+  type StageOptions,
   stageBundles,
 } from './build/cli.js';
 export {
