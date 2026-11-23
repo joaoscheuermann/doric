@@ -549,6 +549,11 @@ keys. `List` and `Catalog` answer the unscoped tools plus the call's Project's,
 by order then registration order; `Execute` relays to the registering
 instance's `ToolHandlerService` with the caller's deadline, failing `not_found`
 for a tool the call does not see and `unavailable` for an unreachable instance.
+`Check` (`tools/v1` 1.6.0) relays the same way to the owner's
+`ToolHandlerService.Check`, on the newest instance and with `projectId` only for
+a scoped tool: an unknown tool fails `not_found`
+(`Tool "<name>" is not registered.`), an unreachable instance `unavailable`,
+and the owner's `tool_error` is kept.
 Skills fail `duplicate_skill` across bundles and `unavailable_tool` for an
 `allowedTools` entry the caller does not see. `InstanceGone` drops an
 instance's tools and skills. Hooks: `Define` is accepted from the contract's

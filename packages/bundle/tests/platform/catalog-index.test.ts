@@ -211,7 +211,7 @@ describe('the catalog index over the generated files', () => {
     assert.equal(own.role, 'contract');
     assert.deepEqual(
       own.methods.map((entry) => entry.method.name),
-      ['Register', 'Unregister', 'List', 'Catalog', 'Execute'],
+      ['Register', 'Unregister', 'List', 'Catalog', 'Execute', 'Check'],
     );
     assert.equal(handler.role, 'handler');
     assert.deepEqual(

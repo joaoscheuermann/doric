@@ -70,6 +70,10 @@ export const contractErrorCodes = [
   // whole `ProviderError` in `details.providerError`; no row in the error
   // table, so it travels as `FAILED_PRECONDITION`.
   'provider_error',
+  // tools/v1 (phase 3, S51): a thrown tool error, the whole `ToolError` in
+  // `details.toolError`; no row in the error table, so it travels as
+  // `FAILED_PRECONDITION`.
+  'tool_error',
 ] as const;
 
 export type ContractErrorCode = (typeof contractErrorCodes)[number];

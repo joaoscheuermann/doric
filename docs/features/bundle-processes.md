@@ -917,3 +917,17 @@ to every host part.
   any other failure rejects with its code so a down runtime is not hidden. The
   kernel entries and manifests are unchanged until S62, which provides
   `claude.login/v1@1.1.0` and requires `runtime.lease/v1@^1.4.0`.
+- 2026-11-23: phase 3, slice S51a, of
+  [`docs/designs/grpc-processes.md`](../designs/grpc-processes.md): the error
+  code `tool_error` is new. A tool error (an `Error` named `ToolErrorObject`
+  with data `{ code, message, issues? }`) thrown by a host-part tool's
+  `execute` or `check` crosses the router as `tool_error`
+  (`FAILED_PRECONDITION`) with the data in `details.toolError`, without its
+  cause chain; plain errors stay `internal` and `ContractError`s pass through;
+  `default` rebuilds the tool error in S51d. `tools/v1` is 1.6.0 with
+  `ToolsService.Check`, which `core` relays to the owner's
+  `ToolHandlerService.Check` (newest instance, `projectId` only for scoped
+  tools): an unknown tool fails `not_found`, an unreachable instance
+  `unavailable`, and the owner's `tool_error` is kept. `createToolHandlers`
+  answers `Check` with the tool's `check` or the zod fallback. Manifests move
+  to `tools/v1@1.6.0` in S62.

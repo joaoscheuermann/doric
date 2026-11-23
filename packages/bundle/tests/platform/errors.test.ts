@@ -68,6 +68,7 @@ const errorTable: Readonly<Record<string, Code>> = {
   storage_path_missing: Code.FailedPrecondition,
   storage_format_unsupported: Code.FailedPrecondition,
   provider_error: Code.FailedPrecondition,
+  tool_error: Code.FailedPrecondition,
   limit_exceeded: Code.ResourceExhausted,
   unknown_contract: Code.Unimplemented,
   unsupported_operation: Code.Unimplemented,
@@ -328,6 +329,26 @@ void test('unknown_session is a platform code that travels as NOT_FOUND and come
   assert.equal(sent.code, Code.NotFound);
   assert.equal(rebuilt.code, 'unknown_session');
   assert.equal(rebuilt.message, 'No Thread session s-1.');
+});
+
+void test('S51a A4: tool_error is a platform code without a row that travels as FAILED_PRECONDITION and comes back with details.toolError', () => {
+  const codes: readonly string[] = contractErrorCodes;
+  const toolError = {
+    code: 'invalid_output',
+    message: 'm',
+    toolName: 't',
+    issues: [{ path: 'a', message: 'x' }],
+  };
+  const sent = toConnectError(
+    new ContractError('tool_error', 'm', { toolError }),
+  );
+  const rebuilt = fromConnectError(sent);
+
+  assert.ok(codes.includes('tool_error'));
+  assert.equal(sent.code, Code.FailedPrecondition);
+  assert.equal(rebuilt.code, 'tool_error');
+  assert.equal(rebuilt.message, 'm');
+  assert.deepEqual(rebuilt.details, { toolError });
 });
 
 void test('a ConnectError without a Doric ErrorInfo yields internal with its raw message', () => {

@@ -177,6 +177,25 @@ const relayed: CallScope = { projectId: 'p1', windowKey: 'w1' };
 
 const jsonValue = (json: JsonValue) => fromJson(ValueSchema, json);
 
+/**
+ * The `tool` package's `ToolErrorObject` as a tool throws it (`bundle` cannot
+ * import `tool`): an `Error` named `ToolErrorObject` whose `data` is the
+ * whole tool error.
+ */
+class ToolErrorObject extends Error {
+  readonly data: {
+    readonly code: string;
+    readonly message: string;
+    readonly [key: string]: unknown;
+  };
+
+  constructor(data: ToolErrorObject['data'], options?: ErrorOptions) {
+    super(data.message, options);
+    this.name = 'ToolErrorObject';
+    this.data = data;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // The test `notes.hooks/v1` file (as `core/tests/support/router.ts` builds it)
 
@@ -786,6 +805,130 @@ describe('createToolHandlers', () => {
     assert.equal(h.toolRegisters.length, 2);
     assert.deepEqual(h.toolRegisters[1], h.toolRegisters[0]);
     assert.equal(registration.registrationId, 'tool-2');
+  });
+
+  // S51a: a thrown tool error crosses as `tool_error`, the whole error in
+  // `details.toolError`, without its cause.
+
+  test('A21 (S51a A1): a tool throwing a ToolErrorObject makes Execute fail tool_error with its message and the whole error data in details.toolError, without its cause', async () => {
+    const h = await harness();
+    const data = {
+      code: 'invalid_output',
+      message: 'm',
+      toolName: 't',
+      callId: 'call-1',
+      diagnostic: 'the output had no items',
+      issues: [{ path: 'a', message: 'x' }],
+    };
+
+    await h.tools.register(
+      h.context,
+      contractTool('fails', async () => {
+        throw new ToolErrorObject(data, { cause: new Error('the cause') });
+      }),
+      { alwaysAvailable: false },
+    );
+
+    const error = contractErrorOf(
+      await rejectionOf(execute(h, 'fails', {}), 'Execute'),
+    );
+
+    assert.equal(error.code, 'tool_error', error.message);
+    assert.equal(error.message, 'm');
+    assert.deepEqual(error.details, { toolError: data });
+    assert.doesNotMatch(JSON.stringify(error.details), /the cause/);
+  });
+
+  test('A22 (S51a A2): a plain Error still crosses as internal with its message, a ContractError unchanged, and an Error named ToolErrorObject without code and message data as internal', async () => {
+    const h = await harness();
+    const named = (data: unknown) =>
+      Object.assign(new Error('not a tool error'), {
+        name: 'ToolErrorObject',
+        data,
+      });
+
+    await h.tools.register(
+      h.context,
+      contractTool('breaks', async () => {
+        throw new Error('boom');
+      }),
+      { alwaysAvailable: false },
+    );
+    await h.tools.register(
+      h.context,
+      contractTool('refuses', async () => {
+        throw new ContractError('invalid_input', 'refused', { field: 'a' });
+      }),
+      { alwaysAvailable: false },
+    );
+    await h.tools.register(
+      h.context,
+      contractTool('no-data', async () => {
+        throw named(undefined);
+      }),
+      { alwaysAvailable: false },
+    );
+    await h.tools.register(
+      h.context,
+      contractTool('no-code', async () => {
+        throw named({ message: 'only a message' });
+      }),
+      { alwaysAvailable: false },
+    );
+
+    await assertFails(execute(h, 'breaks', {}), 'internal', 'boom');
+
+    const refused = contractErrorOf(
+      await rejectionOf(execute(h, 'refuses', {}), 'Execute refuses'),
+    );
+
+    assert.deepEqual(
+      { code: refused.code, message: refused.message, details: refused.details },
+      { code: 'invalid_input', message: 'refused', details: { field: 'a' } },
+    );
+    await assertFails(
+      execute(h, 'no-data', {}),
+      'internal',
+      'not a tool error',
+    );
+    await assertFails(
+      execute(h, 'no-code', {}),
+      'internal',
+      'not a tool error',
+    );
+  });
+
+  test("A23 (S51a A3): a tool whose check throws a ToolErrorObject makes Check fail tool_error with its message and data in details.toolError", async () => {
+    const h = await harness();
+    const data = {
+      code: 'invalid_input',
+      message: 'The payload cannot be checked.',
+      toolName: 'checks',
+      issues: [{ path: 'q', message: 'Required' }],
+    };
+
+    await h.tools.register(
+      h.context,
+      contractTool(
+        'checks',
+        async () => assert.fail('execute ran'),
+        () => {
+          throw new ToolErrorObject(data, { cause: new Error('the cause') });
+        },
+      ),
+      { alwaysAvailable: false },
+    );
+
+    const error = contractErrorOf(
+      await rejectionOf(
+        h.toolClient.check({ name: 'checks', payload: jsonValue({}) }),
+        'Check',
+      ),
+    );
+
+    assert.equal(error.code, 'tool_error', error.message);
+    assert.equal(error.message, 'The payload cannot be checked.');
+    assert.deepEqual(error.details, { toolError: data });
   });
 });
 

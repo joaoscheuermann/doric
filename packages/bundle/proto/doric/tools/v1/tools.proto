@@ -1,4 +1,4 @@
-// `tools/v1` (host, 1.5.0): the tools a model can call. A bundle registers a
+// `tools/v1` (host, 1.6.0): the tools a model can call. A bundle registers a
 // tool's definition as data; `core` keeps it with the registering instance,
 // lists it, and runs it through that instance's `ToolHandlerService`.
 //
@@ -10,6 +10,9 @@
 //
 // 1.5.0: `register` takes data and `list` answers data; a tool runs through
 // `Execute` and the registering bundle's `ToolHandlerService`.
+//
+// 1.6.0: `Check` validates a payload through the registering bundle's
+// `ToolHandlerService.Check`.
 syntax = "proto3";
 
 package doric.tools.v1;
@@ -43,6 +46,10 @@ service ToolsService {
   // Runs a tool the call sees through its registering instance's
   // `ToolHandlerService.Execute` and answers its result.
   rpc Execute(ExecuteRequest) returns (ExecuteResponse);
+  // Validates a payload for a tool the call sees with that tool's own
+  // schema, through its registering instance's `ToolHandlerService.Check`;
+  // never runs the tool. `not_found` for a name the call does not see.
+  rpc Check(CheckRequest) returns (CheckResponse);
 }
 
 // A registered tool's behavior, implemented by the bundle that registers it
@@ -196,6 +203,29 @@ message ExecuteRequest {
 message ExecuteResponse {
   // The result, JSON.
   google.protobuf.Value result = 1;
+}
+
+// Validates a payload for one tool by name.
+message CheckRequest {
+  // The tool's name; the call's scope picks the Project.
+  string name = 1 [(buf.validate.field).string.min_len = 1];
+  // The payload to validate, JSON.
+  google.protobuf.Value payload = 2;
+}
+
+// The tool's own validation of the payload.
+message CheckResponse {
+  option (buf.validate.message).cel = {
+    id: "check_response.result"
+    message: "a success carries data and no issues, a failure issues and no data"
+    expression: "this.success ? (has(this.data) && size(this.issues) == 0) : (!has(this.data) && size(this.issues) > 0)"
+  };
+  // Whether the payload is valid.
+  bool success = 1;
+  // The parsed payload, as the tool executes it; set on success.
+  optional google.protobuf.Value data = 2;
+  // What is wrong with the payload; empty on success.
+  repeated ToolIssueView issues = 3;
 }
 
 // Validates a payload for one registered tool.

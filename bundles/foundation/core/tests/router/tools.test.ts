@@ -12,7 +12,9 @@ import { ValueSchema } from '@bufbuild/protobuf/wkt';
 import { type Client, ConnectError } from '@connectrpc/connect';
 import { ContractError, fromConnectError } from 'bundle/contracts';
 import {
+  CheckResponseSchema,
   type RegisteredTool,
+  type ToolHandlerServiceCheckRequest,
   type ToolHandlerServiceExecuteRequest,
   ToolsService,
 } from 'bundle/contracts/gen/doric/tools/v1/tools_pb.js';
@@ -98,8 +100,11 @@ const shapeOf = (entry: RegisteredTool) => ({
 
 const listed = async (core: RoutedCore, projectId?: string) =>
   (
-    await tools(core, 'runtime', projectId === undefined ? {} : { projectId })
-      .list({})
+    await tools(
+      core,
+      'runtime',
+      projectId === undefined ? {} : { projectId },
+    ).list({})
   ).tools.map(shapeOf);
 
 const value = (json: JsonValue) => fromJson(ValueSchema, json);
@@ -122,14 +127,27 @@ void test('T3.10/AC3.13: one name per Project, refused where Projects overlap', 
 
     assert.notEqual(p1, p2);
     assert.deepEqual(await listed(core, 'p1'), [
-      { name: 'search', description: undefined, projectId: 'p1', bundleId: 'mcp' },
+      {
+        name: 'search',
+        description: undefined,
+        projectId: 'p1',
+        bundleId: 'mcp',
+      },
     ]);
     assert.deepEqual(await listed(core, 'p2'), [
-      { name: 'search', description: undefined, projectId: 'p2', bundleId: 'mcp' },
+      {
+        name: 'search',
+        description: undefined,
+        projectId: 'p2',
+        bundleId: 'mcp',
+      },
     ]);
     assert.deepEqual(await listed(core), []);
 
-    await rejectsWith(register(tools(core, 'other'), 'search'), 'duplicate_tool');
+    await rejectsWith(
+      register(tools(core, 'other'), 'search'),
+      'duplicate_tool',
+    );
     await rejectsWith(register(mcp, 'search'), 'duplicate_tool');
   }));
 
@@ -151,7 +169,12 @@ void test('another bundle may use the name in a Project nobody else holds it in'
       },
     );
     assert.deepEqual(await listed(core, 'p3'), [
-      { name: 'search', description: undefined, projectId: 'p3', bundleId: 'other' },
+      {
+        name: 'search',
+        description: undefined,
+        projectId: 'p3',
+        bundleId: 'other',
+      },
     ]);
   }));
 
@@ -206,7 +229,11 @@ void test('List and Catalog order: by order ascending across bundles, then unord
         settings,
       })),
       [
-        { name: 'a', description: 'ay', settings: [{ key: 'depth', default: 2 }] },
+        {
+          name: 'a',
+          description: 'ay',
+          settings: [{ key: 'depth', default: 2 }],
+        },
         { name: 'z', description: 'zed', settings: [] },
         { name: 'b', description: 'bee', settings: [] },
         { name: 'c', description: 'see', settings: [] },
@@ -214,26 +241,40 @@ void test('List and Catalog order: by order ascending across bundles, then unord
     );
   }));
 
-void test("a new generation serves the key, and the older one serves again once it is gone", () =>
+void test('a new generation serves the key, and the older one serves again once it is gone', () =>
   withCore(async (core) => {
     const gen1 = await register(tools(core, 'mcp'), 'search', {
       projectId: 'p1',
       description: 'gen 1',
     });
-    const gen2 = await register(tools(core, 'mcp', { generation: 2 }), 'search', {
-      projectId: 'p1',
-      description: 'gen 2',
-    });
+    const gen2 = await register(
+      tools(core, 'mcp', { generation: 2 }),
+      'search',
+      {
+        projectId: 'p1',
+        description: 'gen 2',
+      },
+    );
 
     assert.notEqual(gen2, gen1);
     assert.deepEqual(await listed(core, 'p1'), [
-      { name: 'search', description: 'gen 2', projectId: 'p1', bundleId: 'mcp' },
+      {
+        name: 'search',
+        description: 'gen 2',
+        projectId: 'p1',
+        bundleId: 'mcp',
+      },
     ]);
 
     core.instanceGone({ bundleId: 'mcp', generation: 2 });
 
     assert.deepEqual(await listed(core, 'p1'), [
-      { name: 'search', description: 'gen 1', projectId: 'p1', bundleId: 'mcp' },
+      {
+        name: 'search',
+        description: 'gen 1',
+        projectId: 'p1',
+        bundleId: 'mcp',
+      },
     ]);
   }));
 
@@ -247,7 +288,12 @@ void test("an older instance's tool never refuses a newer instance's", () =>
     });
 
     assert.deepEqual(await listed(core), [
-      { name: 'search', description: 'gen 2', projectId: undefined, bundleId: 'mcp' },
+      {
+        name: 'search',
+        description: 'gen 2',
+        projectId: undefined,
+        bundleId: 'mcp',
+      },
     ]);
   }));
 
@@ -266,7 +312,12 @@ void test('Unregister removes from that Project only; unknown and foreign ids ar
     await tools(core, 'other').unregister({ registrationId: p2 });
 
     assert.deepEqual(await listed(core, 'p2'), [
-      { name: 'search', description: undefined, projectId: 'p2', bundleId: 'mcp' },
+      {
+        name: 'search',
+        description: undefined,
+        projectId: 'p2',
+        bundleId: 'mcp',
+      },
     ]);
   }));
 
@@ -275,7 +326,10 @@ void test('Execute relays to the registering instance and answers its result', (
     const execute = (request: ToolHandlerServiceExecuteRequest) => ({
       result: value({
         from: request.name,
-        echo: request.payload === undefined ? null : toJson(ValueSchema, request.payload),
+        echo:
+          request.payload === undefined
+            ? null
+            : toJson(ValueSchema, request.payload),
       }),
     });
 
@@ -303,7 +357,10 @@ void test('Execute relays to the registering instance and answers its result', (
           method,
           name: sent.name,
           projectId: sent.projectId,
-          payload: sent.payload === undefined ? undefined : toJson(ValueSchema, sent.payload),
+          payload:
+            sent.payload === undefined
+              ? undefined
+              : toJson(ValueSchema, sent.payload),
         };
       }),
       [
@@ -391,6 +448,250 @@ void test("InstanceGone drops every tool of that instance and keeps the others'"
     core.instanceGone({ bundleId: 'mcp', generation: 1 });
 
     assert.deepEqual(await listed(core, 'p1'), [
-      { name: 'lookup', description: undefined, projectId: undefined, bundleId: 'other' },
+      {
+        name: 'lookup',
+        description: undefined,
+        projectId: undefined,
+        bundleId: 'other',
+      },
     ]);
+  }));
+
+// ---------------------------------------------------------------------------
+// S51a: `tools/v1.Check` (1.6.0), relayed to the registering instance's
+// `ToolHandlerService.Check`, and tool errors relayed with their details.
+
+/** What a relayed `ToolHandlerService.Check` call carried. */
+const checkCallsOf = (core: RoutedCore) =>
+  core.handlerCalls.map(({ target, method, request }) => {
+    const sent = request as ToolHandlerServiceCheckRequest;
+
+    return {
+      target,
+      method,
+      name: sent.name,
+      projectId: sent.projectId,
+      payload:
+        sent.payload === undefined
+          ? undefined
+          : toJson(ValueSchema, sent.payload),
+    };
+  });
+
+/** A tool error as the SDK sends it: `tool_error` with the whole error in `details.toolError`. */
+const toolErrorData = {
+  code: 'invalid_output',
+  message: 'The result does not match the output schema.',
+  toolName: 'search',
+  callId: 'call-1',
+  issues: [{ path: 'items.0', message: 'Expected string' }],
+};
+
+void test("S51a A5: Check relays {name, projectId, payload} to the registering instance's ToolHandlerService.Check and answers its response unchanged", () =>
+  withCore(async (core) => {
+    core.handlers.set('mcp/1/1', {
+      tools: {
+        check: (request: ToolHandlerServiceCheckRequest) => {
+          const payload =
+            request.payload === undefined
+              ? null
+              : toJson(ValueSchema, request.payload);
+
+          return (payload as { q?: unknown } | null)?.q === 'ok'
+            ? { success: true, data: value({ q: 'ok', limit: 10 }) }
+            : {
+                success: false,
+                issues: [{ path: 'q', message: 'Expected "ok"' }],
+              };
+        },
+      },
+    });
+    await register(tools(core, 'mcp'), 'search', { projectId: 'p1' });
+
+    const caller = tools(core, 'runtime', { projectId: 'p1' });
+    const valid = await caller.check({
+      name: 'search',
+      payload: value({ q: 'ok' }),
+    });
+    const invalid = await caller.check({
+      name: 'search',
+      payload: value({ q: 1 }),
+    });
+
+    assert.deepEqual(toJson(CheckResponseSchema, valid), {
+      success: true,
+      data: { q: 'ok', limit: 10 },
+    });
+    assert.deepEqual(toJson(CheckResponseSchema, invalid), {
+      issues: [{ path: 'q', message: 'Expected "ok"' }],
+    });
+    assert.deepEqual(checkCallsOf(core), [
+      {
+        target: 'mcp/1/1',
+        method: 'check',
+        name: 'search',
+        projectId: 'p1',
+        payload: { q: 'ok' },
+      },
+      {
+        target: 'mcp/1/1',
+        method: 'check',
+        name: 'search',
+        projectId: 'p1',
+        payload: { q: 1 },
+      },
+    ]);
+  }));
+
+void test('S51a A5: Check of an unscoped tool sends no projectId', () =>
+  withCore(async (core) => {
+    core.handlers.set('mcp/1/1', {
+      tools: { check: () => ({ success: true, data: value({}) }) },
+    });
+    await register(tools(core, 'mcp'), 'fetch');
+
+    await tools(core, 'runtime', { projectId: 'p1' }).check({
+      name: 'fetch',
+      payload: value({}),
+    });
+
+    assert.deepEqual(checkCallsOf(core), [
+      {
+        target: 'mcp/1/1',
+        method: 'check',
+        name: 'fetch',
+        projectId: undefined,
+        payload: {},
+      },
+    ]);
+  }));
+
+void test('S51a A6: Check answers not_found for an unregistered name or a tool of another Project, with no handler call', () =>
+  withCore(async (core) => {
+    core.handlers.set('mcp/1/1', {
+      tools: { check: () => ({ success: true, data: value({}) }) },
+    });
+    await register(tools(core, 'mcp'), 'search', { projectId: 'p1' });
+
+    await rejectsWith(
+      tools(core, 'runtime', { projectId: 'p1' }).check({
+        name: 'missing',
+        payload: value({}),
+      }),
+      'not_found',
+      (message) => assert.equal(message, 'Tool "missing" is not registered.'),
+    );
+    await rejectsWith(
+      tools(core, 'runtime', { projectId: 'p2' }).check({
+        name: 'search',
+        payload: value({}),
+      }),
+      'not_found',
+      (message) => assert.equal(message, 'Tool "search" is not registered.'),
+    );
+    assert.deepEqual(core.handlerCalls, []);
+  }));
+
+/** Asserts `promise` fails with `code`, `message` and `details`, as the caller reads them. */
+const rejectsWithError = async (
+  promise: Promise<unknown>,
+  expected: { code: string; message: string; details?: unknown },
+) => {
+  await assert.rejects(promise, (error: unknown) => {
+    assert.ok(error instanceof ConnectError, `not a ConnectError: ${error}`);
+
+    const contract = fromConnectError(error);
+
+    assert.deepEqual(
+      {
+        code: contract.code,
+        message: contract.message,
+        ...(contract.details === undefined
+          ? {}
+          : { details: contract.details }),
+      },
+      expected,
+    );
+
+    return true;
+  });
+};
+
+void test("S51a A7: a handler's Check failing tool_error reaches the caller with the same code, message and details", () =>
+  withCore(async (core) => {
+    core.handlers.set('mcp/1/1', {
+      tools: {
+        check: () => {
+          throw new ContractError('tool_error', toolErrorData.message, {
+            toolError: toolErrorData,
+          });
+        },
+      },
+    });
+    await register(tools(core, 'mcp'), 'search');
+
+    await rejectsWithError(
+      tools(core, 'runtime').check({ name: 'search', payload: value({}) }),
+      {
+        code: 'tool_error',
+        message: toolErrorData.message,
+        details: { toolError: toolErrorData },
+      },
+    );
+  }));
+
+void test("S51a A7: a handler's Execute failing tool_error reaches the caller with the same code, message and details", () =>
+  withCore(async (core) => {
+    core.handlers.set('mcp/1/1', {
+      tools: {
+        execute: () => {
+          throw new ContractError('tool_error', toolErrorData.message, {
+            toolError: toolErrorData,
+          });
+        },
+      },
+    });
+    await register(tools(core, 'mcp'), 'search');
+
+    await rejectsWithError(
+      tools(core, 'runtime').execute({ name: 'search', payload: value({}) }),
+      {
+        code: 'tool_error',
+        message: toolErrorData.message,
+        details: { toolError: toolErrorData },
+      },
+    );
+  }));
+
+void test('S51a A7: Check answers unavailable when the registering instance is unreachable', () =>
+  withCore(async (core) => {
+    // No handler entry for `mcp/1/1`: the instance cannot be reached.
+    await register(tools(core, 'mcp'), 'search');
+
+    await rejectsWith(
+      tools(core, 'runtime').check({ name: 'search', payload: value({}) }),
+      'unavailable',
+    );
+  }));
+
+void test('S51a A8: with two instances of one bundle registering the same key, Check goes to the newest, as Execute does', () =>
+  withCore(async (core) => {
+    const check = () => ({ success: true, data: value({}) });
+
+    core.handlers.set('mcp/1/1', { tools: { check } });
+    core.handlers.set('mcp/2/1', { tools: { check } });
+    await register(tools(core, 'mcp'), 'search', { projectId: 'p1' });
+    await register(tools(core, 'mcp', { generation: 2 }), 'search', {
+      projectId: 'p1',
+    });
+
+    await tools(core, 'runtime', { projectId: 'p1' }).check({
+      name: 'search',
+      payload: value({}),
+    });
+
+    assert.deepEqual(
+      core.handlerCalls.map(({ target, method }) => ({ target, method })),
+      [{ target: 'mcp/2/1', method: 'check' }],
+    );
   }));

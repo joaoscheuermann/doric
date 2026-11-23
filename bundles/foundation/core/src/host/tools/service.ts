@@ -3,7 +3,12 @@
 // relayed to that instance's `ToolHandlerService`.
 
 import { create } from '@bufbuild/protobuf';
-import { ConnectError, type ServiceImpl } from '@connectrpc/connect';
+import type { Value } from '@bufbuild/protobuf/wkt';
+import {
+  ConnectError,
+  type HandlerContext,
+  type ServiceImpl,
+} from '@connectrpc/connect';
 import {
   type Call,
   ContractError,
@@ -64,6 +69,16 @@ export interface InstanceRegistrations {
  *   - A failure of the handler call reaches the caller with its Doric code
  *     (`fromConnectError`).
  *   - No deadline of its own: the relay inherits the `Execute` call's.
+ * - `Check{name, payload}` (1.6.0):
+ *   - The registration of `name` the call sees (the same lookup as
+ *     `Execute`: unscoped tools and those of the call's `projectId`, newest
+ *     instance per key); `not_found` ('Tool "<name>" is not registered.')
+ *     when none, without calling anything.
+ *   - Otherwise `ToolHandlerService.Check{name, projectId?, payload}` on the
+ *     registering instance (`doric-target`), with the call's signal; its
+ *     response is answered unchanged.
+ *   - A failure of that call rejects as `fromConnectError` reads it (code,
+ *     message and details kept), as `Execute` does.
  */
 export const createToolsService = (
   bind: () => CoreBinding,
@@ -95,12 +110,45 @@ export const createToolsService = (
       .sort(byOrder);
   };
 
+  /**
+   * The `ToolHandlerService` call `Execute` and `Check` relay `name` to: the
+   * registration of `name` the call sees, or `not_found`.
+   */
+  const relay = (
+    name: string,
+    payload: Value | undefined,
+    context: HandlerContext,
+  ) => {
+    const binding = bind();
+    const call = callOf(context);
+    const entry = seen(call).find(({ value }) => value.tool?.name === name);
+
+    if (entry === undefined) {
+      throw new ContractError('not_found', `Tool "${name}" is not registered.`);
+    }
+
+    return {
+      client: binding.handler(ToolHandlerService, entry.caller),
+      request: {
+        name,
+        ...(entry.value.projectId === undefined
+          ? {}
+          : { projectId: entry.value.projectId }),
+        ...(payload === undefined ? {} : { payload }),
+      },
+      options: { signal: call.signal },
+    };
+  };
+
   const implementation: ServiceImpl<typeof ToolsService> = {
     register: ({ tool, options }, context) => {
       bind();
 
       if (tool === undefined || options === undefined) {
-        throw new ContractError('invalid_input', 'A tool and its options are required.');
+        throw new ContractError(
+          'invalid_input',
+          'A tool and its options are required.',
+        );
       }
 
       const caller = stampedCallerOf(context);
@@ -175,29 +223,23 @@ export const createToolsService = (
       };
     },
     execute: async ({ name, payload }, context) => {
-      const binding = bind();
-      const call = callOf(context);
-      const entry = seen(call).find(({ value }) => value.tool?.name === name);
-
-      if (entry === undefined) {
-        throw new ContractError('not_found', `Tool "${name}" is not registered.`);
-      }
-
       try {
-        const { result } = await binding
-          .handler(ToolHandlerService, entry.caller)
-          .execute(
-            {
-              name,
-              ...(entry.value.projectId === undefined
-                ? {}
-                : { projectId: entry.value.projectId }),
-              ...(payload === undefined ? {} : { payload }),
-            },
-            { signal: call.signal },
-          );
+        const { client, request, options } = relay(name, payload, context);
+        const { result } = await client.execute(request, options);
 
         return result === undefined ? {} : { result };
+      } catch (error) {
+        throw error instanceof ConnectError ? fromConnectError(error) : error;
+      }
+    },
+    check: async ({ name, payload }, context) => {
+      try {
+        const { client, request, options } = relay(name, payload, context);
+        const { success, data, issues } = await client.check(request, options);
+
+        return data === undefined
+          ? { success, issues }
+          : { success, data, issues };
       } catch (error) {
         throw error instanceof ConnectError ? fromConnectError(error) : error;
       }

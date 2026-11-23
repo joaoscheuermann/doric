@@ -112,6 +112,12 @@ export interface ToolHandlers {
    * Errors of both methods:
    * - `not_found` when no tool of this table is served under the key;
    * - the tool's `ContractError` unchanged;
+   * - a thrown tool error — an `Error` whose `name` is `'ToolErrorObject'`
+   *   and whose `data` is an object with a string `code` and `message` (the
+   *   `tool` package's `ToolErrorObject`) — as `ContractError('tool_error',
+   *   data.message, { toolError: data })`: every field of `data` as JSON
+   *   (`code`, `message`, `toolName?`, `callId?`, `diagnostic?`,
+   *   `issues?`), so the caller can rebuild it; its `cause` is not sent;
    * - any other throw as `internal` with its message (the SDK's encoding);
    * - `invalid_output` when `JSON.stringify` throws on the result or the data
    *   (a bigint, a cycle).
@@ -175,18 +181,33 @@ export const createToolHandlers = (): ToolHandlers => {
       check: async (request) => {
         const tool = served(request.name, request.projectId);
         const payload = jsonOf(request.payload);
-        const checked =
-          tool.check === undefined
-            ? parsedPayload(tool, payload)
-            : await tool.check(payload);
+        let checked: ToolPayloadCheck;
+
+        try {
+          checked =
+            tool.check === undefined
+              ? parsedPayload(tool, payload)
+              : await tool.check(payload);
+        } catch (error) {
+          throw toolErrorOf(error);
+        }
 
         return checkResponseOf(checked);
       },
       execute: async (request, handlerContext) => {
         const tool = served(request.name, request.projectId);
-        const result = asValue(
-          await tool.execute(jsonOf(request.payload), callOf(handlerContext)),
-        );
+        let output: unknown;
+
+        try {
+          output = await tool.execute(
+            jsonOf(request.payload),
+            callOf(handlerContext),
+          );
+        } catch (error) {
+          throw toolErrorOf(error);
+        }
+
+        const result = asValue(output);
 
         return result === undefined ? {} : { result };
       },
@@ -535,6 +556,30 @@ const checkResponseOf = (
   const data = asValue(checked.data);
 
   return data === undefined ? { success: true } : { success: true, data };
+};
+
+/**
+ * A tool's throw as the handler answers it: a tool error (an `Error` named
+ * `ToolErrorObject` whose `data` has a string `code` and `message`; `bundle`
+ * cannot import `tool`) as `ContractError('tool_error', data.message,
+ * { toolError: data })`, without its cause; any other value unchanged.
+ */
+const toolErrorOf = (error: unknown): unknown => {
+  if (!(error instanceof Error) || error.name !== 'ToolErrorObject') {
+    return error;
+  }
+
+  const { data } = error as Error & {
+    readonly data?: { readonly code?: unknown; readonly message?: unknown };
+  };
+
+  if (typeof data?.code !== 'string' || typeof data.message !== 'string') {
+    return error;
+  }
+
+  return new ContractError('tool_error', data.message, {
+    toolError: data,
+  });
 };
 
 /** One served entry of a {@link createTable} and its registration. */

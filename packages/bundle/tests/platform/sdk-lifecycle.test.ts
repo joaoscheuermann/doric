@@ -334,6 +334,7 @@ const tools = [
     list: notCalled,
     catalog: notCalled,
     execute: notCalled,
+    check: notCalled,
   },
 ] as const;
 const regions = [
