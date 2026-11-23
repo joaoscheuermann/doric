@@ -122,18 +122,14 @@ export {
 export { LayeredDirectory } from './layered-directory.js';
 export {
   type ContractEntry,
-  convertV0,
   hostAssetsOf,
   httpPrefixOf,
   httpPrefixPattern,
-  type LegacyResource,
   type Manifest,
-  type ManifestV0,
   type ManifestV1,
   type ManifestV1Input,
   type ManifestV2,
   type ManifestV2Input,
-  manifestV0Schema,
   manifestV1Schema,
   manifestV2Schema,
   type Part,
@@ -144,7 +140,6 @@ export {
   type ReadManifest,
   semverRange,
   semverString,
-  v0BundleId,
 } from './manifest.js';
 export {
   type BundleStates,

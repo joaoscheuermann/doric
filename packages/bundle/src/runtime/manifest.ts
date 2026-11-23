@@ -358,90 +358,20 @@ export const httpPrefixOf = (manifest: Manifest): string | undefined =>
 export const hostAssetsOf = (manifest: Manifest): readonly string[] =>
   manifest.host?.assets ?? [];
 
-const nameSchema = z.string().trim().min(1);
-
-/** Manifest v0 (the format before v1), exactly as the old loader accepted it. */
-export const manifestV0Schema = z
-  .object({
-    name: nameSchema,
-    description: z.string().trim().min(1),
-    tools: z.array(
-      z
-        .object({
-          path: z.string().regex(/^tools\/[^/]+\.js$/),
-          alwaysAvailable: z.boolean(),
-        })
-        .strict(),
-    ),
-    skills: z.array(
-      z
-        .object({
-          path: z.string().regex(/^skills\/[^/]+\/SKILL\.md$/),
-          alwaysAvailable: z.boolean(),
-        })
-        .strict(),
-    ),
-  })
-  .strict();
-
-export type ManifestV0 = z.output<typeof manifestV0Schema>;
-
-export interface LegacyResource {
-  readonly path: string;
-  readonly alwaysAvailable: boolean;
-}
-
 export interface ReadManifest {
-  /** v1 or v2 as written; a converted v0 manifest is v1. */
+  /** v1 or v2 as written. */
   readonly manifest: Manifest;
-  /** Present only for a converted v0 manifest. */
-  readonly legacy?: {
-    readonly tools: readonly LegacyResource[];
-    readonly skills: readonly LegacyResource[];
-  };
 }
 
-/** Legacy identity stays the author's name; renames belong to the distribution. */
-export const v0BundleId = (name: string): string => name;
-
-/**
- * In-memory v0 → v1 conversion: ID from the name, version 0.0.0, any platform,
- * no provides, tools/v1 required when tools are listed. Throws when the
- * converted manifest is not a valid v1 manifest (for example a name that is
- * not a bundle ID).
- */
-export const convertV0 = (v0: ManifestV0): ReadManifest => {
-  const manifest = manifestV1Schema.parse({
-    manifestVersion: 1,
-    id: v0BundleId(v0.name),
-    version: '0.0.0',
-    engines: { doric: '*' },
-    provides: [],
-    requires: v0.tools.length > 0 ? ['tools/v1@^1.0.0'] : [],
-    description: v0.description,
-  });
-
-  return {
-    manifest,
-    legacy: {
-      tools: v0.tools.map(({ path, alwaysAvailable }) => ({
-        path,
-        alwaysAvailable,
-      })),
-      skills: v0.skills.map(({ path, alwaysAvailable }) => ({
-        path,
-        alwaysAvailable,
-      })),
-    },
-  };
-};
+const v0Refusal =
+  'a manifest without manifestVersion is not supported by Doric 2; write manifest version 2';
 
 /**
  * Parses a manifest document by its `manifestVersion`: `1` with
- * `manifestV1Schema`, `2` with `manifestV2Schema`; without the key, as v0
- * converted to v1 (unchanged until phase 3). Throws a `ZodError` for any other
- * `manifestVersion` or an invalid document; the result's `manifest` is valid
- * for its version.
+ * `manifestV1Schema`, `2` with `manifestV2Schema`. Throws a `ZodError` for any
+ * other `manifestVersion` or an invalid document, and an `Error` saying Doric 2
+ * does not support it for a document without `manifestVersion`; the result's
+ * `manifest` is valid for its version.
  */
 export const parseManifest = (document: unknown): ReadManifest => {
   if (
@@ -457,5 +387,5 @@ export const parseManifest = (document: unknown): ReadManifest => {
     };
   }
 
-  return convertV0(manifestV0Schema.parse(document));
+  throw new Error(v0Refusal);
 };

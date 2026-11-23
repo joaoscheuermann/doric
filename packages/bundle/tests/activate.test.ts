@@ -633,60 +633,39 @@ void test('a skill refused after the phase quarantines its active bundle, withdr
   });
 });
 
-void test('v0 bundles load current tool definitions and refuse legacy factories', async () => {
+void test('a manifest without manifestVersion is quarantined with invalid_manifest and its message', async () => {
   await withRoot(async (root) => {
-    const v0 = (
-      name: string,
-      tools: readonly string[],
-      skills: readonly string[] = [],
-    ) => ({
-      name,
-      description: `${name} description`,
-      tools: tools.map((tool) => ({
-        path: `tools/${tool}.js`,
-        alwaysAvailable: true,
-      })),
-      skills: skills.map((skill) => ({
-        path: `skills/${skill}/SKILL.md`,
-        alwaysAvailable: false,
-      })),
-    });
-
     await writeBundle(root, 'mincore', diskCore);
-    await writeBundle(root, 'modern', {
-      manifest: v0('modern', ['read'], ['inspect']),
-      files: {
-        'tools/read.js': `import { bindRegistrant } from ${JSON.stringify(contractsUrl)};
-const definition = { name: 'read', inputSchema: {}, outputSchema: {} };
-export default {
-  name: 'read',
-  definition,
-  [bindRegistrant]: () => ({ name: 'read', definition, settings: [], execute: async () => ({}) }),
-};
-`,
-        'skills/inspect/SKILL.md': skillSource('inspect', {
-          allowedTools: ['read'],
-        }),
-      },
-    });
-    await writeBundle(root, 'legacy', {
-      manifest: v0('legacy', ['old']),
-      files: {
-        'tools/old.js': `const factory = () => ({});
-Object.defineProperty(factory, 'name', { value: 'old' });
-export default factory;
-`,
+    await writeBundle(root, 'old', {
+      manifest: {
+        name: 'old',
+        description: 'old description',
+        tools: [],
+        skills: [],
       },
     });
 
     const { platform } = await start({
       bundlesPath: root,
-      composition: { enabled: ['mincore', 'modern', 'legacy'] },
+      composition: { enabled: ['mincore', 'old'] },
     });
+    const old = platform
+      .diagnostics()
+      .bundles.filter(({ id }) => id === 'old');
 
-    assert.deepEqual(toolNames(platform), ['modern:read']);
-    assert.deepEqual(await skillNames(platform), ['modern:inspect:false']);
-    assert.deepEqual(reasonCodes(platform, 'legacy'), ['invalid_part']);
+    assert.deepEqual(
+      old.map(({ state }) => state),
+      ['quarantined'],
+    );
+    assert.deepEqual(
+      old.flatMap(({ reasons }) => reasons.map(({ code }) => code)),
+      ['invalid_manifest'],
+    );
+    assert.match(
+      old[0]?.reasons[0]?.message ?? '',
+      /a manifest without manifestVersion is not supported by Doric 2; write manifest version 2/,
+    );
+    assert.deepEqual(toolNames(platform), []);
 
     await platform.stop();
   });

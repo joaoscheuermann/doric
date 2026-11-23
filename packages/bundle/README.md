@@ -1728,42 +1728,22 @@ interface ManifestV1 {
     readonly assets?: readonly string[];
   }; // strict; v2 has the same assets
 } // ManifestV1Input: the same with provides and requires optional
-const manifestV0Schema: z.ZodType<ManifestV0>; // strict
-interface ManifestV0 {
-  readonly name: string; // trimmed, non-empty
-  readonly description: string; // trimmed, non-empty
-  readonly tools: readonly { path: string; alwaysAvailable: boolean }[]; // path tools/<file>.js
-  readonly skills: readonly { path: string; alwaysAvailable: boolean }[]; // path skills/<dir>/SKILL.md
-}
 interface ContractEntry {
   readonly id: string;
   readonly major: number;
   readonly spec: string;
 }
 function parseContractEntry(entry: string): ContractEntry | undefined; // "<id>/v<major>@<version-or-range>"
-interface LegacyResource {
-  readonly path: string;
-  readonly alwaysAvailable: boolean;
-}
 interface ReadManifest {
-  readonly manifest: ManifestV1;
-  readonly legacy?: {
-    tools: readonly LegacyResource[];
-    skills: readonly LegacyResource[];
-  };
+  readonly manifest: Manifest; // v1 or v2 as written
 }
 function parseManifest(document: unknown): ReadManifest;
-function convertV0(v0: ManifestV0): ReadManifest;
-function v0BundleId(name: string): string; // the name itself
 ```
 
-`parseManifest` reads a document with `manifestVersion` as version 1 and any
-other as the format the code calls v0 (`name`, `description`, `tools` at
-`tools/<file>.js`, `skills` at `skills/<dir>/SKILL.md`, each with
-`alwaysAvailable`), which `convertV0` turns into a version 1 manifest in
-memory: id from the name, version `0.0.0`, `engines.doric` `*`, no
-`provides`, and `requires` `tools/v1@^1.0.0` when it lists tools; its tools
-and skills are kept as `legacy` ([`manifest.ts`](src/runtime/manifest.ts)).
+`parseManifest` reads a document by its `manifestVersion`, `1` with
+`manifestV1Schema` and `2` with `manifestV2Schema`, and refuses a document
+without it: "a manifest without manifestVersion is not supported by Doric 2;
+write manifest version 2" ([`manifest.ts`](src/runtime/manifest.ts)).
 The fields and rules of version 1 are in [The bundle
 manifest](../../docs/architecture/bundles/manifest.md).
 
@@ -2742,7 +2722,7 @@ The Node entry for the host, the build, embedded foundation host parts
 (`EmbeddedBundle`, as a type) and bundle tests
 ([`src/index.ts`](src/index.ts)); desktop, client, chunk, worker and frame
 parts may not import it ([Build tooling](#build-tooling)). It re-exports, from `bundle/runtime`,
-the manifest, composition and descriptor schemas and types, `convertV0`,
+the manifest, composition and descriptor schemas and types,
 `resolveEnvironment`, the alternatives helpers, `PLATFORM_VERSION`,
 `PLATFORM_ASSETS_VERSION`, `runGeneration` and its types; from the contracts'
 [`skill.ts`](src/contracts/skill.ts), `SkillRecord` (also as `Skill`),
@@ -2943,9 +2923,8 @@ interface KernelPlatform extends HostPlatform {
    with the reasons of each quarantined bundle.
 4. It activates the kernel partition. An installed bundle's host part is
    `<dir>/host/index.js`, which must export `activate` (`invalid_part`
-   otherwise). After each installed bundle activates, the tools a v0 manifest
-   lists are registered on its behalf; once the phase is active, its skills
-   (`skills/*/SKILL.md`, or the v0 manifest's list) are registered through
+   otherwise). Once the phase is active, an installed bundle's skills
+   (`skills/*/SKILL.md`) are registered through
    `skills/v1`, which fails with `missing_dependency` when no `skills/v1`
    provider is active and with `skill_invalid` for an unreadable skill.
 5. In recovery it logs `Bundle recovery mode` with the reason and every
@@ -3144,8 +3123,8 @@ function buildCatalog(input: BuildCatalogInput): ResolvedEnvironment; // the hos
 path, without running bundle code, and throws (`Unable to discover bundles in
 root "<root>".`) when `root` cannot be read ([`discover.ts`](src/loader/discover.ts)).
 `readInstalledBundle` records an unreadable or invalid manifest as
-`invalid_manifest` and an invalid `contracts.json` as `invalid_descriptor`; a
-v0 bundle gets an empty descriptor; a missing `contracts.json` leaves the
+`invalid_manifest` (a manifest without `manifestVersion` included) and an
+invalid `contracts.json` as `invalid_descriptor`; a missing `contracts.json` leaves the
 descriptor absent. `readManifest`, `readDescriptor` and `readComposition` wrap
 JSON and schema failures with the file in the message; `readComposition`
 throws `CompositionError` ([`read.ts`](src/loader/read.ts)). An embedded

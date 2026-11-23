@@ -3,7 +3,7 @@ import { readdir } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 
 import type { QuarantineReason } from '../contracts/platform.js';
-import { type Descriptor, emptyDescriptor } from '../runtime/descriptor.js';
+import type { Descriptor } from '../runtime/descriptor.js';
 import type { ReadManifest } from '../runtime/manifest.js';
 import { readDescriptor, readManifest } from './read.js';
 
@@ -44,16 +44,6 @@ export const readInstalledBundle = async (
     return {
       dir,
       errors: [{ code: 'invalid_manifest', message: describe(error) }],
-    };
-  }
-
-  if (read.legacy !== undefined) {
-    // A v0 bundle has no contracts.json: it provides nothing.
-    return {
-      dir,
-      read,
-      descriptor: emptyDescriptor(read.manifest.id, read.manifest.version),
-      errors: [],
     };
   }
 

@@ -7,7 +7,6 @@ import {
   StorageBackendV1,
   type StorageIdentity,
 } from '../contracts/basic/storage.js';
-import { ToolsV1 } from '../contracts/basic/tools.js';
 import type { Call, CallScope } from '../contracts/call.js';
 import type { Activate, Services } from '../contracts/context.js';
 import type {
@@ -15,7 +14,6 @@ import type {
   Diagnostics,
   QuarantineCode,
 } from '../contracts/platform.js';
-import { isRegistrable } from '../contracts/registrable.js';
 import {
   ActivationFailure,
   type ActivationResult,
@@ -28,7 +26,6 @@ import type { CatalogEntry, ResolvedEnvironment } from '../runtime/catalog.js';
 import { type Composition, compositionSchema } from '../runtime/composition.js';
 import { DiagnosticsStore } from '../runtime/diagnostics.js';
 import { ServiceDirectory } from '../runtime/directory.js';
-import type { LegacyResource, ReadManifest } from '../runtime/manifest.js';
 import type { Principal, ServiceRuntime } from '../runtime/principal.js';
 import { createPrincipal } from '../runtime/services.js';
 import { PLATFORM_VERSION } from '../runtime/version.js';
@@ -41,12 +38,7 @@ import {
 } from './overrides.js';
 import { catalogSnapshot, providePlatformServices } from './platform.js';
 import { readComposition } from './read.js';
-import {
-  discoverSkills,
-  type ParsedSkill,
-  readSkill,
-  resourcePath,
-} from './skills.js';
+import { discoverSkills, type ParsedSkill, readSkill } from './skills.js';
 
 export interface StartHostOptions {
   /** Root whose immediate subdirectories are installed bundles. */
@@ -121,12 +113,6 @@ const fileExists = async (path: string): Promise<boolean> => {
   }
 };
 
-const isToolDefinition = (value: unknown): boolean =>
-  isRegistrable(value) &&
-  typeof (value as { name?: unknown }).name === 'string' &&
-  typeof (value as { definition?: unknown }).definition === 'object' &&
-  (value as { definition?: unknown }).definition !== null;
-
 const failure = (code: QuarantineCode, error: unknown): ActivationFailure =>
   new ActivationFailure(code, messageOf(error), { cause: error });
 
@@ -154,61 +140,18 @@ export const importHostPart = async (
   return loaded.activate as Activate;
 };
 
-/** v0 only: registers manifest-listed tools on the bundle's behalf. */
-const registerLegacyTools = async (
+/**
+ * Once every host bundle of the phase has activated (D10-6): registers the v1
+ * `skills/` directory through skills/v1, on the bundle's behalf, so
+ * `allowed-tools` resolves against every tool of the phase.
+ */
+export const registerInstalledSkills = async (
   dir: string,
-  tools: readonly LegacyResource[],
   principal: Principal,
 ): Promise<void> => {
-  if (tools.length === 0) {
-    return;
-  }
+  const paths = await discoverSkills(dir);
 
-  const registry = principal.unchecked.use(ToolsV1);
-
-  for (const declared of tools) {
-    let definition: unknown;
-
-    try {
-      const loaded = (await import(
-        pathToFileURL(resourcePath(dir, declared.path)).href
-      )) as { readonly default?: unknown };
-
-      definition = loaded.default;
-    } catch (error) {
-      throw failure('invalid_part', error);
-    }
-
-    if (typeof definition === 'function' || !isToolDefinition(definition)) {
-      throw new ActivationFailure(
-        'invalid_part',
-        typeof definition === 'function'
-          ? `"${declared.path}" exports a legacy tool factory; v0 tools must default-export a tool definition.`
-          : `"${declared.path}" does not default-export a tool definition.`,
-      );
-    }
-
-    try {
-      registry.register(definition as Parameters<typeof registry.register>[0], {
-        alwaysAvailable: declared.alwaysAvailable,
-      });
-    } catch (error) {
-      throw failure('registration_failed', error);
-    }
-  }
-};
-
-/** Registers skills through skills/v1, with the bundle as caller. */
-const registerSkills = async (
-  dir: string,
-  skills: readonly {
-    readonly path: string;
-    readonly alwaysAvailable?: boolean;
-  }[],
-  frontmatterAvailability: boolean,
-  principal: Principal,
-): Promise<void> => {
-  if (skills.length === 0) {
+  if (paths.length === 0) {
     return;
   }
 
@@ -221,67 +164,24 @@ const registerSkills = async (
 
   const registry = principal.unchecked.use(SkillsV1);
 
-  for (const declared of skills) {
+  for (const path of paths) {
     let parsed: ParsedSkill;
 
     try {
-      parsed = await readSkill(dir, declared.path, { frontmatterAvailability });
+      parsed = await readSkill(dir, path, { frontmatterAvailability: true });
     } catch (error) {
       throw failure('skill_invalid', error);
     }
 
-    const alwaysAvailable =
-      declared.alwaysAvailable ?? parsed.alwaysAvailable ?? false;
-
     try {
       registry.register(parsed.skill, {
-        alwaysAvailable,
+        alwaysAvailable: parsed.alwaysAvailable ?? false,
         ...(parsed.order === undefined ? {} : { order: parsed.order }),
       });
     } catch (error) {
       throw failure('registration_failed', error);
     }
   }
-};
-
-/**
- * After a successful `activate` of an installed bundle: the v0 manifest
- * tools. Skills wait for the whole phase (`registerInstalledSkills`).
- */
-export const registerInstalledTools = async (
-  dir: string,
-  legacy: ReadManifest['legacy'],
-  principal: Principal,
-): Promise<void> => {
-  if (legacy !== undefined) {
-    await registerLegacyTools(dir, legacy.tools, principal);
-  }
-};
-
-/**
- * Once every host bundle of the phase has activated (D10-6): v0 manifest
- * skills or the v1 `skills/` directory, on the bundle's behalf, so
- * `allowed-tools` resolves against every tool of the phase.
- */
-export const registerInstalledSkills = async (
-  dir: string,
-  legacy: ReadManifest['legacy'],
-  principal: Principal,
-): Promise<void> => {
-  if (legacy !== undefined) {
-    await registerSkills(dir, legacy.skills, false, principal);
-
-    return;
-  }
-
-  const paths = await discoverSkills(dir);
-
-  await registerSkills(
-    dir,
-    paths.map((path) => ({ path })),
-    true,
-    principal,
-  );
 };
 
 const placeholderComposition: Composition = Object.freeze({
@@ -301,10 +201,7 @@ export const readHostCatalog = async (
     'bundlesPath' | 'composition' | 'compositionOverrides' | 'embedded'
   >,
   generation: number,
-): Promise<{
-  readonly installed: readonly InstalledBundle[];
-  readonly resolved: ResolvedEnvironment;
-}> => {
+): Promise<ResolvedEnvironment> => {
   const issues: string[] = [];
   let recovery: { readonly reason: string } | undefined;
   let installed: readonly InstalledBundle[] = [];
@@ -337,7 +234,7 @@ export const readHostCatalog = async (
     }
   }
 
-  const resolved: ResolvedEnvironment = buildCatalog({
+  return buildCatalog({
     installed,
     embedded: options.embedded ?? [],
     composition,
@@ -346,8 +243,6 @@ export const readHostCatalog = async (
     issues,
     ...(recovery === undefined ? {} : { recovery }),
   });
-
-  return { installed, resolved };
 };
 
 /**
@@ -362,7 +257,7 @@ export const startHost = async (
 
   const generation = generations;
   const controller = new AbortController();
-  const { installed, resolved } = await readHostCatalog(options, generation);
+  const resolved = await readHostCatalog(options, generation);
   const embedded = options.embedded ?? [];
   const diagnostics = new DiagnosticsStore({
     generation,
@@ -404,16 +299,6 @@ export const startHost = async (
     sink: options.sink,
   });
 
-  const installedById = new Map<string, InstalledBundle>();
-
-  for (const bundle of installed) {
-    const id = bundle.read?.manifest.id;
-
-    if (id !== undefined && !installedById.has(id)) {
-      installedById.set(id, bundle);
-    }
-  }
-
   const embeddedById = new Map(
     embedded.map((bundle) => [embeddedId(bundle), bundle]),
   );
@@ -424,27 +309,20 @@ export const startHost = async (
 
     return await importHostPart(entry.source.dir);
   };
-  const installedResources =
-    (register: typeof registerInstalledTools) =>
-    async (entry: CatalogEntry, principal: Principal) => {
-      if (entry.source.kind !== 'installed') {
-        return;
-      }
+  const installedSkills = async (entry: CatalogEntry, principal: Principal) => {
+    if (entry.source.kind !== 'installed') {
+      return;
+    }
 
-      await register(
-        entry.source.dir,
-        installedById.get(entry.id)?.read?.legacy,
-        principal,
-      );
-    };
+    await registerInstalledSkills(entry.source.dir, principal);
+  };
   const activation: ActivationResult = await activateEnvironment({
     resolved,
     runtime,
     platform,
     diagnostics,
     loadPart,
-    afterActivate: installedResources(registerInstalledTools),
-    afterPhase: installedResources(registerInstalledSkills),
+    afterPhase: installedSkills,
     log: options.log,
     ...(options.now === undefined ? {} : { now: options.now }),
   });

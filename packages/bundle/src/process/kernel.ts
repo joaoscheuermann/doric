@@ -18,11 +18,9 @@ import {
   importHostPart,
   readHostCatalog,
   registerInstalledSkills,
-  registerInstalledTools,
   type StartHostOptions,
 } from '../loader/activate.js';
 import { type EmbeddedBundle, embeddedId } from '../loader/catalog.js';
-import type { InstalledBundle } from '../loader/discover.js';
 import {
   type BundleStates,
   type CatalogDistributionProvider,
@@ -221,7 +219,7 @@ export const startKernel = async (
 ): Promise<KernelPlatform> => {
   const now = options.now;
   const controller = new AbortController();
-  const { installed, resolved: raw } = await readHostCatalog(options, 1);
+  const raw = await readHostCatalog(options, 1);
   const partition = partitionCatalog(raw);
   const resolved = partition.published;
   const diagnostics = new DiagnosticsStore({
@@ -338,7 +336,7 @@ export const startKernel = async (
       platformCall(generation, scope, signal),
     storage: () => (storage === undefined ? undefined : { ...storage }),
     readCatalog: async (generation) =>
-      (await readHostCatalog(options, generation)).resolved,
+      await readHostCatalog(options, generation),
     spawn:
       options.spawn ??
       forkGeneration(options.runnerPath ?? defaultRunnerPath()),
@@ -416,16 +414,6 @@ export const startKernel = async (
 
   if (options.network !== undefined) provideNetwork(platform, options.network);
 
-  const installedById = new Map<string, InstalledBundle>();
-
-  for (const bundle of installed) {
-    const id = bundle.read?.manifest.id;
-
-    if (id !== undefined && !installedById.has(id)) {
-      installedById.set(id, bundle);
-    }
-  }
-
   const embedded: readonly EmbeddedBundle[] = options.embedded ?? [];
   const embeddedById = new Map(
     embedded.map((bundle) => [embeddedId(bundle), bundle]),
@@ -447,28 +435,13 @@ export const startKernel = async (
 
       return await importHostPart(entry.source.dir);
     },
-    afterActivate: async (entry, principal) => {
-      if (entry.source.kind !== 'installed') {
-        return;
-      }
-
-      await registerInstalledTools(
-        entry.source.dir,
-        installedById.get(entry.id)?.read?.legacy,
-        principal,
-      );
-    },
     // Skills once the kernel phase has activated (D10-6).
     afterPhase: async (entry, principal) => {
       if (entry.source.kind !== 'installed') {
         return;
       }
 
-      await registerInstalledSkills(
-        entry.source.dir,
-        installedById.get(entry.id)?.read?.legacy,
-        principal,
-      );
+      await registerInstalledSkills(entry.source.dir, principal);
     },
     log: options.log,
     ...(now === undefined ? {} : { now }),

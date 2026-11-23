@@ -421,6 +421,13 @@ from the bundle directory. `runBundle` takes the bundle directory two above
 `TestRouterOptions.bundleDir` set it. Phase 3 copies no asset into `dist/`;
 the SEA mode comes in phase 7.
 
+S33 deletes the manifest without `manifestVersion` (v0): `parseManifest`
+refuses it with "a manifest without manifestVersion is not supported by Doric
+2; write manifest version 2", and discovery and activation quarantine such a
+bundle with `invalid_manifest` and that message (A44, AC3.12). `convertV0`,
+`manifestV0Schema`, `ManifestV0`, `LegacyResource`, `v0BundleId`,
+`ReadManifest.legacy` and `registerInstalledTools` are removed.
+
 S34 adds `AgentOptions.maxRecordOutputChars` to `packages/agent`: it caps the
 output a stored tool record keeps, with `capOutput`'s marker (unset: the whole
 output); `maxToolResultChars` still caps what the model sees.
@@ -475,6 +482,10 @@ output); `maxToolResultChars` still caps what the model sees.
   [`docs/designs/grpc-processes.md`](../designs/grpc-processes.md) (v6.12):
   manifests gain `host.assets`; the host SDK's `context.assets` reads them in
   development.
+- 2026-11-22: phase 3, slice S33, of
+  [`docs/designs/grpc-processes.md`](../designs/grpc-processes.md) (v6.12):
+  the v0 manifest path is deleted; a manifest without `manifestVersion` is
+  quarantined with `invalid_manifest`.
 - 2026-11-22: phase 3, slice S34, of
   [`docs/designs/grpc-processes.md`](../designs/grpc-processes.md) (v6.12):
   `AgentOptions.maxRecordOutputChars` caps a stored tool record's output.

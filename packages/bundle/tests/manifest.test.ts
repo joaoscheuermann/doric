@@ -4,9 +4,9 @@ import test from 'node:test';
 import {
   CompositionError,
   compositionSchema,
-  convertV0,
   manifestV1Schema,
   readComposition,
+  readInstalledBundle,
   readManifest,
 } from '../src/index.js';
 import {
@@ -426,57 +426,53 @@ void test('a v1 manifest answers its bundle-wide lists for both parts', () => {
   }
 });
 
-void test('converts a v0 manifest in memory without assigning a product identity', () => {
-  const converted = convertV0({
-    name: 'core',
-    description: 'Core capabilities.',
-    tools: [{ path: 'tools/cwd.js', alwaysAvailable: true }],
-    skills: [{ path: 'skills/a/SKILL.md', alwaysAvailable: false }],
-  });
+const v0Refusal =
+  /a manifest without manifestVersion is not supported by Doric 2; write manifest version 2/;
 
-  assert.ok(converted.manifest.manifestVersion === 1);
-  assert.equal(converted.manifest.id, 'core');
-  assert.equal(converted.manifest.version, '0.0.0');
-  assert.deepEqual(converted.manifest.provides, []);
-  assert.deepEqual(converted.manifest.requires, ['tools/v1@^1.0.0']);
-  assert.equal(satisfies('1.0.0', converted.manifest.engines.doric), true);
-  assert.deepEqual(converted.legacy?.tools, [
-    { path: 'tools/cwd.js', alwaysAvailable: true },
-  ]);
-  assert.deepEqual(converted.legacy?.skills, [
-    { path: 'skills/a/SKILL.md', alwaysAvailable: false },
-  ]);
+void test('refuses a manifest without manifestVersion with the Doric 2 message', () => {
+  const v0Documents = [
+    { name: 'core', description: 'Core capabilities.', tools: [], skills: [] },
+    {
+      name: 'core',
+      description: 'Core capabilities.',
+      tools: [{ path: 'tools/cwd.js', alwaysAvailable: true }],
+      skills: [{ path: 'skills/a/SKILL.md', alwaysAvailable: false }],
+    },
+    { name: 'git', description: 'x' },
+    {},
+  ];
 
-  const withoutTools = convertV0({
-    name: 'threads',
-    description: 'Delegation.',
-    tools: [],
-    skills: [],
-  });
-
-  assert.ok(withoutTools.manifest.manifestVersion === 1);
-  assert.equal(withoutTools.manifest.id, 'threads');
-  assert.deepEqual(withoutTools.manifest.requires, []);
+  for (const document of v0Documents) {
+    assert.throws(
+      () => parseManifest(document),
+      (error: unknown) => error instanceof Error && v0Refusal.test(error.message),
+    );
+  }
 });
 
-void test('rejects a v0 name that is not a bundle ID', () => {
-  assert.throws(() =>
-    convertV0({ name: 'Not An Id', description: 'x', tools: [], skills: [] }),
-  );
-});
-
-void test('recognizes v1 and v2 by manifestVersion and reads v0 otherwise', () => {
-  assert.equal(parseManifest(valid).legacy, undefined);
+void test('recognizes v1 and v2 by manifestVersion and refuses any other', () => {
   assert.equal(parseManifest(valid).manifest.manifestVersion, 1);
-  assert.equal(parseManifest(filesV2).legacy, undefined);
   assert.equal(parseManifest(filesV2).manifest.manifestVersion, 2);
   assert.throws(() => parseManifest({ ...filesV2, manifestVersion: 3 }));
-  assert.notEqual(
-    parseManifest({ name: 'git', description: 'x', tools: [], skills: [] })
-      .legacy,
-    undefined,
+  assert.throws(() =>
+    parseManifest({ name: 'git', description: 'x', tools: [], skills: [] }),
   );
-  assert.throws(() => parseManifest({ name: 'git', description: 'x' }));
+});
+
+void test('discovery quarantines a bundle without manifestVersion with invalid_manifest and its message', async () => {
+  await withRoot(async (root) => {
+    const dir = await writeBundle(root, 'old', {
+      manifest: { name: 'old', description: 'x', tools: [], skills: [] },
+    });
+    const installed = await readInstalledBundle(dir);
+
+    assert.equal(installed.read, undefined);
+    assert.deepEqual(
+      installed.errors.map(({ code }) => code),
+      ['invalid_manifest'],
+    );
+    assert.match(installed.errors[0]?.message ?? '', v0Refusal);
+  });
 });
 
 void test('reads manifests from disk with contextual errors', async () => {
