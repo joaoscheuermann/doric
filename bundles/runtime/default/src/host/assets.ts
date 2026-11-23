@@ -40,6 +40,9 @@ export const defaultAssetPaths: readonly string[] = [
   ...builtInAgentPaths,
 ];
 
+/** The bundle-relative folder of this module's sources; asset paths start with it. */
+const HOST_PREFIX = 'src/host/';
+
 /** The texts `useAssetTexts` installed; undefined while the files beside the module are the source. */
 let installed: ReadonlyMap<string, string> | undefined;
 
@@ -56,9 +59,10 @@ export const useAssetTexts = (texts: ReadonlyMap<string, string>): void => {
 
 /**
  * The text of asset `path` (one of `defaultAssetPaths`): from the installed texts when `useAssetTexts` was called,
- * else read from disk beside this module (`src/host/…` resolved against this module's directory, as today's
- * `import.meta.url` reads). Throws an `Error` naming `path` when the installed texts lack it, or the file's read
- * error (`ENOENT`) when nothing was installed and the file is missing. Never reads at import.
+ * else read from disk beside this module: the part of `path` after `src/host/` resolved against this module's
+ * directory (`dist/host` in a built or staged bundle, which has no `src`). Throws an `Error` naming `path` when the
+ * installed texts lack it, or the file's read error (`ENOENT`) when nothing was installed and the file is missing.
+ * Never reads at import.
  */
 export const assetText = (path: string): string => {
   if (installed !== undefined) {
@@ -69,8 +73,11 @@ export const assetText = (path: string): string => {
   }
   let text = fromDisk.get(path);
   if (text === undefined) {
-    // This module is `src/host/assets.js`: the bundle directory is two folders above.
-    text = readFileSync(new URL(`../../${path}`, import.meta.url), 'utf8');
+    // The assets are copied beside this module, so a staged bundle with only its build output still reads them.
+    const relative = path.startsWith(HOST_PREFIX)
+      ? path.slice(HOST_PREFIX.length)
+      : path;
+    text = readFileSync(new URL(relative, import.meta.url), 'utf8');
     fromDisk.set(path, text);
   }
   return text;
