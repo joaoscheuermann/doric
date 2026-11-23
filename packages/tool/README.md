@@ -75,27 +75,34 @@ for (const toolCall of storage.calls(turn)) {
 ## Defining a tool: `defineTool`
 
 ```ts
-defineTool<Input extends ToolInput, Output extends ToolOutput>(
-  options: DefineToolOptions<Input, Output>,
-): ToolDefinitionObject<Input, Output>
+defineTool<Input extends ToolInput, Output extends ToolOutput, Deps = Services>(
+  options: DefineToolOptions<Input, Output, Deps>,
+): ToolDefinitionObject<Input, Output, Deps>
 ```
+
+`Deps` is what `execute` receives as its third argument, passed by
+`bind(deps)`. It defaults to the kernel `Services`, so existing tools compile
+unchanged; nothing changes at run time. A tool for a host part names a small
+port object (or `unknown`) as `Deps` and is bound by its owner before
+`createToolHandlers().register`; this is how a tool slice rebinds a kernel tool
+to router clients.
 
 `ToolInput` is `z.ZodObject`; `ToolOutput` is `z.ZodType`
 ([`types/tool.ts`](src/lib/types/tool.ts)).
 
 ### Options (`DefineToolOptions`)
 
-| Option             | Type                                                                                                        | Default              | Meaning                                                                                                                                                        |
-| ------------------ | ----------------------------------------------------------------------------------------------------------- | -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `name`             | `string`                                                                                                    | required             | The tool's name, as the model calls it.                                                                                                                        |
-| `description`      | `string`                                                                                                    | absent               | Text shown to the model.                                                                                                                                       |
-| `input`            | `Input` (a Zod object)                                                                                      | required             | Validates every payload.                                                                                                                                       |
-| `output`           | `Output` (any Zod schema)                                                                                   | required             | Validates every result of `execute`.                                                                                                                           |
-| `execute`          | `(payload: z.output<Input>, call: Call, services: Services) => z.input<Output> \| Promise<z.input<Output>>` | required             | The handler (`ToolExecute`).                                                                                                                                   |
-| `strict`           | `boolean`                                                                                                   | `true`               | Copied into `definition.strict`.                                                                                                                               |
-| `inputSchema`      | `JsonObject`                                                                                                | derived from `input` | The JSON Schema the model sees for the input, used verbatim as `definition.inputSchema`. It must have `type: 'object'`. `input` still validates every payload. |
-| `settings`         | `readonly ConfigField[]`                                                                                    | `[]`                 | The configuration fields the tool reads (see [Settings fields](#settings-fields)).                                                                             |
-| `resultModalities` | `readonly string[]`                                                                                         | absent               | What the tool's results hand the model besides text, such as `'image'`.                                                                                        |
+| Option             | Type                                                                                                | Default              | Meaning                                                                                                                                                        |
+| ------------------ | --------------------------------------------------------------------------------------------------- | -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `name`             | `string`                                                                                            | required             | The tool's name, as the model calls it.                                                                                                                        |
+| `description`      | `string`                                                                                            | absent               | Text shown to the model.                                                                                                                                       |
+| `input`            | `Input` (a Zod object)                                                                              | required             | Validates every payload.                                                                                                                                       |
+| `output`           | `Output` (any Zod schema)                                                                           | required             | Validates every result of `execute`.                                                                                                                           |
+| `execute`          | `(payload: z.output<Input>, call: Call, deps: Deps) => z.input<Output> \| Promise<z.input<Output>>` | required             | The handler (`ToolExecute`).                                                                                                                                   |
+| `strict`           | `boolean`                                                                                           | `true`               | Copied into `definition.strict`.                                                                                                                               |
+| `inputSchema`      | `JsonObject`                                                                                        | derived from `input` | The JSON Schema the model sees for the input, used verbatim as `definition.inputSchema`. It must have `type: 'object'`. `input` still validates every payload. |
+| `settings`         | `readonly ConfigField[]`                                                                            | `[]`                 | The configuration fields the tool reads (see [Settings fields](#settings-fields)).                                                                             |
+| `resultModalities` | `readonly string[]`                                                                                 | absent               | What the tool's results hand the model besides text, such as `'image'`.                                                                                        |
 
 A tool whose input schema comes from elsewhere, such as an MCP server's tool,
 passes the schema as `inputSchema`, a permissive `input` (`z.looseObject({})`)
@@ -136,9 +143,7 @@ registered ([`types/tool.ts`](src/lib/types/tool.ts),
 [`tools.ts`](src/lib/tools.ts)):
 
 ```ts
-interface ToolDefinitionObject<Input, Output> extends Registrable<
-  BoundTool<Input, Output>
-> {
+interface UnboundTool<Input, Output, Deps = Services> {
   readonly name: string;
   readonly description?: string;
   readonly input: Input;
@@ -146,11 +151,22 @@ interface ToolDefinitionObject<Input, Output> extends Registrable<
   readonly definition: ToolDefinition;
   readonly settings: readonly ConfigField[];
   readonly resultModalities?: readonly string[];
-  bind(services: Services): BoundTool<Input, Output>;
+  bind(deps: Deps): BoundTool<Input, Output>;
 }
+
+type ToolDefinitionObject<Input, Output, Deps = Services> = UnboundTool<
+  Input,
+  Output,
+  Deps
+> &
+  ([Services] extends [Deps] ? Registrable<BoundTool<Input, Output>> : unknown);
 ```
 
-It carries `bind` under the `bindRegistrant` symbol of `bundle/contracts` too,
+`bind(deps)` makes no call, never throws and may be repeated; each bound tool
+keeps its own `deps`. The definition is registrable with the kernel's
+`tools/v1` only when `Deps` accepts the kernel `Services` (the default, or
+`unknown`); a tool over any other `Deps` is bound by its owner and registered as
+the bound `ContractTool`. A registrable definition carries `bind` under the `bindRegistrant` symbol of `bundle/contracts` too,
 which makes it `Registrable`
 ([`registrable.ts`](../bundle/src/contracts/registrable.ts)). A bundle passes it
 to `tools/v1.register`; the runtime calls `[bindRegistrant]` with the

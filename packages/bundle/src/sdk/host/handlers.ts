@@ -619,6 +619,13 @@ const createTable = <E>() => {
   };
 };
 
-/** A provider's failure as its `ContractError` (`fromConnectError`). */
+/**
+ * A routed call's failure as the caller should rethrow it: a `ConnectError`
+ * (a `HostServices.use` client's failure) as the `ContractError`
+ * `fromConnectError` reads (Doric code, message and details kept; `internal`
+ * with the raw message when the error has no Doric detail); any other value
+ * unchanged, the same object. Never throws. A handler that rethrows it
+ * answers that code instead of `internal`.
+ */
 export const contractErrorOf = (error: unknown): unknown =>
   error instanceof ConnectError ? fromConnectError(error) : error;

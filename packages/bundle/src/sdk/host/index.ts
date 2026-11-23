@@ -31,6 +31,7 @@ export {
   type HostGoneReason,
 } from './control.js';
 export {
+  contractErrorOf,
   createHookHandlers,
   createToolHandlers,
   type HandlerRegistration,

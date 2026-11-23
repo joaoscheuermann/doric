@@ -25,10 +25,11 @@
     },
     "test": {
       "executor": "nx:run-commands",
-      "dependsOn": ["^build"],
+      "dependsOn": ["build", "^build"],
       "outputs": ["{projectRoot}/dist-tests"],
       "options": {
         "commands": [
+          "rm -rf bundles/features/web/dist-tests",
           "tsc -p bundles/features/web/tsconfig.spec.json",
           "node --test bundles/features/web/dist-tests/tests/*.test.js"
         ],

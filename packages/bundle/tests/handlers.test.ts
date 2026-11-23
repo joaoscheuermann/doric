@@ -43,6 +43,7 @@ import {
 } from '@bufbuild/protobuf/wkt';
 import {
   type Client,
+  Code,
   ConnectError,
   type ServiceImpl,
 } from '@connectrpc/connect';
@@ -80,8 +81,9 @@ import {
   RegisterRequestSchema as ToolRegisterRequestSchema,
 } from '../src/contracts/gen/doric/tools/v1/tools_pb.js';
 import { callOf } from '../src/contracts/metadata.js';
-import { fromConnectError } from '../src/contracts/status.js';
+import { fromConnectError, toConnectError } from '../src/contracts/status.js';
 import {
+  contractErrorOf as hostContractErrorOf,
   createHookHandlers,
   createToolHandlers,
   type HandlerRegistration,
@@ -1023,5 +1025,40 @@ describe('onHostStart', () => {
       h.startup.map(({ method }) => method),
       ['stage'],
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// contractErrorOf (phase 3, slice S50a, test H1)
+
+describe('contractErrorOf', () => {
+  test('H1: bundle/host reads a ConnectError as its ContractError (internal without a Doric detail) and answers any other value unchanged', () => {
+    const doric = hostContractErrorOf(
+      toConnectError(
+        new ContractError('unavailable', 'lease pending', {
+          leaseStatus: 'pending',
+        }),
+      ),
+    );
+
+    assert.ok(isContractError(doric), `expected a Doric error: ${doric}`);
+    assert.equal(doric.code, 'unavailable');
+    assert.equal(doric.message, 'lease pending');
+    assert.deepEqual(doric.details, { leaseStatus: 'pending' });
+
+    const raw = hostContractErrorOf(
+      new ConnectError('socket hang up', Code.Unavailable),
+    );
+
+    assert.ok(isContractError(raw), `expected a Doric error: ${raw}`);
+    assert.equal(raw.code, 'internal');
+    assert.equal(raw.message, 'socket hang up');
+
+    const contract = new ContractError('not_found', 'gone');
+    const plain = new Error('plain');
+
+    assert.equal(hostContractErrorOf(contract), contract);
+    assert.equal(hostContractErrorOf(plain), plain);
+    assert.equal(hostContractErrorOf('text'), 'text');
   });
 });

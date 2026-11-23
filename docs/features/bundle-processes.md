@@ -878,3 +878,16 @@ to every host part.
   The kernel entry is unchanged until S62, which adds `host.requires`
   `runtime.lease/v1@^1.4.0`, `screen.relay/v1@^1.1.0`, `log/v1` and provides
   `screen.sessions/v2@2.1.0`.
+- 2026-11-23: phase 3, slice S50a, of
+  [`docs/designs/grpc-processes.md`](../designs/grpc-processes.md):
+  `defineTool<Input, Output, Deps = Services>` passes `bind(deps)` to
+  `execute`; a definition is registrable with the kernel only when `Deps`
+  accepts `Services` (new `UnboundTool`), with no run-time change. Host-part
+  tools take a port object (or `unknown`) and are bound before
+  `createToolHandlers().register`, which is how tool slices rebind kernel tools
+  to router clients. `bundle/host` exports `contractErrorOf`. `web` has its
+  process entry, `src/host/main.ts` (built to `dist/host/main.mjs`), calling
+  `runBundle` with `ToolHandlerService` listed statically; at activation it
+  registers the `web` tool with `tools/v1` (`alwaysAvailable`, order 700),
+  passing provider rejections through. The kernel entry is unchanged until
+  S62, which requires `tools/v1@^1.5.0`.

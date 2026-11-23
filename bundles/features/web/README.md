@@ -63,6 +63,18 @@ no options, so it uses the global `fetch` and a 20 s timeout
 ([src/host/index.ts](src/host/index.ts)). The part registers nothing else and
 returns nothing to dispose.
 
+### Process entry (S50a)
+
+The bundle also has a process entry, [`src/host/main.ts`](src/host/main.ts),
+built to `dist/host/main.mjs`, for the bundle-process runtime
+([bundle processes](../../../docs/features/bundle-processes.md)). It calls
+`runBundle` with `ToolHandlerService` listed statically. At activation
+`registerWebTool` ([src/host/part.ts](src/host/part.ts)) registers the `web`
+tool, defined with `Deps = unknown` and bound with `bind(undefined)`, with
+`tools/v1` (`alwaysAvailable`, order 700). Provider rejections pass through
+unchanged. The kernel entry and the manifest are unchanged until S62, which
+requires `tools/v1@^1.5.0`.
+
 The host part runs in the generation process the Doric host forks: `web` is an
 installed bundle that the host's composition enables and does not list as
 `resident`

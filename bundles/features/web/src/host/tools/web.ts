@@ -55,14 +55,16 @@ export type WebOutput = z.output<typeof output>;
 
 type Input = z.output<typeof input>;
 
-interface FetchResponse {
+/** What {@link FetchLike} answers: the status and the body as text. */
+export interface FetchResponse {
   readonly ok: boolean;
   readonly status: number;
   readonly statusText?: string;
   text(): Promise<string>;
 }
 
-type FetchLike = (
+/** The fetch the web tool reads pages and searches through. */
+export type FetchLike = (
   url: string,
   init?: {
     readonly signal?: AbortSignal;
@@ -74,16 +76,21 @@ type FetchTextResult =
   | { readonly ok: true; readonly text: string }
   | { readonly ok: false; readonly error: string };
 
-interface Options {
+/** The web tool's seams: `fetch` (global `fetch` by default) and the per-request timeout. */
+export interface WebToolOptions {
   readonly fetch?: FetchLike;
   readonly requestTimeoutMs?: number;
 }
 
-/** Creates the provider-neutral web tool. */
+/**
+ * Creates the provider-neutral web tool. It reads nothing from its `deps`
+ * (`Deps = unknown`): the kernel registers it as before, and the host part
+ * binds it with `bind(undefined)`.
+ */
 export const createTool = (
-  options: Options = {},
-): ToolDefinitionObject<typeof input, typeof output> =>
-  defineTool({
+  options: WebToolOptions = {},
+): ToolDefinitionObject<typeof input, typeof output, unknown> =>
+  defineTool<typeof input, typeof output, unknown>({
     name: 'web',
     description,
     input,
@@ -427,5 +434,5 @@ const webError = (action: string, error: string): WebOutput => ({
 const clamp = (value: number, min: number, max: number): number =>
   Math.max(min, Math.min(max, value));
 
-const requestTimeout = (options: Options): number =>
+const requestTimeout = (options: WebToolOptions): number =>
   Math.max(options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS, 1);

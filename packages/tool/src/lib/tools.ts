@@ -26,13 +26,22 @@ import type {
 import { asJsonObject, excerpt, isJsonValue } from './utils/json.js';
 
 /**
- * Defines an inspectable tool. Registering it with `tools/v1` binds it to the
- * registering bundle's services; `toTool(call)` then gives the agent-loop tool
- * for one prompt call.
+ * Defines an inspectable tool. `Deps` is what `execute` receives as its third
+ * argument, from `bind(deps)`; default the kernel `Services`, which `tools/v1`
+ * of the kernel passes when it binds a registered definition. `toTool(call)`
+ * of a bound tool then gives the agent-loop tool for one prompt call. Throws
+ * `ToolErrorObject('invalid_schema')` for an input that is not a Zod object or
+ * an `inputSchema` that is not an object schema. The definition always
+ * carries `[bindRegistrant]` (= `bind`) at run time; the type exposes it only
+ * when `Deps` accepts `Services`.
  */
-export const defineTool = <Input extends ToolInput, Output extends ToolOutput>(
-  options: DefineToolOptions<Input, Output>,
-): ToolDefinitionObject<Input, Output> => {
+export const defineTool = <
+  Input extends ToolInput,
+  Output extends ToolOutput,
+  Deps = Services,
+>(
+  options: DefineToolOptions<Input, Output, Deps>,
+): ToolDefinitionObject<Input, Output, Deps> => {
   if (!(options.input instanceof z.ZodObject)) {
     throw new ToolErrorObject({
       code: 'invalid_schema',
@@ -66,12 +75,12 @@ export const defineTool = <Input extends ToolInput, Output extends ToolOutput>(
       ? {}
       : { resultModalities: Object.freeze([...options.resultModalities]) };
 
-  const bind = (services: Services): BoundTool<Input, Output> => {
+  const bind = (deps: Deps): BoundTool<Input, Output> => {
     const execute = async (
       payload: z.output<Input>,
       call: Call,
     ): Promise<z.output<Output>> => {
-      const result = await options.execute(payload, call, services);
+      const result = await options.execute(payload, call, deps);
       const parsed = options.output.safeParse(result);
 
       if (parsed.success) {
@@ -126,7 +135,7 @@ export const defineTool = <Input extends ToolInput, Output extends ToolOutput>(
     ...modalities,
     bind,
     [bindRegistrant]: bind,
-  });
+  }) as ToolDefinitionObject<Input, Output, Deps>;
 };
 
 /** Whether a tool read back from `tools/v1` is one `defineTool` bound. */

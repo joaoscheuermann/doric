@@ -107,23 +107,31 @@ export interface Tool<
 
 /**
  * What a tool runs: the validated payload, the prompt `Call` it was invoked
- * through, and the services of the bundle that registered it.
+ * through, and the dependencies it was bound to (`bind(deps)`): by default the
+ * kernel `Services` of the bundle that registered it. A tool for a host part
+ * names its own `Deps` (a port object, or the host part's `HostServices`).
  */
-export type ToolExecute<Input extends ToolInput, Output extends ToolOutput> = (
+export type ToolExecute<
+  Input extends ToolInput,
+  Output extends ToolOutput,
+  Deps = Services,
+> = (
   payload: z.output<Input>,
   call: Call,
-  services: Services,
+  deps: Deps,
 ) => z.input<Output> | Promise<z.input<Output>>;
 
+/** The options of {@link defineTool}; `execute` receives the bound `Deps`. */
 export interface DefineToolOptions<
   Input extends ToolInput,
   Output extends ToolOutput,
+  Deps = Services,
 > {
   readonly name: string;
   readonly description?: string;
   readonly input: Input;
   readonly output: Output;
-  readonly execute: ToolExecute<Input, Output>;
+  readonly execute: ToolExecute<Input, Output, Deps>;
   readonly strict?: boolean;
   /**
    * The JSON Schema the model sees for the input, used verbatim as
@@ -173,13 +181,17 @@ export interface BoundTool<
 }
 
 /**
- * An inspectable, unbound tool: what a bundle registers with `tools/v1`, which
- * binds it to the registering bundle's services.
+ * An inspectable, unbound tool. `bind(deps)` answers the {@link BoundTool}
+ * whose every `execute` runs the definition's `execute` with `deps` as its
+ * third argument. Binding makes no call, never throws, and may be repeated:
+ * each bound tool keeps its own `deps`. The definition's name, schemas,
+ * settings and modalities are those of every tool bound from it.
  */
-export interface ToolDefinitionObject<
+export interface UnboundTool<
   Input extends ToolInput = ToolInput,
   Output extends ToolOutput = ToolOutput,
-> extends Registrable<BoundTool<Input, Output>> {
+  Deps = Services,
+> {
   readonly name: string;
   readonly description?: string;
   readonly input: Input;
@@ -187,8 +199,23 @@ export interface ToolDefinitionObject<
   readonly definition: ToolDefinition;
   readonly settings: readonly ConfigField[];
   readonly resultModalities?: readonly string[];
-  bind(services: Services): BoundTool<Input, Output>;
+  bind(deps: Deps): BoundTool<Input, Output>;
 }
+
+/**
+ * What `defineTool` answers. When `Deps` accepts the kernel `Services` (the
+ * default, or `unknown`), it is also `Registrable` with the kernel's
+ * `tools/v1`, which binds it to the registering bundle's services. A tool over
+ * any other `Deps` is not, so it is bound by its owner (`bind(deps)`) and
+ * registered as the bound `ContractTool` (the host part's
+ * `createToolHandlers().register`).
+ */
+export type ToolDefinitionObject<
+  Input extends ToolInput = ToolInput,
+  Output extends ToolOutput = ToolOutput,
+  Deps = Services,
+> = UnboundTool<Input, Output, Deps> &
+  ([Services] extends [Deps] ? Registrable<BoundTool<Input, Output>> : unknown);
 
 export interface ToolStorage {
   definitions(): readonly ToolDefinition[];
