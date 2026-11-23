@@ -12,15 +12,16 @@ import {
   runtimeAttachmentsMethods as methods,
 } from '../../contracts/attachments.js';
 import {
-  AttachResponseSchema,
   type AttachmentsService,
+  AttachResponseSchema,
   ReadResponseSchema,
 } from '../../contracts/gen/doric/runtime/attachments/v1/attachments_pb.js';
 import { readRuntimeScope } from '../../contracts/scope.js';
 import type { RuntimeCore } from '../index.js';
 import type { AttachmentStore } from '../store/attachments.js';
 import { encode } from './codec.js';
-import { detached, parseInput, routed, routedError } from './errors.js';
+import { detached, parseInput, routed } from './errors.js';
+import { routedItems } from './streams.js';
 
 /** The core's attachment store; `unavailable` when it holds none. */
 const storeOf = ({ attachments }: RuntimeCore): AttachmentStore => {
@@ -42,7 +43,10 @@ export const routedAttachmentsService = (
     if (threadId === undefined) return undefined;
     const thread = await runtime.threads.record(threadId);
     if (thread === undefined)
-      throw new ContractError('not_found', `Thread ${threadId} does not exist.`);
+      throw new ContractError(
+        'not_found',
+        `Thread ${threadId} does not exist.`,
+      );
     return thread;
   };
 
@@ -98,10 +102,14 @@ export const routedAttachmentsService = (
             'An attachment starts with its head.',
           );
 
-        const input = parseInput('runtime.attachments/v1 attach', methods.attach.input, {
-          name,
-          bytes: Buffer.from(joinChunks(chunks)).toString('base64'),
-        });
+        const input = parseInput(
+          'runtime.attachments/v1 attach',
+          methods.attach.input,
+          {
+            name,
+            bytes: Buffer.from(joinChunks(chunks)).toString('base64'),
+          },
+        );
         return encode(AttachResponseSchema, {
           attachment: await detached(() =>
             attachments.attach(
@@ -112,14 +120,18 @@ export const routedAttachmentsService = (
           ),
         });
       }),
-    async *read(request, context) {
-      try {
+    read: (request, context) =>
+      routedItems(async function* () {
         const runtime = core();
         const attachments = storeOf(runtime);
         const call = callOf(context);
-        const { id } = parseInput('runtime.attachments/v1 read', methods.read.input, {
-          id: request.id,
-        });
+        const { id } = parseInput(
+          'runtime.attachments/v1 read',
+          methods.read.input,
+          {
+            id: request.id,
+          },
+        );
         const content = await attachments.read(
           await projectOf(runtime, call),
           id,
@@ -133,9 +145,6 @@ export const routedAttachmentsService = (
         yield encode(ReadResponseSchema, { head: { attachment } });
         for (const chunk of chunkBytes(Buffer.from(bytes, 'base64')))
           yield { item: { case: 'chunk' as const, value: chunk } };
-      } catch (error) {
-        throw routedError(error);
-      }
-    },
+      }),
   };
 };

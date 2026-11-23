@@ -317,6 +317,19 @@ void test('the sandbox lease codes travel as NOT_FOUND and UNIMPLEMENTED and com
   }
 });
 
+void test('unknown_session is a platform code that travels as NOT_FOUND and comes back unchanged', () => {
+  const codes: readonly string[] = contractErrorCodes;
+  const sent = toConnectError(
+    new ContractError('unknown_session', 'No Thread session s-1.'),
+  );
+  const rebuilt = fromConnectError(sent);
+
+  assert.ok(codes.includes('unknown_session'));
+  assert.equal(sent.code, Code.NotFound);
+  assert.equal(rebuilt.code, 'unknown_session');
+  assert.equal(rebuilt.message, 'No Thread session s-1.');
+});
+
 void test('a ConnectError without a Doric ErrorInfo yields internal with its raw message', () => {
   const plain = new ConnectError('upstream connect error', Code.Unavailable);
   const foreign = new ConnectError('no such bucket', Code.NotFound);

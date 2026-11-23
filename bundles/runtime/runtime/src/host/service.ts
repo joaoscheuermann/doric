@@ -9,12 +9,13 @@ import { type HookHandlers, type HostContext, onHostStart } from 'bundle/host';
 import { OnEventAppendedHookInputSchema } from 'core/contracts/gen/doric/core/event_hooks/v1/event_hooks_pb.js';
 
 import type { AttachmentsService } from '../contracts/gen/doric/runtime/attachments/v1/attachments_pb.js';
+import type { LeaseService } from '../contracts/gen/doric/runtime/lease/v1/lease_pb.js';
 import type { ThreadsService } from '../contracts/gen/doric/runtime/threads/v1/threads_pb.js';
 import type { UsageService } from '../contracts/gen/doric/runtime/usage/v1/usage_pb.js';
 import type { RuntimeService } from '../contracts/gen/doric/runtime/v2/runtime_pb.js';
+import { onEventAppended } from './appends.js';
 import type { ArchiveSchedule } from './domain/archiver.js';
 import type { Bindings } from './domain/bindings.js';
-import { onEventAppended } from './appends.js';
 import { createNotices } from './domain/notices.js';
 import { createRuntimeCore, type RuntimeCore, runtimeStores } from './index.js';
 import {
@@ -24,11 +25,13 @@ import {
   routedRuntimeHooks,
 } from './routed.js';
 import { routedAttachmentsService } from './rpc/attachments.js';
-import { routedRuntimeService } from './rpc/runtime.js';
 import { detached } from './rpc/errors.js';
 import { installRoutedHandover } from './rpc/handover.js';
+import { routedLeaseService } from './rpc/lease.js';
+import { routedRuntimeService } from './rpc/runtime.js';
 import { routedThreadsService } from './rpc/threads.js';
 import { routedUsageService } from './rpc/usage.js';
+import { createThreadSessions } from './sessions.js';
 
 /**
  * Each routed service by name, for `main.ts`'s static list (S48). S46b adds
@@ -40,6 +43,8 @@ export interface RuntimeImplementations {
   readonly usage: ServiceImpl<typeof UsageService>;
   /** `runtime.threads/v1`. */
   readonly threads: ServiceImpl<typeof ThreadsService>;
+  /** `runtime.lease/v1` (S47a). */
+  readonly lease: ServiceImpl<typeof LeaseService>;
 }
 
 export interface RuntimeServicesOptions {
@@ -105,6 +110,8 @@ export const createRuntimeServices = (
   let log: HostContext['log'] | undefined;
   /** Removes the generation handover's handlers (step 7). */
   let removeHandover: (() => void) | undefined;
+  /** The Thread sessions `runtime.workspace/v1` opens (S47b); empty until then. */
+  const sessions = createThreadSessions();
   const core = (): RuntimeCore => {
     if (bound === undefined)
       throw new ContractError('unavailable', 'runtime is not activated.');
@@ -117,6 +124,7 @@ export const createRuntimeServices = (
       attachments: routedAttachmentsService(core),
       usage: routedUsageService(core),
       threads: routedThreadsService(core),
+      lease: routedLeaseService(core, sessions),
     },
     activate: async (context, hooks) => {
       if (activated) throw new TypeError('runtime is already activated.');
@@ -142,7 +150,9 @@ export const createRuntimeServices = (
         ...stores,
         ports,
         notices,
-        ...(options.bindings === undefined ? {} : { bindings: options.bindings }),
+        ...(options.bindings === undefined
+          ? {}
+          : { bindings: options.bindings }),
         ...(options.archiveSchedule === undefined
           ? {}
           : { archiveSchedule: options.archiveSchedule }),
@@ -162,8 +172,9 @@ export const createRuntimeServices = (
       await onHostStart(hooks, context, async (startup) => {
         await startup.stage('workspace_reconciliation');
         await startup.log('info', 'Reconciling persisted projects and threads');
-        const { interruptedThreads, interruptedProjects } =
-          await detached(() => runtime.lifecycle.recover());
+        const { interruptedThreads, interruptedProjects } = await detached(() =>
+          runtime.lifecycle.recover(),
+        );
         await startup.log('info', 'Workspace reconciled', {
           interruptedThreads,
           interruptedProjects,

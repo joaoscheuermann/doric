@@ -63,6 +63,9 @@ export const contractErrorCodes = [
   // offer, such as `Start` (`UNIMPLEMENTED`).
   'unknown_lease',
   'unsupported_operation',
+  // runtime.workspace/v1 Thread sessions and executor.session/v1 (phase 3, S47/S48): an id that is unknown,
+  // ended, or bound to another instance (`NOT_FOUND`).
+  'unknown_session',
   // models.provider/v1 (phase 3, S43): a thrown llms provider error, the
   // whole `ProviderError` in `details.providerError`; no row in the error
   // table, so it travels as `FAILED_PRECONDITION`.

@@ -35,6 +35,7 @@ import {
 import { PromptFinishedSchema } from '../contracts/gen/doric/runtime/prompt_finished/v1/prompt_finished_pb.js';
 import { checkStorageHealth } from './domain/storage-pressure.js';
 import type { RuntimePorts } from './ports.js';
+import { routedSandbox } from './routed-sandbox.js';
 import { decode, encode } from './rpc/codec.js';
 import { routed } from './rpc/errors.js';
 import { runtimeStorageTypes } from './store/index.js';
@@ -46,8 +47,8 @@ const RUNTIME_HOOKS = 'runtime.hooks/v1';
 const secretOf = (secret: SecretMessage) =>
   secretSchema.parse(toJson(SecretSchema, secret));
 
-/** The ports S47 (`sandbox`) and S48 (`executor`) port; given by the caller until then. */
-export type ExternalPorts = Pick<RuntimePorts, 'sandbox' | 'executor'>;
+/** The port S48 (`executor`) routes; given by the caller until then. `sandbox` is routed since S47. */
+export type ExternalPorts = Pick<RuntimePorts, 'executor'>;
 
 /**
  * `RuntimePorts` over `context.services` (each port keeps today's contract,
@@ -73,7 +74,8 @@ export type ExternalPorts = Pick<RuntimePorts, 'sandbox' | 'executor'>;
  * - `hooks`: {@link routedRuntimeHooks}.
  * - `generation()`: `doric.generation/v1.Describe`'s `{generation,
  *   incarnation}`; undefined when the call fails, as today.
- * - `sandbox`, `executor`: `external`, as given.
+ * - `sandbox`: `routedSandbox(context.services)` (S47).
+ * - `executor`: `external`, as given.
  * A routed failure rejects with `fromConnectError`'s `ContractError`. No call
  * is made until a port is used.
  */
@@ -141,7 +143,7 @@ export const routedPorts = (
         }
         return ids;
       }),
-    sandbox: external.sandbox,
+    sandbox: routedSandbox(services),
     executor: external.executor,
     checkStorage: () => checkStorageHealth(storage),
     catalogSource: async (providerId) => ({

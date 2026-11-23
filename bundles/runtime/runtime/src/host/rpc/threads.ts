@@ -66,9 +66,9 @@ import {
   ThreadEventsResponseSchema,
   ThreadResponseSchema,
   ThreadSnapshotSchema,
-  type ThreadsService,
   ThreadsRequestSchema,
   ThreadsResponseSchema,
+  type ThreadsService,
   UsageResponseSchema,
   ViewThreadResponseSchema,
   WatchThreadRequestSchema,
@@ -76,11 +76,10 @@ import {
   WatchThreadResponseSchema,
 } from '../../contracts/gen/doric/runtime/threads/v1/threads_pb.js';
 import { runtimeThreadsMethods as methods } from '../../contracts/threads.js';
-
 import type { RuntimeCore } from '../index.js';
 import { decode, encode, runtimeOneofs } from './codec.js';
-import { detached, parseInput, routed, routedError } from './errors.js';
-import { type StreamSink, streamOf } from './streams.js';
+import { detached, parseInput, routed } from './errors.js';
+import { detachedItems, type StreamSink } from './streams.js';
 
 /**
  * The largest encoded `WatchThreadResponse` snapshot: 3 MiB. A single event larger than it still goes alone
@@ -194,42 +193,32 @@ export const routedThreadsService = (
   const control = (runtime: RuntimeCore, context: HandlerContext) =>
     runtime.bindings.bound(callOf(context)).host.threads;
 
-  /** Each message `open` pushes, as a server stream. */
-  async function* items<T>(
-    signal: AbortSignal,
-    open: Parameters<typeof streamOf<T>>[0],
-  ): AsyncGenerator<T> {
-    try {
-      yield* streamOf<T>((sink) => detached(() => open(sink)), signal);
-    } catch (error) {
-      throw routedError(error);
-    }
-  }
-
   /** A domain listener that pushes each item encoded as `schema`. */
-  const encoded =
-    <D extends DescMessage>(
-      schema: D,
-      sink: StreamSink<MessageShape<D>>,
-      expand: (message: MessageShape<D>) => MessageShape<D>[] = (message) => [
-        message,
-      ],
-    ) => ({
-      next: (item: unknown) => {
-        try {
-          for (const message of expand(encode(schema, item, runtimeOneofs)))
-            sink.next(message);
-        } catch (error) {
-          sink.end(error);
-        }
-      },
-      end: (error?: unknown) => sink.end(error),
-    });
+  const encoded = <D extends DescMessage>(
+    schema: D,
+    sink: StreamSink<MessageShape<D>>,
+    expand: (message: MessageShape<D>) => MessageShape<D>[] = (message) => [
+      message,
+    ],
+  ) => ({
+    next: (item: unknown) => {
+      try {
+        for (const message of expand(encode(schema, item, runtimeOneofs)))
+          sink.next(message);
+      } catch (error) {
+        sink.end(error);
+      }
+    },
+    end: (error?: unknown) => sink.end(error),
+  });
 
   return {
     spawn: (request, context) =>
       answer(SpawnResponseSchema, async (runtime) => {
-        const { prompt, title, options } = json(SpawnRequestSchema, request) as {
+        const { prompt, title, options } = json(
+          SpawnRequestSchema,
+          request,
+        ) as {
           prompt?: unknown;
           title?: unknown;
           options?: unknown;
@@ -243,12 +232,17 @@ export const routedThreadsService = (
       }),
     list: ({ limit, cursor }, context) =>
       answer(ListResponseSchema, async (runtime) => {
-        const [size, after] = input('list', methods.list.input, [limit, cursor]);
+        const [size, after] = input('list', methods.list.input, [
+          limit,
+          cursor,
+        ]);
         return await control(runtime, context).list(size, after);
       }),
     get: ({ threadId }, context) =>
       answer(GetResponseSchema, async (runtime) =>
-        control(runtime, context).get(input('get', methods.get.input, threadId)),
+        control(runtime, context).get(
+          input('get', methods.get.input, threadId),
+        ),
       ),
     events: ({ threadId, afterSequence, limit }, context) =>
       answer(EventsResponseSchema, async (runtime) => {
@@ -261,7 +255,10 @@ export const routedThreadsService = (
       }),
     send: ({ threadId, prompt }, context) =>
       answer(SendResponseSchema, async (runtime) => {
-        const [id, text] = input('send', methods.send.input, [threadId, prompt]);
+        const [id, text] = input('send', methods.send.input, [
+          threadId,
+          prompt,
+        ]);
         return { promptResult: await control(runtime, context).send(id, text) };
       }),
     restart: ({ threadId, prompt }, context) =>
@@ -279,7 +276,10 @@ export const routedThreadsService = (
           promptId,
         ]);
         return {
-          interruptResult: await control(runtime, context).interrupt(id, prompt),
+          interruptResult: await control(runtime, context).interrupt(
+            id,
+            prompt,
+          ),
         };
       }),
     terminate: ({ threadId }, context) =>
@@ -442,7 +442,10 @@ export const routedThreadsService = (
       answer(ResumeResponseSchema, async ({ service }) => {
         const parsed = input('resume', methods.resume.input, { id, promptId });
         return {
-          resumeResult: await service.threads.resume(parsed.id, parsed.promptId),
+          resumeResult: await service.threads.resume(
+            parsed.id,
+            parsed.promptId,
+          ),
         };
       }),
     rewind: (request) =>
@@ -581,11 +584,13 @@ export const routedThreadsService = (
         json(WatchThreadRequestSchema, request),
         () => undefined,
       ]);
-      yield* items<WatchThreadResponse>(context.signal, (sink) =>
-        watches.thread(
-          parsed,
-          encoded(WatchThreadResponseSchema, sink, splitSnapshot),
-        ),
+      yield* detachedItems<WatchThreadResponse>(
+        (sink) =>
+          watches.thread(
+            parsed,
+            encoded(WatchThreadResponseSchema, sink, splitSnapshot),
+          ),
+        context.signal,
       );
     },
     async *viewThread({ threadId }, context) {
@@ -594,11 +599,13 @@ export const routedThreadsService = (
         { threadId },
         () => undefined,
       ]);
-      yield* items(context.signal, (sink) =>
-        service.threads.view(
-          parsed.threadId,
-          encoded(ViewThreadResponseSchema, sink),
-        ),
+      yield* detachedItems(
+        (sink) =>
+          service.threads.view(
+            parsed.threadId,
+            encoded(ViewThreadResponseSchema, sink),
+          ),
+        context.signal,
       );
     },
   };

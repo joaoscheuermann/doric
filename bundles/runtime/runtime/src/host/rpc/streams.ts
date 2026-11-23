@@ -1,7 +1,10 @@
 // Listener-based sources as server streams (phase 3, slice S46a), on the
-// pattern of core's `createInbox`.
+// pattern of core's `createInbox`. S47a folds the stream wrappers of
+// `rpc/runtime.ts`, `rpc/threads.ts` and `rpc/attachments.ts` here.
 
 import type { Disposable } from 'bundle/contracts';
+
+import { detached, routedError } from './errors.js';
 
 /** What a listener-based source pushes to one open stream. */
 export interface StreamSink<T> {
@@ -71,3 +74,33 @@ export const streamOf = <T>(
     }
   },
 });
+
+/**
+ * Yields every item of `source()`, in order. Any failure, thrown by `source()`
+ * itself or by its iteration, is rethrown as `routedError` reads it, so a
+ * `ContractError` reaches the caller unchanged and a routed `ConnectError`
+ * keeps its Doric code. A consumer `return` (the call cancelled) closes
+ * `source`'s iterator. Never yields after a failure.
+ */
+export async function* routedItems<T>(
+  source: () => AsyncIterable<T>,
+): AsyncGenerator<T> {
+  try {
+    yield* source();
+  } catch (error) {
+    throw routedError(error);
+  }
+}
+
+/**
+ * `routedItems(() => streamOf(sink => detached(() => open(sink)), signal))`:
+ * a listener-based server stream whose `open` runs outside the incoming call
+ * (S46a's convention), ending when `signal` aborts. Replaces the `items`
+ * helpers of `rpc/runtime.ts` and `rpc/threads.ts` (callers encode each item
+ * themselves).
+ */
+export const detachedItems = <T>(
+  open: (sink: StreamSink<T>) => Disposable,
+  signal: AbortSignal,
+): AsyncGenerator<T> =>
+  routedItems(() => streamOf<T>((sink) => detached(() => open(sink)), signal));

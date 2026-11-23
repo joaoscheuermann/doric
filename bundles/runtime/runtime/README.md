@@ -134,6 +134,26 @@ and removed at deactivate; `context.generations` `onChanged`/`onSignal` drive
 it, and the drain takes a `doric.generation/v1` Hold, sends its signals, then
 releases. `replay_failed` travels as `INTERNAL`.
 
+The sandbox port also goes through the router: `routedSandbox`
+([`routed-sandbox.ts`](src/host/routed-sandbox.ts)) calls `sandbox/v1` by
+lease id, and the domain is unchanged (`ExternalPorts` keeps only the
+executor, routed in S48). `runtime.lease/v1`
+([`lease.ts`](src/host/rpc/lease.ts)) serves its 11 RPCs. Lease operations
+run in the caller's call, so its deadline, cancellation and trace reach
+`sandbox/v1`; cancelling `Start` kills the process. Callers never see lease
+ids. A Thread scope that names an unknown Thread answers `unavailable` with
+`leaseStatus` `missing` (no fallback to the first active Project); a sandbox
+`unknown_lease` during an operation answers `unavailable` with `leaseStatus`
+`unavailable`; a sandbox without live processes answers `UNIMPLEMENTED`.
+Lease requests are checked by protovalidate only (no zod re-parse).
+Terminating a Project finishes in the background with a real `sandbox/v1`
+`Release`; callers wait for `cancelled` before deleting it. A session registry
+([`sessions.ts`](src/host/sessions.ts)) exists; sessions open with
+`runtime.workspace/v1` (S47b). Open: over HTTP/2 an `unsupported_operation`
+from sandbox `Start` arrives on the result instead of rejecting the start; an
+`Exec` result (output as text and bytes) can exceed 4 MiB; `PutFile` buffers
+the whole file without a cap.
+
 ## Records: Projects and Threads
 
 The public records travel through every contract as loose zod objects, so a
@@ -993,7 +1013,9 @@ type LeaseOutcome<T> =
 - `describe`, `exec`, `readFile`, `readFileBytes` and `writeFile` resolve the
   sandbox from the scope: with a `promptId`, the prompt's bound sandbox; else
   the Project of `projectId`, or of `threadId`'s Thread; with neither, or with
-  a `threadId` that names no Thread, the Project with the latest activity. A Project whose lease is not ready rejects
+  a `threadId` that names no Thread, the Project with the latest activity (kernel
+  entry only; the routed `runtime.lease/v1` of S47a answers `unavailable` with
+  `leaseStatus` `missing` instead). A Project whose lease is not ready rejects
   with `ContractError('unavailable', 'Project lease is not ready (<status>).')`;
   no Project rejects with `ContractError('invalid_input', 'runtime.lease/v1 needs a Project or Thread scope.')`.
   With a `promptId` whose binding has ended, or that belongs to another Thread

@@ -34,8 +34,8 @@ import {
 import { runtimeMethods as methods } from '../../contracts/runtime.js';
 import type { RuntimeCore } from '../index.js';
 import { decode, encode, runtimeOneofs } from './codec.js';
-import { detached, parseInput, routed, routedError } from './errors.js';
-import { streamOf } from './streams.js';
+import { detached, parseInput, routed } from './errors.js';
+import { detachedItems } from './streams.js';
 
 /** `value` parsed by today's input schema of `runtime/v2.<method>`. */
 const input = <S extends z.ZodType>(
@@ -64,23 +64,6 @@ export const routedRuntimeService = (
       encode(schema, await detached(() => work(core())), runtimeOneofs),
     );
 
-  /** Each item `open` pushes, encoded as `schema`. */
-  async function* items<T, D extends DescMessage>(
-    schema: D,
-    signal: AbortSignal,
-    open: Parameters<typeof streamOf<T>>[0],
-  ): AsyncGenerator<MessageShape<D>> {
-    try {
-      for await (const item of streamOf<T>(
-        (sink) => detached(() => open(sink)),
-        signal,
-      ))
-        yield encode(schema, item, runtimeOneofs);
-    } catch (error) {
-      throw routedError(error);
-    }
-  }
-
   return {
     recover: () =>
       answer(RecoverResponseSchema, async ({ lifecycle }) => ({
@@ -107,17 +90,16 @@ export const routedRuntimeService = (
       }),
     async *drain(_request, context) {
       const { lifecycle } = core();
-      yield* items<{ projectId: string }, typeof DrainResponseSchema>(
-        DrainResponseSchema,
-        context.signal,
-        (sink) => {
-          lifecycle.drain((projectId) => sink.next({ projectId })).then(
+      for await (const item of detachedItems<{ projectId: string }>((sink) => {
+        lifecycle
+          .drain((projectId) => sink.next({ projectId }))
+          .then(
             () => sink.end(),
             (error: unknown) => sink.end(error),
           );
-          return { dispose: () => undefined };
-        },
-      );
+        return { dispose: () => undefined };
+      }, context.signal))
+        yield encode(DrainResponseSchema, item, runtimeOneofs);
     },
     dispose: () =>
       answer(DisposeResponseSchema, async ({ lifecycle }) => {
@@ -192,24 +174,29 @@ export const routedRuntimeService = (
       })),
     vmSsh: ({ vmId }) =>
       answer(VmSshResponseSchema, async ({ service }) => ({
-        vmSsh: await service.sshForVm(input('vmSsh', methods.vmSsh.input, vmId)),
+        vmSsh: await service.sshForVm(
+          input('vmSsh', methods.vmSsh.input, vmId),
+        ),
       })),
     async *watch(_request, context) {
       const { notices } = core();
-      yield* items(WatchResponseSchema, context.signal, (sink) =>
-        notices.watch((notice) => sink.next(notice)),
-      );
+      for await (const item of detachedItems<unknown>(
+        (sink) => notices.watch((notice) => sink.next(notice)),
+        context.signal,
+      ))
+        yield encode(WatchResponseSchema, item, runtimeOneofs);
     },
     async *watchProject(request, context) {
       const { watches } = core();
-      const [parsed] = input(
-        'watchProject',
-        methods.watchProject.input,
-        [json(WatchProjectRequestSchema, request), () => undefined],
-      );
-      yield* items(WatchProjectResponseSchema, context.signal, (sink) =>
-        watches.project(parsed, sink),
-      );
+      const [parsed] = input('watchProject', methods.watchProject.input, [
+        json(WatchProjectRequestSchema, request),
+        () => undefined,
+      ]);
+      for await (const item of detachedItems<unknown>(
+        (sink) => watches.project(parsed, sink),
+        context.signal,
+      ))
+        yield encode(WatchProjectResponseSchema, item, runtimeOneofs);
     },
   };
 };

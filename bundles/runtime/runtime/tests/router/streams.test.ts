@@ -5,9 +5,19 @@
 import assert from 'node:assert/strict';
 import test, { describe } from 'node:test';
 
-import { ContractError, type Disposable } from 'bundle/contracts';
+import {
+  ContractError,
+  type Disposable,
+  isContractError,
+  toConnectError,
+} from 'bundle/contracts';
 
-import { type StreamSink, streamOf } from '../../src/host/rpc/streams.js';
+import {
+  detachedItems,
+  routedItems,
+  type StreamSink,
+  streamOf,
+} from '../../src/host/rpc/streams.js';
 
 /** A source a test pushes into, counting its opens and disposals. */
 const source = <T>() => {
@@ -157,5 +167,71 @@ describe('streamOf', () => {
       stream[Symbol.asyncIterator]().next(),
       (error: unknown) => error === failure,
     );
+  });
+});
+
+// S47a (contract §2.1): the stream wrappers of `rpc/runtime.ts`,
+// `rpc/threads.ts` and `rpc/attachments.ts`, folded here. Test 21 of S47a.
+describe('routedItems and detachedItems', () => {
+  /** Every item `stream` yields, or the error it fails with. */
+  const outcomeOf = async <T>(stream: AsyncIterable<T>) => {
+    const items: T[] = [];
+    try {
+      for await (const item of stream) items.push(item);
+    } catch (error) {
+      return { items, error };
+    }
+    return { items };
+  };
+
+  test('21: routedItems yields the source in order and passes a ContractError the iteration throws unchanged', async () => {
+    const failure = new ContractError('not_found', 'no such Thread');
+    async function* source() {
+      yield 1;
+      yield 2;
+      throw failure;
+    }
+
+    const { items, error } = await outcomeOf(routedItems(source));
+
+    assert.deepEqual(items, [1, 2]);
+    assert.equal(error, failure);
+  });
+
+  test('21: routedItems converts a routed ConnectError, thrown by source() itself, to its Doric error', async () => {
+    const routed = toConnectError(
+      new ContractError('unknown_lease', 'No lease l-1.'),
+    );
+
+    const { items, error } = await outcomeOf(
+      routedItems<number>(() => {
+        throw routed;
+      }),
+    );
+
+    assert.deepEqual(items, []);
+    assert.ok(isContractError(error), String(error));
+    assert.equal(error.code, 'unknown_lease');
+    assert.equal(error.message, 'No lease l-1.');
+  });
+
+  test('21: detachedItems yields what open pushes, ends when the signal aborts and disposes the source once', async () => {
+    const pushes = source<string>();
+    const controller = new AbortController();
+    const iterator = detachedItems<string>((sink) => {
+      const disposable = pushes.open(sink);
+      sink.next('a');
+      sink.next('b');
+
+      return disposable;
+    }, controller.signal);
+
+    assert.deepEqual(await iterator.next(), { done: false, value: 'a' });
+    assert.deepEqual(await iterator.next(), { done: false, value: 'b' });
+    const pending = iterator.next();
+    controller.abort();
+
+    assert.deepEqual(await pending, { done: true, value: undefined });
+    assert.equal(pushes.state.disposed, 1);
   });
 });

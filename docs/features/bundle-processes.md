@@ -769,3 +769,23 @@ to every host part.
   `context.generations` `onChanged`/`onSignal`, and the drain takes a
   `doric.generation/v1` Hold, sends its signals, then releases.
   `replay_failed` now travels as `INTERNAL`.
+- 2026-11-23: phase 3, slice S47a, of
+  [`docs/designs/grpc-processes.md`](../designs/grpc-processes.md): the
+  runtime's sandbox port goes through the router (`routedSandbox`,
+  `src/host/routed-sandbox.ts`, calls `sandbox/v1` by lease id; domain
+  unchanged; `ExternalPorts` keeps only the executor, routed in S48).
+  `createRuntimeServices` also serves `runtime.lease/v1` (11 RPCs,
+  `src/host/rpc/lease.ts`). Lease operations run in the caller's call, so
+  deadline, cancellation and trace reach `sandbox/v1`; cancelling `Start`
+  kills the process. Lease callers never see lease ids. A Thread scope naming
+  an unknown Thread answers `unavailable` with `leaseStatus` `missing` (no
+  fallback to the first active Project); a sandbox `unknown_lease`
+  mid-operation answers `unavailable` with `leaseStatus` `unavailable`; a
+  sandbox without live processes answers `UNIMPLEMENTED`. Lease RPCs rely on
+  protovalidate (no zod re-parse). Terminating a Project finishes in the
+  background with a real `sandbox/v1` `Release`; callers wait for `cancelled`
+  before deleting. `unknown_session` joins `contractErrorCodes` (`NOT_FOUND`);
+  a session registry (`src/host/sessions.ts`) exists and sessions open in
+  S47b. Open findings: over HTTP/2 an `unsupported_operation` from sandbox
+  `Start` arrives on the result rather than rejecting the start; an `Exec`
+  result can exceed 4 MiB; `PutFile` buffers the whole file uncapped.

@@ -8,8 +8,10 @@
 //   facade serves it;
 // - `events/v1`, `hooks/v1`, `secrets/v1`, `models/v1`, `host-config/v1`,
 //   `doric.startup/v1` and `doric.generation/v1`, recording fakes.
-// `sandbox` and `executor` are the in-process fakes the domain tests use,
-// given as `external` until S47/S48 route them. `core`'s calls to the hook
+// - `sandbox/v1` (S47a), a fake provider by lease id (`./sandbox.ts`) over
+//   the domain tests' `SandboxProviderOptions`.
+// `executor` is the in-process fake the domain tests use, given as
+// `external` until S48 routes it. `core`'s calls to the hook
 // handler service arrive through `router.client` with the caller `core`.
 
 import assert from 'node:assert/strict';
@@ -72,21 +74,27 @@ import type { DoricConfiguration } from '../../src/contracts/configuration.js';
 import { ExecutorV1 } from '../../src/contracts/executor.js';
 import { ExecutorService } from '../../src/contracts/gen/doric/executor/v1/executor_pb.js';
 import { AttachmentsService } from '../../src/contracts/gen/doric/runtime/attachments/v1/attachments_pb.js';
+import { LeaseService } from '../../src/contracts/gen/doric/runtime/lease/v1/lease_pb.js';
 import { ThreadsService } from '../../src/contracts/gen/doric/runtime/threads/v1/threads_pb.js';
 import { UsageService } from '../../src/contracts/gen/doric/runtime/usage/v1/usage_pb.js';
 import { RuntimeService } from '../../src/contracts/gen/doric/runtime/v2/runtime_pb.js';
 import { SandboxService } from '../../src/contracts/gen/doric/sandbox/v1/sandbox_pb.js';
-import { SandboxV1 } from '../../src/contracts/sandbox.js';
 import type { ExternalPorts } from '../../src/host/routed.js';
 import { createRuntimeServices } from '../../src/host/service.js';
 import { defaultConfiguration, epoch } from '../domain/support/harness.js';
-import { type Backend, memoryBackend, snapshot, stores } from '../store/support.js';
+import {
+  type Backend,
+  memoryBackend,
+  snapshot,
+  stores,
+} from '../store/support.js';
 import { testExecution } from '../support/execution.js';
 import { executorProvider, type Script } from '../support/executor.js';
+import { type SandboxRecord, sandboxProvider } from '../support/sandbox.js';
 import {
-  type SandboxProviderOptions,
-  sandboxProvider,
-} from '../support/sandbox.js';
+  type FakeSandboxProviderOptions,
+  fakeSandboxProvider,
+} from './sandbox.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -123,7 +131,8 @@ export const eventually = async (
   const deadline = performance.now() + timeoutMs;
 
   while (!(await ready())) {
-    if (performance.now() > deadline) assert.fail(`timed out waiting for ${what}`);
+    if (performance.now() > deadline)
+      assert.fail(`timed out waiting for ${what}`);
     await new Promise((resolve) => setTimeout(resolve, 5));
   }
 };
@@ -227,7 +236,11 @@ export const collect = <T>(stream: AsyncIterable<T>): Collector<T> => {
 };
 
 /** `core`, as the router stamps it on its calls to the handler services. */
-export const core: Caller = { bundleId: 'core', version: '1.0.0', generation: 1 };
+export const core: Caller = {
+  bundleId: 'core',
+  version: '1.0.0',
+  generation: 1,
+};
 
 // ---------------------------------------------------------------------------
 // The harness
@@ -267,13 +280,17 @@ export interface HarnessOptions {
   /** The secrets `secrets/v1.Resolve` knows, by id. */
   readonly secrets?: Readonly<Record<string, SecretJson>>;
   /** `secrets/v1.ResolveByKind`'s answer. */
-  readonly byKind?: (kind: string, exclude: readonly string[]) => SecretJson | undefined;
+  readonly byKind?: (
+    kind: string,
+    exclude: readonly string[],
+  ) => SecretJson | undefined;
   readonly redactions?: readonly string[];
   /** `models/v1.Kind`'s descriptor (as JSON) by kind id. */
   readonly kinds?: Readonly<Record<string, JsonValue>>;
   /** `models/v1.Models`'s models (as JSON) by provider id. */
   readonly models?: Readonly<Record<string, readonly JsonValue[]>>;
-  readonly sandbox?: SandboxProviderOptions;
+  /** The fake `sandbox/v1` provider's sandbox, acquisition and hooks. */
+  readonly sandbox?: Omit<FakeSandboxProviderOptions, 'record' | 'log'>;
   /** One prompt run of the external executor; finishes with 'done' by default. */
   readonly execute?: Script;
 }
@@ -300,7 +317,10 @@ export const requires = [
   SandboxService.typeName,
 ];
 
-/** `sandbox` and `executor` over the domain tests' in-process fakes. */
+/**
+ * `executor` over the domain tests' in-process fake, beside the sandbox
+ * record the routed fake shares.
+ */
 const externalPorts = (options: HarnessOptions) => {
   const sandbox = sandboxProvider(options.sandbox);
   const side = createTestServices({
@@ -311,10 +331,6 @@ const externalPorts = (options: HarnessOptions) => {
     ],
   });
   const external: ExternalPorts = {
-    sandbox: {
-      acquire: (input) => side.services.use(SandboxV1).acquire(input),
-      discard: (identity) => side.services.use(SandboxV1).discard(identity),
-    },
     executor: (scope) => side.services.use(ExecutorV1, scope),
   };
 
@@ -322,12 +338,21 @@ const externalPorts = (options: HarnessOptions) => {
 };
 
 /** The recording fakes of the bundle's dependencies, `storage/v1` included. */
-const fakesOf = (options: HarnessOptions, backend: Backend) => {
+const fakesOf = (
+  options: HarnessOptions,
+  backend: Backend,
+  sandboxRecord: SandboxRecord,
+) => {
   const calls: Recorded[] = [];
   const runs: RecordedRun[] = [];
   const record = (method: string, request: JsonValue) => {
     calls.push({ method, request });
   };
+  const sandbox = fakeSandboxProvider({
+    ...options.sandbox,
+    record: sandboxRecord,
+    log: record,
+  });
   const configuration =
     options.configuration ??
     (() => ({
@@ -344,26 +369,27 @@ const fakesOf = (options: HarnessOptions, backend: Backend) => {
   };
 
   const fakes: ServiceEntry[] = [
+    sandbox.entry,
     partial(StorageService, {
-        ...storage,
-        // A measured disk with room to spare, as the kernel harness answers:
-        // the memory backend measures none, which reads as storage low.
-        health: () => ({
-          storageHealth: {
-            status: 'ok',
-            writable: true,
-            disk: { blocks: 100, availableBlocks: 50 },
-          },
-        }),
-        defineType: async (request, context) => {
-          record('storage.defineType', { type: request.type });
-          await options.defineTypeGate;
-          const error = options.defineTypeError?.(request.type);
-          if (error !== undefined) throw error;
-
-          return await storage.defineType(request, context);
+      ...storage,
+      // A measured disk with room to spare, as the kernel harness answers:
+      // the memory backend measures none, which reads as storage low.
+      health: () => ({
+        storageHealth: {
+          status: 'ok',
+          writable: true,
+          disk: { blocks: 100, availableBlocks: 50 },
         },
       }),
+      defineType: async (request, context) => {
+        record('storage.defineType', { type: request.type });
+        await options.defineTypeGate;
+        const error = options.defineTypeError?.(request.type);
+        if (error !== undefined) throw error;
+
+        return await storage.defineType(request, context);
+      },
+    }),
     partial(EventsService, {
       register: (request) => {
         record('events.register', toJson(EventsRegisterRequestSchema, request));
@@ -510,9 +536,8 @@ const fakesOf = (options: HarnessOptions, backend: Backend) => {
     }),
   ];
 
-  return { calls, runs, fakes };
+  return { calls, runs, fakes, sandbox };
 };
-
 
 /**
  * runtime's host part in a test router, its services listed as `main.ts`
@@ -520,8 +545,12 @@ const fakesOf = (options: HarnessOptions, backend: Backend) => {
  */
 export const harness = (options: HarnessOptions = {}) => {
   const backend = options.backend ?? memoryBackend();
-  const { calls, runs, fakes } = fakesOf(options, backend);
   const external = externalPorts(options);
+  const { calls, runs, fakes, sandbox } = fakesOf(
+    options,
+    backend,
+    external.record,
+  );
   const router = createTestRouter({
     fakes,
     requires,
@@ -540,6 +569,7 @@ export const harness = (options: HarnessOptions = {}) => {
       [AttachmentsService, runtime.implementations.attachments],
       [UsageService, runtime.implementations.usage],
       [ThreadsService, runtime.implementations.threads],
+      [LeaseService, runtime.implementations.lease],
       [HookHandlerService, hooks.implementation],
     ] as ServiceEntry[],
     activate: (activated: HostContext) => {
@@ -558,6 +588,8 @@ export const harness = (options: HarnessOptions = {}) => {
     backend,
     seed,
     sandbox: external.record,
+    /** The fake `sandbox/v1` provider: its leases and the operations it ran. */
+    sandboxProvider: sandbox,
     /** The context `activate` received, once it ran. */
     context: () => context,
     /** Activates the definition; resolves once `activate` resolved. */
@@ -570,6 +602,11 @@ export const harness = (options: HarnessOptions = {}) => {
     attachments: (scope?: CallScope) =>
       router.client(AttachmentsService, scope === undefined ? {} : { scope }),
     usage: () => router.client(UsageService),
+    lease: (scope?: CallScope, caller?: Caller) =>
+      router.client(LeaseService, {
+        ...(scope === undefined ? {} : { scope }),
+        ...(caller === undefined ? {} : { caller }),
+      }),
     threads: (scope?: CallScope, caller?: Caller) =>
       router.client(ThreadsService, {
         ...(scope === undefined ? {} : { scope }),
@@ -598,8 +635,8 @@ export const contextHarness = async (
   options: HarnessOptions = {},
 ) => {
   const backend = options.backend ?? memoryBackend();
-  const { calls, fakes } = fakesOf(options, backend);
   const external = externalPorts(options);
+  const { calls, fakes, sandbox } = fakesOf(options, backend, external.record);
   const router = createTestRouter({
     fakes,
     requires,
@@ -619,6 +656,8 @@ export const contextHarness = async (
     calls,
     context,
     external: external.external,
+    /** The fake `sandbox/v1` provider. */
+    sandboxProvider: sandbox,
     control: router.control,
     logs: router.logs,
   };
@@ -686,12 +725,17 @@ export const handleHostStop = (h: Harness) =>
   h.hookHandler().handle({
     contract: 'doric.app.hooks/v1',
     hook: 'onHostStopHook',
-    input: anyPack(OnHostStopHookInputSchema, create(OnHostStopHookInputSchema)),
+    input: anyPack(
+      OnHostStopHookInputSchema,
+      create(OnHostStopHookInputSchema),
+    ),
   });
 
 /** The calls of `method`, in order. */
 export const callsOf = (h: Pick<Harness, 'calls'>, method: string) =>
-  h.calls.filter((call) => call.method === method).map(({ request }) => request);
+  h.calls
+    .filter((call) => call.method === method)
+    .map(({ request }) => request);
 
 /** Waits until a Project reads `state` through `runtime/v2.Project`. */
 export const projectState = (h: Harness, id: string, state: string) =>
@@ -699,4 +743,3 @@ export const projectState = (h: Harness, id: string, state: string) =>
     async () => (await h.runtime().project({ id })).project?.state === state,
     `Project ${id} ${state}`,
   );
-
