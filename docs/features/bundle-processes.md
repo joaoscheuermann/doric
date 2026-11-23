@@ -849,3 +849,16 @@ to every host part.
   (S46a–S48c). The kernel entry and manifest are unchanged until S62, which
   adds `executor.session/v1@1.0.0` to runtime's provides and makes
   `executor/v1` optional for `runtime`.
+- 2026-11-23: phase 3, slice S49a, of
+  [`docs/designs/grpc-processes.md`](../designs/grpc-processes.md):
+  `screen-relay` has its process entry, `src/host/main.ts` (built to
+  `dist/host/main.mjs`), calling `runBundle` with `RelayService`
+  (`screen.relay/v1`) listed statically and `BundleDefinition.httpServer`: its
+  own loopback listener (`127.0.0.1:0`, port reported to the platform), to
+  which the gateway forwards `/screen/<token>/…` unchanged.
+  `ScreenRelayServer.serve` makes the relay that listener's only handler
+  (unknown paths and upgrades answer 404). A replayed `Expose` of the same
+  token and upstream is idempotent, so `screen`'s re-published tokens (S49b)
+  restore a restarted relay. Open: an old `screen` generation's shutdown can
+  forget tokens the new one re-exposed. The kernel entry and manifest are
+  unchanged until S62, which adds `host.httpPrefix: "/screen/"`.

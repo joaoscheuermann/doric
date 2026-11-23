@@ -75,6 +75,28 @@ export interface ScreenRelayServer {
    * once added, so the returned function flips the relay to pass-through.
    */
   mount(resources: ScreenRelayResources): () => void;
+  /**
+   * Serves the relay as the only handler of `server`: the part's own loopback
+   * listener (`BundleDefinition.httpServer`), which the gateway sends every
+   * request and upgrade under `/screen/` with its target unchanged (spec
+   * section 11, "The HTTP prefix").
+   *
+   * Accepts a plain `http.Server` with no `request` or `upgrade` listener of
+   * its own; listening or not. From the call on:
+   * - a request under `/screen/<token>/` of an exposed token is forwarded as
+   *   `mount` forwards it (path after the token, query kept, `host` rewritten,
+   *   hop-by-hop headers dropped); an unreachable upstream answers 502;
+   * - any other request (an unknown token, `/screen`, a path outside the
+   *   tree) answers 404 `No such screen.`, `text/plain`;
+   * - an upgrade of an exposed token is forwarded byte for byte, as `mount`'s;
+   *   any other upgrade gets `HTTP/1.1 404 Not Found` and its socket is
+   *   closed (nothing else owns upgrades on this listener).
+   *
+   * Returns a function that detaches both listeners; idempotent. It neither
+   * closes `server` (the SDK does, after `deactivate`) nor drops tokens.
+   * `dispose` still destroys every relayed socket. Never throws.
+   */
+  serve(server: Server): () => void;
   dispose(): void;
 }
 
@@ -382,6 +404,48 @@ export const createScreenRelay = (): ScreenRelayServer => {
       return () => {
         mounted = false;
         host.off('upgrade', handleUpgrade);
+      };
+    },
+    serve: (server) => {
+      // The part's own listener: nothing sits behind the relay, so whatever
+      // it does not know answers 404 here, upgrades included.
+      const serveRequest = (
+        request: IncomingMessage,
+        response: ServerResponse,
+      ): void => {
+        const resolved = relayTarget(request.url, sessions);
+
+        if (resolved === undefined) {
+          response.writeHead(404, { 'content-type': 'text/plain' });
+          response.end('No such screen.');
+
+          return;
+        }
+
+        proxyHttp(resolved, request, response);
+      };
+      const serveUpgrade = (
+        request: IncomingMessage,
+        socket: Socket,
+        head: Buffer,
+      ): void => {
+        const resolved = relayTarget(request.url, sessions);
+
+        if (resolved === undefined) {
+          answer(socket, 404, 'Not Found');
+
+          return;
+        }
+
+        proxyUpgrade(resolved, request, socket, head);
+      };
+
+      server.on('request', serveRequest);
+      server.on('upgrade', serveUpgrade);
+
+      return () => {
+        server.off('request', serveRequest);
+        server.off('upgrade', serveUpgrade);
       };
     },
     dispose: () => {

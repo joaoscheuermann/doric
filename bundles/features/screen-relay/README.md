@@ -231,6 +231,31 @@ the upstream's. It does not end HTTP requests in flight and does not clear the t
 unmount first, which removes the `upgrade` listener
 ([`src/host/index.ts`](src/host/index.ts)).
 
+### Process entry (S49a)
+
+The bundle also has a process entry, [`src/host/main.ts`](src/host/main.ts),
+built to `dist/host/main.mjs`, for the bundle-process runtime
+([bundle processes](../../../docs/features/bundle-processes.md)). It calls
+`runBundle` with `RelayService` (`screen.relay/v1`) listed statically and sets
+`BundleDefinition.httpServer`. The kernel entry and the manifest are unchanged
+until S62, which adds `host.httpPrefix: "/screen/"`. In this entry:
+
+- The relay serves its own loopback listener (`127.0.0.1:0`, the port reported
+  to the platform); the gateway forwards every `/screen/<token>/…` request and
+  upgrade with its path unchanged.
+- `ScreenRelayServer.serve(server)` makes the relay the only handler of that
+  listener: a known token is proxied as `mount` proxies it (an unreachable
+  upstream answers 502); anything else answers 404 `No such screen.`, and any
+  other upgrade gets a 404 and its socket is closed.
+- `Expose` and `Forget` are served over the router. A replayed `Expose` of the
+  same token and upstream is idempotent; `screen` re-publishes its tokens
+  through `registrations.track` (S49b), so a restarted relay gets them back.
+- `Expose` with an empty token or host, or a bad port, answers
+  `invalid_input`; after stop, every RPC answers `unavailable`.
+- Open: when an old `screen` generation shuts down after the new one
+  re-exposed a token, its `Forget` can drop that token (as with the kernel
+  entry today).
+
 ## Errors and failure behavior
 
 All in [`src/host/relay.ts`](src/host/relay.ts):
