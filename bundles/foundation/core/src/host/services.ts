@@ -6,9 +6,12 @@
 // keeps until slice S62; S41's `main.ts` lists these services in
 // `runBundle`.
 
-import type { Registry } from '@bufbuild/protobuf';
-import { type Call, ContractError } from 'bundle/contracts';
+import { create, type Registry } from '@bufbuild/protobuf';
+import { anyPack } from '@bufbuild/protobuf/wkt';
+import { ContractError } from 'bundle/contracts';
 import { EventsService } from 'bundle/contracts/gen/doric/events/v1/events_pb.js';
+import { HooksService } from 'bundle/contracts/gen/doric/hooks/v1/hooks_pb.js';
+import { LogService } from 'bundle/contracts/gen/doric/log/v1/log_pb.js';
 import { SecretsService } from 'bundle/contracts/gen/doric/secrets/v1/secrets_pb.js';
 import { SettingsService } from 'bundle/contracts/gen/doric/settings/v1/settings_pb.js';
 import { SkillsService } from 'bundle/contracts/gen/doric/skills/v1/skills_pb.js';
@@ -23,10 +26,16 @@ import type {
 import type { SchemaValidators } from 'bundle/runtime';
 import { serveStorage } from 'storage/rpc';
 
-import type { OnEventAppendedHookInput } from '../contracts/gen/doric/core/event_hooks/v1/event_hooks_pb.js';
+import { OnEventAppendedHookInputSchema } from '../contracts/gen/doric/core/event_hooks/v1/event_hooks_pb.js';
 import { createCoreState } from '../shared/state.js';
 import { type CoreBinding, createBinding } from './binding.js';
 import { createEventsService } from './events/service.js';
+import {
+  CORE_EVENT_HOOKS,
+  createHooksService,
+  DEFAULT_HOOK_DEADLINE_MS,
+} from './hooks/service.js';
+import { createLogService } from './log/service.js';
 import { createSecretsService } from './secrets/service.js';
 import { createSettingsService } from './settings/service.js';
 import { createSkillsService } from './skills/service.js';
@@ -41,14 +50,24 @@ export type CoreDataServices = readonly [
   typeof EventsService,
   typeof ToolsService,
   typeof SkillsService,
+  typeof HooksService,
+  typeof LogService,
 ];
 
 export interface CoreServicesOptions {
   /**
-   * The message types of settings values and event payloads. `Register` of
-   * `settings/v1` and `events/v1` look up `messageType` here; `Set` and
-   * `Append` unpack and validate their `Any` with it. A type missing here is
-   * refused as `invalid_input`. Read at every call.
+   * The message types of settings values and event payloads, and the files
+   * of the hooks contracts that bundles define. `Register` of `settings/v1`
+   * and `events/v1` look up `messageType` here; `Set` and `Append` unpack
+   * and validate their `Any` with it. A type missing here is refused as
+   * `invalid_input`.
+   *
+   * `hooks/v1.Define`, `Register` and `Run` take a hooks contract's hooks
+   * from the messages here whose file has `(doric.platform.v1.hooks).id`
+   * equal to the contract. Each hook is a message with
+   * `(doric.platform.v1.hook)`, and its name, kind and order come from that
+   * option. `core.event-hooks/v1` is always known, whether or not it is here.
+   * Read at every call.
    */
   readonly types: Registry;
   /**
@@ -60,16 +79,12 @@ export interface CoreServicesOptions {
   /** The clock of `settings/v1` write times (epoch ms); `Date.now` by default. */
   readonly now?: () => number;
   /**
-   * Called once after each `events/v1.Append` committed its row, with the
-   * stream and the event type, and the `Call` of the `Append`. It is not
-   * awaited, and its throw or rejection never reaches the `Append`. This is
-   * where `core.event-hooks/v1.onEventAppendedHook` is fired once `hooks/v1`
-   * is served. Default: nothing.
+   * How long `hooks/v1.Run` waits for one observe, transform or decide
+   * handler before it reports `hook_handler_timeout` and moves on, in ms.
+   * The default is `DEFAULT_HOOK_DEADLINE_MS` (10,000); 0 means no deadline.
+   * Sequence handlers never have one.
    */
-  readonly onEventAppended?: (
-    input: Pick<OnEventAppendedHookInput, 'stream' | 'type'>,
-    call: Call,
-  ) => void | Promise<void>;
+  readonly hookDeadlineMs?: number;
 }
 
 /** `core`'s data services and the step that binds them to the instance. */
@@ -95,15 +110,18 @@ export interface CoreServices {
    * registration carries no defaults; `settings_missing` when protovalidate
    * refuses the empty message.
    *
-   * `tools/v1` and `skills/v1` keep D4's key rule (`RegistrationTable`).
-   * Every registration belongs to the router-stamped calling instance. A
-   * bundle's newest instance serves its keys, and the registration ends
-   * with `Unregister` or that instance's `InstanceGone`. Unlike
-   * `storage/v1`, `settings/v1` and `events/v1`, these are not partitioned
-   * by generation: every caller sees the serving registration of every key.
+   * `tools/v1`, `skills/v1` and `hooks/v1` keep D4's key rule
+   * (`RegistrationTable`). Every registration belongs to the router-stamped
+   * calling instance. A bundle's newest instance serves its keys, and the
+   * registration ends with `Unregister` or that instance's `InstanceGone`.
+   * Unlike `storage/v1`, `settings/v1` and `events/v1`, these three are not
+   * partitioned by generation: every caller sees the serving registration of
+   * every key.
    *
-   * `tools/v1.Execute` calls the registering instance's
-   * `ToolHandlerService` with `target` naming it.
+   * `tools/v1.Execute` and `hooks/v1.Run` call the registering instance's
+   * `ToolHandlerService` and `HookHandlerService` with `target` naming it.
+   * `log/v1` writes to `doric.log/v1` and reports through
+   * `doric.diagnostics/v1`.
    */
   readonly services: ServiceEntries<CoreDataServices>;
   /**
@@ -118,7 +136,14 @@ export interface CoreServices {
    * It also gives `context.instances.onGone` the registrations of all four
    * services, so an `InstanceGone` disposes every registration of that
    * instance (each dispose guarded; core's own never throw). The documents
-   * it wrote stay. It also drops the instance's tools and skills.
+   * it wrote stay. It also drops the instance's tools, skills, hook
+   * definitions and hook handlers.
+   *
+   * `core` defines `core.event-hooks/v1` as its own instance
+   * (`context.instance`), in process and with no I/O. From then on, each
+   * committed `events/v1.Append` runs `onEventAppendedHook` with
+   * `OnEventAppendedHookInput{stream, type}`, without awaiting it; its
+   * failure never reaches the `Append`.
    *
    * Does no I/O. No backend and no catalog is reached until the first RPC
    * that needs one, and `core`'s own storage types (`core.settings/v1`,
@@ -178,10 +203,29 @@ export const createCoreServices = (
     storage,
     (call) => secrets.redactions(call),
     () => options.types,
-    options.onEventAppended,
+    async (input, call) => {
+      // Detached from the Append call: its end must not cancel the hook.
+      const detached = Object.create(bind().own(call), {
+        signal: { value: new AbortController().signal, enumerable: true },
+      }) as typeof call;
+      await hooks.runOwn(Object.freeze(detached), {
+        contract: CORE_EVENT_HOOKS,
+        hook: 'onEventAppendedHook',
+        input: anyPack(
+          OnEventAppendedHookInputSchema,
+          create(OnEventAppendedHookInputSchema, input),
+        ),
+      });
+    },
   );
   const tools = createToolsService(bind);
   const skills = createSkillsService(bind, tools);
+  const hooks = createHooksService(
+    bind,
+    () => options.types,
+    options.hookDeadlineMs ?? DEFAULT_HOOK_DEADLINE_MS,
+  );
+  const log = createLogService(bind, (call) => secrets.redactions(call));
 
   return {
     services: [
@@ -194,6 +238,8 @@ export const createCoreServices = (
       [EventsService, events.implementation],
       [ToolsService, tools.implementation],
       [SkillsService, skills.implementation],
+      [HooksService, hooks.implementation],
+      [LogService, log.implementation],
     ],
     activate: (context) => {
       if (binding !== undefined) {
@@ -201,6 +247,7 @@ export const createCoreServices = (
       }
 
       binding = createBinding(context);
+      hooks.defineOwn(context.instance, CORE_EVENT_HOOKS);
       context.instances.onGone((instance) => {
         for (const handler of goneHandlers) {
           handler(instance);
@@ -211,6 +258,7 @@ export const createCoreServices = (
         events.registrations.dropInstance(instance);
         tools.registrations.dropInstance(instance);
         skills.registrations.dropInstance(instance);
+        hooks.registrations.dropInstance(instance);
       });
     },
   };

@@ -514,8 +514,24 @@ does not see is `not_found`, an unreachable instance `unavailable`.
 `InstanceGone` drops the instance's tools and skills. Skills fail
 `duplicate_skill` across bundles and `unavailable_tool` for an `allowedTools`
 entry the caller does not see. `tools/v1` has no `Check` RPC; the model repair
-flow is deferred to the runtime and default slices. Hooks and log follow in
-S40b.
+flow is deferred to the runtime and default slices.
+
+S40b adds `hooks/v1` and `log/v1` (eight services in all), and the
+`hookDeadlineMs` option (default 10,000) replaces `onEventAppended`. `Define` is
+accepted from the contract's provider only (`doric.*` only from doric; a second
+provider fails `registration_conflict`); `Register` adds handlers; `Run` only
+from the bundle serving the definition (`not_owner`), input checked by type.
+Handlers with an `order` run first, then catalog order with doric first; a
+reverse hook reverses the catalog part. Observe, transform and decide handlers
+are bounded by the hook deadline; failures and timeouts go to
+`doric.diagnostics/v1` as `hook_handler_failed` / `hook_handler_timeout` and the
+run goes on (an empty decide answer is a failed handler, not a refusal).
+Sequence handlers have no deadline and the first failure fails `Run`.
+`WatchAvailability` streams the state, then each change. `core.event-hooks/v1`
+is defined by core at `activate` and run after each committed append, detached
+from the `Append` call. Log `Write` and `WriteBatch` stamp the caller, host
+environment, scope and trace, redact secrets and write to `doric.log/v1`; a
+failed write fails the call, so the SDK falls back to stdout.
 
 ## Evolution
 
@@ -603,3 +619,7 @@ S40b.
   [`docs/designs/grpc-processes.md`](../designs/grpc-processes.md) (v6.12):
   `createCoreServices` also serving `tools/v1` and `skills/v1`, tools keyed by
   name and Project.
+- 2026-11-23: phase 3, slice S40b, of
+  [`docs/designs/grpc-processes.md`](../designs/grpc-processes.md) (v6.12):
+  `createCoreServices` also serving `hooks/v1` and `log/v1`, with the
+  `hookDeadlineMs` option replacing `onEventAppended`.

@@ -26,9 +26,15 @@ import { assertDefinitionOwnerIn, PLATFORM } from '../../shared/state.js';
 import type { CoreBinding } from '../binding.js';
 import { jsonOfAny, optionMessage } from '../messages.js';
 import { createRegistrations, type Registrations } from '../registrations.js';
-import type { CoreServicesOptions } from '../services.js';
+
 import { createEventRegistry } from './registry.js';
 import { createEventSinks, streamOf } from './sinks.js';
+
+/** Told once after each committed `Append`; not awaited, its failure ignored. */
+export type EventAppended = (
+  input: { readonly stream: string; readonly type: string },
+  call: Call,
+) => void | Promise<void>;
 
 /**
  * `events/v1` as `createCoreServices` serves it. `Register` looks up
@@ -43,7 +49,7 @@ export const createEventsService = (
   storage: StorageFacade,
   redactions: (call: Call) => Promise<readonly string[]>,
   types: () => Registry,
-  onAppended: CoreServicesOptions['onEventAppended'],
+  onAppended: EventAppended,
 ): {
   readonly implementation: ServiceImpl<typeof EventsService>;
   readonly registrations: Registrations;

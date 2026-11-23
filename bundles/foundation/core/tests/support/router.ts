@@ -19,6 +19,7 @@ import {
   FieldDescriptorProtoSchema,
   FieldOptionsSchema,
   FileDescriptorProtoSchema,
+  FileOptionsSchema,
   MessageOptionsSchema,
   OneofDescriptorProtoSchema,
 } from '@bufbuild/protobuf/wkt';
@@ -32,6 +33,7 @@ import { createTestServices } from 'bundle';
 import {
   type CallScope,
   ContractError,
+  callOf,
   type SecretsBackend,
   SecretsBackendV1,
   StorageBackendV1,
@@ -47,9 +49,23 @@ import {
 import { HookHandlerService } from 'bundle/contracts/gen/doric/hooks/v1/hooks_pb.js';
 import { CatalogService } from 'bundle/contracts/gen/doric/platform/catalog/v1/catalog_pb.js';
 import {
+  DiagnosticsService,
+  type ReportRequest,
+} from 'bundle/contracts/gen/doric/platform/diagnostics/v1/diagnostics_pb.js';
+import {
+  LogService as PlatformLogService,
+  type WriteRequest as PlatformWriteRequest,
+} from 'bundle/contracts/gen/doric/platform/log/v1/log_pb.js';
+import {
   EventOptionSchema,
   event as eventOption,
   file_doric_platform_v1_options,
+  HookKind,
+  HookOptionSchema,
+  HookOrder,
+  HooksOptionSchema,
+  hook as hookOption,
+  hooks as hooksOption,
   SettingsOptionSchema,
   settings as settingsOption,
 } from 'bundle/contracts/gen/doric/platform/v1/options_pb.js';
@@ -152,6 +168,17 @@ export interface RoutedCore {
   readonly handlers: Map<string, InstanceHandlers>;
   /** Every handler call core made, in order: `{ target, method, request }`. */
   readonly handlerCalls: readonly HandlerCall[];
+  /** The `doric.log/v1.Write` requests core made (fake), in order. */
+  readonly platformLogs: readonly PlatformWriteRequest[];
+  /**
+   * The trace id of the call each `doric.log/v1.Write` arrived on, in the
+   * order of `platformLogs` (the second field of its `traceparent`).
+   */
+  readonly platformLogTraceIds: readonly string[];
+  /** When set, the `doric.log/v1.Write` fake throws it. */
+  failLog: ContractError | undefined;
+  /** The `doric.diagnostics/v1.Report` requests core made (fake), in order. */
+  readonly reports: readonly ReportRequest[];
   /**
    * Delivers `InstanceGone` of `instance` to the handlers `core` gave
    * `context.instances.onGone`, as the router would (the test router sends
@@ -177,7 +204,8 @@ export interface ServeCoreOptions {
   readonly now?: () => number;
   /** Default: {@link testMessages}. */
   readonly types?: Registry;
-  readonly onEventAppended?: CoreServicesOptions['onEventAppended'];
+  /** `CoreServicesOptions.hookDeadlineMs`; the default is 10,000. */
+  readonly hookDeadlineMs?: CoreServicesOptions['hookDeadlineMs'];
 }
 
 const coreManifest = async (): Promise<Record<string, unknown>> =>
@@ -207,7 +235,7 @@ const notServed = (): never => {
 
 /**
  * `createCoreServices({ types, validators: ajvValidators(), now,
- * onEventAppended })` served
+ * hookDeadlineMs })` served
  * on a fresh `createTestRouter` (instance {@link CORE_INSTANCE}) with these
  * fakes, then activated:
  * - `[StorageBackendService, serveStorageBackend(memory)]`, every call
@@ -217,7 +245,10 @@ const notServed = (): never => {
  *   {@link ACTIVE_GENERATION}, the bundles `core` (its built manifest) and
  *   `bundles`, and `core` as the host provider of `events/v1`;
  * - `[ReferenceSourceService, …]`, answering `references` (failing for
- *   `failingSources`).
+ *   `failingSources`);
+ * - `[PlatformLogService, …]`, whose `Write` records into `platformLogs`
+ *   (throwing `failLog` when set);
+ * - `[DiagnosticsService, …]`, whose `Report` records into `reports`.
  *
  * `core`'s `context.services.use` answers a `target`ed `ToolHandlerService`
  * or `HookHandlerService` from `handlers`, recording each call in
@@ -346,13 +377,39 @@ export const serveCore = async (
       }),
     );
   };
+  const platformLogs: PlatformWriteRequest[] = [];
+  const platformLogTraceIds: string[] = [];
+  const reports: ReportRequest[] = [];
+  const sinks = { failLog: undefined as ContractError | undefined };
+  const platformLog: ServiceImpl<typeof PlatformLogService> = {
+    write: (request, context) => {
+      if (sinks.failLog !== undefined) {
+        throw sinks.failLog;
+      }
+
+      platformLogs.push(request);
+      platformLogTraceIds.push(
+        callOf(context).trace.traceparent.split('-')[1] ?? '',
+      );
+
+      return {};
+    },
+  };
+  const diagnostics: ServiceImpl<typeof DiagnosticsService> = {
+    get: notServed,
+    report: (request) => {
+      reports.push(request);
+
+      return {};
+    },
+  };
   const core = createCoreServices({
     types: options.types ?? testMessages(),
     validators: ajvValidators(),
     ...(options.now === undefined ? {} : { now: options.now }),
-    ...(options.onEventAppended === undefined
+    ...(options.hookDeadlineMs === undefined
       ? {}
-      : { onEventAppended: options.onEventAppended }),
+      : { hookDeadlineMs: options.hookDeadlineMs }),
   });
   const goneHandlers: ((instance: BundleInstance) => void)[] = [];
   const router = createTestRouter({
@@ -371,6 +428,8 @@ export const serveCore = async (
       ],
       [CatalogService, catalog],
       [ReferenceSourceService, referenceSource],
+      [PlatformLogService, platformLog],
+      [DiagnosticsService, diagnostics],
     ],
   });
 
@@ -416,6 +475,15 @@ export const serveCore = async (
     secretsBackend: backends.services.use(SecretsBackendV1),
     handlers,
     handlerCalls,
+    platformLogs,
+    platformLogTraceIds,
+    get failLog() {
+      return sinks.failLog;
+    },
+    set failLog(error: ContractError | undefined) {
+      sinks.failLog = error;
+    },
+    reports,
     storage: (bundleId, generation = bundleId === 'doric' ? 0 : 1) =>
       storageClient(
         router.client(StorageService, {
@@ -502,6 +570,16 @@ const eventMessage = (type: string) => {
  * - `notes.Typed`, `(event).type = "notes.typed/v1"`: `string type = 1`.
  * - `notes.XSent`, `(event).type = "x.sent/v1"`: `string text = 1` (the
  *   event of a bundle named `x`, for sinks whose owner is a placeholder).
+ *
+ * And the hooks contract `notes.hooks/v1` (file `test/notes_hooks.proto`,
+ * package `notes.hooks`, `(hooks).id = "notes.hooks/v1"`), one hook per
+ * kind, each input `string text = 1`:
+ * - `notes.hooks.SeenInput`: `onSeenHook`, observe.
+ * - `notes.hooks.ShapeInput`: `onShapeHook`, transform.
+ * - `notes.hooks.AllowInput`: `onAllowHook`, decide.
+ * - `notes.hooks.StepInput`: `onStepHook`, sequence.
+ * - `notes.hooks.UnwindInput`: `onUnwindHook`, sequence,
+ *   `HOOK_ORDER_REVERSE`.
  */
 export const testMessages = (): Registry => {
   const STRING = FieldDescriptorProto_Type.STRING;
@@ -567,11 +645,67 @@ export const testMessages = (): Registry => {
     ],
   });
 
-  return createFileRegistry(proto, (name) =>
+  const resolve = (name: string) =>
     name === file_doric_platform_v1_options.proto.name
       ? file_doric_platform_v1_options
       : name === file_buf_validate_validate.proto.name
         ? file_buf_validate_validate
-        : undefined,
+        : undefined;
+
+  return createFileRegistry(
+    createFileRegistry(proto, resolve),
+    createFileRegistry(notesHooksFile(), resolve),
   );
+};
+
+const hookMessage = (
+  name: string,
+  hook: string,
+  kind: HookKind,
+  order: HookOrder = HookOrder.UNSPECIFIED,
+) => {
+  const options = create(MessageOptionsSchema);
+
+  setExtension(
+    options,
+    hookOption,
+    create(HookOptionSchema, { name: hook, kind, order }),
+  );
+
+  return create(DescriptorProtoSchema, {
+    name,
+    field: [scalar('text', 1, FieldDescriptorProto_Type.STRING)],
+    options,
+  });
+};
+
+/** The `notes.hooks/v1` hooks file of {@link testMessages}. */
+const notesHooksFile = () => {
+  const options = create(FileOptionsSchema);
+
+  setExtension(
+    options,
+    hooksOption,
+    create(HooksOptionSchema, { id: 'notes.hooks/v1' }),
+  );
+
+  return create(FileDescriptorProtoSchema, {
+    name: 'test/notes_hooks.proto',
+    package: 'notes.hooks',
+    syntax: 'proto3',
+    dependency: [file_doric_platform_v1_options.proto.name],
+    options,
+    messageType: [
+      hookMessage('SeenInput', 'onSeenHook', HookKind.OBSERVE),
+      hookMessage('ShapeInput', 'onShapeHook', HookKind.TRANSFORM),
+      hookMessage('AllowInput', 'onAllowHook', HookKind.DECIDE),
+      hookMessage('StepInput', 'onStepHook', HookKind.SEQUENCE),
+      hookMessage(
+        'UnwindInput',
+        'onUnwindHook',
+        HookKind.SEQUENCE,
+        HookOrder.REVERSE,
+      ),
+    ],
+  });
 };

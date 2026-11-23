@@ -515,9 +515,9 @@ the core's host contracts, these are `secrets/v1.registerReferences` and
 `navigation/v1.register`, `chain` and `subscribe`, `regions/v1.items` and
 `subscribe`, and `commands/v1.register`.
 
-In a host process, `createCoreServices({ types, validators, now? })`
+In a host process, `createCoreServices({ types, validators, now?, hookDeadlineMs? })`
 ([`services.ts`](src/host/services.ts)) answers `{ services, activate(context) }`
-and serves `storage/v1`, `settings/v1`, `secrets/v1`, `events/v1`, `tools/v1` and `skills/v1` over the router beside the kernel
+and serves `storage/v1`, `settings/v1`, `secrets/v1`, `events/v1`, `tools/v1`, `skills/v1`, `hooks/v1` and `log/v1` over the router beside the kernel
 entry; calls before `activate` fail `unavailable`. Storage views are
 partitioned by the router-stamped caller generation, and types are released on
 `InstanceGone` (data kept). Settings values are protobuf messages (`Any`)
@@ -532,7 +532,7 @@ every open stream before a write answers; `AddRedaction` refuses an empty
 secret. Events: `Register` refuses a payload message with a field named `type`;
 `Sink` binds an events stream; `Append` stores `{ type, ...payload JSON }` (zero
 values omitted), redacted, committed through the storage facade as core, then
-calls the `onEventAppended` option (fire-and-forget) until `hooks/v1` is served.
+runs `core.event-hooks/v1` (defined by core at `activate`) detached from the call.
 Tools are keyed by name and Project: a registration in an overlapping Project by
 another bundle fails `duplicate_tool`; the newest instance of a bundle serves its
 keys. `List` and `Catalog` answer the unscoped tools plus the call's Project's,
@@ -541,7 +541,19 @@ instance's `ToolHandlerService` with the caller's deadline, failing `not_found`
 for a tool the call does not see and `unavailable` for an unreachable instance.
 Skills fail `duplicate_skill` across bundles and `unavailable_tool` for an
 `allowedTools` entry the caller does not see. `InstanceGone` drops an
-instance's tools and skills.
+instance's tools and skills. Hooks: `Define` is accepted from the contract's
+provider only (`doric.*` only from doric; a second provider fails
+`registration_conflict`); `Run` only from the bundle serving the definition
+(`not_owner`), with the input checked by type. Handlers with an `order` run
+first, then catalog order with doric first (a reverse hook reverses the catalog
+part). Observe, transform and decide handlers are bounded by `hookDeadlineMs`
+(default 10,000); a failure or timeout is reported to `doric.diagnostics/v1` as
+`hook_handler_failed` or `hook_handler_timeout` and the run goes on (an empty
+decide answer is a failed handler, not a refusal). Sequence handlers have no
+deadline and the first failure fails `Run`. `WatchAvailability` streams the
+state, then each change. Log: `Write` and `WriteBatch` stamp the caller, host
+environment, scope and trace, redact secrets and write to `doric.log/v1`; a
+failed write fails the call, so the SDK falls back to stdout.
 
 ### `tools/v1`
 

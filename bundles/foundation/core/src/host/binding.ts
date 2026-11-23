@@ -1,7 +1,13 @@
 // What `createCoreServices().activate` binds: the backend, the catalog and
 // `core`'s own `Call`, read by every routed service at call time.
 
-import type { DescService, JsonValue } from '@bufbuild/protobuf';
+import {
+  type DescService,
+  fromJson,
+  type JsonValue,
+  type MessageInitShape,
+} from '@bufbuild/protobuf';
+import { ValueSchema } from '@bufbuild/protobuf/wkt';
 import { type Client, ConnectError } from '@connectrpc/connect';
 import {
   type Call,
@@ -13,6 +19,11 @@ import {
   type CatalogSnapshot,
   CatalogService,
 } from 'bundle/contracts/gen/doric/platform/catalog/v1/catalog_pb.js';
+import { DiagnosticsService } from 'bundle/contracts/gen/doric/platform/diagnostics/v1/diagnostics_pb.js';
+import {
+  LogService as PlatformLogService,
+  type WriteRequestSchema as PlatformWriteRequestSchema,
+} from 'bundle/contracts/gen/doric/platform/log/v1/log_pb.js';
 import { BackendService as SecretsBackendService } from 'bundle/contracts/gen/doric/secrets/backend/v1/backend_pb.js';
 import { ReferenceSourceService } from 'bundle/contracts/gen/doric/secrets/v1/secrets_pb.js';
 import { BackendService as StorageBackendService } from 'bundle/contracts/gen/doric/storage/backend/v1/backend_pb.js';
@@ -25,6 +36,12 @@ import { type CatalogLookup, splitEntry } from '../shared/state.js';
 export interface CoreCatalog extends CatalogLookup {
   /** The snapshot's host generation: the active one for a generation-0 call. */
   readonly generation: number;
+  /**
+   * The snapshot's `order`, the bundles in activation order. Hook handlers
+   * without an `order` run in it, with `doric` before every bundle. Empty
+   * for a snapshot without one.
+   */
+  readonly order: readonly string[];
 }
 
 /** What `activate` binds; every service reads it at call time. */
@@ -62,6 +79,27 @@ export interface CoreBinding {
    * deadline, scope, trace and signal.
    */
   handler<S extends DescService>(service: S, caller: StampedCaller): Client<S>;
+  /**
+   * `doric.log/v1.Write` through `context.services.use(PlatformLogService)`.
+   * Rejects with the call's `ContractError`.
+   */
+  writeLog(
+    record: MessageInitShape<typeof PlatformWriteRequestSchema>,
+    call: Call,
+  ): Promise<void>;
+  /**
+   * `doric.diagnostics/v1.Report`, best effort: never rejects, and a failure
+   * is dropped.
+   */
+  report(
+    input: {
+      readonly bundleId: string;
+      readonly kind: string;
+      readonly message: string;
+      readonly details?: JsonValue;
+    },
+    call: Call,
+  ): Promise<void>;
 }
 
 const providesOf = (manifest: JsonValue | undefined): readonly string[] => {
@@ -95,6 +133,7 @@ const catalogOf = (snapshot: CatalogSnapshot | undefined): CoreCatalog => {
 
   return {
     generation: snapshot?.generation ?? 0,
+    order: snapshot?.order ?? [],
     provides: (bundleId) => provides.get(bundleId) ?? new Map(),
     activeProvider: (contractId) => active.get(contractId),
   };
@@ -104,6 +143,8 @@ const catalogOf = (snapshot: CatalogSnapshot | undefined): CoreCatalog => {
 export const createBinding = (context: HostContext): CoreBinding => {
   const catalogs = new Map<number, Promise<CoreCatalog>>();
   const catalogClient = context.services.use(CatalogService);
+  const platformLog = context.services.use(PlatformLogService);
+  const diagnostics = context.services.use(DiagnosticsService);
   const { instance } = context;
 
   return {
@@ -121,6 +162,30 @@ export const createBinding = (context: HostContext): CoreBinding => {
       context.services.use(service, {
         target: `${caller.bundleId}/${caller.generation}/${caller.incarnation}`,
       }),
+    writeLog: async (record, call) => {
+      try {
+        await platformLog.write(record, { signal: call.signal });
+      } catch (error) {
+        throw error instanceof ConnectError ? fromConnectError(error) : error;
+      }
+    },
+    report: async (input, call) => {
+      try {
+        await diagnostics.report(
+          {
+            bundleId: input.bundleId,
+            kind: input.kind,
+            message: input.message,
+            ...(input.details === undefined
+              ? {}
+              : { details: fromJson(ValueSchema, input.details) }),
+          },
+          { signal: call.signal },
+        );
+      } catch {
+        // Best effort: a report that cannot be made is dropped.
+      }
+    },
     catalog: (call) => {
       const generation = call.caller.generation;
       const cached = catalogs.get(generation);

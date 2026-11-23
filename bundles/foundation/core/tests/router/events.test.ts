@@ -3,8 +3,8 @@
 // (without its static check of the shipped composition, which stays there).
 // Payloads are `google.protobuf.Any`s of the code-built test messages; the
 // stored body is the message's JSON (protobuf-es `toJson`: JSON names, zero
-// fields omitted) after `type`. `core.event-hooks/v1` fires through the
-// `onEventAppended` option until `hooks/v1` is served (S39 gap 6).
+// fields omitted) after `type`. `core.event-hooks/v1` firing on a committed
+// append is proved through `hooks/v1` in `./hooks.test.ts` (S40b).
 
 import assert from 'node:assert/strict';
 import test from 'node:test';
@@ -394,55 +394,6 @@ void test('a sink whose owner segment is a placeholder writes only the streams o
       request,
     );
     assert.equal((await readStream(core, 'x.x/t-1')).lastSequence, 1);
-  } finally {
-    await core.close();
-  }
-});
-
-void test('a committed append calls onEventAppended once with its stream and type; a failed one calls nothing, and a rejecting callback does not fail the append', async () => {
-  const seen: { stream: string; type: string; lastSequence: number }[] = [];
-  let core: RoutedCore | undefined;
-  const core_ = await served({
-    onEventAppended: async ({ stream, type }) => {
-      assert.ok(core);
-      // The row is committed before the callback hears of it.
-      const page = await readStream(core, stream);
-
-      seen.push({ stream, type, lastSequence: page.lastSequence });
-
-      throw new Error('observer failed');
-    },
-  });
-
-  core = core_;
-
-  try {
-    const notes = events(core, 'notes', scope);
-
-    await registered(core);
-    await rejectsWith(
-      notes.append({ type: 'notes.added/v1', payload: added({ noteId: '' }) }),
-      'invalid_input',
-    );
-    await notes.append({
-      type: 'notes.added/v1',
-      payload: added({ noteId: 'hello' }),
-    });
-
-    const deadline = Date.now() + 2000;
-
-    while (seen.length === 0 && Date.now() < deadline) {
-      await new Promise((done) => setTimeout(done, 1));
-    }
-
-    await new Promise((done) => setTimeout(done, 20));
-    assert.deepEqual(seen, [
-      {
-        stream: 'notes.thread-events/t-1',
-        type: 'notes.added/v1',
-        lastSequence: 1,
-      },
-    ]);
   } finally {
     await core.close();
   }

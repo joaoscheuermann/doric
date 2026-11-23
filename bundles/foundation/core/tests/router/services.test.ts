@@ -4,9 +4,13 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
+import { create } from '@bufbuild/protobuf';
+import { anyPack, EmptySchema } from '@bufbuild/protobuf/wkt';
 import { ConnectError } from '@connectrpc/connect';
 import { defineStorageType, fromConnectError } from 'bundle/contracts';
 import { EventsService } from 'bundle/contracts/gen/doric/events/v1/events_pb.js';
+import { HooksService } from 'bundle/contracts/gen/doric/hooks/v1/hooks_pb.js';
+import { LogService } from 'bundle/contracts/gen/doric/log/v1/log_pb.js';
 import { SecretsService } from 'bundle/contracts/gen/doric/secrets/v1/secrets_pb.js';
 import { SettingsService } from 'bundle/contracts/gen/doric/settings/v1/settings_pb.js';
 import { SkillsService } from 'bundle/contracts/gen/doric/skills/v1/skills_pb.js';
@@ -64,7 +68,7 @@ void test('every RPC fails with unavailable until activate ran', async () => {
   }
 });
 
-void test('tools/v1 and skills/v1 follow events/v1 and fail with unavailable until activate ran', async () => {
+void test('tools/v1, skills/v1, hooks/v1 and log/v1 follow events/v1 and fail with unavailable until activate ran', async () => {
   const core = createCoreServices({
     types: testMessages(),
     validators: ajvValidators(),
@@ -79,6 +83,8 @@ void test('tools/v1 and skills/v1 follow events/v1 and fail with unavailable unt
       EventsService.typeName,
       ToolsService.typeName,
       SkillsService.typeName,
+      HooksService.typeName,
+      LogService.typeName,
     ],
   );
 
@@ -97,6 +103,9 @@ void test('tools/v1 and skills/v1 follow events/v1 and fail with unavailable unt
   try {
     const tools = router.client(ToolsService, { caller });
     const skills = router.client(SkillsService, { caller });
+    const hooks = router.client(HooksService, { caller });
+    const log = router.client(LogService, { caller });
+    const contract = 'notes.hooks/v1';
     const calls: readonly (() => Promise<unknown>)[] = [
       () =>
         tools.register({
@@ -120,6 +129,30 @@ void test('tools/v1 and skills/v1 follow events/v1 and fail with unavailable unt
         }),
       () => skills.unregister({ registrationId: 'r1' }),
       () => skills.list({}),
+      () => hooks.define({ contract }),
+      () => hooks.register({ contract, hook: 'onSeenHook' }),
+      () => hooks.unregister({ registrationId: 'r1' }),
+      () =>
+        hooks.run({
+          contract,
+          hook: 'onSeenHook',
+          input: anyPack(EmptySchema, create(EmptySchema)),
+        }),
+      async () => {
+        // An item instead of the failure ends the stream read without one.
+        for await (const item of hooks.watchAvailability({ contract })) {
+          return item;
+        }
+
+        return undefined;
+      },
+      () => log.write({ record: { level: 'info', message: 'm' } }),
+      () =>
+        log.writeBatch(
+          (async function* () {
+            yield { record: { level: 'info', message: 'm' } };
+          })(),
+        ),
     ];
 
     for (const call of calls) {
