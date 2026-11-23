@@ -7,7 +7,12 @@ import { posix as path } from 'node:path';
 import type { MessageInitShape } from '@bufbuild/protobuf';
 import type { Client } from '@connectrpc/connect';
 import { contractErrorOf, type HostServices } from 'bundle/host';
-import { cwdChangeSchema, cwdLocationSchema } from 'runtime/contracts';
+import {
+  cwdChangeSchema,
+  cwdLocationSchema,
+  execRequestOf,
+  execResultOf,
+} from 'runtime/contracts';
 import {
   AttachmentsService,
   type AttachRequestSchema,
@@ -15,7 +20,6 @@ import {
 import { LeaseService } from 'runtime/contracts/gen/doric/runtime/lease/v1/lease_pb.js';
 import { WorkspaceService } from 'runtime/contracts/gen/doric/runtime/workspace/v1/workspace_pb.js';
 
-import { execRequestOf } from './lease.js';
 import type { FilesToolPorts } from './ports.js';
 import type { LeaseSandbox } from './sandbox.js';
 
@@ -45,18 +49,11 @@ const routedLeaseSandbox = async (
     id,
     root,
     exec: (input) =>
-      routed(async () => {
-        const { response } = await lease.exec({
-          target,
-          request: execRequestOf(input),
-        });
-
-        return {
-          exitCode: response?.exitCode ?? null,
-          stdout: response?.stdout ?? '',
-          stderr: response?.stderr ?? '',
-        };
-      }),
+      routed(async () =>
+        execResultOf(
+          await lease.exec({ target, request: execRequestOf(input) }),
+        ),
+      ),
     readFile: (file) =>
       routed(async () => {
         const { response } = await lease.readFile({
