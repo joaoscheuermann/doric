@@ -10,6 +10,8 @@ import {
   type DescMessage,
   type DescMethod,
   type DescService,
+  getOption,
+  hasOption,
   type MessageInitShape,
   type MessageShape,
 } from '@bufbuild/protobuf';
@@ -39,6 +41,8 @@ import {
   GenerationChangedSchema,
   PeerSignalSchema,
 } from '../contracts/gen/doric/platform/v1/control_pb.js';
+import { contract as contractOption } from '../contracts/gen/doric/platform/v1/options_pb.js';
+import { isPlatformContract } from '../contracts/ids.js';
 import { callContextKey, callerIncarnationKey } from '../contracts/metadata.js';
 import { toConnectError } from '../contracts/status.js';
 import { abortAtDeadline, anySignal } from '../runtime/call.js';
@@ -77,7 +81,10 @@ export interface TestRouterOptions {
    *
    * Undefined: every service is declared (no enforcement). Given: a call
    * through `context.services.use(ref)` whose `ref.typeName` is neither
-   * listed nor one of the bundle's own `services` fails with
+   * listed nor one of the bundle's own `services`, and whose file's
+   * `(doric.platform.v1.contract).id` is not a `doric.*` platform contract
+   * (`isPlatformContract`; those are always declared, as `routeCall`
+   * step 3 exempts them), fails with
    * `PERMISSION_DENIED`, reason `undeclared_requirement`, whether or not a
    * fake serves it, as `routeCall` refuses it (step 3). A declared service
    * that neither a fake nor the bundle serves fails with `UNAVAILABLE`,
@@ -280,13 +287,14 @@ export const createTestRouter = (
   };
 
   /** The transport `context.services.use` reaches `typeName` through. */
-  const useTarget = (typeName: string): Transport => {
+  const useTarget = (typeName: string, service: DescService): Transport => {
     const own = bundle.has(typeName) ? bundleTransport : undefined;
 
     if (
       declared !== undefined &&
       own === undefined &&
-      !declared.has(typeName)
+      !declared.has(typeName) &&
+      !isPlatformService(service)
     ) {
       throw failure(
         'undeclared_requirement',
@@ -477,6 +485,15 @@ const record = (
   );
 };
 
+/**
+ * Whether `service` belongs to a `doric.*` platform contract: its file's
+ * `(doric.platform.v1.contract).id` is one (`isPlatformContract`), as
+ * `routeCall` reads it; the package name does not count.
+ */
+const isPlatformService = (service: DescService): boolean =>
+  hasOption(service.file, contractOption) &&
+  isPlatformContract(getOption(service.file, contractOption).id);
+
 /** The `ConnectError` a call fails with for the Doric `code`. */
 const failure = (code: string, message: string): Error =>
   toConnectError(new ContractError(code, message));
@@ -532,7 +549,7 @@ interface Hop {
  * The deadline is the earliest of the call's `timeoutMs` and the parent's.
  */
 const hopTransport = (
-  target: (typeName: string) => Transport,
+  target: (typeName: string, service: DescService) => Transport,
   hop: () => Hop,
 ): Transport => {
   const prepare = (
@@ -541,7 +558,7 @@ const hopTransport = (
     timeoutMs: number | undefined,
     header: ConstructorParameters<typeof Headers>[0],
   ) => {
-    const transport = target(method.parent.typeName);
+    const transport = target(method.parent.typeName, method.parent);
     const { caller, scope, parent } = hop();
     const own =
       timeoutMs !== undefined && timeoutMs > 0 ? Date.now() + timeoutMs : 0;

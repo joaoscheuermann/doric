@@ -24,6 +24,7 @@ import {
 import { type Call, deadlineOf } from '../../src/contracts/call.js';
 import { ContractError, isContractError } from '../../src/contracts/error.js';
 import { ConformanceService } from '../../src/contracts/gen/doric/conformance/v1/conformance_pb.js';
+import { StartupService } from '../../src/contracts/gen/doric/platform/startup/v1/startup_pb.js';
 import { SettingsService } from '../../src/contracts/gen/doric/settings/v1/settings_pb.js';
 import { ToolsService } from '../../src/contracts/gen/doric/tools/v1/tools_pb.js';
 import { callOf } from '../../src/contracts/metadata.js';
@@ -493,6 +494,47 @@ describe('createTestRouter: fakes and context.services.use', () => {
     );
 
     assert.ok(response.value !== undefined);
+  });
+
+  test('with requires given, a doric.* platform contract is declared without being listed; a doric.-named non-platform service is not', async () => {
+    const stages: string[] = [];
+    let toolsReached = false;
+    const router = createTestRouter({
+      requires: [],
+      fakes: [
+        partial(StartupService, {
+          stage: (request) => {
+            stages.push(request.name);
+
+            return {};
+          },
+        }),
+        partial(ToolsService, {
+          list: () => {
+            toolsReached = true;
+
+            return { tools: [] };
+          },
+        }),
+      ],
+    });
+    const context = await router.activate<readonly DescService[]>({
+      activate: () => {},
+    });
+
+    // `doric.startup/v1` is a platform contract: `routeCall` skips step 3.
+    await within(
+      context.services.use(StartupService).stage({ name: 'boot' }),
+      'stage',
+    );
+    assert.deepEqual(stages, ['boot']);
+
+    // `doric.tools.v1.ToolsService` belongs to `tools/v1`, not a platform
+    // contract, whatever its package name.
+    const error = await failureOf(context.services.use(ToolsService).list({}));
+
+    assertFailure(error, Code.PermissionDenied, 'undeclared_requirement');
+    assert.equal(toolsReached, false);
   });
 
   test("the bundle's own services are always declared", async () => {
@@ -1023,7 +1065,9 @@ describe('createTestRouter: context.assets', () => {
   });
 
   test('without bundleDir, activation succeeds and read and require fail naming the bundle', async () => {
-    const router = createTestRouter({ instance: { bundleId: 'no-dir-bundle' } });
+    const router = createTestRouter({
+      instance: { bundleId: 'no-dir-bundle' },
+    });
     const context = await router.activate({ activate: () => {} });
 
     const message = await rejectionOf(

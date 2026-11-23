@@ -63,18 +63,18 @@ the one `bundle/contracts` instance of a `desktopMain` generation
 [`build-runner.mjs`](../../app/desktop/doric/build-runner.mjs)).
 `./package.json` is exported as itself.
 
-| Entry                    | Source                                               | Runs in          | Audience                                                                                                   |
-| ------------------------ | ---------------------------------------------------- | ---------------- | ---------------------------------------------------------------------------------------------------------- |
-| `bundle/contracts`       | [`src/contracts/index.ts`](src/contracts/index.ts)   | Node and browser | Bundle authors                                                                                             |
-| `bundle/runtime`         | [`src/runtime/index.ts`](src/runtime/index.ts)       | Node and browser | Apps, `desktop`, embedded foundation host parts, bundle tests                                              |
-| `bundle`                 | [`src/index.ts`](src/index.ts)                       | Node             | The host, build tooling, embedded foundation host parts (types), bundle tests                              |
-| `bundle/testing`         | [`src/testing/index.ts`](src/testing/index.ts)       | Node             | Bundle unit tests                                                                                          |
-| `bundle/platform`        | [`src/platform/index.ts`](src/platform/index.ts)     | Node             | The host: `startPlatform`, the catalog index and the staged-bundle readers                                 |
-| `bundle/host`            | [`src/sdk/host/index.ts`](src/sdk/host/index.ts)     | Node             | Host parts: `runBundle`, `HostContext`, `stampedCallerOf`, without the build tooling the root pulls in     |
-| `bundle/client`          | [`src/sdk/client/index.ts`](src/sdk/client/index.ts) | Browser          | Client parts: one Connect transport per client part over `fetch`, with the `doric-client-part` interceptor |
-| `bundle/externals`       | [`src/build/externals.ts`](src/build/externals.ts)   | Node and browser | Build tooling                                                                                              |
-| `bundle/contracts/gen/*` | `src/contracts/gen/*`, written by `generate-proto`   | Node and browser | Bundles that use the platform's `.proto` contracts                                                         |
-| `bundle/schemas/*`       | `dist/schemas/*`, written by the build               | Data             | The desktop platform build, which copies the folder by path (see [Who uses it](#who-uses-it))              |
+| Entry                    | Source                                               | Runs in          | Audience                                                                                                                                                          |
+| ------------------------ | ---------------------------------------------------- | ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `bundle/contracts`       | [`src/contracts/index.ts`](src/contracts/index.ts)   | Node and browser | Bundle authors                                                                                                                                                    |
+| `bundle/runtime`         | [`src/runtime/index.ts`](src/runtime/index.ts)       | Node and browser | Apps, `desktop`, embedded foundation host parts, bundle tests                                                                                                     |
+| `bundle`                 | [`src/index.ts`](src/index.ts)                       | Node             | The host, build tooling, embedded foundation host parts (types), bundle tests                                                                                     |
+| `bundle/testing`         | [`src/testing/index.ts`](src/testing/index.ts)       | Node             | Bundle unit tests                                                                                                                                                 |
+| `bundle/platform`        | [`src/platform/index.ts`](src/platform/index.ts)     | Node             | The host: `startPlatform`, the catalog index and the staged-bundle readers                                                                                        |
+| `bundle/host`            | [`src/sdk/host/index.ts`](src/sdk/host/index.ts)     | Node             | Host parts: `runBundle`, `HostContext`, `stampedCallerOf`, `createToolHandlers`, `createHookHandlers`, `onHostStart`, without the build tooling the root pulls in |
+| `bundle/client`          | [`src/sdk/client/index.ts`](src/sdk/client/index.ts) | Browser          | Client parts: one Connect transport per client part over `fetch`, with the `doric-client-part` interceptor                                                        |
+| `bundle/externals`       | [`src/build/externals.ts`](src/build/externals.ts)   | Node and browser | Build tooling                                                                                                                                                     |
+| `bundle/contracts/gen/*` | `src/contracts/gen/*`, written by `generate-proto`   | Node and browser | Bundles that use the platform's `.proto` contracts                                                                                                                |
+| `bundle/schemas/*`       | `dist/schemas/*`, written by the build               | Data             | The desktop platform build, which copies the folder by path (see [Who uses it](#who-uses-it))                                                                     |
 
 `./contracts/gen/*` exports the protobuf-es code generated from
 [`proto/`](proto), its 39 contract files (the platform contracts under
@@ -3404,7 +3404,9 @@ interface ConformanceOptions {
 clients' calls to it, over `createRouterTransport` of `@connectrpc/connect`,
 so each message passes Connect's binary serialization. A request is validated
 with protovalidate first (`invalid_input`); a call to a service that is not
-declared in `requires` fails with `undeclared_requirement`; a declared service
+declared in `requires` fails with `undeclared_requirement` (platform
+contracts, whose id starts with `doric.`, are exempt, as in the real router);
+a declared service
 nobody serves fails with `unavailable`; a call before `activate` or after
 `control.stop()` fails with `unavailable`. It sends no `ProviderChanged` and
 no `InstanceGone`.

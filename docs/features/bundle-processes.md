@@ -707,3 +707,16 @@ to every host part.
   `invalid_input`, provider errors `provider_error` (`FAILED_PRECONDITION`,
   full error in `details.providerError`), and images are read through
   `runtime.attachments/v1.Read` into a `data:` URL.
+- 2026-11-23: phase 3, slice S45a, of
+  [`docs/designs/grpc-processes.md`](../designs/grpc-processes.md): the host
+  SDK (`bundle/host`) exports `createToolHandlers` (serves
+  `ToolHandlerService`; `register` registers per Project with `tools/v1`
+  through `registrations.track`, so it is re-registered after core restarts,
+  and returns an unregister handle; `Check` falls back to the tool's zod
+  input; results are JSON), `createHookHandlers` (serves
+  `HookHandlerService`; `register` reads contract, hook and kind from the
+  proto options and answers by kind: observe, transform, decide, sequence)
+  and `onHostStart` (an `onHostStartHook` handler with `stage()` and `log()`
+  over `doric.startup/v1`; it runs for real only from S61/S62).
+  `createTestRouter` exempts platform contracts (`doric.*`) from `requires`,
+  as the real router does.

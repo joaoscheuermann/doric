@@ -30,6 +30,16 @@ export {
   HostGoneError,
   type HostGoneReason,
 } from './control.js';
+export {
+  createHookHandlers,
+  createToolHandlers,
+  type HandlerRegistration,
+  type HookAnswer,
+  type HookHandle,
+  type HookHandlerOptions,
+  type HookHandlers,
+  type ToolHandlers,
+} from './handlers.js';
 export type { LogBatchContext, LogSink } from './log.js';
 export {
   type RegistrationConflictCode,
@@ -48,3 +58,4 @@ export {
   type StartBundleOptions,
   startBundle,
 } from './run.js';
+export { type HostStartup, onHostStart } from './start.js';
