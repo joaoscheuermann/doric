@@ -58,6 +58,15 @@ export const contractErrorCodes = [
   'instance_revoked',
   'not_connected',
   'control_stream_open',
+  // sandbox/v1 by lease id (phase 3, S44): an unknown, released or other
+  // instance's lease (`NOT_FOUND`), and an operation the sandbox does not
+  // offer, such as `Start` (`UNIMPLEMENTED`).
+  'unknown_lease',
+  'unsupported_operation',
+  // models.provider/v1 (phase 3, S43): a thrown llms provider error, the
+  // whole `ProviderError` in `details.providerError`; no row in the error
+  // table, so it travels as `FAILED_PRECONDITION`.
+  'provider_error',
 ] as const;
 
 export type ContractErrorCode = (typeof contractErrorCodes)[number];

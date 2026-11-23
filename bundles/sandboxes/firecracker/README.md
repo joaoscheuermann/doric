@@ -35,6 +35,19 @@ providers and how one is chosen.
 | Slots             | none                                                                               |
 | Parts             | host only: [`src/host/index.ts`](src/host/index.ts) exports `activate`             |
 
+The host part also runs as a process ([`src/host/main.ts`](src/host/main.ts), built into
+`dist/host/main.mjs`) with `runBundle`,
+serving `SandboxService` by lease id through the router
+([`src/host/service.ts`](src/host/service.ts)). A lease belongs to the
+calling instance: an unknown, released or other instance's lease fails with
+`unknown_lease` (`NOT_FOUND`), and an operation the sandbox does not offer,
+such as `Start` on a sandbox without live processes, with
+`unsupported_operation` (`UNIMPLEMENTED`). When an instance is gone
+(`context.instances.onGone`) its leases are released; `deactivate` releases
+every lease and disposes the pool. The running host keeps the kernel entry
+`src/host/index.ts` until the switch (phase 3, slice S44 of
+[`grpc-processes.md`](../../../docs/designs/grpc-processes.md)).
+
 The bundle declares no contract of its own and has no `src/contracts/`:
 `sandbox/v1` is declared by `runtime` in
 [`runtime/contracts`](../../runtime/runtime/src/contracts/sandbox.ts) and

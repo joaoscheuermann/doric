@@ -45,6 +45,7 @@ const errorTable: Readonly<Record<string, Code>> = {
   unknown_command: Code.NotFound,
   unknown_provider: Code.NotFound,
   unknown_session: Code.NotFound,
+  unknown_lease: Code.NotFound,
   registration_conflict: Code.AlreadyExists,
   duplicate_tool: Code.AlreadyExists,
   duplicate_skill: Code.AlreadyExists,
@@ -66,8 +67,10 @@ const errorTable: Readonly<Record<string, Code>> = {
   control_stream_open: Code.FailedPrecondition,
   storage_path_missing: Code.FailedPrecondition,
   storage_format_unsupported: Code.FailedPrecondition,
+  provider_error: Code.FailedPrecondition,
   limit_exceeded: Code.ResourceExhausted,
   unknown_contract: Code.Unimplemented,
+  unsupported_operation: Code.Unimplemented,
   unavailable: Code.Unavailable,
   generation_lost: Code.Unavailable,
   unavailable_tool: Code.Unavailable,
@@ -282,6 +285,22 @@ void test('code, message and JSON details survive toConnectError and fromConnect
   assert.equal(rebuilt.code, 'undeclared_requirement');
   assert.equal(rebuilt.message, 'chat does not require storage/v1');
   assert.deepEqual(rebuilt.details, jsonDetails);
+});
+
+void test('the sandbox lease codes travel as NOT_FOUND and UNIMPLEMENTED and come back unchanged', () => {
+  const cases: ReadonlyArray<readonly [string, Code]> = [
+    ['unknown_lease', Code.NotFound],
+    ['unsupported_operation', Code.Unimplemented],
+  ];
+
+  for (const [code, grpc] of cases) {
+    const sent = toConnectError(new ContractError(code, `${code} message`));
+    const rebuilt = fromConnectError(sent);
+
+    assert.equal(sent.code, grpc, code);
+    assert.equal(rebuilt.code, code);
+    assert.equal(rebuilt.message, `${code} message`);
+  }
 });
 
 void test('a ConnectError without a Doric ErrorInfo yields internal with its raw message', () => {

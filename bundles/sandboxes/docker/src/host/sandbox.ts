@@ -2,6 +2,7 @@ import {
   defineMethod,
   defineService,
   type HostContext,
+  type Log,
   LogV1,
 } from 'bundle/contracts';
 import {
@@ -15,6 +16,7 @@ import { createSandbox, createVmRegistry } from 'sandbox';
 import { createSandpool } from 'sandpool';
 
 import { logV1Logger } from './logger.js';
+import type { SandboxPoolBinding } from './service.js';
 import { logSandboxPool } from './start.js';
 
 export type Environment = Readonly<Record<string, string | undefined>>;
@@ -90,6 +92,49 @@ export const dockerSandboxSettings = (environment: Environment) =>
   }) as const;
 
 /**
+ * Builds the binding `createSandboxService` runs on: the client, the VM
+ * registry and the pool from `options` and the environment (as activation
+ * does today), with `log` as the pool's logger sink. Contacts nothing until
+ * the first acquisition. Throws as today for a malformed `DORIC_SANDBOX_*`
+ * value.
+ */
+export const dockerSandboxBinding = (
+  options: DockerSandboxOptions,
+  log: Log,
+): SandboxPoolBinding => {
+  const settings = dockerSandboxSettings(options.environment ?? process.env);
+  const client = (options.client ?? createDockerClient)({
+    exposeDockerSocket: settings.dockerSocket,
+  });
+  const vms = createVmRegistry('docker', client);
+  const pool = createSandpool({
+    ...settings.limits,
+    logger: logV1Logger(log),
+    create: (identity) =>
+      createSandbox({
+        provider: vms.provider,
+        image: settings.image,
+        imagePullPolicy: 'if-not-present',
+        resources: settings.resources,
+        // The Project id names the durable workspace the sandbox reattaches.
+        workspace: identity,
+        network: {
+          mode: 'egress',
+          ssh: settings.ssh,
+          dnsServers: ['1.1.1.1'],
+        },
+      }),
+  });
+
+  return {
+    pool,
+    vms,
+    description: { provider: 'docker', durableWorkspace: true },
+    discard: (identity) => discardWorkspace(client, identity),
+  };
+};
+
+/**
  * The host part of the `docker` bundle: builds the Docker client, the VM
  * registry and the sandbox pool, provides `sandbox/v1` over them, and
  * disposes the pool on deactivation. Nothing is contacted until the first
@@ -98,35 +143,16 @@ export const dockerSandboxSettings = (environment: Environment) =>
 export const activateDockerSandbox =
   (options: DockerSandboxOptions = {}) =>
   ({ services }: HostContext) => {
-    const settings = dockerSandboxSettings(options.environment ?? process.env);
-    const client = (options.client ?? createDockerClient)({
-      exposeDockerSocket: settings.dockerSocket,
-    });
-    const vms = createVmRegistry('docker', client);
-    const pool = createSandpool({
-      ...settings.limits,
-      logger: logV1Logger(services.use(LogV1)),
-      create: (identity) =>
-        createSandbox({
-          provider: vms.provider,
-          image: settings.image,
-          imagePullPolicy: 'if-not-present',
-          resources: settings.resources,
-          // The Project id names the durable workspace the sandbox reattaches.
-          workspace: identity,
-          network: {
-            mode: 'egress',
-            ssh: settings.ssh,
-            dnsServers: ['1.1.1.1'],
-          },
-        }),
-    });
+    const { pool, vms, description, discard } = dockerSandboxBinding(
+      options,
+      services.use(LogV1),
+    );
 
     services.provide(
       defineService(SandboxV1, {
         describe: defineMethod({
           ...sandboxMethods.describe,
-          execute: async () => ({ provider: 'docker', durableWorkspace: true }),
+          execute: async () => description,
         }),
         acquire: defineMethod({
           ...sandboxMethods.acquire,
@@ -138,7 +164,7 @@ export const activateDockerSandbox =
         }),
         discard: defineMethod({
           ...sandboxMethods.discard,
-          execute: (identity) => discardWorkspace(client, identity),
+          execute: discard,
         }),
         machines: defineMethod({
           ...sandboxMethods.machines,

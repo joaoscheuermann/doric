@@ -7,6 +7,7 @@
     "./package.json": "./package.json"
   },
   "dependencies": {
+    "@connectrpc/connect": "^2.3.0",
     "bundle": "0.0.1",
     "firecracker-sandbox": "0.0.1",
     "pino": "^10.3.1",
@@ -14,5 +15,8 @@
     "sandbox": "0.0.1",
     "sandpool": "0.0.1",
     "tslib": "^2.3.0"
+  },
+  "devDependencies": {
+    "@bufbuild/protobuf": "^2.17.0"
   }
 }

@@ -691,3 +691,10 @@ to every host part.
   [`docs/designs/grpc-processes.md`](../designs/grpc-processes.md) (v6.12, A7):
   the host SDK's batched `context.log` queue with stdout fallback, redaction,
   exit flushing and process handlers; `BundleDefinition.logSink`.
+- 2026-11-23: phase 3, slice S44, of
+  [`docs/designs/grpc-processes.md`](../designs/grpc-processes.md): the
+  `docker` and `firecracker` host processes (`src/host/main.ts`) serve
+  `SandboxService` by lease id; leases are per calling instance
+  (`unknown_lease`, `NOT_FOUND`), a sandbox without live processes answers
+  `unsupported_operation` (`UNIMPLEMENTED`), `onGone` releases the instance's
+  leases and `deactivate` releases all.

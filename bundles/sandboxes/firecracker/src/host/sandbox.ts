@@ -2,6 +2,7 @@ import {
   defineMethod,
   defineService,
   type HostContext,
+  type Log,
   LogV1,
 } from 'bundle/contracts';
 import { createFirecrackerClient } from 'firecracker-sandbox';
@@ -10,6 +11,7 @@ import { createSandbox, createVmRegistry, type SandboxProvider } from 'sandbox';
 import { createSandpool } from 'sandpool';
 
 import { logV1Logger } from './logger.js';
+import type { SandboxPoolBinding } from './service.js';
 import { logSandboxPool } from './start.js';
 
 export type Environment = Readonly<Record<string, string | undefined>>;
@@ -46,6 +48,50 @@ export const firecrackerSandboxSettings = (environment: Environment) =>
   }) as const;
 
 /**
+ * Builds the binding `createSandboxService` runs on: the client, the VM
+ * registry and the pool from `options` and the environment (as activation
+ * does today), with `log` as the pool's logger sink. Contacts nothing until
+ * the first acquisition.
+ */
+export const firecrackerSandboxBinding = (
+  options: FirecrackerSandboxOptions,
+  log: Log,
+): SandboxPoolBinding => {
+  const settings = firecrackerSandboxSettings(
+    options.environment ?? process.env,
+  );
+  const client = (options.client ?? createFirecrackerClient)();
+  const vms = createVmRegistry('firecracker', client);
+  const pool = createSandpool({
+    ...settings.limits,
+    logger: logV1Logger(log),
+    create: (identity) =>
+      createSandbox({
+        provider: vms.provider,
+        image: settings.image,
+        imagePullPolicy: 'if-not-present',
+        resources: settings.resources,
+        // The Project id is passed as the workspace name, as on Docker;
+        // Firecracker keeps no durable workspace for it.
+        workspace: identity,
+        network: {
+          mode: 'egress',
+          ssh: settings.ssh,
+          dnsServers: ['1.1.1.1'],
+        },
+      }),
+  });
+
+  return {
+    pool,
+    vms,
+    description: { provider: 'firecracker', durableWorkspace: false },
+    // Firecracker keeps no durable workspace, so there is nothing to discard.
+    discard: async () => undefined,
+  };
+};
+
+/**
  * The host part of the `firecracker` bundle: builds the Firecracker client, the VM
  * registry and the sandbox pool, provides `sandbox/v1` over them, and
  * disposes the pool on deactivation. Nothing is contacted until the first
@@ -54,39 +100,16 @@ export const firecrackerSandboxSettings = (environment: Environment) =>
 export const activateFirecrackerSandbox =
   (options: FirecrackerSandboxOptions = {}) =>
   ({ services }: HostContext) => {
-    const settings = firecrackerSandboxSettings(
-      options.environment ?? process.env,
+    const { pool, vms, description, discard } = firecrackerSandboxBinding(
+      options,
+      services.use(LogV1),
     );
-    const client = (options.client ?? createFirecrackerClient)();
-    const vms = createVmRegistry('firecracker', client);
-    const pool = createSandpool({
-      ...settings.limits,
-      logger: logV1Logger(services.use(LogV1)),
-      create: (identity) =>
-        createSandbox({
-          provider: vms.provider,
-          image: settings.image,
-          imagePullPolicy: 'if-not-present',
-          resources: settings.resources,
-          // The Project id is passed as the workspace name, as on Docker;
-          // Firecracker keeps no durable workspace for it.
-          workspace: identity,
-          network: {
-            mode: 'egress',
-            ssh: settings.ssh,
-            dnsServers: ['1.1.1.1'],
-          },
-        }),
-    });
 
     services.provide(
       defineService(SandboxV1, {
         describe: defineMethod({
           ...sandboxMethods.describe,
-          execute: async () => ({
-            provider: 'firecracker',
-            durableWorkspace: false,
-          }),
+          execute: async () => description,
         }),
         acquire: defineMethod({
           ...sandboxMethods.acquire,
@@ -98,9 +121,7 @@ export const activateFirecrackerSandbox =
         }),
         discard: defineMethod({
           ...sandboxMethods.discard,
-          // Firecracker keeps no durable workspace, so there is nothing to
-          // discard.
-          execute: async () => undefined,
+          execute: discard,
         }),
         machines: defineMethod({
           ...sandboxMethods.machines,

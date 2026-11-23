@@ -33,6 +33,20 @@ The bundle has no `optional` contracts, slots, settings, tools, routes,
 elements, storage types or `desktopScope`. Its package
 ([`package.json`](package.json)) is `docker`, private, and exports only
 `./package.json`: the bundle has no contracts module of its own, because
+
+- **Host process** ([`src/host/main.ts`](src/host/main.ts), built into
+  `dist/host/main.mjs`): runs the host part as a process with `runBundle`,
+  serving `SandboxService` by lease id through the router
+  ([`src/host/service.ts`](src/host/service.ts)). A lease belongs to the
+  calling instance: an unknown, released or other instance's lease fails with
+  `unknown_lease` (`NOT_FOUND`), and an operation the sandbox does not offer,
+  such as `Start` on a sandbox without live processes, with
+  `unsupported_operation` (`UNIMPLEMENTED`). When an instance is gone
+  (`context.instances.onGone`) its leases are released; `deactivate` releases
+  every lease and disposes the pool. The running host keeps the kernel entry
+  `src/host/index.ts` until the switch (phase 3, slice S44 of
+  [`grpc-processes.md`](../../../docs/designs/grpc-processes.md)).
+
 `sandbox/v1` is declared by the [`runtime`](../../runtime/runtime/README.md)
 bundle in `runtime/contracts`.
 

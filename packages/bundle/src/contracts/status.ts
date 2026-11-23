@@ -60,6 +60,7 @@ const errorTable: ReadonlyArray<readonly [Code, readonly string[]]> = [
       'unknown_command',
       'unknown_provider',
       'unknown_session',
+      'unknown_lease',
     ],
   ],
   [
@@ -85,7 +86,7 @@ const errorTable: ReadonlyArray<readonly [Code, readonly string[]]> = [
     ],
   ],
   [Code.ResourceExhausted, ['limit_exceeded']],
-  [Code.Unimplemented, ['unknown_contract']],
+  [Code.Unimplemented, ['unknown_contract', 'unsupported_operation']],
   [
     Code.Unavailable,
     [
