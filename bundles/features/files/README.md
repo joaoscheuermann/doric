@@ -68,6 +68,21 @@ bundle has no settings, routes or storage of its own.
   [`src/host/writes.ts`](src/host/writes.ts)) and registers seven tools with
   `tools/v1` ([`src/host/tools/`](src/host/tools)). The build copies the
   skills of [`src/skills/`](src/skills) into the bundle.
+- **Host process** ([`src/host/main.ts`](src/host/main.ts),
+  `createFilesHost` in [`src/host/service.ts`](src/host/service.ts)), beside
+  the kernel until slice S62 of
+  [`docs/designs/grpc-processes.md`](../../../docs/designs/grpc-processes.md):
+  the seven tools run over `FilesToolPorts`
+  ([`src/host/ports.ts`](src/host/ports.ts)), shared with the kernel; the
+  routed ports ([`src/host/routed.ts`](src/host/routed.ts)) call
+  `runtime.workspace/v1` and `runtime.lease/v1`, and `view-image` streams
+  `ReadFileBytes` into `runtime.attachments/v1.Attach`. The process serves
+  `files/v1` 1.4.0 ([`src/host/lease.ts`](src/host/lease.ts)) on the lease
+  scope `{ projectId }` only: each method is one `Describe`, then steps with
+  `expectSandboxId`, and the first not-ready step is the `{ status }` answer.
+  `ReadBytes` streams its head, then chunks of at most 1 MiB (truncated at
+  `BYTES_LIMIT`, `binary` on a NUL byte). Before activation its methods fail
+  `unavailable`.
 - **Client** ([`src/client/index.ts`](src/client/index.ts)): on activation it
   creates the window's sandbox store and refresh coordinator and binds them to
   the activation's services ([`src/client/state.ts`](src/client/state.ts));

@@ -7,9 +7,10 @@
 import { Buffer } from 'node:buffer';
 import { posix } from 'node:path';
 
-import { type Sandbox, workspacePathKind } from 'sandbox';
+import { workspacePathKind } from 'sandbox';
 
 import type { CreateInput, CreateOutcome } from '../contracts/index.js';
+import type { ProjectSandbox } from './lease.js';
 
 /** The longest name a file system takes, in UTF-8 bytes. */
 const NAME_LIMIT_BYTES = 255;
@@ -23,7 +24,7 @@ const validName = (name: string): boolean =>
 
 /** Creates an empty file or directory named `input.name` in `input.directory`. */
 export const createEntry = async (
-  sandbox: Sandbox,
+  sandbox: ProjectSandbox,
   input: CreateInput,
   kind: 'file' | 'directory',
 ): Promise<CreateOutcome> => {

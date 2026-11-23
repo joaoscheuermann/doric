@@ -1011,3 +1011,19 @@ after a 5 s grace; a failure after the cancel answers `run_cancelled` or
   tools over `runtime.threads/v1` and optional `default.agents/v1`; any
   `unavailable` from the agent lookup answers "Agent types are unavailable in
   this runtime."
+- 2026-11-23: phase 3, slice S53a, of
+  [`docs/designs/grpc-processes.md`](../designs/grpc-processes.md): `files`
+  runs on its own host process (`src/host/main.ts`, `createFilesHost`); its
+  seven tools run over `FilesToolPorts`, shared with the kernel, and the routed
+  ports call `runtime.workspace/v1` and `runtime.lease/v1` (one `Describe`, then
+  steps with `expectSandboxId`); `view-image` streams `ReadFileBytes` into
+  `runtime.attachments/v1.Attach`.
+- 2026-11-23: phase 3, slice S53b, of
+  [`docs/designs/grpc-processes.md`](../designs/grpc-processes.md): the `files`
+  process serves `files/v1` 1.4.0 over `runtime.lease/v1` with the lease scope
+  `{projectId}` only; each former `withLease` task is one `Describe` then steps
+  naming that sandbox, the first not-ready step answering `{status}` (A58);
+  `ReadBytes` streams the head, then chunks of at most 1 MiB (truncated at
+  `BYTES_LIMIT`, `binary` on a NUL byte); before activation its methods fail
+  `unavailable`. Known differences until S62: the over-size attachment message
+  and `runtime`'s whole-file `ReadFileBytes`; RK36 is deferred to S62.

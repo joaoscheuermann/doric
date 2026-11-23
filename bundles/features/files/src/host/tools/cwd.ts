@@ -1,7 +1,8 @@
 import type { Call } from 'bundle/contracts';
-import { type RuntimeWorkspace, RuntimeWorkspaceV1 } from 'runtime/contracts';
 import { defineTool } from 'tool';
 import { z } from 'zod';
+
+import type { FilesToolPorts } from '../ports.js';
 
 const description =
   "Report this thread's working directory, or move it to a given path. A relative path resolves against the current directory, the way cd does. A move takes effect only when the path is a directory inside the workspace root, and every other tool resolves its relative paths against this directory. Move here as soon as the work moves into a repository or a subdirectory - after a clone, for instance - so the other tools run in it.";
@@ -32,8 +33,8 @@ export const tool = defineTool({
   description,
   input,
   output,
-  execute: (input, call, services): Promise<CwdOutput> =>
-    execute(services.use(RuntimeWorkspaceV1, call.scope), call, input),
+  execute: (input, call, ports: FilesToolPorts): Promise<CwdOutput> =>
+    execute(ports, call, input),
 });
 
 /**
@@ -47,7 +48,7 @@ export const tool = defineTool({
  * spelling.
  */
 const execute = async (
-  workspace: RuntimeWorkspace,
+  workspace: Pick<FilesToolPorts, 'setCwd' | 'location'>,
   call: Call,
   input: Input,
 ): Promise<CwdOutput> => {

@@ -4,7 +4,7 @@ import { listSandboxTree, type SandboxTreeNode } from 'sandbox';
 import { defineTool } from 'tool';
 import { z } from 'zod';
 
-import { currentDirectory, leaseSandbox } from '../sandbox.js';
+import type { FilesToolPorts } from '../ports.js';
 
 const description =
   'Display directory structure as an ASCII tree. Directories are listed first, then files, both sorted alphabetically. Respects .gitignore, ignores node_modules and __pycache__ unless a .gitignore negation brings them back, and excludes hidden files except .agents. A relative path resolves against the current working directory. Shows `depth` levels below the path (default 3); a directory at the last level shows how many entries it holds instead of its children, so call tree on it to look deeper.';
@@ -31,9 +31,9 @@ export const tool = defineTool({
   description,
   input,
   output,
-  execute: async (input, call, services): Promise<TreeOutput> => {
-    const cwd = await currentDirectory(services, call);
-    const sandbox = await leaseSandbox(services, call);
+  execute: async (input, call, ports: FilesToolPorts): Promise<TreeOutput> => {
+    const cwd = await ports.cwd(call);
+    const sandbox = await ports.sandbox(call);
 
     return execute(sandbox.root, cwd, sandbox, input);
   },

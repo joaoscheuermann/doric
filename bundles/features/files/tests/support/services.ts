@@ -26,12 +26,16 @@ import type { Terminal } from 'terminal/contracts';
 import {
   isBoundTool,
   type Tool,
-  type ToolDefinitionObject,
   type ToolInput,
   type ToolOutput,
+  type UnboundTool,
 } from 'tool';
 
 import { activate } from '../../src/host/index.js';
+import {
+  type FilesToolPorts,
+  kernelFilesToolPorts,
+} from '../../src/host/ports.js';
 
 /** The sandbox operations the fake lease forwards. */
 export type LeasedSandbox = Pick<
@@ -168,11 +172,16 @@ export const filesServices = (
   };
 };
 
-/** The agent-loop tool of `definition` for one prompt over a fake lease and Thread. */
+/**
+ * The agent-loop tool of `definition` for one prompt over a fake lease and
+ * Thread, bound to `kernelFilesToolPorts` of the kernel `Services` (S53a F0).
+ */
 export const bindTool = <I extends ToolInput, O extends ToolOutput>(
   definition:
-    | ToolDefinitionObject<I, O>
-    | ((terminals: () => Terminal | undefined) => ToolDefinitionObject<I, O>),
+    | UnboundTool<I, O, FilesToolPorts>
+    | ((
+        terminals: () => Terminal | undefined,
+      ) => UnboundTool<I, O, FilesToolPorts>),
   sandbox: LeasedSandbox,
   host: Host,
   attached?: AttachedImages,
@@ -181,7 +190,7 @@ export const bindTool = <I extends ToolInput, O extends ToolOutput>(
   const resolved =
     typeof definition === 'function' ? definition(terminals) : definition;
 
-  return resolved.bind(services).toTool(call);
+  return resolved.bind(kernelFilesToolPorts(services)).toTool(call);
 };
 
 /** A recording `tools/v1`, standing for the core's registry. */

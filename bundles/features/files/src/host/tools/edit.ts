@@ -3,11 +3,8 @@ import { posix as path } from 'node:path';
 import { defineTool } from 'tool';
 import { z } from 'zod';
 
-import {
-  currentDirectory,
-  type LeaseSandbox,
-  leaseSandbox,
-} from '../sandbox.js';
+import type { FilesToolPorts } from '../ports.js';
+import type { LeaseSandbox } from '../sandbox.js';
 
 const description =
   "Edit a file using exact text replacement. Each edit's oldText must match a unique, non-overlapping region of the original file. If two changes affect the same block or nearby lines, merge them into one edit. A relative path resolves against the current working directory.";
@@ -61,10 +58,10 @@ export const tool = defineTool({
   description,
   input,
   output,
-  execute: async (input, call, services): Promise<EditOutput> => {
-    const cwd = await currentDirectory(services, call);
+  execute: async (input, call, ports: FilesToolPorts): Promise<EditOutput> => {
+    const cwd = await ports.cwd(call);
 
-    return execute(cwd, await leaseSandbox(services, call), input);
+    return execute(cwd, await ports.sandbox(call), input);
   },
 });
 

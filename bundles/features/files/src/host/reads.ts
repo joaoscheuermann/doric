@@ -5,6 +5,7 @@
 // acquires one and answers the lease state otherwise.
 
 import { Buffer } from 'node:buffer';
+import { posix } from 'node:path';
 
 import { type Call, defineMethod, defineService } from 'bundle/contracts';
 import { RuntimeLeaseV1 } from 'runtime/contracts';
@@ -12,7 +13,6 @@ import {
   listSandboxDirectories,
   listSandboxDirectory,
   listSandboxTree,
-  type Sandbox,
   workspacePathKind,
 } from 'sandbox';
 
@@ -28,6 +28,7 @@ import {
   filesMethods,
   type TreeRead,
 } from '../contracts/index.js';
+import type { ProjectSandbox } from './lease.js';
 import { createEntry } from './writes.js';
 
 /** The largest text payload the content read returns. */
@@ -38,7 +39,7 @@ export const BYTES_LIMIT = 4_194_304;
 
 /** Lists one directory level, with the workspace visibility rules. */
 export const readDirectory = async (
-  sandbox: Sandbox,
+  sandbox: ProjectSandbox,
   path?: string,
 ): Promise<DirectoryRead> => {
   const listing = await listSandboxDirectory(sandbox, { path: path ?? '' });
@@ -54,7 +55,7 @@ export const readDirectory = async (
 
 /** Lists the whole tree below `path` in one read. */
 export const readTree = async (
-  sandbox: Sandbox,
+  sandbox: ProjectSandbox,
   path?: string,
 ): Promise<TreeRead> => {
   const listing = await listSandboxTree(sandbox, { path: path ?? '' });
@@ -73,7 +74,7 @@ export const readTree = async (
  * the rules the whole tree read applies from `root`; one answer per asked path.
  */
 export const readDirectories = async (
-  sandbox: Sandbox,
+  sandbox: ProjectSandbox,
   input: DirectoriesInput,
 ): Promise<DirectoriesRead> => {
   const listings = await listSandboxDirectories(sandbox, {
@@ -101,7 +102,7 @@ export const readDirectories = async (
  * as its bytes in base64 under BYTES_LIMIT.
  */
 export const readContent = async (
-  sandbox: Sandbox,
+  sandbox: ProjectSandbox,
   path: string,
   encoding: 'utf8' | 'base64' = 'utf8',
 ): Promise<ContentRead> => {
@@ -132,6 +133,77 @@ export const readContent = async (
         : kept.toString('utf8');
 
   return { status: 'read', path, content, truncated, binary };
+};
+
+/** A `ReadBytes` read's outcome; mirrors `doric.files.v1.BytesRead`. */
+export type BytesRead =
+  | {
+      readonly status: 'read';
+      readonly path: string;
+      readonly truncated: boolean;
+      readonly binary: boolean;
+    }
+  | { readonly status: 'not_found' | 'not_file' | 'invalid_path' };
+
+/** What `readBytes` answers: the outcome and, when read, the kept bytes. */
+export interface BytesReadResult {
+  readonly read: BytesRead;
+  /** At most `BYTES_LIMIT` bytes; empty unless `read.status === 'read'`. */
+  readonly bytes: Uint8Array;
+}
+
+/** A `ProjectSandbox` that can also stream one file's bytes. */
+export interface ProjectBytesSandbox extends ProjectSandbox {
+  /**
+   * The first bytes of the file at the absolute `path`: at most `max`
+   * bytes. Reading stops once `max` bytes arrived. Rejects as the sandbox
+   * read fails.
+   */
+  fileBytes(path: string, max: number): Promise<Uint8Array>;
+}
+
+/**
+ * Reads one workspace file's exact bytes under `BYTES_LIMIT`, with the
+ * rules of `readContent`:
+ * - `invalid_path` when the path leaves the workspace;
+ * - `not_found` when it is missing; `not_file` when it is not a file;
+ * - otherwise `read`, with `truncated` when the file holds more than
+ *   `BYTES_LIMIT` bytes, and `binary` when the bytes read hold a NUL.
+ *
+ * `path` in the answer is the path as asked. Rejects as `fileBytes` or the
+ * kind probe rejects (no `not_found` fallback for a read that fails after
+ * the probe said `file`; Q4).
+ */
+export const readBytes = async (
+  sandbox: ProjectBytesSandbox,
+  path: string,
+): Promise<BytesReadResult> => {
+  const kind = await workspacePathKind(sandbox, path);
+  const none = new Uint8Array();
+
+  if (kind === 'escaped')
+    return { read: { status: 'invalid_path' }, bytes: none };
+  if (kind === 'missing') return { read: { status: 'not_found' }, bytes: none };
+  if (kind !== 'file') return { read: { status: 'not_file' }, bytes: none };
+
+  // The resolution `workspacePathKind` applies: an absolute path is not
+  // joined under the root a second time.
+  const absolute = posix.isAbsolute(path)
+    ? posix.normalize(path)
+    : posix.join(sandbox.root, path);
+  // One byte past the cap, so truncation is visible.
+  const read = await sandbox.fileBytes(absolute, BYTES_LIMIT + 1);
+  const bytes = read.subarray(0, BYTES_LIMIT);
+
+  return {
+    read: {
+      status: 'read',
+      path,
+      truncated: read.byteLength > BYTES_LIMIT,
+      binary: read.includes(0),
+    },
+    bytes,
+  };
 };
 
 /** `files/v1`, over the calling Project's lease. */

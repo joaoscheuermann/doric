@@ -3,11 +3,8 @@ import { posix as path } from 'node:path';
 import { defineTool } from 'tool';
 import { z } from 'zod';
 
-import {
-  currentDirectory,
-  type LeaseSandbox,
-  leaseSandbox,
-} from '../sandbox.js';
+import type { FilesToolPorts } from '../ports.js';
+import type { LeaseSandbox } from '../sandbox.js';
 import { visibleFiles } from './visible-files.js';
 
 const DEFAULT_LIMIT = 1000;
@@ -44,9 +41,9 @@ export const tool = defineTool({
   description,
   input,
   output,
-  execute: async (input, call, services): Promise<FindOutput> => {
-    const cwd = await currentDirectory(services, call);
-    const sandbox = await leaseSandbox(services, call);
+  execute: async (input, call, ports: FilesToolPorts): Promise<FindOutput> => {
+    const cwd = await ports.cwd(call);
+    const sandbox = await ports.sandbox(call);
 
     return execute(sandbox.root, cwd, sandbox, input);
   },
