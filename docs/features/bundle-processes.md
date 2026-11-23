@@ -698,3 +698,12 @@ to every host part.
   (`unknown_lease`, `NOT_FOUND`), a sandbox without live processes answers
   `unsupported_operation` (`UNIMPLEMENTED`), `onGone` releases the instance's
   leases and `deactivate` releases all.
+- 2026-11-23: phase 3, slice S43, of
+  [`docs/designs/grpc-processes.md`](../designs/grpc-processes.md):
+  `serveProviderKind` of `llms/rpc` serves `ProviderService` for one provider
+  kind; the `claude`, `codex`, `openai` and `openrouter` host processes
+  (`src/host/main.ts`) serve it through `runBundle`. One built provider per
+  `providerId`, rebuilt when values or secret change; build failures are
+  `invalid_input`, provider errors `provider_error` (`FAILED_PRECONDITION`,
+  full error in `details.providerError`), and images are read through
+  `runtime.attachments/v1.Read` into a `data:` URL.

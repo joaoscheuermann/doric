@@ -42,7 +42,7 @@ The feature that configures providers from settings is described in
 
 ## Entry point
 
-[`package.json`](./package.json) exports one entry, `llms`, from
+[`package.json`](./package.json) exports the main entry, `llms`, from
 [`src/index.ts`](./src/index.ts) (built to `dist/index.js` with its types in
 `dist/index.d.ts`; the `@org/source` condition resolves to the TypeScript
 source inside the workspace). Runtime dependencies are `pino` (the logger
@@ -53,6 +53,22 @@ the README calls internal is not, and neither is a name the README attributes
 to another source: `ToolDefinition` and `ToolCallRequest` come from `tool`,
 `Logger` from `pino`, and `ErrorOptions` is the standard `Error` constructor
 options type.
+
+A second entry, `llms/rpc` ([`src/rpc/index.ts`](./src/rpc/index.ts), built
+to `dist/rpc/index.js`),
+exports `serveProviderKind(source, { readAttachment })`, which serves
+`doric.models.provider.v1.ProviderService` for one provider kind in a bundle
+host process:
+
+- it keeps one built provider per `providerId`, cached by the SHA-256 of the
+  sorted values and the secret, so a rotated secret rebuilds it; a build
+  failure is `invalid_input`;
+- an image is read through `runtime.attachments/v1.Read` in chunks of at most
+  1 MiB into a `data:` URL; an `https` URL passes through;
+- an `LlmProviderError` crosses the router as `provider_error`
+  (`FAILED_PRECONDITION`) with the full error in `details.providerError`, for
+  the caller to rebuild; any other error is `internal`;
+- a tool without `outputSchema` reaches the provider with `outputSchema: {}`.
 
 ## Quick start
 

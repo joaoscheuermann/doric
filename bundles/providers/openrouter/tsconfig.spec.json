@@ -13,6 +13,7 @@
   "include": ["src/**/*.ts", "tests/**/*.ts"],
   "references": [
     { "path": "../../../packages/bundle/tsconfig.lib.json" },
-    { "path": "../../../packages/llms/tsconfig.lib.json" }
+    { "path": "../../../packages/llms/tsconfig.lib.json" },
+    { "path": "../../runtime/runtime" }
   ]
 }

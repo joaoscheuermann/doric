@@ -42,7 +42,16 @@ part and no contracts module: it declares no contract of its own, since
 exports `./package.json` and `./host`; `./host` resolves to
 `./src/host/index.ts` under the `@org/source` condition and to
 `./dist/host/index.js` (types `./dist/host/index.d.ts`) otherwise. It depends
-on `bundle`, `llms`, `pino` and `tslib`.
+on `bundle`, `llms`, `pino`, `runtime` and `tslib`.
+
+The host process entry [`src/host/main.ts`](src/host/main.ts) (built to
+`dist/host/main.mjs`) serves `doric.models.provider.v1.ProviderService` through
+`runBundle` with `serveProviderKind` of `llms/rpc`, from the kind source that
+`kindSource()` of [`src/host/provider.ts`](src/host/provider.ts) returns; it
+reads images through `runtime.attachments/v1`, so the package depends on
+`runtime`. The kernel entry stays `src/host/index.ts` until the host switch
+(phase 3, slice S43 of
+[`grpc-processes.md`](../../../docs/designs/grpc-processes.md)).
 
 ## Provided contract: `models.provider/v1` (1.3.0)
 

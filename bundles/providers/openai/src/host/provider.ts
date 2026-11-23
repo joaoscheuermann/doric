@@ -15,6 +15,7 @@ import {
   type ModelIconName,
   type SecretSource,
 } from 'llms';
+import type { ProviderKindSource } from 'llms/rpc';
 import type { Logger } from 'pino';
 
 /** The values one provider carries: a literal per field, or a source for its secret. */
@@ -166,6 +167,41 @@ export const createKindProvider = (
     },
     { cardinality: 'many' },
   );
+};
+
+/**
+ * The kind as `llms/rpc`'s source: the descriptor and traits of `definition`,
+ * its catalog and icons, and `build` as `buildConfigured` with a fresh
+ * transport (`options.transport?.()` else `createFetchTransport()`) and
+ * `options.logger()`, identity `{ id: providerId, name: providerId }`.
+ * Answers the same descriptor, catalog and icons `createKindProvider` does.
+ * `build` throws as `buildConfigured` does (a required value missing).
+ */
+export const kindSource = (
+  definition: KindDefinition,
+  options: KindProviderOptions,
+): ProviderKindSource => {
+  const transport = () => options.transport?.() ?? createFetchTransport();
+  const { catalog } = definition;
+
+  return {
+    kind: definition.kind,
+    advertised: definition.advertised,
+    catalogCapacity: definition.catalogCapacity,
+    ...(catalog === undefined
+      ? {}
+      : {
+          catalog: (input: Parameters<typeof catalog>[0]) =>
+            catalog(input, transport()),
+        }),
+    icons: (input) => definition.icons(input),
+    build: ({ providerId, values }) =>
+      buildConfigured(definition, values, {
+        transport: transport(),
+        logger: options.logger(),
+        identity: { id: providerId, name: providerId },
+      }),
+  };
 };
 
 /**
