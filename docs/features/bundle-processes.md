@@ -595,14 +595,48 @@ work as follows. A thrown llms provider error crosses the router as
 registering instance's `ToolHandlerService.Check`. `runtime` exports
 `serveExecutor`, `remotePromptSession` and `historyPatchItems` from
 `runtime/contracts` (`src/contracts/executor-serving.ts`, since S62b1) for
-executor bundles, and `default` imports them from there. `default`'s process entry (`src/host/main.ts`)
-serves `executor/v1` and `default.agents/v1` and defines `default.hooks/v1`;
+executor bundles, and `default` imports them from there. `default`'s process
+entry (`src/host/main.ts`) serves `executor/v1` and `default.agents/v1` and defines `default.hooks/v1`;
 its model calls go through `llms/rpc`'s `modelsLanguageModel` and its tool
 calls make one `Check` before each `Execute`. A cancelled `Run` or `Compact`
 is not aborted: `runtime` signals it through
 `executor.session/v1.WatchCancel`, waits for the call, and cancels it only
 after a 5 s grace; a failure after the cancel answers `run_cancelled` or
 `compaction_cancelled`. The kernel entries stay in use until S62.
+
+Since S62a the build also counts what a host part serves without recording it
+(`hostProvides`, `packages/bundle/src/build/host-provides.ts`): the `HOST` or
+`HOOKS` contract of each contract-role service in the part's static `services`
+list, and each `provides` id whose `.proto` marks a hooks, event, settings or
+storage-type contract that no service serves; ids recorded on `host` or
+`desktopMain` are left out. `checkRecording(manifest, recorded, served?)`
+counts them for "provides declares …", and for a version 2 manifest refuses a
+served contract `provides` does not list with "`<source>`: the host part
+serves `<id>`, which provides does not declare." (version 1 manifests are not
+refused until S62c). Each served contract `provides` lists gets a `host` entry
+in `contracts.json` with `local: false` and `schema: schemas/<id>.json`, but no
+schema document is written for it.
+
+`runtime.threads/v1.ThreadEvents` (proto 1.10.0, since S62b3) answers the
+longest prefix of the events after the cursor whose answer encodes below
+`THREAD_EVENTS_MAX_BYTES` (3 MiB), at least one event when any follows, and
+`lastSequence` unchanged: the larger of the record's last sequence and the
+last event's. The wire does not change; a caller continues from the last
+event's sequence while it is below `lastSequence`, and when the record runs
+ahead of its events that extra call answers an empty page.
+`readThreadEventLog` (`runtime/contracts`, `src/contracts/thread-events.ts`)
+reads the whole log that way and joins the pages; it answers `undefined` when
+a page answers no log (no Thread, also one deleted between pages) and fails
+`invalid_output` when a page's last sequence is not after its cursor. The
+routed hosts of `comments`, `openui` and `papercraft` read through it.
+`transport`'s `ListEvents` sets `nextAfterSequence` whenever its page ends
+before `lastSequence`, cut by transport or by `runtime`.
+
+Stored `comments.added/v1` and `comments.resolved/v1` rows are read in either
+encoding, today's payload or the message's JSON, through `commentsAddedOf` and
+`commentsResolvedOf` (`comments/contracts`, `src/contracts/rows.ts`, since
+S62b2); `chat` and `papercraft` use them and fall back to the row as stored,
+and `papercraft` depends on `comments`.
 
 ## Evolution
 
@@ -1073,6 +1107,18 @@ after a 5 s grace; a failure after the cancel answers `run_cancelled` or
   answering `unavailable` counts as no sessions. Methods fail `unavailable`
   "git is not activated." before activation. The kernel entry stays until
   S62.
+- 2026-11-23: phase 3, slice S56, of
+  [`docs/designs/grpc-processes.md`](../designs/grpc-processes.md): `openui`
+  runs as its own process (`src/host/main.ts`, `createOpenuiHost`) serving
+  `openui.programs/v1` and `openui.questions/v1`, registering
+  `openui.answered/v1`, its `runtime.hooks/v1` handler and its skill; its
+  services answer `unavailable` until activation. Routed requests are parsed
+  again with today's zod schemas, so the questions digest matches the
+  kernel's; stored `openui.answered/v1` rows read the same in both encodings.
+  The skill is never read at import: the kernel reads it in `activate` beside
+  the compiled module, the process through `context.assets.read` (needs
+  `host.assets`, slice S62). The 200 ms validation timer's instruct runs
+  detached.
 - 2026-11-23: phase 3, slice S57a, of
   [`docs/designs/grpc-processes.md`](../designs/grpc-processes.md) (version
   6.18): `papercraft`'s kernel runs on ports and gains no process. The cores
@@ -1291,7 +1337,7 @@ after a 5 s grace; a failure after the cancel answers `run_cancelled` or
   reach through `pino-std-serializers` and `undici-types`.
 - 2026-11-24: phase 3, slice S62a, of
   [`docs/designs/grpc-processes.md`](../designs/grpc-processes.md) (version
-  6.26, A61, A63, A70): `packages/bundle/src/build/host-provides.ts` adds
+  6.28, A61, A63, A70): `packages/bundle/src/build/host-provides.ts` adds
   `HostProvide` and `hostProvides({manifest, recorded, services, index})`:
   the `HOST`/`HOOKS` contracts of contract-role services in the host part's
   static `services` list, plus `provides` ids whose `.proto` marks them
@@ -1306,7 +1352,10 @@ after a 5 s grace; a failure after the cancel answers `run_cancelled` or
   entry per served contract `provides` lists (`local: false`,
   `schemas/<id>.json`, no schema file written); the kernel's dry activation
   stays. No real bundle's `contracts.json` changes until S62c lists
-  `api.*/v1` and `executor.session/v1`.
+  `api.*/v1` and `executor.session/v1`. S62c must settle the schema document
+  of served entries: the desktop's `client-routing.ts` leaves a contract
+  without one unrouted (default deny), and the host's
+  `tests/bridge-exposure.test.ts` reads it for every host service entry.
 - 2026-11-24: phase 3, slice S62b2, of
   [`docs/designs/grpc-processes.md`](../designs/grpc-processes.md) (version
   6.26): `comments`' `src/host/rows.ts` moves to `src/contracts/rows.ts` and
@@ -1332,15 +1381,3 @@ after a 5 s grace; a failure after the cancel answers `run_cancelled` or
   `credential_name_taken` under `ALREADY_EXISTS`, `api.threads/v1` the
   queued edit's `invalid_prompt` under `INVALID_ARGUMENT` (both 1.0.0), and
   `git.commands/v1`'s header says 1.2.0.
-- 2026-11-23: phase 3, slice S56, of
-  [`docs/designs/grpc-processes.md`](../designs/grpc-processes.md): `openui`
-  runs as its own process (`src/host/main.ts`, `createOpenuiHost`) serving
-  `openui.programs/v1` and `openui.questions/v1`, registering
-  `openui.answered/v1`, its `runtime.hooks/v1` handler and its skill; its
-  services answer `unavailable` until activation. Routed requests are parsed
-  again with today's zod schemas, so the questions digest matches the
-  kernel's; stored `openui.answered/v1` rows read the same in both encodings.
-  The skill is never read at import: the kernel reads it in `activate` beside
-  the compiled module, the process through `context.assets.read` (needs
-  `host.assets`, slice S62). The 200 ms validation timer's instruct runs
-  detached.

@@ -85,8 +85,9 @@ helpers an executor bundle uses to serve `executor/v1` over
 entry does not re-export and `src/host/rpc/errors.ts` re-exports beside
 `detached`. `runtime/contracts` is
 browser-safe: it holds contract refs, zod schemas, types and pure functions,
-and its run-time imports are `zod`, `bundle/contracts`, the generated code and
-`storage/rpc/chunks`, none of them Node-only
+and its run-time imports are `zod`, `bundle/contracts`, the generated code,
+`@bufbuild/protobuf`, `@connectrpc/connect` and `storage/rpc/chunks`, none of
+them Node-only
 ([`tests/contracts-window.test.ts`](tests/contracts-window.test.ts) bundles it
 for the browser with esbuild and fails on any Node module; `tsconfig.client.json`
 cannot prove it, since Node types reach it through `pino-std-serializers` and
@@ -949,10 +950,11 @@ and the last event's sequence ([`service.ts`](src/host/domain/service.ts)).
 Over the router, `runtime.threads/v1.ThreadEvents` (1.10.0) answers the
 longest prefix of those events whose answer encodes below
 `THREAD_EVENTS_MAX_BYTES` (3 MiB), at least one event, with `lastSequence`
-unchanged ([`rpc/threads.ts`](src/host/rpc/threads.ts)); a non-empty page whose
-last sequence is below `lastSequence` was cut, and the next cursor is that
-sequence. The manifest still provides `runtime.threads/v1@1.8.0` until slice
-S62c.
+unchanged ([`rpc/threads.ts`](src/host/rpc/threads.ts)). A non-empty page
+whose last sequence is below `lastSequence` was cut or the record runs ahead of
+its last event; either way the next cursor is that sequence, and when the
+record runs ahead that one extra call answers an empty page. The manifest
+still provides `runtime.threads/v1@1.8.0` until slice S62c.
 
 `instruct` gives a Thread an instruction from the calling bundle: a steer whose
 source is `{ kind: 'bundle', bundleId, reason, retain? }`, where `bundleId` is

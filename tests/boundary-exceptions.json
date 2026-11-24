@@ -5,7 +5,7 @@
       "bundle": "core",
       "target": "models.provider/v1",
       "decision": "docs/designs/grpc-processes.md",
-      "until": "S62"
+      "until": "S62c"
     }
   ]
 }
