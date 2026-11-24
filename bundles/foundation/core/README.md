@@ -898,7 +898,10 @@ Behavior ([`src/host/models/index.ts`](src/host/models/index.ts)):
   kind's first `secret` field, reads the credential whose id that field holds
   through `secrets/v1.resolve` (a missing one sends no secret), and calls the
   record's `catalog`. A failure answers `failed` and logs the warning
-  `Model catalog could not be read` with `{ kind }` only.
+  `Model catalog could not be read` with `{ kind }` only. The process part's
+  `models/v1` `Catalog` logs the same warning whenever its result is `failed`:
+  a provider that throws, answers no result, or answers `failed`
+  ([`src/host/models/service.ts`](src/host/models/service.ts)).
 - `prepare` takes the provider list of a configuration (each `{ id, kind,
 configuration, models?: { name }[] }`) and builds every provider, one at a
   time in list order, through the record of its kind

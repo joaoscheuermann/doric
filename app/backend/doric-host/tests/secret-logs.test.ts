@@ -5,13 +5,16 @@ import { setTimeout as delay } from 'node:timers/promises';
 
 import { defaultConfig } from 'host-config/testing';
 
+import { callApi } from './helpers/api.js';
 import { freshDatabase, startHostProcess } from './helpers/host.js';
 
 // No log line may carry a resolved secret: not the host's own lines, not the
-// platform's, and not a bundle's `log/v1` records. The compiled host runs as
-// an operator runs it, and its whole log file and console are scanned. That a
-// bundle's own careless `log/v1` record is redacted is the core's rule, tested
-// in bundles/foundation/core (log-redaction).
+// platform's, and not a record a bundle process writes, through `log/v1` or
+// on its stdout (spec section 15, U19). The compiled host runs as an operator
+// runs it, with each host part in its own process, and is driven only through
+// the public API on its public listener; its whole log file and console are
+// scanned. That a bundle's own careless `log/v1` record is redacted is the
+// core's rule, tested in bundles/foundation/core (log-redaction).
 
 const connectionString = process.env.DORIC_TEST_DATABASE_URL;
 const sandboxed = process.env.DORIC_TEST_SANDBOX === 'true';
@@ -54,7 +57,7 @@ const catalog = async () => {
   };
 };
 
-void test('no host, platform or bundle log line carries a stored or applied secret', {
+void test('no host, platform or bundle process log line carries a stored or applied secret', {
   skip: connectionString === undefined,
   timeout: 300_000,
 }, async () => {
@@ -65,82 +68,91 @@ void test('no host, platform or bundle log line carries a stored or applied secr
   try {
     const host = await startHostProcess({ DORIC_DATABASE_URL: database.url });
     try {
-      const send = async (method: string, path: string, body: unknown) => {
-        const response = await host.request(path, method, body);
-        return {
-          status: response.status,
-          body: (await response.json()) as { id?: string; state?: string },
-        };
-      };
+      const api = <T = Record<string, unknown>>(
+        procedure: string,
+        request: unknown,
+      ) => callApi<T>(host.url, `doric.api.${procedure}`, request);
+      const create = async (request: Record<string, string>) =>
+        (
+          await api<{ credentialDescription?: { id?: string } }>(
+            'credentials.v1.CredentialsService/CreateCredential',
+            request,
+          )
+        ).credentialDescription?.id;
 
-      const providerKey = await send('POST', '/credentials', {
+      const providerKey = await create({
         kind: 'API_TOKEN',
         name: 'router',
         secret: providerSecret,
       });
-      const identity = await send('POST', '/credentials', {
+      const identity = await create({
         kind: 'GIT',
         name: 'github',
         username: 'octocat',
         email: 'octocat@example.com',
       });
-      const github = await send('POST', '/credentials', {
+      const github = await create({
         kind: 'API_TOKEN',
         name: 'github',
         secret: githubSecret,
       });
-      assert.deepEqual(
-        [providerKey.status, identity.status, github.status],
-        [201, 201, 201],
-      );
+      assert.ok(providerKey && identity && github);
 
-      const replaced = await send('PUT', '/config', {
-        ...defaultConfig,
-        providers: [
-          {
-            id: 'openrouter',
-            kind: 'openrouter',
-            configuration: {
-              token: providerKey.body.id,
-              modelsUrl: `${models.url}/models`,
+      await api('config.v1.ConfigService/PutConfig', {
+        configuration: {
+          ...defaultConfig,
+          providers: [
+            {
+              id: 'openrouter',
+              kind: 'openrouter',
+              configuration: {
+                token: providerKey,
+                modelsUrl: `${models.url}/models`,
+              },
+              models: [{ name: 'fake/model', reasonings: [] }],
             },
-            models: [{ name: 'fake/model', reasonings: [] }],
-          },
-          {
-            id: 'broken',
-            kind: 'openrouter',
-            configuration: {
-              token: providerKey.body.id,
-              modelsUrl: `${models.url}/broken/models`,
+            {
+              id: 'broken',
+              kind: 'openrouter',
+              configuration: {
+                token: providerKey,
+                modelsUrl: `${models.url}/broken/models`,
+              },
+              models: [{ name: 'fake/model', reasonings: [] }],
             },
-            models: [{ name: 'fake/model', reasonings: [] }],
+          ],
+          models: {
+            execution: { providerId: 'openrouter', model: 'fake/model' },
           },
-        ],
-        models: {
-          execution: { providerId: 'openrouter', model: 'fake/model' },
+          gitCredentialId: identity,
+          githubCredentialId: github,
         },
-        gitCredentialId: identity.body.id,
-        githubCredentialId: github.body.id,
       });
-      assert.equal(replaced.status, 200);
 
-      const listed = await send('POST', '/providers/models', {
+      // The provider bundle's process resolves the key and reads the catalog.
+      await api('providers.v1.ProvidersService/ListModels', {
         kind: 'openrouter',
         configuration: {
-          token: providerKey.body.id,
+          token: providerKey,
           modelsUrl: `${models.url}/models`,
         },
       });
-      assert.equal(listed.status, 200);
 
       if (sandboxed) {
         // A Project's sandbox gets the Git identity and the GitHub token.
-        const project = await send('POST', '/projects', { name: 'Project' });
-        assert.equal(project.status, 202);
+        const created = await api<{ project?: { id?: string } }>(
+          'projects.v1.ProjectsService/CreateProject',
+          { name: 'Project' },
+        );
+        const projectId = created.project?.id;
+        assert.ok(projectId);
         for (let attempt = 0; attempt < 600; attempt += 1) {
           const state = (
-            await send('GET', `/projects/${project.body.id}`, undefined)
-          ).body.state;
+            await api<{ project?: { state?: string } }>(
+              'projects.v1.ProjectsService/GetProject',
+              { projectId },
+            )
+          ).project?.state;
           if (state === 'ready') break;
           assert.notEqual(state, 'failed');
           await delay(200);
@@ -159,6 +171,7 @@ void test('no host, platform or bundle log line carries a stored or applied secr
 
   // The secrets were resolved and used: the catalog saw the provider key.
   assert.ok(models.authorizations.includes(`Bearer ${providerSecret}`));
+  // A bundle process's record of the broken catalog reached the host's log.
   assert.ok(output.includes('Model catalog could not be read'));
   assert.equal(output.includes(providerSecret), false);
   assert.equal(output.includes(githubSecret), false);

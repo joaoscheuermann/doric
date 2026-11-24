@@ -2,16 +2,39 @@ import assert from 'node:assert/strict';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import test from 'node:test';
+import { setTimeout as delay } from 'node:timers/promises';
 
+import { callApi } from './helpers/api.js';
 import {
   freshDatabase,
   type LogLine,
   startHostProcess,
 } from './helpers/host.js';
+import {
+  childProcesses,
+  hostPartBundles,
+  spawnedBundles,
+} from './helpers/processes.js';
 
 // The compiled host's boot and stop, observed as an operator sees them: the
-// startup log, the fatal stage of a refused boot, the HTTP surface and the
-// exit code. Build doric first.
+// startup log, the fatal stage of a refused boot, the public API on the
+// public listener, the bundle processes `ps` shows, and the exit code. Build
+// doric first (the host stages its bundles with `stage --dev`).
+
+/** The staged bundles the compiled host boots. */
+const bundlesPath = 'app/backend/doric-host/dist/bundles';
+
+/** The typeNames of the eight `doric.api.*` services `transport` serves. */
+const apiServices = [
+  'doric.api.config.v1.ConfigService',
+  'doric.api.credentials.v1.CredentialsService',
+  'doric.api.host.v1.HostService',
+  'doric.api.projects.v1.ProjectsService',
+  'doric.api.providers.v1.ProvidersService',
+  'doric.api.status.v1.StatusService',
+  'doric.api.terminals.v1.TerminalsService',
+  'doric.api.threads.v1.ThreadsService',
+];
 
 const connectionString = process.env.DORIC_TEST_DATABASE_URL;
 const databaseCase = connectionString === undefined;
@@ -19,10 +42,74 @@ const databaseCase = connectionString === undefined;
 const startup = (lines: readonly LogLine[]) =>
   lines.filter(({ component }) => component === 'startup');
 
+/** The start-step lines each bundle logs from its `onHostStartHook`, in its order. */
+const startSteps: Readonly<Record<string, readonly string[]>> = {
+  postgres: ['Initializing PostgreSQL client', 'PostgreSQL client initialized'],
+  core: ['Activating stored credentials'],
+  'host-config': [
+    'Activating Doric configuration',
+    'Doric configuration activated',
+  ],
+  docker: ['Configuring sandbox pool', 'Sandbox pool configured'],
+  runtime: [
+    'Reconciling persisted projects and threads',
+    'Workspace reconciled',
+  ],
+  transport: ['Network interfaces configured'],
+};
+
+/** The contract names (`name/vN`, no range) a staged manifest lists under `key`. */
+const manifestContracts = async (
+  bundle: string,
+  key: 'provides' | 'requires',
+): Promise<readonly string[]> => {
+  const manifest = JSON.parse(
+    await readFile(join(bundlesPath, bundle, 'manifest.json'), 'utf8'),
+  ) as Record<string, readonly string[] | undefined>;
+
+  return (manifest[key] ?? []).map((entry) => entry.split('@')[0] ?? entry);
+};
+
+/**
+ * For each start-step bundle, the other start-step bundles providing a
+ * contract it requires, read from the staged manifests: the activation order
+ * puts each of them first.
+ */
+const startStepRequires = async (): Promise<
+  ReadonlyMap<string, readonly string[]>
+> => {
+  const bundles = Object.keys(startSteps);
+  const provides = new Map(
+    await Promise.all(
+      bundles.map(
+        async (bundle) =>
+          [bundle, await manifestContracts(bundle, 'provides')] as const,
+      ),
+    ),
+  );
+
+  return new Map(
+    await Promise.all(
+      bundles.map(async (bundle) => {
+        const requires = await manifestContracts(bundle, 'requires');
+
+        return [
+          bundle,
+          bundles.filter(
+            (other) =>
+              other !== bundle &&
+              (provides.get(other) ?? []).some((id) => requires.includes(id)),
+          ),
+        ] as const;
+      }),
+    ),
+  );
+};
+
 const fatalStage = (lines: readonly LogLine[]) =>
   lines.find(({ msg }) => msg === 'Doric failed to start')?.stage;
 
-void test('boots through every startup stage in order, serves, and stops on SIGTERM', {
+void test('boots through every startup stage in order and serves the public API', {
   skip: databaseCase,
   timeout: 120_000,
 }, async () => {
@@ -33,29 +120,48 @@ void test('boots through every startup stage in order, serves, and stops on SIGT
     try {
       const lines = await host.lines();
 
-      // Each bundle logs its own start step, in activation order (BWP-6): the
-      // transport names its socket namespaces, the sandbox its pool, and the
-      // runtime its workspace. The kernel no longer logs those.
+      // Each bundle logs its own start step from its `onHostStartHook`, in
+      // activation order (BWP-6): the transport names its public API, the
+      // sandbox its pool, and the runtime its workspace. `Bundles loaded` comes
+      // before the first start step, and `Binding HTTP listener` after the
+      // last, just before the public listener binds.
+      const messages = startup(lines).map(({ msg }) => msg ?? '');
+      assert.deepEqual(messages.slice(0, 3), [
+        'Doric starting',
+        'Loading bundles',
+        'Bundles loaded',
+      ]);
+      assert.deepEqual(messages.slice(-2), [
+        'Binding HTTP listener',
+        'Doric listening',
+      ]);
+      // The steps run one bundle at a time, each bundle's lines together and
+      // in its order; which bundle goes first is the activation order's.
+      const steps = messages.slice(3, -2);
+      const bundleOf = (msg: string) =>
+        Object.keys(startSteps).find((bundle) =>
+          startSteps[bundle]?.includes(msg),
+        );
+      const order = [
+        ...new Set(steps.map((msg) => bundleOf(msg) ?? `unexpected: ${msg}`)),
+      ];
+      assert.deepEqual([...order].sort(), Object.keys(startSteps).sort());
       assert.deepEqual(
-        startup(lines).map(({ msg }) => msg),
-        [
-          'Doric starting',
-          'Loading bundles',
-          'Bundles loaded',
-          'Initializing PostgreSQL client',
-          'PostgreSQL client initialized',
-          'Activating stored credentials',
-          'Activating Doric configuration',
-          'Doric configuration activated',
-          'Network interfaces configured',
-          'Configuring sandbox pool',
-          'Sandbox pool configured',
-          'Reconciling persisted projects and threads',
-          'Workspace reconciled',
-          'Binding HTTP listener',
-          'Doric listening',
-        ],
+        steps,
+        order.flatMap((bundle) => startSteps[bundle] ?? []),
       );
+      // A bundle's step comes after the steps of the bundles it requires
+      // (the transport after the runtime, the runtime after the sandbox).
+      const requires = await startStepRequires();
+      assert.ok(requires.get('transport')?.includes('runtime'));
+      for (const [bundle, required] of requires) {
+        for (const dependency of required) {
+          assert.ok(
+            order.indexOf(dependency) < order.indexOf(bundle),
+            `${bundle} starts after ${dependency}, which it requires: ${order.join(', ')}`,
+          );
+        }
+      }
       const line = (msg: string) =>
         startup(lines).find((entry) => entry.msg === msg);
 
@@ -67,9 +173,17 @@ void test('boots through every startup stage in order, serves, and stops on SIGT
       );
       assert.equal(line('Sandbox pool configured')?.networkMode, 'egress');
       assert.equal(line('Sandbox pool configured')?.dockerSocketShared, false);
+      // The public API replaces the Socket.IO namespaces.
       assert.deepEqual(
+        [
+          ...((line('Network interfaces configured')?.apiServices ??
+            []) as string[]),
+        ].sort(),
+        apiServices,
+      );
+      assert.equal(
         line('Network interfaces configured')?.socketNamespaces,
-        ['/status', '/projects', '/threads'],
+        undefined,
       );
       assert.equal(line('Workspace reconciled')?.interruptedThreads, 0);
       assert.equal(line('Workspace reconciled')?.interruptedProjects, 0);
@@ -80,41 +194,63 @@ void test('boots through every startup stage in order, serves, and stops on SIGT
       assert.deepEqual(line('Doric listening')?.alternatives, {
         sandbox: 'docker',
       });
-      // The runtime logs its own recovery steps through log/v1, between
-      // reconciliation and the workspace it found.
-      const recovery = lines
-        .filter(({ msg }) =>
-          [
-            'Reconciling persisted projects and threads',
-            'Project and thread reconciliation complete',
-            'Interrupted prompts resumed',
-            'Project sandbox recovery scheduled',
-            'Workspace reconciled',
-          ].includes(msg ?? ''),
-        )
-        .map(({ msg }) => msg);
-      assert.deepEqual(recovery, [
-        'Reconciling persisted projects and threads',
+      // The runtime process logs its own recovery steps through log/v1, in
+      // their order. They reach the host log through the bundle's log stream,
+      // which is not ordered against the host's own lines (they may land after
+      // `Doric listening`), so wait a bounded time for all three.
+      const recoverySteps = [
         'Project and thread reconciliation complete',
         'Interrupted prompts resumed',
         'Project sandbox recovery scheduled',
-        'Workspace reconciled',
-      ]);
+      ];
+      const recoveryLines = (all: readonly LogLine[]) =>
+        all.filter(({ msg }) => recoverySteps.includes(msg ?? ''));
+      let logged = lines;
+      for (
+        const deadline = Date.now() + 5_000;
+        recoveryLines(logged).length < recoverySteps.length &&
+        Date.now() < deadline;
+      ) {
+        await delay(100);
+        logged = await host.lines();
+      }
+      const recovery = recoveryLines(logged);
+      assert.deepEqual(
+        recovery.map(({ msg }) => msg),
+        recoverySteps,
+      );
+      for (const entry of recovery) {
+        assert.equal(entry.component, 'bundles', entry.msg);
+        assert.equal(entry.bundleId, 'runtime', entry.msg);
+      }
+      // The host's own start step brackets the workspace it reconciled.
+      assert.deepEqual(
+        startup(logged)
+          .map(({ msg }) => msg)
+          .filter((msg) =>
+            [
+              'Reconciling persisted projects and threads',
+              'Workspace reconciled',
+            ].includes(msg ?? ''),
+          ),
+        ['Reconciling persisted projects and threads', 'Workspace reconciled'],
+      );
 
-      const config = await host.request('/config');
-      assert.equal(config.status, 200);
-      // The configuration the boot activated is the one the host serves.
+      // The configuration the boot activated is the one the public API serves.
+      const config = await callApi<{
+        doricConfiguration?: { revision?: number };
+      }>(host.url, 'doric.api.config.v1.ConfigService/GetConfig');
       assert.equal(
-        ((await config.json()) as { revision: number }).revision,
+        config.doricConfiguration?.revision,
         line('Doric configuration activated')?.configRevision,
       );
-      const projects = await host.request('/projects');
-      assert.equal(projects.status, 200);
-      assert.deepEqual(await projects.json(), { items: [] });
-      const missing = await host.request('/nowhere');
-      assert.equal(missing.status, 404);
-
-      assert.equal(await host.stop(), 0);
+      const projects = await callApi<{ items?: unknown[] }>(
+        host.url,
+        'doric.api.projects.v1.ProjectsService/ListProjects',
+      );
+      assert.deepEqual(projects.items ?? [], []);
+      // No REST route is left on the public port.
+      assert.equal((await host.request('/projects')).status, 404);
     } finally {
       await host.close();
     }
@@ -130,9 +266,8 @@ void test('a missing database URL fails the boot at database_client', {
   try {
     assert.equal(await host.exited, 1);
     const lines = await host.lines();
+    // The storage identity is the boot's first read of the database.
     assert.equal(fatalStage(lines), 'database_client');
-    // Every bundle was loaded first: the database is the first I/O.
-    assert.ok(startup(lines).some(({ msg }) => msg === 'Bundles loaded'));
   } finally {
     await host.close();
   }
@@ -167,7 +302,7 @@ void test('legacy Project rows the stage-7 migration never moved fail the boot a
   }
 });
 
-void test('a composition without a structural provider fails the boot at bundle_load', {
+void test('a composition without default fails the boot at bundle_load with Bundle recovery mode', {
   timeout: 120_000,
 }, async () => {
   const directory = await mkdtemp(
@@ -206,5 +341,71 @@ void test('a composition without a structural provider fails the boot at bundle_
     }
   } finally {
     await rm(directory, { recursive: true, force: true });
+  }
+});
+
+void test('SIGTERM runs the shutdown and exits 0 with no bundle process left', {
+  skip: databaseCase,
+  timeout: 120_000,
+}, async () => {
+  assert.ok(connectionString);
+  const database = await freshDatabase(connectionString);
+  try {
+    const host = await startHostProcess({ DORIC_DATABASE_URL: database.url });
+    try {
+      assert.ok(host.child.pid);
+      const running = await childProcesses(host.child.pid);
+      assert.ok(running.length > 0, 'the host runs its bundle processes');
+
+      const started = Date.now();
+      assert.equal(await host.stop(), 0);
+      // Within the shutdown deadline, below compose's 30 s grace period.
+      assert.ok(Date.now() - started < 30_000);
+      // Every instance was stopped (or killed at the deadline) before the exit.
+      const alive = (
+        await Promise.all(
+          running.map(async ({ pid }) => {
+            try {
+              process.kill(pid, 0);
+              return [pid];
+            } catch {
+              return [];
+            }
+          }),
+        )
+      ).flat();
+      assert.deepEqual(alive, []);
+    } finally {
+      await host.close();
+    }
+  } finally {
+    await database.close();
+  }
+});
+
+void test('ps shows one process per scheduled host part and none for a client-only bundle', {
+  skip: databaseCase,
+  timeout: 120_000,
+}, async () => {
+  assert.ok(connectionString);
+  const database = await freshDatabase(connectionString);
+  try {
+    const host = await startHostProcess({ DORIC_DATABASE_URL: database.url });
+    try {
+      assert.ok(host.child.pid);
+      const spawned = await spawnedBundles(
+        bundlesPath,
+        await childProcesses(host.child.pid),
+      );
+
+      // AC3.1, D-4: one process per host part, the alternative not chosen
+      // (`firecracker`) and the client-only bundles none.
+      assert.deepEqual([...spawned].sort(), hostPartBundles);
+      assert.equal(await host.stop(), 0);
+    } finally {
+      await host.close();
+    }
+  } finally {
+    await database.close();
   }
 });

@@ -1,33 +1,55 @@
-import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 
+import { createFileRegistry } from '@bufbuild/protobuf';
 import {
   type AlternativeChoices,
+  applyCompositionOverrides,
+  buildCatalog,
   type Composition,
   compositionOverridesPath,
-  type EmbeddedBundle,
+  compositionSchema,
+  discoverBundles,
   enableAlternatives,
   enabledAlternatives,
-  type KernelPlatform,
-  type LogSink,
-  type PlatformLog,
+  type InstalledBundle,
+  PLATFORM_VERSION,
   readComposition,
+  readCompositionOverrides,
   type StartupSink,
   selectAlternatives,
-  startKernel,
   type Variables,
 } from 'bundle';
-import type { CatalogSnapshot, NetworkResources } from 'bundle/contracts';
+import { file_doric_events_v1_events } from 'bundle/contracts/gen/doric/events/v1/events_pb.js';
+import { file_doric_hooks_v1_hooks } from 'bundle/contracts/gen/doric/hooks/v1/hooks_pb.js';
+import { file_doric_log_v1_log } from 'bundle/contracts/gen/doric/log/v1/log_pb.js';
+import { file_doric_models_provider_v1_provider } from 'bundle/contracts/gen/doric/models/provider/v1/provider_pb.js';
+import { file_doric_models_v1_models } from 'bundle/contracts/gen/doric/models/v1/models_pb.js';
+import { file_doric_secrets_backend_v1_backend } from 'bundle/contracts/gen/doric/secrets/backend/v1/backend_pb.js';
+import { file_doric_secrets_v1_secrets } from 'bundle/contracts/gen/doric/secrets/v1/secrets_pb.js';
+import { file_doric_settings_v1_settings } from 'bundle/contracts/gen/doric/settings/v1/settings_pb.js';
+import {
+  file_doric_skills_v1_skills,
+  SkillsService,
+} from 'bundle/contracts/gen/doric/skills/v1/skills_pb.js';
+import { file_doric_storage_backend_v1_backend } from 'bundle/contracts/gen/doric/storage/backend/v1/backend_pb.js';
+import { file_doric_storage_v1_storage } from 'bundle/contracts/gen/doric/storage/v1/storage_pb.js';
+import {
+  file_doric_tools_v1_tools,
+  ToolsService,
+} from 'bundle/contracts/gen/doric/tools/v1/tools_pb.js';
+import {
+  type CatalogIndex,
+  createCatalogIndex,
+  type Platform,
+  type PlatformOptions,
+  readStagedCatalogIndex,
+  runHostHook,
+  stagedCommandOf,
+  stagedHostPart,
+  startPlatform,
+} from 'bundle/platform';
+import { DiagnosticsStore, type ResolvedEnvironment } from 'bundle/runtime';
 import type { Logger } from 'pino';
-import { ToolErrorObject } from 'tool';
-
-import { createCatalogDistribution } from '../bridge/catalog.js';
-
-export interface Bundles {
-  readonly platform: KernelPlatform;
-  /** Installed bundles the host activated (embedded ones excluded). */
-  readonly bundleCount: number;
-}
 
 /**
  * The core (or a chosen foundation provider) could not activate, or a
@@ -40,36 +62,6 @@ export class BundleRecoveryError extends Error {
     super(`Bundle recovery mode: ${reason ?? 'unknown reason'}`);
     this.name = 'BundleRecoveryError';
   }
-}
-
-export interface StartBundlesOptions {
-  readonly network?: NetworkResources;
-  readonly bundlesPath: string;
-  readonly compositionPath: string;
-  /**
-   * The composition to boot in place of the file at `compositionPath`, such
-   * as the shipped one with the alternatives the variables chose applied
-   * (`hostComposition`, D10-9); its overrides still live beside
-   * `compositionPath`.
-   */
-  readonly composition?: Composition | { readonly path: string };
-  /**
-   * The composition overrides the splash recovery actions persist (HR-6);
-   * default `composition.overrides.json` beside the composition.
-   */
-  readonly compositionOverridesPath?: string;
-  /** Optional embedded bundles, used by isolated hosts and tests. */
-  readonly embedded?: readonly EmbeddedBundle[];
-  readonly logger: Logger;
-  /** Test seam: the generation runner the kernel forks. */
-  readonly runnerPath?: string;
-  /**
-   * Random per host process [S8-22]: with the host generation, it names the
-   * generation the desktop downloads through `doric.catalog/v1.distribution`.
-   */
-  readonly hostBoot?: string;
-  /** The host's startup record: the stages and log lines of `doric.startup/v1`. */
-  readonly startup?: StartupSink;
 }
 
 /**
@@ -89,22 +81,6 @@ export const bundlePaths = (
     join(entrypointDirectory, '..', '..', 'composition.json'),
 });
 
-/** Writes `doric.log/v1` records into the host's own pino destinations. */
-export const pinoSink = (logger: Logger): LogSink => ({
-  write: ({ level, message, fields, ...origin }) => {
-    logger[level](
-      { ...origin, ...(fields === undefined ? {} : { fields }) },
-      message,
-    );
-  },
-});
-
-const platformLog = (logger: Logger): PlatformLog => ({
-  info: (fields, message) => logger.info(fields, message),
-  warn: (fields, message) => logger.warn(fields, message),
-  error: (fields, message) => logger.error(fields, message),
-});
-
 /**
  * The contracts and bundles the host needs active before it serves, as its
  * composition declares them (`required`). Without them the host would run
@@ -114,53 +90,6 @@ export type StructuralRequirement = NonNullable<Composition['required']>;
 
 /** Only the composition defines which providers are essential. */
 const noRequirements: StructuralRequirement = { contracts: [], bundles: [] };
-
-/** Why the catalog cannot serve the host, or `undefined` when it can. */
-export const structuralFault = (
-  catalog: CatalogSnapshot,
-  required: StructuralRequirement,
-): string | undefined => {
-  const active = new Set(
-    catalog.bundles
-      .filter(({ state }) => state === 'active')
-      .map(({ id }) => id),
-  );
-  const missing = [
-    ...required.contracts.filter(
-      (id) =>
-        !catalog.contracts.some(
-          (contract) =>
-            contract.id === id &&
-            contract.providers.some(({ bundleId }) => active.has(bundleId)),
-        ),
-    ),
-    ...required.bundles.filter((id) => !active.has(id)),
-  ];
-
-  return missing.length === 0
-    ? undefined
-    : `structural providers unavailable: ${missing.join(', ')}`;
-};
-
-/**
- * Refuses a host whose structural providers are not all active (design 57
- * §9.1, row 4b). Today any of them failing is a startup crash; a quarantine
- * must not leave a host without routes. The reasons are logged as the
- * recovery reason before the fatal path runs.
- */
-export const assertStructural = async (
-  platform: KernelPlatform,
-  logger: Logger,
-  required: StructuralRequirement,
-): Promise<void> => {
-  const reason = structuralFault(platform.catalog(), required);
-
-  if (reason === undefined) return;
-
-  logger.error({ reason }, 'Bundle recovery mode');
-  await platform.stop();
-  throw new BundleRecoveryError(reason);
-};
 
 /** The composition the host boots, with what the startup log says about it. */
 export interface HostComposition {
@@ -220,77 +149,282 @@ export const hostComposition = async (
   };
 };
 
+/** The booted host: the platform and what the host read to boot it. */
+export interface HostPlatform {
+  readonly platform: Platform;
+  /** The host resolution the platform booted (generation 1). */
+  readonly resolved: ResolvedEnvironment;
+  readonly diagnostics: DiagnosticsStore;
+}
+
+export interface StartHostPlatformOptions {
+  /** The staged bundles (`bundlePaths`); each `<id>/` holds `manifest.json`, `contracts.json`, `descriptors.binpb`, `host/`. */
+  readonly bundlesPath: string;
+  /** The composition file; its overrides (`composition.overrides.json`) live beside it. */
+  readonly compositionPath: string;
+  /** What to boot instead of the file, as `hostComposition` answers it. */
+  readonly composition: Composition | { readonly path: string };
+  /** `hostComposition(...).required`: the structural providers. */
+  readonly required: StructuralRequirement;
+  /** `<DORIC_HOST>:<DORIC_PORT>` (`0.0.0.0:3000` by default). */
+  readonly publicAddress: string;
+  /** The host's stage tracker and its `component: 'startup'` lines (`doric.startup/v1`). */
+  readonly startup: StartupSink;
+  /** The host logger: `doric.log/v1` records (`component: 'bundles'`), `Bundles loaded`, `Bundle recovery mode`. */
+  readonly logger: Logger;
+  /** Ends the host after a later required quarantine; `process.exit` when undefined. */
+  readonly exit?: PlatformOptions['exit'];
+  /** The instances' base environment; `process.env` when undefined. */
+  readonly env?: NodeJS.ProcessEnv;
+}
+
+/** The generation the host boots: the first. */
+const bootGeneration = 1;
+
+/** The levels of `doric.log/v1`, each a method of the host logger. */
+const logLevels = new Set(['debug', 'info', 'warn', 'error'] as const);
+
+type LogLevel = typeof logLevels extends Set<infer Level> ? Level : never;
+
+const isLogLevel = (level: string): level is LogLevel =>
+  logLevels.has(level as LogLevel);
+
+const messageOf = (error: unknown): string =>
+  error instanceof Error ? error.message : String(error);
+
 /**
- * Boots the host's bundles through the kernel: the foundation, the core and
- * the embedded bundles run in this process, and the installed bundles run in
- * a generation process the kernel forks. It resolves once generation 1 is
- * active or failed. Activation opens no database.
+ * The files of the basic `HOST` contracts. `packages/bundle` defines them, so
+ * no bundle's `descriptors.binpb` holds the ones its own files do not import,
+ * though bundles provide them (`core`'s `hooks/v1`, `postgres`'s
+ * `storage.backend/v1`).
  */
-export const startBundles = async ({
-  bundlesPath,
-  compositionPath,
-  composition = { path: compositionPath },
-  compositionOverridesPath: overridesPath = compositionOverridesPath(
-    compositionPath,
-  ),
-  embedded = [],
-  logger,
-  runnerPath,
-  hostBoot = randomUUID(),
-  startup,
-  network,
-}: StartBundlesOptions): Promise<Bundles> => {
-  const platform = await startKernel({
-    bundlesPath,
-    composition,
-    compositionOverrides: overridesPath,
-    embedded,
-    log: platformLog(logger.child({ component: 'platform' })),
-    sink: pinoSink(logger.child({ component: 'bundles' })),
-    errorClasses: [ToolErrorObject],
-    distribution: (source) => createCatalogDistribution({ source, hostBoot }),
-    ...(runnerPath === undefined ? {} : { runnerPath }),
-    ...(startup === undefined ? {} : { startup }),
-    ...(network === undefined ? {} : { network }),
-  });
+const basicHostFiles = [
+  file_doric_hooks_v1_hooks,
+  file_doric_log_v1_log,
+  file_doric_tools_v1_tools,
+  file_doric_skills_v1_skills,
+  file_doric_settings_v1_settings,
+  file_doric_secrets_v1_secrets,
+  file_doric_secrets_backend_v1_backend,
+  file_doric_storage_v1_storage,
+  file_doric_storage_backend_v1_backend,
+  file_doric_events_v1_events,
+  file_doric_models_v1_models,
+  file_doric_models_provider_v1_provider,
+];
 
-  if (platform.mode === 'recovery') {
-    const reason = platform.diagnostics().recovery?.reason;
+/**
+ * `staged`, falling back to the basic `HOST` contracts for what it lacks; the
+ * staged descriptors win where both hold a file.
+ */
+const withBasicContracts = (staged: CatalogIndex): CatalogIndex => {
+  const basic = createCatalogIndex(basicHostFiles);
+  const desktop = [
+    ...staged.desktopMethods(),
+    ...basic
+      .desktopMethods()
+      .filter(({ path }) => staged.method(path) === undefined),
+  ];
 
-    await platform.stop();
-    throw new BundleRecoveryError(reason);
-  }
-
-  const installed = new Set(
-    platform
-      .catalog()
-      .bundles.filter(({ state }) => state === 'active')
-      .map(({ id }) => id),
-  );
-
-  for (const { manifest } of embedded) installed.delete(manifest.id);
-
-  return { platform, bundleCount: installed.size };
+  return {
+    method: (path) => staged.method(path) ?? basic.method(path),
+    service: (fullName) => staged.service(fullName) ?? basic.service(fullName),
+    contract: (id) => staged.contract(id) ?? basic.contract(id),
+    desktopMethods: () => desktop,
+    // No basic contract is part of the public API (`api.*`).
+    publicMethods: () => staged.publicMethods(),
+    registry: createFileRegistry(basic.registry, staged.registry),
+  };
 };
 
 /**
- * A structural provider lost after boot (cross-review G-5): the generation
- * that held `runtime` or `direct` exhausted its respawns and the kernel
- * activated an empty view. The host takes its fatal path, as a boot without
- * those providers does, so the supervisor restarts it as it did when the
- * process died. Returns the unsubscriber.
+ * The host resolution of generation 1: the staged bundles discovered, the
+ * composition read (or the object `hostComposition` answered, validated)
+ * with its overrides applied. Discovery and overrides problems become
+ * catalog issues; a composition that cannot be read is answered as the
+ * `reason` of a recovery.
  */
-export const watchStructural = (
-  platform: KernelPlatform,
-  logger: Logger,
-  fatal: (reason: string) => void,
-  required: StructuralRequirement,
-): (() => void) =>
-  platform.generations.onActive(() => {
-    const reason = structuralFault(platform.catalog(), required);
+const readHostResolution = async (
+  options: Pick<
+    StartHostPlatformOptions,
+    'bundlesPath' | 'compositionPath' | 'composition'
+  >,
+): Promise<ResolvedEnvironment | { readonly reason: string }> => {
+  const issues: string[] = [];
+  let installed: readonly InstalledBundle[] = [];
+  let composition: Composition;
 
-    if (reason === undefined) return;
+  try {
+    installed = await discoverBundles(options.bundlesPath);
+  } catch (error) {
+    issues.push(messageOf(error));
+  }
 
-    logger.error({ reason }, 'Bundle recovery mode');
-    fatal(reason);
+  try {
+    composition =
+      'path' in options.composition
+        ? await readComposition(options.composition.path)
+        : compositionSchema.parse(options.composition);
+  } catch (error) {
+    return { reason: `invalid composition: ${messageOf(error)}` };
+  }
+
+  try {
+    composition = applyCompositionOverrides(
+      composition,
+      await readCompositionOverrides(
+        compositionOverridesPath(options.compositionPath),
+      ),
+    );
+  } catch (error) {
+    issues.push(messageOf(error));
+  }
+
+  return buildCatalog({
+    installed,
+    embedded: [],
+    composition,
+    platformVersion: PLATFORM_VERSION,
+    generation: bootGeneration,
+    issues,
   });
+};
+
+/**
+ * Flows → Boot up to the bound public listener (spec `:1526`): reads the
+ * composition with its overrides applied, discovers the staged bundles and
+ * resolves the host environment (generation 1), indexes their
+ * `descriptors.binpb` (`readStagedCatalogIndex`), and starts the platform with
+ * `stagedCommandOf(bundlesPath)` and `stagedHostPart(bundlesPath)`, so
+ * client-only bundles are active and never spawned. Before the listener
+ * binds it logs `Bundles loaded` `{bundleCount, skillCount, toolCount}`
+ * (`bundleCount`: the catalog's active entries; the counts from
+ * `skills/v1.List` and `tools/v1.List` as `doric`), then runs
+ * `onHostStartHook` (`runHostHook`); at shutdown it runs `onHostStopHook`
+ * within the platform's deadline.
+ *
+ * Resolves once the public listener listens. Rejects with
+ * `BundleRecoveryError(platform.structuralFault)` after logging
+ * `Bundle recovery mode` `{reason}` and shutting the platform down, when a
+ * structural provider is not active after the boot; with the platform's
+ * rejection otherwise (`RouterBindingError`, `PublicListenerBindingError`,
+ * the storage identity's `ContractError`, a failing `onHostStartHook`), after
+ * the platform shut down what started. Nothing is left running on a
+ * rejection. Never runs `onHostReadyHook` (see {@link hostReady}).
+ */
+export const startHostPlatform = async (
+  options: StartHostPlatformOptions,
+): Promise<HostPlatform> => {
+  const { bundlesPath, startup } = options;
+  const startupLog = options.logger.child({ component: 'startup' });
+  const bundlesLog = options.logger.child({ component: 'bundles' });
+  const recovery = (reason: string): BundleRecoveryError => {
+    startupLog.error({ reason }, 'Bundle recovery mode');
+
+    return new BundleRecoveryError(reason);
+  };
+  const resolved = await readHostResolution(options);
+
+  if ('reason' in resolved) throw recovery(resolved.reason);
+  if (resolved.recovery !== undefined) throw recovery(resolved.recovery.reason);
+
+  const diagnostics = new DiagnosticsStore({ generation: bootGeneration });
+
+  diagnostics.load(resolved);
+
+  const index = withBasicContracts(
+    await readStagedCatalogIndex(
+      bundlesPath,
+      resolved.entries
+        .filter(({ state }) => state === 'scheduled')
+        .map(({ id }) => id),
+    ),
+  );
+  const platform = await startPlatform({
+    publicAddress: options.publicAddress,
+    index,
+    resolved,
+    commandOf: stagedCommandOf(bundlesPath),
+    hostPart: stagedHostPart(bundlesPath),
+    diagnostics,
+    required: options.required,
+    startup,
+    ...(options.env === undefined ? {} : { env: options.env }),
+    ...(options.exit === undefined ? {} : { exit: options.exit }),
+    writeLog: ({ level, message, fields, traceId, ...origin }, call) => {
+      bundlesLog[isLogLevel(level) ? level : 'info'](
+        {
+          bundleId: origin.bundleId,
+          version: origin.version,
+          generation: origin.generation,
+          environment: origin.environment,
+          scope: origin.scope,
+          ...(traceId === undefined ? {} : { traceId }),
+          caller: call.caller,
+          ...(fields === undefined ? {} : { fields }),
+        },
+        message,
+      );
+    },
+    beforeListen: async (doric) => {
+      const [skills, tools] = await Promise.all([
+        doric.client(SkillsService).list({}),
+        doric.client(ToolsService).list({}),
+      ]);
+
+      startupLog.info(
+        {
+          bundleCount: diagnostics
+            .snapshot()
+            .bundles.filter(({ state }) => state === 'active').length,
+          skillCount: skills.skills.length,
+          toolCount: tools.tools.length,
+        },
+        'Bundles loaded',
+      );
+      await runHostHook(doric, 'onHostStartHook');
+      // The platform binds the public listener right after this step, so a
+      // bind failure is reported at `network_binding`.
+      startup.stage('network_binding');
+      startupLog.info(
+        { address: options.publicAddress },
+        'Binding HTTP listener',
+      );
+    },
+    beforeStop: (doric, signal) =>
+      runHostHook(doric, 'onHostStopHook', { signal }),
+  });
+
+  if (platform.structuralFault !== undefined) {
+    const error = recovery(platform.structuralFault);
+
+    await platform.shutdown();
+    throw error;
+  }
+
+  return { platform, resolved, diagnostics };
+};
+
+/**
+ * `onHostReadyHook` of `doric.app.hooks/v1`, run as `doric` after the public
+ * listener listens and before `Doric listening`. Resolves once every handler
+ * was called; a failure (no `hooks/v1` provider, a `Run` error) is logged at
+ * `warn` with its code and never thrown.
+ */
+export const hostReady = async (
+  platform: Platform,
+  logger: Logger,
+): Promise<void> => {
+  try {
+    await runHostHook(platform, 'onHostReadyHook');
+  } catch (error) {
+    logger.warn(
+      {
+        code:
+          error instanceof Error && 'code' in error ? error.code : 'internal',
+        reason: messageOf(error),
+      },
+      'onHostReadyHook failed',
+    );
+  }
+};

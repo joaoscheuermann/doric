@@ -3,9 +3,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import type { CatalogSnapshot } from 'bundle/contracts';
-
-import { hostComposition, structuralFault } from '../src/lib/bundles/boot.js';
+import { hostComposition } from '../src/lib/bundles/boot.js';
 
 // The shipped composition enables the sandbox bundle `DORIC_SANDBOX_PROVIDER`
 // names (D10-9). The kernel keeps no sandbox settings: each sandbox bundle reads
@@ -128,24 +126,6 @@ void test('an operator composition without required assumes no product providers
 
     assert.deepEqual(own.required, { contracts: [], bundles: [] });
   });
-});
-
-void test('an operator composition enforces its own essential provider', async () => {
-  await withComposition(
-    { core: 'core', enabled: ['core'], required: { contracts: ['sample/v1'] } },
-    async (path) => {
-      const own = await hostComposition({ DORIC_COMPOSITION: path }, path);
-      const catalog = {
-        contracts: [],
-        bundles: [{ id: 'core', state: 'active' }],
-      } as unknown as CatalogSnapshot;
-
-      assert.equal(
-        structuralFault(catalog, own.required),
-        'structural providers unavailable: sample/v1',
-      );
-    },
-  );
 });
 
 void test('an unreadable composition is left to the kernel for validation', async () => {

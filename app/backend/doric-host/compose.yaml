@@ -59,6 +59,8 @@ services:
       - firecracker-state:/var/lib/doric/firecracker
       - firecracker-cache:/var/cache/doric/firecracker
       - postgres-data:/var/lib/doric/postgresql:ro
+    restart: on-failure
+    stop_grace_period: 30s
 
   docker:
     profiles: [docker]
@@ -98,6 +100,8 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - postgres-data:/var/lib/doric/postgresql:ro
+    restart: on-failure
+    stop_grace_period: 30s
 
 volumes:
   postgres-data:

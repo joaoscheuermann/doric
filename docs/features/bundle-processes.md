@@ -658,6 +658,37 @@ encoding, today's payload or the message's JSON, through `commentsAddedOf` and
 S62b2); `chat` and `papercraft` use them and fall back to the row as stored,
 and `papercraft` depends on `comments`.
 
+Since S62c3 the host boots the platform
+([`app/backend/doric-host/README.md`](../../app/backend/doric-host/README.md),
+"Startup and failures"). `src/index.ts` creates no Express app, Socket.IO
+server or bridge; it calls `startHostPlatform` and `hostReady`
+(`src/lib/bundles/boot.ts`). `startHostPlatform` reads the composition with
+`composition.overrides.json` applied, resolves generation 1, loads a
+`DiagnosticsStore` (from `bundle/runtime`), indexes the staged
+`descriptors.binpb` (`readStagedCatalogIndex`) and calls `startPlatform` with
+`stagedCommandOf` and `stagedHostPart`, so every host part runs as its own
+process in activation order and client-only bundles are never spawned. Each
+bundle's `descriptors.binpb` holds only its own protos, so `withBasicContracts`
+merges the generated files of the 12 basic host contracts from
+`bundle/contracts/gen` into the index, the staged files winning. The
+platform's `beforeListen` logs `Bundles loaded`
+`{bundleCount, skillCount, toolCount}`, runs `onHostStartHook`, and at its end
+sets the `network_binding` stage and logs `Binding HTTP listener`
+`{address}`; `beforeStop` runs `onHostStopHook`. `hostReady` runs
+`onHostReadyHook` and logs a failure at `warn`; the host then logs
+`Doric listening` with `port: platform.publicPort`. SIGINT and SIGTERM run
+`platform.shutdown()`, then exit 0. A composition that cannot be read or fails
+the structural check (an unserved `required` contract, or no runtime) logs
+`Bundle recovery mode` and throws `BundleRecoveryError` before the platform
+starts; a structural fault after the start does the same after
+`platform.shutdown()`. A bundle process's lines reach the host log through
+`log/v1` (component `bundles`) and are not ordered against the host's own
+lines. `project.json` stages with `stage --dev <dir> --all bundles`,
+`composition.json` has no `resident` list, and `compose.yaml` gives
+`firecracker` and `docker` `restart: on-failure` and `stop_grace_period: 30s`.
+`core`'s `models/v1` `Catalog` writes `Model catalog could not be read`
+whenever its result is `failed`.
+
 ## Evolution
 
 - 2026-11-22: phase 0 of
@@ -1430,3 +1461,21 @@ and `papercraft` depends on `comments`.
   provider, then the `DESKTOP` methods, each path once. Decision (Q11): the
   public API is recognised by the contract id `api.*`. The host still boots
   the kernel until S62c3.
+- 2026-11-24: phase 3, slice S62c3, of
+  [`docs/designs/grpc-processes.md`](../designs/grpc-processes.md) (version
+  6.31): the host boots through `startHostPlatform` and `hostReady` on
+  `startPlatform`, with no Express, Socket.IO or bridge; `Doric listening`
+  logs `platform.publicPort`; SIGINT and SIGTERM run `platform.shutdown()`
+  and exit 0; `Binding HTTP listener` logs `{address}` at the end of
+  `beforeListen`; a recovery logs `Bundle recovery mode` and throws
+  `BundleRecoveryError`. `withBasicContracts` adds the basic host contracts
+  to the staged index. `stage --dev`, no `resident`, Compose restart and
+  grace settings. `core`'s `Catalog` logs `Model catalog could not be read`
+  on every `failed` result. Tests: `boot`, `bundles` and `secret-logs`
+  rewritten, `bridge.test.ts` deleted, `tests/helpers/api.ts` and
+  `processes.ts` new. Decisions: S62c3b rewrites `tests/helpers/platform.ts`
+  and its four users (C3-1); the dropped `bundles.test.ts` cases (PC23, B14,
+  stage-1 parity, kind registration, firecracker activation) come back in
+  S62d or group E (C3-4). Open item: `packages/bundle` has no helper for the
+  basic contracts; moving `withBasicContracts` there needs an exported list
+  of basic files or an option of `readStagedCatalogIndex` or `startPlatform`.

@@ -7,6 +7,16 @@ and provider history in PostgreSQL, and exposes REST and Socket.IO so the
 desktop app, scripts and other clients can drive it. Read this if you deploy
 the host, integrate with its API, or change the kernel.
 
+> **Branch `feat/grpc-processes`, from slice S62c3.** The host boots through
+> the gRPC platform (`startHostPlatform` on `startPlatform`): every host part
+> runs in its own process, and the host serves no Express app, no Socket.IO
+> server and no desktop bridge. The sections below that describe the REST API,
+> Socket.IO, the desktop bridge and kernel bundles describe the kernel path
+> this branch replaces; [Startup and failures](#startup-and-failures) and
+> [Shutdown](#shutdown) describe the platform boot. The public API is
+> `doric.api.*` on the gateway
+> ([grpc-processes.md](../../../docs/designs/grpc-processes.md)).
+
 For the product overview and the quickest way to get everything running, start
 with the [main README](../../../README.md).
 
@@ -243,8 +253,8 @@ generation process that inherits the host's environment and read the
   ([`src/index.ts`](src/index.ts)).
 - `DORIC_PORT` (default `3000`): port of that listener, parsed with
   `Number.parseInt`, so only the leading digits count (`3000abc` binds
-  `3000`). `0` binds a random free port, and `Doric listening` then still logs
-  `port: 0`. A value whose leading digits are not a port 0–65535 fails
+  `3000`). `0` binds a random free port, and `Doric listening` logs the port
+  the platform bound (`platform.publicPort`). A value whose leading digits are not a port 0–65535 fails
   startup at `network_binding` ([`src/index.ts`](src/index.ts)).
 - `DORIC_DATABASE_URL` (no default): PostgreSQL connection URL. Required: an
   empty or missing URL fails startup at `database_client`, and an unreachable
@@ -373,18 +383,22 @@ kernel loads through the `bundle` platform package
 
 ```text
 src/
-├── index.ts            composition root: logger, listener, startup stages, bundle boot, shutdown
+├── index.ts            composition root: logger, startup stages, platform boot, shutdown
 └── lib/
     ├── bridge/
     │   ├── catalog.ts     the distribution members of `doric.catalog/v1`
     │   └── socket.ts      the desktop bridge namespace `/doric/bridge`
     ├── bundles/
-    │   └── boot.ts        bundle paths, composition, structural checks
+    │   └── boot.ts        bundle paths, composition, the platform boot (`startHostPlatform`, `hostReady`)
     └── socket-buffer.ts   the largest Socket.IO message the host accepts
 ```
 
-The kernel owns one Express app, one Node HTTP server and one Socket.IO server
-on it, and hands all three to the bundles as their network
+From slice S62c3 `src/index.ts` creates no Express app, HTTP server or
+Socket.IO server and installs no bridge: the platform binds the public
+listener, and `src/lib/bridge` and `src/lib/socket-buffer.ts` stay unused
+until group F deletes them. Before S62c3 the kernel owned one Express app,
+one Node HTTP server and one Socket.IO server on it, and handed all three to
+the bundles as their network
 ([`src/index.ts`](src/index.ts)); the `transport` bundle registers the REST
 routes and Socket.IO namespaces on them
 ([`transport/src/host/index.ts`](../../../bundles/foundation/transport/src/host/index.ts)),
@@ -441,8 +455,6 @@ composition at `DORIC_COMPOSITION` (both under
   `papercraft` and `mcp`;
 - chooses `postgres` as the provider of `storage.backend/v1` and
   `secrets.backend/v1`;
-- names the `resident` bundles that run in the kernel process itself
-  (`host-config`, `transport`, `screen-relay`);
 - requires the contracts `runtime/v2`, `executor/v1`, `sandbox/v1`,
   `models/v1` and `host-config/v1` and the bundle `transport`: the host does
   not serve without an active provider of each
@@ -450,6 +462,11 @@ composition at `DORIC_COMPOSITION` (both under
 - offers the `sandbox` alternative: `DORIC_SANDBOX_PROVIDER` picks `docker`,
   the default and the one `enabled` lists, or `firecracker`, which then takes
   the place of `docker` in `enabled`.
+
+From slice S62c3 no bundle runs in the host process: the platform spawns
+every host part as its own process, in activation order, and the start-step
+lines follow that order. The text below, up to the bundle list, describes
+the kernel path before S62c3.
 
 The kernel runs four kinds of bundle in its own process
 ([`partition.ts`](../../../packages/bundle/src/process/partition.ts)):
@@ -619,21 +636,29 @@ every startup line are in
 [observability.md](../../../docs/architecture/bundles/observability.md#the-hosts-startup-record-doricstartupv1).
 In order:
 
-1. `bootstrap`: the kernel reads the composition and applies the chosen
+1. `bootstrap`: the host reads the composition and applies the chosen
    alternatives, then logs `Doric starting` with `host`, `port` and
    `alternatives` ([`src/lib/bundles/boot.ts`](src/lib/bundles/boot.ts)). A
-   composition it cannot read is handed to the platform as a path, which
-   refuses it at `bundle_load`.
-2. `bundle_load`: it logs `Loading bundles`, starts the platform and waits
-   until the first generation is active or failed, checks the `required`
-   contracts and bundles, and logs `Bundles loaded` with `bundleCount`, the
-   number of installed bundles that are active, embedded bundles not counted
-   (32 with the shipped composition), `skillCount` (`skills/v1.list`) and
-   `toolCount` (`tools/v1.list`)
-   ([`src/lib/bundles/boot.ts`](src/lib/bundles/boot.ts)). Activating the
-   bundles opens no database.
-3. The bundles' start steps (`onHostStartHook`) run one after another, in
-   activation order, kernel bundles first. A step that names a stage runs in
+   composition it cannot read is handed on as a path and refused at
+   `bundle_load`.
+2. `bundle_load`: it logs `Loading bundles` and calls `startHostPlatform`
+   ([`src/lib/bundles/boot.ts`](src/lib/bundles/boot.ts)). That reads the
+   composition with `composition.overrides.json` applied, discovers the
+   staged bundles and resolves generation 1. A composition that cannot be
+   read, or that fails the structural check (a `required` contract no
+   bundle serves, or no runtime), logs `Bundle recovery mode` with `reason`
+   (component `startup`) and throws `BundleRecoveryError` before the platform
+   starts. Otherwise it indexes the staged `descriptors.binpb` files
+   (`readStagedCatalogIndex`) and starts the platform (`startPlatform`), which
+   spawns each host part as its own process (`node dist/host/main.mjs` of the
+   staged bundle) in activation order; client-only bundles are active and
+   never spawned. Each bundle's `descriptors.binpb` holds only its own
+   protos, so the boot merges the generated files of the 12 basic host
+   contracts from `bundle/contracts/gen` into the index (`withBasicContracts`;
+   the staged descriptors win where both hold a file).
+3. The bundles' start steps run one after another, in activation order, the
+   order of the composition's `enabled` list after the foundation and the
+   core. A step that names a stage runs in
    it; one that names none runs in the stage the previous step left. With the
    shipped composition:
    - `database_client`: the `core` bundle's start step connects
@@ -675,21 +700,29 @@ In order:
      ([Host restarts](#host-restarts),
      [`runtime/src/host/lifecycle.ts`](../../../bundles/runtime/runtime/src/host/lifecycle.ts)).
 
-   After the start steps the platform reads the storage identity, still within
-   `platform.start()`; a failure there is reported at the last bundle's stage
-   ([`kernel.ts`](../../../packages/bundle/src/process/kernel.ts)).
+   After the start steps the platform reads the storage identity; a failure
+   there is reported at the last bundle's stage.
 
-4. The kernel starts watching the required providers (the last item of the
-   list below), then installs the [desktop bridge](#the-desktop-bridge).
-5. The bundles hear that the host is ready (`platform.ready()`, which runs
-   `onHostReadyHook`) before it accepts any request. A failing ready step is
-   recorded as a `hook_execute_failed` diagnostic and startup goes on; no
-   bundle of the shipped composition registers one
-   ([`kernel.ts`](../../../packages/bundle/src/process/kernel.ts)).
-6. `network_binding`: it logs `Binding HTTP listener` with `host` and `port`,
-   listens on `DORIC_HOST:DORIC_PORT`, logs `Doric listening` with `host`,
-   `port` and `alternatives`, and enters the stage `ready`
+4. Before the public listener binds (the platform's `beforeListen` step),
+   the host logs `Bundles loaded` with `bundleCount` (the catalog's active
+   entries), `skillCount` (`skills/v1.List`) and `toolCount`
+   (`tools/v1.List`), both called as `doric`, and runs `onHostStartHook`. At
+   the end of that step it enters `network_binding` and logs
+   `Binding HTTP listener` with `address` (`DORIC_HOST:DORIC_PORT`, an IPv6
+   host in brackets); the platform then binds the public listener.
+5. A structural provider that is not active once the platform has started
+   logs `Bundle recovery mode` with `reason`, shuts the platform down and
+   throws `BundleRecoveryError`.
+6. `hostReady` runs `onHostReadyHook` as `doric`; a failure is logged at
+   `warn` as `onHostReadyHook failed` with `code` and `reason`, and startup
+   goes on. The host then logs `Doric listening` with `host`, `port`
+   (`platform.publicPort`, the bound port, so `DORIC_PORT=0` logs the port
+   actually bound) and `alternatives`, and enters the stage `ready`
    ([`src/index.ts`](src/index.ts)).
+
+A bundle process writes its log lines through `doric.log/v1`, and the host
+logs them with component `bundles`; they are not ordered against the host's
+own lines.
 
 A failure in any stage logs `Doric failed to start` at level `fatal` with only
 the `stage` field, and the process exits with code 1
@@ -728,35 +761,24 @@ in a `Bundle recovery mode` line.
   sandbox provider, for instance after an invalid `DORIC_SANDBOX_CPUS`, leaves
   `sandbox/v1` without a provider and so takes this path.
 - A required provider lost after boot, when a generation becomes active
-  without it, logs `Bundle recovery mode` with `reason` (component `startup`)
-  and exits the process with code 1, so
-  a supervisor restarts the host.
+  without it, ends the host through the platform's `exit` (the host flushes
+  its log and exits with code 1), so a supervisor restarts the host;
+  `compose.yaml` gives `docker` and `firecracker` `restart: on-failure` and
+  `stop_grace_period: 30s`.
+
+From slice S62c3 every recovery-mode failure is logged by `startHostPlatform`
+as `Bundle recovery mode` with `reason` (component `startup`) and throws
+`BundleRecoveryError`; the kernel paths above (component `platform`,
+`kernel.ts`) no longer run in the host.
 
 ### Shutdown
 
-`SIGINT` or `SIGTERM` closes the host once, in this order
-([`src/index.ts`](src/index.ts)):
-
-1. It stops watching the required providers.
-2. It closes the Socket.IO server and the HTTP listener.
-3. `platform.shutdown()` runs the bundles' stop steps (`onHostStopHook`) in
-   reverse activation order, while every bundle is still active. Only
-   `runtime` registers one in the shipped composition: it suspends every live
-   Project ([Host restarts](#host-restarts),
-   [`runtime/src/host/lifecycle.ts`](../../../bundles/runtime/runtime/src/host/lifecycle.ts)).
-   A failing stop step is recorded as a `hook_execute_failed` diagnostic and
-   the shutdown goes on
-   ([`kernel.ts`](../../../packages/bundle/src/process/kernel.ts)).
-4. `platform.stop()` first stops every generation process, all at once: each
-   deactivates its bundles in reverse order and is killed with `SIGKILL` if
-   it is still alive after 10 seconds
-   ([`manager.ts`](../../../packages/bundle/src/process/manager.ts)). Then the
-   kernel deactivates its own bundles in reverse activation order:
-   `transport`, `screen-relay`, `host-config`, `core` and, last, `postgres`,
-   which disconnects the database
-   ([`postgres/src/host/index.ts`](../../../bundles/foundation/postgres/src/host/index.ts),
-   [`activation.ts`](../../../packages/bundle/src/runtime/activation.ts),
-   [`kernel.ts`](../../../packages/bundle/src/process/kernel.ts)).
+`SIGINT` or `SIGTERM` closes the host once
+([`src/index.ts`](src/index.ts)): `platform.shutdown()` closes the public
+listener, runs the stop steps (`onHostStopHook`, as `doric`, within the
+platform's deadline) and stops every bundle process; the host then flushes
+its log and exits with code 0. In the shipped composition `runtime`'s stop
+step suspends every live Project ([Host restarts](#host-restarts)).
 
 The signal handlers:
 
@@ -768,8 +790,7 @@ The signal handlers:
 - leave a rejected step unhandled: an error in any step becomes an unhandled
   promise rejection, which Node's default handling turns into an exit with
   code 1;
-- never call `process.exit` after a clean close: the process ends once nothing
-  keeps Node's event loop alive.
+- call `process.exit(0)` once `platform.shutdown()` resolves.
 
 ### The desktop bridge
 
@@ -2815,10 +2836,11 @@ plugin of [`nx.json`](../../../nx.json).
 
 `tests/` is type-checked only by `doric-host:test`. It covers
 ([`tests/`](tests)): the boot and stop of the
-compiled host and its startup stages, the bundle composition and its order,
-what a desktop window may call (against
+compiled host and its startup stages over the platform boot, the bundle
+composition and its order over the staged bundle processes, what a desktop
+window may call (against
 [`bridge-exposure.snapshot.json`](tests/bridge-exposure.snapshot.json)), the
-desktop bridge, the sandbox provider choice, the Socket.IO buffer size, the
+sandbox provider choice, the Socket.IO buffer size, the
 credential adapter and its reference races, the migrations over seeded
 databases, persistence, and that no log line carries a resolved secret.
 

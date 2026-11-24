@@ -24,8 +24,8 @@ import type {
 import { isModelIconName, modelIconSvg } from 'llms';
 
 import type { CoreBinding, CoreCatalog } from '../binding.js';
-import { preparedOf } from './configuration.js';
 import { capacityCandidate, positiveCapacity } from './capacity.js';
+import { preparedOf } from './configuration.js';
 import { iconAnswerOf, PROVIDER_ICONS_DEADLINE_MS } from './icons.js';
 import type { ConfiguredProvider } from './providers.js';
 
@@ -55,8 +55,6 @@ const relayedError = (error: unknown): unknown =>
 /** The keys of the kind's `secret` fields. */
 const secretKeys = (kind: ModelKindDescriptor): readonly string[] =>
   kind.fields.filter((field) => field.kind === 'secret').map(({ key }) => key);
-
-
 
 /**
  * `models/v1` 1.5.0 over the provider bundles of `models.provider/v1`.
@@ -451,19 +449,22 @@ export const createModelsService = (
       const secret =
         id === undefined ? undefined : await secrets.secretOf(id, call);
 
-      try {
-        const { catalogResult } = await binding.provider(read.bundleId).catalog(
+      const catalogResult = await binding
+        .provider(read.bundleId)
+        .catalog(
           {
             configuration,
             ...(secret === undefined ? {} : { secret }),
           },
           { signal: call.signal },
+        )
+        .then(
+          (response) =>
+            response.catalogResult ?? { status: 'failed', models: [] },
+          () => ({ status: 'failed', models: [] }),
         );
 
-        return {
-          catalogResult: catalogResult ?? { status: 'failed', models: [] },
-        };
-      } catch {
+      if (catalogResult.status === 'failed') {
         // Never the endpoint, the credential or the response.
         const own = binding.own(call);
         const traceId = call.trace.traceparent.split('-')[1];
@@ -484,9 +485,9 @@ export const createModelsService = (
             call,
           )
           .catch(() => undefined);
-
-        return { catalogResult: { status: 'failed', models: [] } };
       }
+
+      return { catalogResult };
     },
     prepare: async ({ configuration }, context) => {
       const call = callOf(context);

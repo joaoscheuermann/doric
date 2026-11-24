@@ -150,9 +150,13 @@ desktop UI.
 - The **host** listens on `DORIC_HOST:DORIC_PORT`, `0.0.0.0:3000` by default,
   loads the bundles its composition enables, and logs `Doric listening` once
   it accepts requests ([`src/index.ts`](app/backend/doric-host/src/index.ts)).
-  It runs the foundation, the core, the embedded bundles and the resident
-  bundles in its own process, and every other installed bundle in a
-  generation process it forks, which inherits its environment
+  On the branch `feat/grpc-processes`, from slice S62c3, it boots the gRPC
+  platform instead: every host part runs as its own process, and the host
+  serves no REST route, Socket.IO namespace or bridge of its own
+  ([`docs/designs/grpc-processes.md`](docs/designs/grpc-processes.md)).
+  Before that it ran the foundation, the core, the embedded bundles and the
+  resident bundles in its own process, and every other installed bundle in a
+  generation process it forked, which inherits its environment
   ([`boot.ts`](app/backend/doric-host/src/lib/bundles/boot.ts),
   [bundles and composition](app/backend/doric-host/README.md#bundles-and-composition)).
   Startup never applies database migrations; the `migrate` target does

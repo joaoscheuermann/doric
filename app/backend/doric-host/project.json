@@ -20,7 +20,7 @@
       "outputs": ["{projectRoot}/dist/bundles"],
       "options": {
         "commands": [
-          "node packages/bundle/dist/build/cli.js stage app/backend/doric-host/dist/bundles --all bundles"
+          "node packages/bundle/dist/build/cli.js stage --dev app/backend/doric-host/dist/bundles --all bundles"
         ],
         "parallel": false
       },
