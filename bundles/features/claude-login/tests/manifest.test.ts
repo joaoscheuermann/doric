@@ -4,7 +4,9 @@
 // the desktop app of platform 1.7.0 or later (`desktop/ui/error-notice`).
 // What it provides and requires of the host stays as it was. The patch 1.1.1
 // (6(a) follow-up, OD48) tells a sign-in that finishes after its element is
-// gone apart from a success.
+// gone apart from a success. grpc-processes S62c raises claude.login/v1 to
+// its .proto header version, 1.1.0, and lists log/v1 as optional, as every
+// host part does.
 
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
@@ -17,6 +19,7 @@ interface Manifest {
   readonly engines: { readonly doric: string };
   readonly provides: readonly string[];
   readonly requires: readonly string[];
+  readonly optional?: readonly string[];
   readonly desktopScope?: Readonly<Record<string, readonly string[]>>;
 }
 
@@ -35,15 +38,16 @@ test('claude-login ships its client part as 1.1.0, then the patch 1.1.1, and ask
   assert.equal(engines.doric, '^1.7.0');
 });
 
-test('claude-login requires ui/v1 and regions/v1 beside secrets/v1, and still provides claude.login/v1@1.0.0', async () => {
-  const { provides, requires, desktopScope } = await manifest();
+test('claude-login requires ui/v1 and regions/v1 beside secrets/v1, takes log/v1 as optional, and provides claude.login/v1@1.1.0', async () => {
+  const { provides, requires, optional, desktopScope } = await manifest();
 
   assert.deepEqual([...requires].sort(), [
     'regions/v1@^1.0.0',
     'secrets/v1@^1.0.0',
     'ui/v1@^1.0.0',
   ]);
-  assert.deepEqual(provides, ['claude.login/v1@1.0.0']);
+  assert.deepEqual(optional, ['log/v1']);
+  assert.deepEqual(provides, ['claude.login/v1@1.1.0']);
   assert.deepEqual(desktopScope, {
     'claude.login/v1': ['projectId', 'threadId', 'promptId'],
   });

@@ -224,6 +224,45 @@ void test('B2: main.ts lists the eight doric.api services then HookHandlerServic
   assert.match(main, /deactivate:\s*host\.deactivate/);
 });
 
+/** The public API contracts `transport`'s host part serves (A60), in `main.ts` order. */
+const API_CONTRACTS = [
+  'api.config/v1',
+  'api.credentials/v1',
+  'api.providers/v1',
+  'api.host/v1',
+  'api.projects/v1',
+  'api.threads/v1',
+  'api.terminals/v1',
+  'api.status/v1',
+];
+
+void test('S62c: contracts.json lists the eight api.*/v1@1.0.0 on host, kind service, cardinality one, local false, and dist/schemas/ holds no file for them', async () => {
+  const dist = join(bundleRoot, 'dist');
+  const descriptor = JSON.parse(
+    await readFile(join(dist, 'contracts.json'), 'utf8'),
+  ) as { readonly contracts: readonly { readonly id: string }[] };
+
+  assert.deepEqual(
+    descriptor.contracts.filter(({ id }) => id.startsWith('api.')),
+    API_CONTRACTS.map((id) => ({
+      id,
+      version: '1.0.0',
+      kind: 'service',
+      environment: 'host',
+      cardinality: 'one',
+      local: false,
+      schema: `schemas/${id}.json`,
+    })),
+  );
+  for (const id of API_CONTRACTS) {
+    await assert.rejects(
+      stat(join(dist, 'schemas', `${id}.json`)),
+      { code: 'ENOENT' },
+      `dist/schemas/${id}.json`,
+    );
+  }
+});
+
 void test('B3: src/host/process and src/host/api import only bundle, the consumed contracts, protobuf, Connect, zod and their own modules', async () => {
   const files = [
     ...(await sourcesUnder(join(bundleRoot, 'src', 'host', 'process'))),

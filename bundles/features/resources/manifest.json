@@ -6,12 +6,13 @@
   "description": "The host machine and Project sandbox resource monitor.",
   "provides": ["resources/v1@1.0.0"],
   "requires": [
-    "runtime.lease/v1@^1.1.0",
+    "runtime.lease/v1@^1.4.0",
     "ui/v1@^1.0.0",
     "regions/v1@^1.0.0",
     "workspace.selection/v1@^1.0.0",
     "runtime.records/v1@^1.0.0"
   ],
+  "optional": ["log/v1", "secrets/v1"],
   "desktopScope": {
     "resources/v1": ["projectId", "threadId", "promptId"]
   }

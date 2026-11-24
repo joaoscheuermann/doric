@@ -610,12 +610,25 @@ Since S62a the build also counts what a host part serves without recording it
 list, and each `provides` id whose `.proto` marks a hooks, event, settings or
 storage-type contract that no service serves; ids recorded on `host` or
 `desktopMain` are left out. `checkRecording(manifest, recorded, served?)`
-counts them for "provides declares …", and for a version 2 manifest refuses a
-served contract `provides` does not list with "`<source>`: the host part
-serves `<id>`, which provides does not declare." (version 1 manifests are not
-refused until S62c). Each served contract `provides` lists gets a `host` entry
-in `contracts.json` with `local: false` and `schema: schemas/<id>.json`, but no
-schema document is written for it.
+counts them for "provides declares …", and, in every manifest version since
+S62c1, refuses a served contract `provides` does not list with "`<source>`: the
+host part serves `<id>`, which provides does not declare." Each served contract
+`provides` lists gets a `host` entry in `contracts.json` with `local: false` and
+`schema: schemas/<id>.json`, but no schema document is written for it: a reader
+treats the missing document as a contract with no JSON Schema and no exposure,
+so the desktop leaves it unrouted; its exposure is its `.proto`'s, in
+`descriptors.binpb`.
+
+Since S62c1 the manifests (still version 1) list what their host parts serve
+and call: `transport` provides the eight `api.*/v1@1.0.0`, `runtime` provides
+`executor.session/v1@1.0.0` and `runtime.threads/v1@1.10.0` and lists
+`executor/v1` under `optional`, `core` lists `models.provider/v1` under
+`optional`, every bundle with a host part lists `log/v1` and `secrets/v1`, and
+`terminal` requires `runtime.lease/v1`. Every `provides` entry of a host
+contract carries its `.proto` header's version, which the repository test
+`tests/provide-versions.test.mjs` (in `npm run lint:test`) checks; client
+contracts and headers that say "until phase 4" are not checked. The host still
+boots the kernel.
 
 `runtime.threads/v1.ThreadEvents` (proto 1.10.0, since S62b3) answers the
 longest prefix of the events after the cursor whose answer encodes below
@@ -1381,3 +1394,23 @@ and `papercraft` depends on `comments`.
   `credential_name_taken` under `ALREADY_EXISTS`, `api.threads/v1` the
   queued edit's `invalid_prompt` under `INVALID_ARGUMENT` (both 1.0.0), and
   `git.commands/v1`'s header says 1.2.0.
+- 2026-11-24: phase 3, slice S62c1, of
+  [`docs/designs/grpc-processes.md`](../designs/grpc-processes.md) (version
+  6.29): `checkRecording` refuses a served contract `provides` does not declare
+  in every manifest version. 27 manifests change in version 1: `transport`'s
+  eight `api.*/v1`, `runtime`'s `executor.session/v1@1.0.0`,
+  `runtime.threads/v1@1.10.0` and optional `executor/v1`, `core`'s optional
+  `models.provider/v1`, the optional `log/v1` and `secrets/v1` of every host
+  part, `terminal`'s `runtime.lease/v1`, host contracts' `provides` versions
+  raised to their `.proto` headers with the `requires` ranges, and
+  `chat.composer/v1@1.1.0`; `host.assets` and `host.httpPrefix` are objects.
+  `declaredContracts` maps `models.provider/v1`, `storage.backend/v1` and
+  `secrets.backend/v1` to `core`, and `tests/boundary-exceptions.json` is
+  empty. New `tests/provide-versions.test.mjs` (`protoHeaders`,
+  `findProvideVersionDrift` in `tests/support/provide-versions.mjs`) fails
+  when a host contract's `provides` version differs from its `.proto` header.
+  `bridge-exposure.test.ts` skips a host entry with no staged document.
+  Decisions: S62c is split into S62c1 (lists), S62c2 (the public API on the
+  gateway) and S62c3 (the boot); served entries get no schema document;
+  client contract versions stay until phases 5–6; bundle `version` fields do
+  not change. The host still boots the kernel.

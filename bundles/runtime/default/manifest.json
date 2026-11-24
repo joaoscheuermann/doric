@@ -5,23 +5,26 @@
   "engines": { "doric": "^1.10.0" },
   "description": "The default agent: system prompt, skills, tools, model resolution and provider history.",
   "provides": [
-    "executor/v1@1.5.0",
-    "default.hooks/v1@1.0.0",
-    "default.agents/v1@1.0.0"
+    "executor/v1@1.6.0",
+    "default.hooks/v1@1.1.0",
+    "default.agents/v1@1.1.0"
   ],
   "requires": [
-    "tools/v1@^1.0.0",
-    "skills/v1@^1.0.0",
-    "models/v1@^1.2.0",
-    "host-config/v1@^1.1.0",
-    "hooks/v1@^1.0.0",
-    "log/v1@^1.0.0",
-    "ui/v1@^1.0.0"
+    "tools/v1@^1.6.0",
+    "skills/v1@^1.2.0",
+    "models/v1@^1.5.0",
+    "host-config/v1@^1.3.0",
+    "hooks/v1@^1.1.0",
+    "log/v1@^1.1.0",
+    "ui/v1@^1.0.0",
+    "executor.session/v1@^1.0.0"
   ],
   "optional": [
     "runtime.lease/v1",
     "runtime.workspace/v1",
     "chat.views/v1",
-    "default.skill-sources/v1"
-  ]
+    "default.skill-sources/v1",
+    "secrets/v1"
+  ],
+  "host": { "assets": ["src/host/prompts/*.md", "src/host/agents/*.md"] }
 }

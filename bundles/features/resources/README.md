@@ -22,8 +22,8 @@ across bundles is described in the feature docs listed under
 | `version`         | `1.1.5`                                                                                                                      |
 | `engines`         | `{ "doric": "^1.0.0" }`                                                                                                      |
 | `provides`        | `resources/v1@1.0.0`                                                                                                         |
-| `requires`        | `runtime.lease/v1@^1.1.0`, `ui/v1@^1.0.0`, `regions/v1@^1.0.0`, `workspace.selection/v1@^1.0.0`, `runtime.records/v1@^1.0.0` |
-| `optional`        | none                                                                                                                         |
+| `requires`        | `runtime.lease/v1@^1.4.0`, `ui/v1@^1.0.0`, `regions/v1@^1.0.0`, `workspace.selection/v1@^1.0.0`, `runtime.records/v1@^1.0.0` |
+| `optional`        | `log/v1`, `secrets/v1`                                                                                                       |
 | `desktopScope`    | `resources/v1`: `projectId`, `threadId`, `promptId`                                                                          |
 | `description`     | "The host machine and Project sandbox resource monitor."                                                                     |
 
@@ -190,7 +190,7 @@ method fails `unavailable` before activation.
   `expired`, `missing`). Any other failure rejects with its code: a runtime
   that is down is not hidden.
 
-The kernel entry and the manifest are unchanged until S62, which requires
+The kernel entry stays until S62. Since S62c1 the manifest requires
 `runtime.lease/v1@^1.4.0`.
 
 ## Client part

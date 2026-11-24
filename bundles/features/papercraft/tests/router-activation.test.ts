@@ -96,8 +96,22 @@ void test('A2: a skills/v1.Register failing unavailable_tool leaves the skill ou
   assert.equal(answer.status.case, 'none');
 });
 
-void test('A3: with the bundle’s own directory and no readAsset, activate rejects naming the skill path as not listed in host.assets', async (t) => {
-  const world = routerWorld({ readAsset: 'context', bundleDir: bundleRoot });
+void test('A3: with a bundle directory whose manifest has no host.assets and no readAsset, activate rejects naming the skill path as not listed in host.assets', async (t) => {
+  // The bundle's own manifest lists its assets since S62c (§2.3), so the
+  // case stages a copy of that manifest without its `host` entry, next to
+  // the skill it would read.
+  const directory = await mkdtemp(join(tmpdir(), 'papercraft-assets-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const { host: _host, ...manifest } = JSON.parse(
+    await readFile(join(bundleRoot, 'manifest.json'), 'utf8'),
+  ) as Record<string, unknown>;
+  await writeFile(join(directory, 'manifest.json'), JSON.stringify(manifest));
+  await mkdir(join(directory, 'src', 'host', 'skills'), { recursive: true });
+  await writeFile(
+    join(directory, SKILL_PATH),
+    await readFile(join(bundleRoot, SKILL_PATH)),
+  );
+  const world = routerWorld({ readAsset: 'context', bundleDir: directory });
   stopAfter(t, world);
 
   await assert.rejects(world.activate(), (error: unknown) => {

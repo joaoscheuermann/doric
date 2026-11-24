@@ -1316,6 +1316,12 @@ test('T6.4-23, AC6.4: the chat manifest is 2.0.0 on platform ^1.10.0, names the 
     manifest.optional.filter((id) => id.startsWith('layout.')),
     [],
   );
+  // S62c (§2.3): the chat provides chat.composer/v1 itself, so it no longer
+  // requires its own contract; what else it required stays.
+  assert.deepEqual(
+    manifest.requires.filter((ref) => ref.startsWith('chat.composer/')),
+    [],
+  );
   assert.deepEqual(
     [...manifest.requires].sort(),
     [
@@ -1329,7 +1335,6 @@ test('T6.4-23, AC6.4: the chat manifest is 2.0.0 on platform ^1.10.0, names the 
       'runtime.attachments/v1@^1.0.0',
       'runtime.records/v1@^1.0.0',
       'comments/v1@^1.0.0',
-      'chat.composer/v1@^1.0.0',
       'layout.tabs/v2@^2.0.0',
     ].sort(),
   );

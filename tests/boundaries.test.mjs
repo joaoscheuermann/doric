@@ -576,6 +576,31 @@ test('17. cycles: a sandbox/v1 edge runs from the provider to the declarer', () 
   });
 });
 
+test("17a. cycles: core's lines for models.provider/v1, storage.backend/v1 and secrets.backend/v1 run from their providers to core", () => {
+  assert.deepEqual(
+    cyclesOf([
+      bundle('core', {
+        group: 'foundation',
+        provides: ['log/v1@1.1.0', 'secrets/v1@1.3.0'],
+        requires: ['storage.backend/v1@^1.0.0', 'secrets.backend/v1@^1.0.0'],
+        optional: ['models.provider/v1'],
+      }),
+      bundle('claude', {
+        group: 'providers',
+        provides: ['models.provider/v1@1.4.0'],
+        requires: ['log/v1@^1.1.0'],
+        optional: ['secrets/v1'],
+      }),
+      bundle('postgres', {
+        group: 'storage',
+        provides: ['storage.backend/v1@1.0.0', 'secrets.backend/v1@1.0.0'],
+        optional: ['log/v1', 'secrets/v1'],
+      }),
+    ]),
+    clean,
+  );
+});
+
 // T0.1, core
 
 test('18. core: a desktopScope entry with projectId is found as <contract>:projectId; other keys are not', () => {

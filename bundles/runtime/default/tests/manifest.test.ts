@@ -62,19 +62,21 @@ describe('the default manifest', () => {
     );
   });
 
+  // S62c (§2.3, R1): each host contract carries its `.proto` header's
+  // version, and each requirement the range its provider now meets.
   test('keeps what it provided, required and took as optional', () => {
     assert.deepEqual(manifest.provides, [
-      'executor/v1@1.5.0',
-      'default.hooks/v1@1.0.0',
-      'default.agents/v1@1.0.0',
+      'executor/v1@1.6.0',
+      'default.hooks/v1@1.1.0',
+      'default.agents/v1@1.1.0',
     ]);
     for (const ref of [
-      'tools/v1@^1.0.0',
-      'skills/v1@^1.0.0',
-      'models/v1@^1.2.0',
-      'host-config/v1@^1.1.0',
-      'hooks/v1@^1.0.0',
-      'log/v1@^1.0.0',
+      'tools/v1@^1.6.0',
+      'skills/v1@^1.2.0',
+      'models/v1@^1.5.0',
+      'host-config/v1@^1.3.0',
+      'hooks/v1@^1.1.0',
+      'log/v1@^1.1.0',
     ])
       assert.ok(manifest.requires.includes(ref), ref);
     for (const ref of ['runtime.lease/v1', 'runtime.workspace/v1'])

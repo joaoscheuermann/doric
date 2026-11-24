@@ -23,9 +23,9 @@ built and loaded.
 | -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
 | `id`           | `comments`, version `1.0.0`, engine `doric ^1.0.0`                                                                                              |
 | `description`  | Anchored comments on any target the app can address: the registry, its durable events and the attended state it folds back from the Thread log. |
-| `provides`     | `comments/v1@1.0.0`, `comments.added/v1@1.0.0`, `comments.resolved/v1@1.0.0`                                                                    |
-| `requires`     | `events/v1@^1.0.0`, `runtime.threads/v1@^1.2.0`, `tools/v1@^1.0.0`                                                                              |
-| `optional`     | none                                                                                                                                            |
+| `provides`     | `comments/v1@1.1.0`, `comments.added/v1@1.1.0`, `comments.resolved/v1@1.1.0`                                                                    |
+| `requires`     | `events/v1@^1.1.0`, `runtime.threads/v1@^1.2.0`, `tools/v1@^1.5.0`                                                                              |
+| `optional`     | `log/v1`, `secrets/v1`                                                                                                                          |
 | `desktopScope` | `comments/v1`: `projectId`, `threadId`, `promptId`                                                                                              |
 
 `desktopScope` lets a desktop window call `comments/v1` with those three scope

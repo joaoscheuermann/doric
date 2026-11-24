@@ -26,8 +26,8 @@ complete description.
 | `manifestVersion` | `1`                                                                                       |
 | `id`              | `docker`, version `1.0.0`, engine `doric ^1.0.0`                                          |
 | `description`     | "Docker sandbox provider for the Doric agent: one durable-workspace sandbox per Project." |
-| `provides`        | `sandbox/v1@1.0.0`                                                                        |
-| `requires`        | `hooks/v1@^1.0.0`, `log/v1@^1.0.0`                                                        |
+| `provides`        | `sandbox/v1@1.1.0`                                                                        |
+| `requires`        | `hooks/v1@^1.1.0`, `log/v1@^1.0.0`                                                        |
 
 The bundle has no `optional` contracts, slots, settings, tools, routes,
 elements, storage types or `desktopScope`. Its package

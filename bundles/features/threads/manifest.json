@@ -8,10 +8,16 @@
   "description": "Delegation capabilities for creating and steering direct child threads.",
   "provides": [],
   "requires": [
-    "tools/v1@^1.2.0",
+    "tools/v1@^1.5.0",
     "runtime.threads/v1@^1.7.0",
     "ui/v1@^1.0.0",
     "navigation/v1@^1.0.0"
   ],
-  "optional": ["default.agents/v1", "chat.views/v1", "runtime.records/v1"]
+  "optional": [
+    "default.agents/v1",
+    "chat.views/v1",
+    "runtime.records/v1",
+    "log/v1",
+    "secrets/v1"
+  ]
 }

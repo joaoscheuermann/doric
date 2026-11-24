@@ -28,9 +28,9 @@ measurement to the footer), [context compaction](../../../docs/features/context-
 | `version`         | `1.0.6`                                                                                                                                                                   |
 | `engines`         | `doric: ^1.0.0`                                                                                                                                                           |
 | `description`     | Thread usage and cost, with the context capacity from the live model catalog.                                                                                             |
-| `provides`        | `usage/v1@1.0.0`                                                                                                                                                          |
+| `provides`        | `usage/v1@1.1.0`                                                                                                                                                          |
 | `requires`        | `runtime.usage/v1@^1.0.0`, `runtime.threads/v1@^1.0.0`, `host-config/v1@^1.0.0`, `models/v1@^1.1.0`, `ui/v1@^1.0.0`, `regions/v1@^1.0.0`, `workspace.selection/v1@^1.0.0` |
-| `optional`        | none                                                                                                                                                                      |
+| `optional`        | `log/v1`, `secrets/v1`                                                                                                                                                    |
 | `desktopScope`    | `usage/v1`: `projectId`, `threadId`, `promptId`, the scope keys a desktop window may send to it ([manifest](../../../docs/architecture/bundles/manifest.md))              |
 
 Parts: `src/contracts/` (exported as `usage/contracts`), `src/host/` and
@@ -200,8 +200,8 @@ codes.
   value on `replaced` and the previous one on `invalid` or `rejected`; a
   `host-config/v1` answer without a configuration fails `invalid_output`.
 
-The `usage/v1` proto header says version 1.1.0. The kernel entry and the
-manifest are unchanged until S62, which provides `usage/v1@1.1.0`.
+The `usage/v1` proto header says version 1.1.0. The kernel entry stays
+until S62; since S62c1 the manifest provides `usage/v1@1.1.0`.
 
 ## Client part
 

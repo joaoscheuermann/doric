@@ -24,9 +24,9 @@ built and loaded.
 | -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `id`           | `screen`, version `2.0.4`, engine `doric ^1.0.0`                                                                                                                             |
 | `description`  | The xpra HTML5 screen of a Project's sandbox.                                                                                                                                |
-| `provides`     | `screen.sessions/v2@2.0.0` (host part), `screen.views/v1@1.0.0` (desktop part)                                                                                               |
-| `requires`     | `log/v1@^1.0.0`, `runtime.lease/v1@^1.1.0`, `ui/v1@^1.0.0`, `workspace.selection/v1@^1.0.0`, `runtime.records/v1@^1.0.0`, `layout.stack/v2@^2.0.0`, `screen.relay/v1@^1.0.0` |
-| `optional`     | none                                                                                                                                                                         |
+| `provides`     | `screen.sessions/v2@2.1.0` (host part), `screen.views/v1@1.0.0` (desktop part)                                                                                               |
+| `requires`     | `log/v1@^1.1.0`, `runtime.lease/v1@^1.4.0`, `ui/v1@^1.0.0`, `workspace.selection/v1@^1.0.0`, `runtime.records/v1@^1.0.0`, `layout.stack/v2@^2.0.0`, `screen.relay/v1@^1.1.0` |
+| `optional`     | `secrets/v1`                                                                                                                                                                 |
 | `desktopScope` | `projectId`, `threadId` and `promptId`: the scope keys a window may send with a call of `screen.sessions/v2`                                                                 |
 
 Every entry of `requires` is required: a composition missing any of them
@@ -230,9 +230,9 @@ built to `dist/host/main.mjs`, for the bundle-process runtime
 ([bundle processes](../../../docs/features/bundle-processes.md)). It calls
 `runBundle` with `SessionsService` (`screen.sessions/v2`) listed statically.
 The session code takes narrower types (`ScreenSandbox`, `ScreenLease`,
-`ScreenRelayPublisher`). The kernel entry and the manifest are unchanged until
-S62, which adds `host.requires` `runtime.lease/v1@^1.4.0`,
-`screen.relay/v1@^1.1.0` and `log/v1`, and provides `screen.sessions/v2@2.1.0`.
+`ScreenRelayPublisher`). The kernel entry stays until S62. Since
+S62c1 the manifest requires `runtime.lease/v1@^1.4.0`,
+`screen.relay/v1@^1.1.0` and `log/v1@^1.1.0`, and provides `screen.sessions/v2@2.1.0`.
 In this entry:
 
 - Before activation, `Attach` fails `unavailable` ("The screen sessions are not

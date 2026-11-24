@@ -5,10 +5,11 @@
 // change of what the window can reach, and must update the snapshot in review.
 
 import assert from 'node:assert/strict';
-import { readdir, readFile } from 'node:fs/promises';
+import { access, readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import test from 'node:test';
 
+import { readStagedCatalogIndex } from 'bundle/platform';
 import { exposureOf, platformContracts } from 'bundle/runtime';
 
 const bundles = 'app/backend/doric-host/dist/bundles';
@@ -38,6 +39,7 @@ interface Staged {
   }[];
   readonly desktopScope?: Readonly<Record<string, readonly string[]>>;
   readonly dir: string;
+  readonly id: string;
 }
 
 const readJson = async (path: string): Promise<Record<string, unknown>> =>
@@ -59,6 +61,7 @@ const staged = async (): Promise<Staged[]> => {
 
         return {
           dir,
+          id,
           contracts: descriptor.contracts as Staged['contracts'],
           desktopScope: manifest.desktopScope as Staged['desktopScope'],
         };
@@ -66,7 +69,18 @@ const staged = async (): Promise<Staged[]> => {
   );
 };
 
-/** The exposed methods of every host contract the build publishes, by contract. */
+const exists = async (path: string): Promise<boolean> =>
+  access(path).then(
+    () => true,
+    () => false,
+  );
+
+/**
+ * The exposed methods of every host contract the build publishes, by contract.
+ * A `service` entry whose document the build did not write (a contract the
+ * host part serves without recording it, S62c) counts as exposing nothing:
+ * the test below checks that its descriptors expose no `DESKTOP` method.
+ */
 const exposedMethods = async (
   environment = 'host',
 ): Promise<Record<string, string[]>> => {
@@ -78,7 +92,13 @@ const exposedMethods = async (
         continue;
       }
 
-      const document = await readJson(join(bundle.dir, contract.schema));
+      const path = join(bundle.dir, contract.schema);
+
+      if (!(await exists(path))) {
+        continue;
+      }
+
+      const document = await readJson(path);
       const methods = Object.entries(
         (document['x-doric-expose'] ?? {}) as Record<string, string>,
       )
@@ -154,6 +174,53 @@ void test('desktop providers expose exactly the operations used by clients', asy
     ],
     'windows/v1': ['open'],
   });
+});
+
+void test('a host entry without a staged document is a contract whose descriptors expose no DESKTOP method', async () => {
+  const undocumented: { readonly bundle: string; readonly id: string }[] = [];
+
+  for (const bundle of await staged()) {
+    for (const contract of bundle.contracts) {
+      if (
+        contract.environment === 'host' &&
+        contract.kind === 'service' &&
+        !(await exists(join(bundle.dir, contract.schema)))
+      ) {
+        undocumented.push({ bundle: bundle.id, id: contract.id });
+      }
+    }
+  }
+
+  // The contracts host parts serve without recording them (S62c): transport's
+  // public API and runtime's executor.session/v1.
+  assert.deepEqual(undocumented.map(({ id }) => id).sort(), [
+    'api.config/v1',
+    'api.credentials/v1',
+    'api.host/v1',
+    'api.projects/v1',
+    'api.providers/v1',
+    'api.status/v1',
+    'api.terminals/v1',
+    'api.threads/v1',
+    'executor.session/v1',
+  ]);
+
+  const index = await readStagedCatalogIndex(
+    bundles,
+    undocumented.map(({ bundle }) => bundle),
+  );
+  const ids = new Set(undocumented.map(({ id }) => id));
+
+  for (const id of ids) {
+    assert.ok(index.contract(id), `${id} is in the staged descriptors`);
+  }
+  assert.deepEqual(
+    index
+      .desktopMethods()
+      .filter(({ contract }) => ids.has(contract.id))
+      .map(({ method }) => method.name),
+    [],
+  );
 });
 
 void test('every exposed bundle contract accepts exactly the frozen window scope keys', async () => {

@@ -25,9 +25,9 @@ the relay mounts on).
 | `version`         | `1.0.0`                                                                                                  |
 | `engines`         | `{ "doric": "^1.0.0" }`                                                                                  |
 | `description`     | The screen relay: the token tree of every Project screen, served on the origin the host already exposes. |
-| `provides`        | `screen.relay/v1@1.0.0`                                                                                  |
+| `provides`        | `screen.relay/v1@1.1.0`                                                                                  |
 | `requires`        | none                                                                                                     |
-| `optional`        | none                                                                                                     |
+| `optional`        | `log/v1`, `secrets/v1`                                                                                   |
 
 The bundle has one part, the host part ([`src/host/index.ts`](src/host/index.ts)),
 and a contracts module ([`src/contracts/index.ts`](src/contracts/index.ts)),
@@ -237,8 +237,8 @@ The bundle also has a process entry, [`src/host/main.ts`](src/host/main.ts),
 built to `dist/host/main.mjs`, for the bundle-process runtime
 ([bundle processes](../../../docs/features/bundle-processes.md)). It calls
 `runBundle` with `RelayService` (`screen.relay/v1`) listed statically and sets
-`BundleDefinition.httpServer`. The kernel entry and the manifest are unchanged
-until S62, which adds `host.httpPrefix: "/screen/"`. In this entry:
+`BundleDefinition.httpServer`. The kernel entry stays until S62;
+since S62c1 the manifest has `host.httpPrefix: "/screen/"`. In this entry:
 
 - The relay serves its own loopback listener (`127.0.0.1:0`, the port reported
   to the platform); the gateway forwards every `/screen/<token>/…` request and

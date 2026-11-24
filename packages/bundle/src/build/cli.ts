@@ -556,11 +556,16 @@ export const checkContractEnvironment = (input: {
  * Host provides (A61, A63, A70): after the dry activation the build reads
  * the host part's static `services` and the build index, and
  * {@link hostProvides} answers what the host part provides beyond the
- * recording. They count in `checkRecording`; each one `provides` declares
- * gets a `host` entry in `contracts.json` after the recorded entries, with
- * the declared version, its kind and cardinality, `local: false` and the
- * path `schemas/<id>.json`, where no document is written. A contract the
- * desktopMain part records gets no host entry, in any manifest version.
+ * recording. They count in `checkRecording`: a served contract `provides`
+ * does not list fails the build, in any manifest version. Each one
+ * `provides` declares gets a `host` entry in `contracts.json` after the
+ * recorded entries, with the declared version, its kind and cardinality,
+ * `local: false` and the path `schemas/<id>.json`, where no document is
+ * written: a reader treats the missing document as a contract with no JSON
+ * Schema and no `x-doric-expose` (the desktop leaves it unrouted). Its
+ * exposure is its `.proto`'s, which the gateway reads from
+ * `descriptors.binpb`. A contract the desktopMain part records gets no host
+ * entry, in any manifest version.
  */
 export const buildBundle = async (
   bundleDir: string,

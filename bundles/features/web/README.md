@@ -18,8 +18,8 @@ bundle skill files are built and registered is described in
 | `engines`         | `doric` `^1.0.0`                                         |
 | `description`     | `Web research capability for the Doric agent.`           |
 | `provides`        | none                                                     |
-| `requires`        | `tools/v1@^1.2.0`                                        |
-| `optional`        | none                                                     |
+| `requires`        | `tools/v1@^1.5.0`                                        |
+| `optional`        | `log/v1`, `secrets/v1`                                   |
 | Parts             | host (`src/host/`), and the skill files of `src/skills/` |
 
 ([manifest.json](manifest.json), [project.json](project.json))
@@ -72,8 +72,8 @@ built to `dist/host/main.mjs`, for the bundle-process runtime
 `registerWebTool` ([src/host/part.ts](src/host/part.ts)) registers the `web`
 tool, defined with `Deps = unknown` and bound with `bind(undefined)`, with
 `tools/v1` (`alwaysAvailable`, order 700). Provider rejections pass through
-unchanged. The kernel entry and the manifest are unchanged until S62, which
-requires `tools/v1@^1.5.0`.
+unchanged. The kernel entry stays until S62; since S62c1 the
+manifest requires `tools/v1@^1.5.0`.
 
 The host part runs in the generation process the Doric host forks: `web` is an
 installed bundle that the host's composition enables and does not list as

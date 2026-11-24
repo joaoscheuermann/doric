@@ -5,16 +5,16 @@
   "engines": { "doric": "^1.10.0" },
   "description": "Core capabilities available to the Doric agent.",
   "provides": [
-    "files/v1@1.3.0",
+    "files/v1@1.4.0",
     "files.sandbox/v1@1.0.0",
     "files.refresh/v1@1.0.0",
     "files.open-file/v1@1.0.0"
   ],
   "requires": [
-    "tools/v1@^1.4.0",
+    "tools/v1@^1.5.0",
     "runtime.workspace/v1@^1.2.0",
-    "runtime.lease/v1@^1.2.0",
-    "runtime.attachments/v1@^1.0.0",
+    "runtime.lease/v1@^1.4.0",
+    "runtime.attachments/v1@^1.1.0",
     "ui/v1@^1.0.0",
     "regions/v1@^1.0.0",
     "commands/v1@^1.0.0",
@@ -24,7 +24,13 @@
     "layout.panel/v3@^3.0.0",
     "layout.tabs/v2@^2.0.0"
   ],
-  "optional": ["files.decorations/v1", "chat.hooks/v2", "chat.views/v1"],
+  "optional": [
+    "files.decorations/v1",
+    "chat.hooks/v2",
+    "chat.views/v1",
+    "log/v1",
+    "secrets/v1"
+  ],
   "desktopScope": {
     "files/v1": ["projectId", "threadId", "promptId"]
   }

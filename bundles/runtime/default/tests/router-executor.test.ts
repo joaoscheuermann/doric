@@ -43,19 +43,29 @@ import { plain } from './support/router-wire.js';
 // steers and cancels are in `router-session.test.ts`, the history methods in
 // `router-history.test.ts`.
 
-/** A copy of the bundle's assets under a manifest whose `host.assets` lists them (S62's globs). */
-const assetsDirectory = async (): Promise<string> => {
+/**
+ * A copy of the bundle's assets under a manifest whose `host.assets` lists
+ * them (S62's globs), or, with `listed: false`, under a manifest with no
+ * `host` entry.
+ */
+const assetsDirectory = async ({ listed = true } = {}): Promise<string> => {
   const directory = await mkdtemp(join(tmpdir(), 'default-assets-'));
-  const manifest = JSON.parse(
+  const { host: _host, ...manifest } = JSON.parse(
     await readFile(join(bundleRoot, 'manifest.json'), 'utf8'),
   ) as Record<string, unknown>;
 
   await writeFile(
     join(directory, 'manifest.json'),
-    JSON.stringify({
-      ...manifest,
-      host: { assets: ['src/host/prompts/*.md', 'src/host/agents/*.md'] },
-    }),
+    JSON.stringify(
+      listed
+        ? {
+            ...manifest,
+            host: {
+              assets: ['src/host/prompts/*.md', 'src/host/agents/*.md'],
+            },
+          }
+        : manifest,
+    ),
   );
   for (const folder of ['src/host/prompts', 'src/host/agents']) {
     await cp(join(bundleRoot, folder), join(directory, folder), {
@@ -96,10 +106,12 @@ void test('D1 activate installs the assets of host.assets and defines default.ho
 });
 
 void test('D2 activate without host.assets in the manifest rejects naming a prompt asset not listed in host.assets', async (t) => {
+  const directory = await assetsDirectory({ listed: false });
+  t.after(() => rm(directory, { recursive: true, force: true }));
   const host = routed({
     provider: scriptedModel([]).provider,
     readAsset: 'context',
-    bundleDir: bundleRoot,
+    bundleDir: directory,
   });
   t.after(() => host.router.control.stop());
 

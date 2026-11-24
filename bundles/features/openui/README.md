@@ -500,7 +500,7 @@ again with the same zod schemas, so a questions digest matches the kernel's;
 stored `openui.answered/v1` rows read the same in both encodings. The skill is
 never read at import: the kernel reads it in activation beside the compiled
 module, the process with `context.assets.read` (which needs the manifest's
-`host.assets`, slice S62). The 200 ms validation timer's instruct runs
+`host.assets`, `["src/host/skills/*.md"]` since S62c1). The 200 ms validation timer's instruct runs
 detached.
 
 ### The `openui` skill

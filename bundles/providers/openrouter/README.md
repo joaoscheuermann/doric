@@ -29,7 +29,7 @@ across bundles.
 | `version`         | `1.2.0`                                                                    |
 | `engines.doric`   | `^1.0.0`                                                                   |
 | `description`     | `OpenRouter provider kind with live catalog and structured-output repair.` |
-| `provides`        | `models.provider/v1@1.3.0`                                                 |
+| `provides`        | `models.provider/v1@1.4.0`                                                 |
 | `requires`        | `log/v1@^1.0.0`                                                            |
 
 The manifest has no `optional` contracts and no slots. The bundle has no

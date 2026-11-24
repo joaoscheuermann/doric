@@ -26,7 +26,7 @@ the conformance kit every storage backend shares.
 | `description`     | `PostgreSQL storage and secrets backends over Prisma.` |
 | `provides`        | `storage.backend/v1@1.1.0`, `secrets.backend/v1@1.0.0` |
 | `requires`        | none                                                   |
-| `optional`        | none (the field is absent)                             |
+| `optional`        | `log/v1`, `secrets/v1`                                 |
 
 The bundle has one part, the host part ([`src/host/index.ts`](src/host/index.ts)).
 It declares no slot, no contracts module (`src/contracts/` does not exist) and

@@ -25,9 +25,9 @@ and the credentials behave across bundles.
 | `version`         | `0.2.0`                                                                                             |
 | `engines.doric`   | `^1.0.0`                                                                                            |
 | `description`     | `Owner of the Doric configuration settings space.`                                                  |
-| `provides`        | `host-config.configuration/v1@1.2.0`, `host-config/v1@1.2.0`                                        |
+| `provides`        | `host-config.configuration/v1@1.3.0`, `host-config/v1@1.3.0`                                        |
 | `requires`        | `hooks/v1@^1.0.0`, `settings/v1@^1.0.0`, `secrets/v1@^1.0.0`, `models/v1@^1.0.0`, `tools/v1@^1.0.0` |
-| `optional`        | none (the field is absent)                                                                          |
+| `optional`        | `log/v1`                                                                                            |
 | `desktopScope`    | `{ "host-config/v1": ["projectId", "threadId", "promptId"] }`                                       |
 
 `desktopScope` lets a desktop window send the scope keys `projectId`,
@@ -65,7 +65,7 @@ built to `dist/host/main.mjs`, for the bundle-process runtime
 ([bundle processes](../../../docs/features/bundle-processes.md)). It calls
 `runBundle` with `HostConfigService` (`host-config/v1`),
 `ReferenceSourceService` and `HookHandlerService` listed statically, and
-depends on `@connectrpc/connect`. The kernel entry and the manifest are
+depends on `@connectrpc/connect`. The kernel entry is
 unchanged until S62. In this entry:
 
 - `host-config.configuration/v1` is a settings space registered with

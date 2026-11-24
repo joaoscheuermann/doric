@@ -156,3 +156,22 @@ void test('B2: main.ts lists ComposerService, then ComposerFlushHandlerService, 
 
   assert.deepEqual(services.map(fullName), CHAT_SERVICES);
 });
+
+void test('S62c: the staged contracts.json lists chat.composer/v1 on desktopMain only, at 1.1.0', async () => {
+  const descriptor = JSON.parse(
+    await readFile(join(bundleRoot, 'dist', 'contracts.json'), 'utf8'),
+  ) as {
+    readonly contracts: readonly {
+      readonly id: string;
+      readonly version: string;
+      readonly environment: string;
+    }[];
+  };
+
+  assert.deepEqual(
+    descriptor.contracts
+      .filter(({ id }) => id === 'chat.composer/v1')
+      .map(({ version, environment }) => [version, environment]),
+    [['1.1.0', 'desktopMain']],
+  );
+});

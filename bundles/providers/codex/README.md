@@ -29,7 +29,7 @@ how the Codex authorization value is obtained.
 | `version`         | `1.2.0`                                           |
 | `engines.doric`   | `^1.0.0`                                          |
 | `description`     | `Codex provider kind (internal, not advertised).` |
-| `provides`        | `models.provider/v1@1.3.0`                        |
+| `provides`        | `models.provider/v1@1.4.0`                        |
 | `requires`        | `log/v1@^1.0.0`                                   |
 
 The manifest has no `optional` contracts and no slots. The bundle has no

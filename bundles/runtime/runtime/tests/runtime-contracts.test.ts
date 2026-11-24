@@ -178,47 +178,55 @@ void test('the manifest provides and requires exactly the stage 5 contracts', as
   // terminal contract leave with the nine lease reads, so the bundle is the
   // major 3.0.0 and no longer watches terminal/v1 or resources/v1.
   assert.equal(manifest.version, '3.0.0');
-  assert.deepEqual(manifest.optional ?? [], []);
+  // S62c (§2.3): the runtime calls the agent through executor/v1 when an
+  // executor is there, and serves it executor.session/v1, so the runtime no
+  // longer requires the executor that requires it back.
+  assert.deepEqual(manifest.optional ?? [], [ExecutorV1.id]);
+  // S62c (§2.3, R1): every host contract carries its `.proto` header's
+  // version.
   assert.deepEqual(manifest.provides, [
     // Bundle isolation step 7(a): watchProject's snapshot without the
     // terminals, which terminal/v1 streams.
-    `${RuntimeV2.id}@2.0.0`,
+    `${RuntimeV2.id}@2.1.0`,
     // 1.1.0: watchThread (stage 9 R-STREAM); 1.2.0: the terminal result
     // delivery (stage 10 R-5.3); 1.3.0: steering a running prompt; 1.4.0:
     // retry; 1.5.0: a bundle's instruction and restarting a failed child;
     // 1.6.0: spawn options (agent, model, effort); 1.7.0: a Thread's own
     // provider, model and effort, and setThreadExecution; 1.8.0: archive,
     // restore, pin and view.
-    `${RuntimeThreadsV1.id}@1.8.0`,
+    `${RuntimeThreadsV1.id}@1.10.0`,
     // 1.1.0: withThread (stage 10 R-5.2).
     // 1.2.0: location
-    `${RuntimeWorkspaceV1.id}@1.2.0`,
+    `${RuntimeWorkspaceV1.id}@1.3.0`,
     // 1.1.0: withLease (stage 10 R-5.1); 1.2.0: readFileBytes; 1.3.0
     // (bundle isolation 7(c)): the nine reads moved to the bundles that own
     // them.
-    `${RuntimeLeaseV1.id}@1.3.0`,
+    `${RuntimeLeaseV1.id}@1.5.0`,
     // The images a Project holds, for prompts and tool results.
-    `${RuntimeAttachmentsV1.id}@1.0.0`,
+    `${RuntimeAttachmentsV1.id}@1.1.0`,
     // 1.1.0: onThreadsClosingHook (stage 10 R-5.4).
     // 1.2.0: onPromptStartedHook and onThreadCwdChangedHook.
-    `${RuntimeHooksV1.id}@1.2.0`,
+    `${RuntimeHooksV1.id}@1.3.0`,
     // Stage 10 R-5.5: the unfilled usage projection.
-    `${RuntimeUsageV1.id}@1.0.0`,
+    `${RuntimeUsageV1.id}@1.1.0`,
     // Bundle isolation phase 3: the window's records mirror, a client
-    // contract the runtime's client part provides.
+    // contract the runtime's client part provides; it keeps its version
+    // until phases 5 and 6 (§2.3, Q4).
     `${RuntimeRecordsV1.id}@1.0.0`,
-    `${promptFinishedEvent.type}@1.0.0`,
+    `${promptFinishedEvent.type}@1.1.0`,
     // terminal/v1 left with the stage-10 host switch: the `terminal` bundle
     // provides it.
     // The storage types the host part defines are provided contracts too.
     // 1.1.0: the internal `owner` field (57-WP-H).
-    `${projectType.type}@1.1.0`,
+    `${projectType.type}@1.2.0`,
     // 1.1.0: a spawned Thread's agent, model and effort; 1.2.0: providerId;
     // 1.3.0: the archive fields.
-    `${threadType.type}@1.3.0`,
-    `${historyType.type}@1.0.0`,
-    `${migrationType.type}@1.0.0`,
-    `${attachmentType.type}@1.0.0`,
+    `${threadType.type}@1.4.0`,
+    `${historyType.type}@1.1.0`,
+    `${migrationType.type}@1.1.0`,
+    `${attachmentType.type}@1.1.0`,
+    // S48: the session an executor/v1 call reports through.
+    'executor.session/v1@1.0.0',
   ]);
   assert.deepEqual(manifest.requires, [
     // 1.1.0: putBlob and getBlob, which hold the attachments' bytes.
@@ -231,9 +239,9 @@ void test('the manifest provides and requires exactly the stage 5 contracts', as
     'secrets/v1@^1.0.0',
     'models/v1@^1.0.0',
     `${ConfigurationV1.id}@^1.0.0`,
-    // 1.4.0: the executor resolves a Thread's own provider.
-    `${ExecutorV1.id}@^1.4.0`,
-    `${SandboxV1.id}@^1.0.0`,
+    // executor/v1 moved to `optional` (S62c, §2.3).
+    // 1.1.0: the sandbox host contract's version (S62c, §2.3).
+    `${SandboxV1.id}@^1.1.0`,
   ]);
   assert.ok(isHooksContract(RuntimeHooksV1));
 });

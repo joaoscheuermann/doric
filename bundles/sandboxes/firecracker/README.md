@@ -29,9 +29,9 @@ providers and how one is chosen.
 | `version`         | `1.0.0`                                                                            |
 | `engines`         | `{ "doric": "^1.0.0" }`                                                            |
 | `description`     | Firecracker sandbox provider for the Doric agent: one microVM sandbox per Project. |
-| `provides`        | `sandbox/v1@1.0.0`                                                                 |
-| `requires`        | `hooks/v1@^1.0.0`, `log/v1@^1.0.0`                                                 |
-| `optional`        | none                                                                               |
+| `provides`        | `sandbox/v1@1.1.0`                                                                 |
+| `requires`        | `hooks/v1@^1.1.0`, `log/v1@^1.0.0`                                                 |
+| `optional`        | `secrets/v1`                                                                       |
 | Slots             | none                                                                               |
 | Parts             | host only: [`src/host/index.ts`](src/host/index.ts) exports `activate`             |
 

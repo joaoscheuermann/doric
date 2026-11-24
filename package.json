@@ -5,7 +5,7 @@
   "scripts": {
     "lint": "biome check . --formatter-enabled=false",
     "lint:fix": "biome check . --formatter-enabled=false --write",
-    "lint:test": "node --test --test-concurrency=1 tests/lint.test.mjs tests/boundaries.test.mjs tests/contract-inventory.test.mjs",
+    "lint:test": "node --test --test-concurrency=1 tests/lint.test.mjs tests/boundaries.test.mjs tests/contract-inventory.test.mjs tests/provide-versions.test.mjs",
     "test:fake-host": "node --test tests/fake-host-bundles.test.mjs",
     "format": "biome format . --write && prettier . --write",
     "format:check": "biome format . && prettier . --check",

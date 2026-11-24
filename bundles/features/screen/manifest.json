@@ -4,16 +4,17 @@
   "version": "2.0.4",
   "engines": { "doric": "^1.0.0" },
   "description": "The xpra HTML5 screen of a Project's sandbox.",
-  "provides": ["screen.sessions/v2@2.0.0", "screen.views/v1@1.0.0"],
+  "provides": ["screen.sessions/v2@2.1.0", "screen.views/v1@1.0.0"],
   "requires": [
-    "log/v1@^1.0.0",
-    "runtime.lease/v1@^1.1.0",
+    "log/v1@^1.1.0",
+    "runtime.lease/v1@^1.4.0",
     "ui/v1@^1.0.0",
     "workspace.selection/v1@^1.0.0",
     "runtime.records/v1@^1.0.0",
     "layout.stack/v2@^2.0.0",
-    "screen.relay/v1@^1.0.0"
+    "screen.relay/v1@^1.1.0"
   ],
+  "optional": ["secrets/v1"],
   "desktopScope": {
     "screen.sessions/v2": ["projectId", "threadId", "promptId"]
   }

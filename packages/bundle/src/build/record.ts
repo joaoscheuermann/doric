@@ -249,14 +249,14 @@ export const recordActivation = async (options: {
  * problems, each a message for a person, in the order: per recorded
  * contract (duplicate, not declared, cardinality against the platform's,
  * exposure); then per `served` contract that `provides` does not declare,
- * for a version 2 manifest only (S62a; every version from S62c):
+ * for a manifest of any version (S62c):
  * "<source>: the host part serves <id>, which provides does not declare.";
  * then per `provides` id that no recorded and no `served` contract has:
  * "provides declares <id>, but no part provides, defines or registers it
  * during activate." (message unchanged).
  *
- * `served` defaults to `[]`, which keeps today's answer for every existing
- * call. Never throws.
+ * `served` defaults to `[]`, which keeps the answer of every call that
+ * passes no served contracts. Never throws.
  */
 export const checkRecording = (
   manifest: Manifest,
@@ -312,13 +312,11 @@ export const checkRecording = (
     }
   }
 
-  if (manifest.manifestVersion === 2) {
-    for (const contract of served) {
-      if (!provides.has(contract.id)) {
-        errors.push(
-          `${contract.source}: the host part serves ${contract.id}, which provides does not declare.`,
-        );
-      }
+  for (const contract of served) {
+    if (!provides.has(contract.id)) {
+      errors.push(
+        `${contract.source}: the host part serves ${contract.id}, which provides does not declare.`,
+      );
     }
   }
 

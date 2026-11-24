@@ -13,7 +13,9 @@
 // `chat.hooks/v2` instead of the old chat hooks, and refreshes after its own
 // `edit` and `write` calls. Bundle isolation 9 ships 1.9.0: the bundle
 // declares `files.decorations/v1` (listed under `optional`) and names no
-// `git.*` contract.
+// `git.*` contract. grpc-processes S62c provides files/v1 at its .proto
+// header version, 1.4.0, and lists log/v1 and secrets/v1 as optional, as
+// every host part does.
 
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -57,9 +59,12 @@ describe('the files manifest', () => {
     );
   });
 
-  test('provides files/v1@1.3.0 at version 1.9.0 on platform ^1.10.0', () => {
+  test('provides files/v1@1.4.0 at version 1.9.0 on platform ^1.10.0', () => {
     assert.equal(manifest.version, '1.9.0');
-    assert.ok(manifest.provides.includes('files/v1@1.3.0'));
+    assert.deepEqual(
+      manifest.provides.filter((ref) => ref.startsWith('files/v1@')),
+      ['files/v1@1.4.0'],
+    );
     assert.equal(manifest.engines.doric, '^1.10.0');
   });
 
@@ -88,6 +93,19 @@ describe('the files manifest', () => {
       manifest.optional.filter((ref) => ref.startsWith('git.')),
       [],
     );
+  });
+
+  test('requires tools/v1@^1.5.0, runtime.lease/v1@^1.4.0 and runtime.attachments/v1@^1.1.0, and takes log/v1 and secrets/v1 as optional', () => {
+    for (const range of [
+      'tools/v1@^1.5.0',
+      'runtime.lease/v1@^1.4.0',
+      'runtime.attachments/v1@^1.1.0',
+    ]) {
+      assert.ok(manifest.requires.includes(range), range);
+    }
+    for (const id of ['log/v1', 'secrets/v1']) {
+      assert.ok(manifest.optional.includes(id), id);
+    }
   });
 
   test('takes chat.hooks/v2 as its only optional chat hooks', () => {

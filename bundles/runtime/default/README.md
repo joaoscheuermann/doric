@@ -23,16 +23,16 @@ How bundles are built and loaded is in
 
 [`manifest.json`](manifest.json):
 
-| Field             | Value                                                                                                                                  |
-| ----------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| `manifestVersion` | `1`                                                                                                                                    |
-| `id`              | `default` (equal to the `name` of [`package.json`](package.json))                                                                      |
-| `version`         | `2.8.0`                                                                                                                                |
-| `engines.doric`   | `^1.10.0`                                                                                                                              |
-| `description`     | "The default agent: system prompt, skills, tools, model resolution and provider history."                                              |
-| `provides`        | `executor/v1@1.5.0`, `default.hooks/v1@1.0.0`, `default.agents/v1@1.0.0`                                                               |
-| `requires`        | `tools/v1@^1.0.0`, `skills/v1@^1.0.0`, `models/v1@^1.2.0`, `host-config/v1@^1.1.0`, `hooks/v1@^1.0.0`, `log/v1@^1.0.0`, `ui/v1@^1.0.0` |
-| `optional`        | `runtime.lease/v1`, `runtime.workspace/v1`, `chat.views/v1`, `default.skill-sources/v1`                                                |
+| Field             | Value                                                                                                                                                                |
+| ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `manifestVersion` | `1`                                                                                                                                                                  |
+| `id`              | `default` (equal to the `name` of [`package.json`](package.json))                                                                                                    |
+| `version`         | `2.8.0`                                                                                                                                                              |
+| `engines.doric`   | `^1.10.0`                                                                                                                                                            |
+| `description`     | "The default agent: system prompt, skills, tools, model resolution and provider history."                                                                            |
+| `provides`        | `executor/v1@1.6.0`, `default.hooks/v1@1.1.0`, `default.agents/v1@1.1.0`                                                                                             |
+| `requires`        | `tools/v1@^1.6.0`, `skills/v1@^1.2.0`, `models/v1@^1.5.0`, `host-config/v1@^1.3.0`, `hooks/v1@^1.1.0`, `log/v1@^1.1.0`, `ui/v1@^1.0.0`, `executor.session/v1@^1.0.0` |
+| `optional`        | `runtime.lease/v1`, `runtime.workspace/v1`, `chat.views/v1`, `default.skill-sources/v1`, `secrets/v1`                                                                |
 
 The package exports `./contracts` ([`src/contracts/index.ts`](src/contracts/index.ts)),
 `./contracts/gen/*` (the protobuf-es code `generate-proto` writes from `proto/`) and `./package.json`. It declares no slot.
@@ -119,8 +119,8 @@ Until `activate` resolves, every method fails `unavailable` with
 `default is not active.`. A thrown llms `ProviderErrorObject` answers
 `provider_error` with the error's data in `details.providerError`, a
 `ToolErrorObject` answers `tool_error` with its data in `details.toolError`,
-and a `ContractError` passes unchanged. The manifest has no `host.assets` yet:
-S62 adds `["src/host/prompts/*.md", "src/host/agents/*.md"]`, which the
+and a `ContractError` passes unchanged. Since S62c1 the manifest's `host.assets` is
+`["src/host/prompts/*.md", "src/host/agents/*.md"]`, which the
 process needs, since `context.assets.read` refuses a path outside them.
 
 ## Contracts it provides

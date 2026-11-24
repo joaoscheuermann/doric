@@ -12,20 +12,25 @@
 // isolation 7(c) (a patch: the busy check reads `terminal/v1`), and at 1.3.0
 // from bundle isolation 9 (a minor: it provides `files.decorations/v1`, the
 // marks of the Files tree, and takes the `files.*` contracts it uses from
-// `files/contracts`).
+// `files/contracts`). grpc-processes S62c provides `git.commands/v1` at its
+// .proto header version, 1.2.0, and lists `log/v1` as optional, as every host
+// part does.
 
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { describe, test } from 'node:test';
 
 describe('the git manifest', () => {
-  test('requires layout.tabs/v2@^2.0.0 and provides git.commands/v1@1.1.0', () => {
+  test('requires layout.tabs/v2@^2.0.0 and provides git.commands/v1@1.2.0', () => {
     const manifest = JSON.parse(
       readFileSync('bundles/features/git/manifest.json', 'utf8'),
     ) as { version: string; provides: string[]; requires: string[] };
 
     assert.equal(manifest.version, '1.3.0');
-    assert.ok(manifest.provides.includes('git.commands/v1@1.1.0'));
+    assert.deepEqual(
+      manifest.provides.filter((ref) => ref.startsWith('git.commands/')),
+      ['git.commands/v1@1.2.0'],
+    );
     assert.deepEqual(
       manifest.requires.filter((ref) => ref.startsWith('layout.tabs/')),
       ['layout.tabs/v2@^2.0.0'],
@@ -113,5 +118,21 @@ describe('the git manifest', () => {
       manifest.requires.filter((ref) => ref.startsWith('layout.panel/')),
       [],
     );
+  });
+
+  test('requires tools/v1@^1.5.0, runtime.workspace/v1@^1.3.0, runtime.lease/v1@^1.4.0 and secrets/v1@^1.3.0, and takes log/v1 as optional', () => {
+    const manifest = JSON.parse(
+      readFileSync('bundles/features/git/manifest.json', 'utf8'),
+    ) as { requires: string[]; optional: string[] };
+
+    for (const range of [
+      'tools/v1@^1.5.0',
+      'runtime.workspace/v1@^1.3.0',
+      'runtime.lease/v1@^1.4.0',
+      'secrets/v1@^1.3.0',
+    ]) {
+      assert.ok(manifest.requires.includes(range), range);
+    }
+    assert.ok(manifest.optional.includes('log/v1'));
   });
 });

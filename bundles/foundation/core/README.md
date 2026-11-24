@@ -62,7 +62,7 @@ feature docs, which state each contract at the level the feature needs:
 | `engines`         | `doric: ^1.0.0`                                            |
 | `description`     | Default provider of the basic Doric services.              |
 | `requires`        | `storage.backend/v1@^1.0.0`, `secrets.backend/v1@^1.0.0`   |
-| `optional`        | none                                                       |
+| `optional`        | `models.provider/v1`                                       |
 | Other fields      | none (`desktopScope`, slots and the like are not declared) |
 
 `provides`, with the part that provides each entry:

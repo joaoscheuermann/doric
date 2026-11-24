@@ -1132,39 +1132,35 @@ for (const manifestVersion of [1, 2] as const) {
   });
 }
 
-void test('a v2 fixture whose main.ts serves a HOST contract provides does not list fails naming its line; the same v1 fixture builds without an entry for it', async () => {
+void test('a fixture whose main.ts serves a HOST contract provides does not list fails naming its line, in version 1 and version 2', async () => {
   await withRoot(async (root) => {
     const files = {
       'dist/host/index.js': providing('demo.api/v1'),
       ...servingFiles([toolsService]),
     };
-    const v2 = await writeBundle(root, 'v2', {
-      manifest: environmentManifest(2, ['demo.api/v1@1.0.0']),
-      files,
-    });
 
-    await assert.rejects(buildBundle(v2), (error: unknown) => {
-      assert.ok(error instanceof BuildError, String(error));
-      assert.ok(
-        error.message.includes(
-          'src/host/main.ts:6: the host part serves tools/v1, which provides does not declare.',
-        ),
-        error.message,
+    for (const manifestVersion of [1, 2] as const) {
+      const dir = await writeBundle(root, `v${manifestVersion}`, {
+        manifest: environmentManifest(manifestVersion, ['demo.api/v1@1.0.0']),
+        files,
+      });
+
+      await assert.rejects(
+        buildBundle(dir),
+        (error: unknown) => {
+          assert.ok(error instanceof BuildError, String(error));
+          assert.ok(
+            error.message.includes(
+              'src/host/main.ts:6: the host part serves tools/v1, which provides does not declare.',
+            ),
+            error.message,
+          );
+
+          return true;
+        },
+        `version ${manifestVersion}`,
       );
-
-      return true;
-    });
-
-    const v1 = await writeBundle(root, 'v1', {
-      manifest: environmentManifest(1, ['demo.api/v1@1.0.0']),
-      files,
-    });
-    const { descriptor } = await buildBundle(v1);
-
-    assert.deepEqual(
-      descriptor.contracts.map(({ id, environment }) => [id, environment]),
-      [['demo.api/v1', 'host']],
-    );
+    }
   });
 });
 
@@ -1211,7 +1207,7 @@ void test('a v2 fixture whose provides lists a hooks and an event contract of it
   });
 });
 
-void test('a v1 fixture whose desktopMain part records a HOST contract that main.ts also serves builds, and lists it on desktopMain only', async () => {
+void test('a v1 fixture whose desktopMain part records a HOST contract its main.ts also serves, and that provides lists, still builds with it on desktopMain only', async () => {
   await withRoot(async (root) => {
     const dir = await writeBundle(root, 'demo', {
       manifest: environmentManifest(1, ['tools/v1@1.0.0']),

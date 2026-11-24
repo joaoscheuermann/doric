@@ -477,8 +477,8 @@ The target `generate-proto` writes their protobuf-es code into
 `doric.api.*` services. [`src/host/main.ts`](src/host/main.ts) runs it with
 `runBundle`, serving the eight services and the `onHostStartHook` handler;
 the kernel keeps mounting [`src/host/index.ts`](src/host/index.ts) (the
-Express routes and Socket.IO) until group F, and the `api.*` contracts enter
-`provides` in S62.
+Express routes and Socket.IO) until group F, and `provides` lists the eight
+`api.*/v1@1.0.0` contracts since S62c1.
 
 - **`createTransportHost()`**
   ([`service.ts`](src/host/process/service.ts)) builds, with no I/O, the

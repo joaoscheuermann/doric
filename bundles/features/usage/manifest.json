@@ -4,7 +4,7 @@
   "version": "1.0.6",
   "engines": { "doric": "^1.0.0" },
   "description": "Thread usage and cost, with the context capacity from the live model catalog.",
-  "provides": ["usage/v1@1.0.0"],
+  "provides": ["usage/v1@1.1.0"],
   "requires": [
     "runtime.usage/v1@^1.0.0",
     "runtime.threads/v1@^1.0.0",
@@ -14,6 +14,7 @@
     "regions/v1@^1.0.0",
     "workspace.selection/v1@^1.0.0"
   ],
+  "optional": ["log/v1", "secrets/v1"],
   "desktopScope": {
     "usage/v1": ["projectId", "threadId", "promptId"]
   }

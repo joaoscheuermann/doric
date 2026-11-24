@@ -9,7 +9,9 @@
 // tool and the source `terminal` in the chat through `chat.views/v1` (listed
 // under `optional`), on platform `^1.10.0`. Bundle isolation 7(c) ships the
 // patch 1.2.1: its client copies of the runtime and workspace contracts
-// become imports.
+// become imports. grpc-processes S62c provides terminal/v1 at its .proto
+// header version, 1.3.0, and requires runtime.lease/v1@^1.5.0, which its host
+// process calls, and the host ranges the contracts' new versions meet.
 
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -27,10 +29,10 @@ const manifest = JSON.parse(
   readFileSync('bundles/features/terminal/manifest.json', 'utf8'),
 ) as Manifest;
 
-void test('terminal 1.2.1 on platform ^1.10.0 provides terminal/v1@1.2.0 and requires layout.tabs/v2@^2.0.0, workspace.sidebar/v1@^1.0.0, workspace.selection/v1@^1.0.0 and runtime.records/v1@^1.0.0', () => {
+void test('terminal 1.2.1 on platform ^1.10.0 provides terminal/v1@1.3.0 and requires layout.tabs/v2@^2.0.0, workspace.sidebar/v1@^1.0.0, workspace.selection/v1@^1.0.0 and runtime.records/v1@^1.0.0', () => {
   assert.equal(manifest.version, '1.2.1');
   assert.equal(manifest.engines.doric, '^1.10.0');
-  assert.deepEqual(manifest.provides, ['terminal/v1@1.2.0']);
+  assert.deepEqual(manifest.provides, ['terminal/v1@1.3.0']);
   assert.deepEqual(
     manifest.requires.filter((range) => range.startsWith('layout.tabs/')),
     ['layout.tabs/v2@^2.0.0'],
@@ -64,4 +66,16 @@ void test('terminal takes chat.views/v1 as optional beside files.refresh/v1 and 
     manifest.requires.filter((ref) => ref.startsWith('chat.')),
     [],
   );
+});
+
+void test('terminal requires runtime.lease/v1@^1.5.0 and the host ranges tools/v1@^1.5.0, secrets/v1@^1.3.0, hooks/v1@^1.1.0 and runtime.workspace/v1@^1.3.0', () => {
+  for (const range of [
+    'runtime.lease/v1@^1.5.0',
+    'tools/v1@^1.5.0',
+    'secrets/v1@^1.3.0',
+    'hooks/v1@^1.1.0',
+    'runtime.workspace/v1@^1.3.0',
+  ]) {
+    assert.ok(manifest.requires.includes(range), `${range} is not required`);
+  }
 });

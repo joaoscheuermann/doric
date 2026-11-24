@@ -207,8 +207,8 @@ complete list of checks and outputs is in [Build tooling](#build-tooling).
   `HOOKS` contract in its static `services` list, and every `provides` id
   whose `.proto` marks it a hooks, event, settings or storage-type contract
   and that no service serves; both satisfy the `provides` check
-  ([`host-provides.ts`](src/build/host-provides.ts)). For a version 2
-  manifest, a served contract missing from `provides` fails with
+  ([`host-provides.ts`](src/build/host-provides.ts)). In any manifest
+  version, a served contract missing from `provides` fails with
   `<source>: the host part serves <id>, which provides does not declare.`
 - Every contract a part reaches with `services.use` or with `use` of the
   `hooks/v1` facade is listed in `requires` or `optional`, unless the bundle
@@ -3671,8 +3671,8 @@ a `defineCommand` value; every other call is an inert no-op and
 ([`record.ts`](src/build/record.ts)). `checkRecording` lists every problem: a
 contract recorded twice in one environment, a contract not declared in
 `provides`, a basic contract with another cardinality than the platform's, a
-method exposed against the platform's table, for a version 2 manifest a
-`served` contract `provides` does not declare, and a `provides` entry that
+method exposed against the platform's table, a `served` contract `provides`
+does not declare (in any manifest version), and a `provides` entry that
 nothing recorded and no `served` contract has.
 
 `hostProvides` ([`host-provides.ts`](src/build/host-provides.ts)) answers,

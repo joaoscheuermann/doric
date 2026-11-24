@@ -127,6 +127,11 @@ const usesPackage = (specifier, name) =>
  *
  * `default.skill-sources/v1` (declared by `default`) joined it in phase 8,
  * and `files.decorations/v1` (declared by `files`) in phase 9.
+ * `models.provider/v1`, `storage.backend/v1` and `secrets.backend/v1`
+ * (declared by `core`, which consumes them; their `.proto` files live in
+ * `packages/bundle`) joined it in slice S62c of grpc-processes, when `core`
+ * listed `models.provider/v1` and every host part listed `log/v1` and
+ * `secrets/v1` (docs/designs/grpc-processes.md, "Phase 3's slices").
  * @type {Readonly<Record<string, string>>}
  */
 export const declaredContracts = Object.freeze({
@@ -134,6 +139,9 @@ export const declaredContracts = Object.freeze({
   'sandbox/v1': 'runtime',
   'default.skill-sources/v1': 'default',
   'files.decorations/v1': 'files',
+  'models.provider/v1': 'core',
+  'storage.backend/v1': 'core',
+  'secrets.backend/v1': 'core',
 });
 
 /**

@@ -73,10 +73,14 @@ void test('activation provides and defines exactly what the manifest declares', 
     activate,
   });
 
-  // runtime.records/v1 is the client part's (bundle isolation phase 3): the
-  // host part records every other provided contract.
+  // runtime.records/v1 is the client part's (bundle isolation phase 3) and
+  // executor.session/v1 is served by the host part's process, not recorded
+  // (grpc-processes S62c): the host part records every other provided
+  // contract.
   const hostProvides = manifest.provides.filter(
-    (entry) => idOf(entry) !== 'runtime.records/v1',
+    (entry) =>
+      idOf(entry) !== 'runtime.records/v1' &&
+      idOf(entry) !== 'executor.session/v1',
   );
 
   assert.deepEqual(
@@ -119,7 +123,22 @@ void test('the built descriptor lists runtime.records/v1 on the client and every
   );
 });
 
-void test('the runtime activates after its providers and before the bundles that require it', async () => {
+void test('the built descriptor lists executor.session/v1@1.0.0 on the host, which the host part serves', async () => {
+  const descriptor = descriptorSchema.parse(
+    JSON.parse(
+      await readFile('bundles/runtime/runtime/dist/contracts.json', 'utf8'),
+    ),
+  );
+
+  assert.deepEqual(
+    descriptor.contracts
+      .filter(({ id }) => id === 'executor.session/v1')
+      .map(({ version, environment }) => [version, environment]),
+    [['1.0.0', 'host']],
+  );
+});
+
+void test('the runtime activates after its providers and before the bundles that require it, default included', async () => {
   const core = await manifestOf('core');
   const runtime = await manifestOf('runtime');
   const candidates = [
@@ -128,8 +147,19 @@ void test('the runtime activates after its providers and before the bundles that
     candidate(await manifestOf('files')),
     candidate(await manifestOf('git')),
     candidate(await manifestOf('threads')),
-    candidate(provider('default', ['executor/v1@1.4.0'])),
-    candidate(provider('docker', ['sandbox/v1@1.0.0'])),
+    // default provides executor/v1, which runtime lists as optional, and
+    // requires executor.session/v1, which runtime provides (S62c).
+    candidate(
+      manifestV1Schema.parse({
+        manifestVersion: 1,
+        id: 'default',
+        version: '1.0.0',
+        engines: { doric: '^1.0.0' },
+        provides: ['executor/v1@1.6.0'],
+        requires: ['executor.session/v1@^1.0.0'],
+      }),
+    ),
+    candidate(provider('docker', ['sandbox/v1@1.1.0'])),
     // The window surfaces the stage-10 client parts of files and git require:
     // the ids they use since bundle isolation 4(a), which removed the old ones,
     // and since 4(d) the selection of `workspace` (`runtime.records/v1` is the
@@ -170,10 +200,11 @@ void test('the runtime activates after its providers and before the bundles that
     resolved.entries.find((entry) => entry.id === id);
 
   assert.deepEqual(state('runtime')?.reasons, []);
+  assert.deepEqual(state('default')?.reasons, []);
   const position = (id: string) => resolved.order.indexOf(id);
-  for (const before of ['core', 'default', 'docker', 'host-config'])
+  for (const before of ['core', 'docker', 'host-config'])
     assert.ok(position(before) < position('runtime'), before);
-  for (const after of ['files', 'git', 'threads'])
+  for (const after of ['default', 'files', 'git', 'threads'])
     assert.ok(position('runtime') < position(after), after);
   // files, git and threads keep their lexical order, so tools keep theirs.
   assert.deepEqual(
@@ -190,8 +221,8 @@ void test('a second provider of runtime/v2 is quarantined without a choice', asy
     candidate(core),
     candidate(runtime),
     candidate(other),
-    candidate(provider('default', ['executor/v1@1.4.0'])),
-    candidate(provider('docker', ['sandbox/v1@1.0.0'])),
+    candidate(provider('default', ['executor/v1@1.6.0'])),
+    candidate(provider('docker', ['sandbox/v1@1.1.0'])),
     candidate(provider('host-config', ['host-config/v1@1.1.0'])),
     candidate(
       provider('storage-backend', [

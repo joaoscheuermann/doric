@@ -28,9 +28,9 @@ built and loaded, see
 | `id`              | `claude-login`                                           |
 | `version`         | `1.1.1`                                                  |
 | `engines`         | `doric` `^1.7.0`                                         |
-| `provides`        | `claude.login/v1@1.0.0`                                  |
+| `provides`        | `claude.login/v1@1.1.0`                                  |
 | `requires`        | `secrets/v1@^1.0.0`, `ui/v1@^1.0.0`, `regions/v1@^1.0.0` |
-| `optional`        | none                                                     |
+| `optional`        | `log/v1`                                                 |
 | `desktopScope`    | `claude.login/v1`: `projectId`, `threadId`, `promptId`   |
 
 `description` is the string "The in-app Claude Code sign-in: reuse an existing
@@ -201,7 +201,7 @@ delegates to it, so its behaviour is unchanged.
 - The callback server listens on port 54545, falling back to 54546. `Finish`
   can wait up to 10 minutes; the process transport (S60) must not shorten it.
 
-The kernel entry and the manifest are unchanged until S62, which provides
+The kernel entry stays until S62. Since S62c1 the manifest provides
 `claude.login/v1@1.1.0`; `secrets/v1` stays required.
 
 ## Client part

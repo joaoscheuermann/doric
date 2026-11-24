@@ -4,6 +4,7 @@
   "version": "1.2.0",
   "engines": { "doric": "^1.0.0" },
   "description": "OpenAI Responses provider kind.",
-  "provides": ["models.provider/v1@1.3.0"],
-  "requires": ["log/v1@^1.0.0"]
+  "provides": ["models.provider/v1@1.4.0"],
+  "requires": ["log/v1@^1.0.0"],
+  "optional": ["runtime.attachments/v1", "secrets/v1"]
 }

@@ -26,9 +26,9 @@ how a Claude provider is signed in.
 | `version`         | `1.2.0`                                                          |
 | `engines`         | `{ "doric": "^1.0.0" }`                                          |
 | `description`     | `Claude provider kind (Claude Code subscription login).`         |
-| `provides`        | `models.provider/v1@1.3.0`                                       |
+| `provides`        | `models.provider/v1@1.4.0`                                       |
 | `requires`        | `log/v1@^1.0.0`                                                  |
-| `optional`        | none                                                             |
+| `optional`        | `runtime.attachments/v1`, `secrets/v1`                           |
 | `desktopScope`    | none                                                             |
 
 The bundle declares no slot and fills none.
