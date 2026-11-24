@@ -60,6 +60,27 @@ export const stagedCommandOf = (
   };
 };
 
+/**
+ * `PlatformOptions.hostPart` over the bundles staged in `bundlesDir`
+ * (resolved to an absolute path when called): the answered function is true
+ * when `<bundlesDir>/<bundleId>/host/` holds `command.json`,
+ * `doric-<bundleId>` or `main.mjs` (D6), false otherwise (a client-only
+ * bundle, an unknown id). Reads the file system on each call; never throws.
+ */
+export const stagedHostPart = (
+  bundlesDir: string,
+): ((bundleId: string) => boolean) => {
+  const root = resolve(bundlesDir);
+
+  return (bundleId) => {
+    const host = join(root, bundleId, 'host');
+
+    return ['command.json', `doric-${bundleId}`, 'main.mjs'].some((name) =>
+      existsSync(join(host, name)),
+    );
+  };
+};
+
 const isStrings = (value: unknown): value is readonly string[] =>
   Array.isArray(value) && value.every((part) => typeof part === 'string');
 

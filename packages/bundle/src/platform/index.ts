@@ -3,21 +3,33 @@
 // and the gateway. Exported from the package as `bundle/platform` (phase 3);
 // Node only, not reachable from a window.
 
-import { createFileRegistry } from '@bufbuild/protobuf';
-import { ConnectError, createClient } from '@connectrpc/connect';
+import {
+  create,
+  createFileRegistry,
+  type DescService,
+} from '@bufbuild/protobuf';
+import { anyPack } from '@bufbuild/protobuf/wkt';
+import { type Client, ConnectError, createClient } from '@connectrpc/connect';
 import { createAsyncIterable } from '@connectrpc/connect/protocol';
 import { createTransport } from '@connectrpc/connect/protocol-grpc';
 
 import {
-  type StorageIdentity,
   StorageBackendV1,
+  type StorageIdentity,
 } from '../contracts/basic/storage.js';
 import { ContractError } from '../contracts/error.js';
-import { file_doric_platform_app_hooks_v1_hooks } from '../contracts/gen/doric/platform/app/hooks/v1/hooks_pb.js';
+import { HooksService } from '../contracts/gen/doric/hooks/v1/hooks_pb.js';
+import {
+  file_doric_platform_app_hooks_v1_hooks,
+  OnHostReadyHookInputSchema,
+  OnHostStartHookInputSchema,
+  OnHostStopHookInputSchema,
+} from '../contracts/gen/doric/platform/app/hooks/v1/hooks_pb.js';
 import { file_doric_platform_bundle_v1_bundle } from '../contracts/gen/doric/platform/bundle/v1/bundle_pb.js';
 import { file_doric_platform_diagnostics_v1_diagnostics } from '../contracts/gen/doric/platform/diagnostics/v1/diagnostics_pb.js';
 import { file_doric_platform_generation_v1_generation } from '../contracts/gen/doric/platform/generation/v1/generation_pb.js';
 import { file_doric_platform_log_v1_log } from '../contracts/gen/doric/platform/log/v1/log_pb.js';
+import { file_doric_platform_startup_v1_startup } from '../contracts/gen/doric/platform/startup/v1/startup_pb.js';
 import { BackendService } from '../contracts/gen/doric/storage/backend/v1/backend_pb.js';
 import type { QuarantineReason } from '../contracts/platform.js';
 import { fromConnectError } from '../contracts/status.js';
@@ -38,7 +50,9 @@ import {
   createDiagnosticsService,
   createGenerationService,
   createLogService,
+  createStartupService,
   type LogServiceOptions,
+  type StartupSink,
 } from './router/platform-services.js';
 import { callRoutesOf } from './router/route.js';
 import {
@@ -49,7 +63,10 @@ import {
 import { createRouterRelay } from './supervisor/router-relay.js';
 import type { SpawnCommand } from './supervisor/spawn.js';
 import { startSupervisor } from './supervisor/supervisor.js';
-import type { Timings } from './supervisor/timings.js';
+import {
+  timings as platformTimings,
+  type Timings,
+} from './supervisor/timings.js';
 
 export {
   type CatalogIndex,
@@ -60,9 +77,36 @@ export {
   defaultPublicAddress,
   PublicListenerBindingError,
 } from './gateway/index.js';
-export { readStagedCatalogIndex, stagedCommandOf } from './staged.js';
+export type { StartupSink } from './router/platform-services.js';
+export {
+  readStagedCatalogIndex,
+  stagedCommandOf,
+  stagedHostPart,
+} from './staged.js';
 export type { PublishResult } from './supervisor/publish.js';
 export type { SpawnCommand } from './supervisor/spawn.js';
+
+/**
+ * The platform's own caller, `doric` (generation 0, incarnation 0: the
+ * gateway's caller, `route.ts`'s `gatewayCaller`), which has no instance and
+ * no client part.
+ */
+export interface DoricCaller {
+  /**
+   * A Connect client of `service` whose every call the router serves in
+   * process as a call of `doric`: steps 2 to 4 of section 3 as for a bundle's
+   * call, step 3 letting every method of a contract service through (no lists
+   * to check); a method of a handler service answers `not_owner`. `service`
+   * must be in `PlatformOptions.index` or be a platform contract the router
+   * serves, else the call fails `UNIMPLEMENTED`. A call without `timeoutMs`
+   * waits at most `timings.activeWaitMs` for an active provider, then fails
+   * `unavailable`; `signal` cancels it. Failures are `ConnectError`s carrying
+   * the Doric code (`fromConnectError` reads it). Creating the client makes no
+   * call and never throws; once `shutdown` closed the router, every call fails
+   * `unavailable`.
+   */
+  client<S extends DescService>(service: S): Client<S>;
+}
 
 export interface PlatformOptions {
   /** `DORIC_ROUTER_ADDRESS`; `defaultRouterAddress` when undefined. */
@@ -130,10 +174,57 @@ export interface PlatformOptions {
    * stdout when undefined. Must not throw.
    */
   readonly writeLog?: LogServiceOptions['write'];
+  /**
+   * The sink of `doric.startup/v1` (`createStartupService`), which the router
+   * now always serves. Also told `stage('database_client')` just before the
+   * storage identity read. A sink that discards everything when undefined.
+   */
+  readonly startup?: StartupSink;
+  /**
+   * Whether a scheduled bundle has a host part (`stagedHostPart` for a staged
+   * tree). A bundle for which it answers `false` is never spawned, at the boot
+   * or by a publish; it is recorded `active` in the diagnostics with no
+   * activation time, counts as active for its dependents, and is never
+   * stopped. Read once per bundle per adopted resolution; must not throw.
+   * Undefined: every scheduled bundle has one (today's behaviour).
+   */
+  readonly hostPart?: (bundleId: string) => boolean;
+  /**
+   * Runs once, after the boot settled and the storage identity was read (when
+   * there is a provider), and before the public listener binds: the host's
+   * `Bundles loaded` and `onHostStartHook`. Not run when the boot ends with a
+   * `structuralFault`. Its rejection makes `startPlatform` shut down what
+   * started (no `beforeStop`) and reject with that same value. A required
+   * bundle quarantined while it runs still calls `exit(1)`, as after the boot.
+   */
+  readonly beforeListen?: (doric: DoricCaller) => Promise<void>;
+  /**
+   * Runs once in `shutdown`, after the public listener closed and before any
+   * instance gets `Stop`: the host's `onHostStopHook`. `signal` aborts at the
+   * shutdown deadline (`timings.shutdownDeadlineMs` after `shutdown` began);
+   * the level stops get what is left of that deadline. A rejection or throw is
+   * ignored: `shutdown` goes on and never rejects. Not run for a
+   * `startPlatform` that rejected, nor when `structuralFault` is set.
+   */
+  readonly beforeStop?: (
+    doric: DoricCaller,
+    signal: AbortSignal,
+  ) => Promise<void>;
 }
 
-/** A booted platform. */
-export interface Platform {
+/** A booted platform. Its `client` is the `doric` caller of {@link DoricCaller}. */
+export interface Platform extends DoricCaller {
+  /**
+   * Set when, once the boot settled, a bundle of `required.bundles` is not
+   * `active`, or a contract of `required.contracts` has no `active` provider:
+   * `structural providers unavailable: <ids, contracts first, then bundles,
+   * comma-separated>` (the host's `structuralFault` wording). Then the
+   * identity was not read, `beforeListen` did not run, no public listener was
+   * bound (`publicPort` undefined), and the host is expected to log `Bundle
+   * recovery mode` and call `shutdown`. Undefined otherwise; never changes
+   * after `startPlatform` resolved.
+   */
+  readonly structuralFault?: string;
   /** The router's bound port, the one in every `DORIC_ROUTER_URL`. */
   readonly routerPort: number;
   /**
@@ -165,9 +256,10 @@ export interface Platform {
    */
   publish(next: ResolvedEnvironment): Promise<PublishResult>;
   /**
-   * The host shutdown of section 7: closes the public listener, stops every
-   * instance by dependency level in reverse activation order within the
-   * shutdown deadline, then closes the router. Never rejects; a second call
+   * The host shutdown of section 7: closes the public listener, runs
+   * {@link PlatformOptions.beforeStop}, stops every instance by dependency
+   * level in reverse activation order within what is left of the shutdown
+   * deadline, then closes the router. Never rejects; a second call
    * resolves with the first.
    */
   shutdown(): Promise<void>;
@@ -195,12 +287,27 @@ export interface Platform {
  * boot does not reject: the host reads the diagnostics, as today's boot
  * fails at the stage `bundle_load`. A publish never reads the identity
  * again.
+ *
+ * Also: the router serves `doric.startup/v1` in process
+ * (`createStartupService(options.startup ?? silent)`), and its index falls
+ * back to that contract's file too; the supervisor spawns only the bundles
+ * `options.hostPart` accepts; after the boot settled, when a required
+ * provider is missing it resolves with `structuralFault` set and nothing
+ * below runs; otherwise, when a provider of `storage.backend/v1` is active,
+ * it calls `startup.stage('database_client')` and then reads the identity;
+ * then awaits `beforeListen(platform)`; then binds the public listener. It
+ * also rejects with `beforeListen`'s rejection, after shutting down what
+ * started. A required bundle quarantined during the boot sets
+ * `structuralFault` instead of rejecting.
  */
 export const startPlatform = async (
   options: PlatformOptions,
 ): Promise<Platform> => {
   const { diagnostics, resolved } = options;
   const required = options.required ?? { bundles: [], contracts: [] };
+  const startup = options.startup ?? silentStartup;
+  const shutdownDeadlineMs = (options.timings ?? platformTimings)
+    .shutdownDeadlineMs;
   const exit = options.exit ?? ((code: number) => process.exit(code));
   const instances = new InstanceTable();
   const relay = createRouterRelay();
@@ -231,6 +338,7 @@ export const startPlatform = async (
       }),
       createDiagnosticsService({ diagnostics }),
       createBundleService(),
+      createStartupService(startup),
     ],
     instances,
     ...(options.timings === undefined ? {} : { timings: options.timings }),
@@ -300,6 +408,7 @@ export const startPlatform = async (
     held: (key) => generation.holdsOf(key).length > 0,
     ...(options.env === undefined ? {} : { env: options.env }),
     ...(options.timings === undefined ? {} : { timings: options.timings }),
+    ...(options.hostPart === undefined ? {} : { hostPart: options.hostPart }),
     diagnostics,
     onQuarantine: (bundleId, reason) => {
       options.onQuarantine?.(bundleId, reason);
@@ -315,13 +424,33 @@ export const startPlatform = async (
   await supervisor.boot();
   booted = true;
 
+  const doric: DoricCaller = {
+    client: (service) => createClient(service, doricTransport(router)),
+  };
+  const isActive = (bundleId: string): boolean =>
+    diagnostics.state(bundleId) === 'active';
+  const missing = [
+    ...required.contracts.filter(
+      (id) =>
+        !resolved.contracts.some(
+          (contract) =>
+            contract.id === id &&
+            contract.providers.some(({ bundleId }) => isActive(bundleId)),
+        ),
+    ),
+    ...required.bundles.filter((id) => !isActive(id)),
+  ];
+  const structuralFault =
+    missing.length === 0
+      ? undefined
+      : `structural providers unavailable: ${missing.join(', ')}`;
   const storageActive = resolved.contracts
     .find((contract) => contract.id === StorageBackendV1.id)
-    ?.providers.some(
-      (provider) => diagnostics.state(provider.bundleId) === 'active',
-    );
+    ?.providers.some(({ bundleId }) => isActive(bundleId));
 
-  if (storageActive === true) {
+  if (structuralFault === undefined && storageActive === true) {
+    startup.stage('database_client');
+
     try {
       storage = await readStorageIdentity(router);
     } catch (error) {
@@ -331,9 +460,19 @@ export const startPlatform = async (
     }
   }
 
+  if (structuralFault === undefined && options.beforeListen !== undefined) {
+    try {
+      await options.beforeListen(doric);
+    } catch (error) {
+      await supervisor.shutdown();
+      await router.close();
+      throw error;
+    }
+  }
+
   let gateway: Gateway | undefined;
 
-  if (options.publicAddress !== undefined) {
+  if (structuralFault === undefined && options.publicAddress !== undefined) {
     try {
       gateway = await startGateway({
         address: options.publicAddress,
@@ -360,7 +499,38 @@ export const startPlatform = async (
   let shuttingDown: Promise<void> | undefined;
   let publishing: Promise<unknown> = Promise.resolve();
 
+  /** `beforeStop`, bounded by the shutdown deadline; never rejects. */
+  const runBeforeStop = async (deadlineAt: number): Promise<void> => {
+    const { beforeStop } = options;
+
+    if (structuralFault !== undefined || beforeStop === undefined) {
+      return;
+    }
+
+    const controller = new AbortController();
+    const timer = setTimeout(
+      () => controller.abort(),
+      Math.max(0, deadlineAt - Date.now()),
+    );
+    const aborted = new Promise<void>((resolve) => {
+      controller.signal.addEventListener('abort', () => resolve());
+    });
+
+    try {
+      await Promise.race([
+        (async () => beforeStop(doric, controller.signal))(),
+        aborted,
+      ]);
+    } catch {
+      // A failing `beforeStop` does not stop the shutdown.
+    } finally {
+      clearTimeout(timer);
+    }
+  };
+
   return {
+    client: doric.client,
+    ...(structuralFault === undefined ? {} : { structuralFault }),
     routerPort: router.port,
     ...(gateway === undefined ? {} : { publicPort: gateway.port }),
     publish: (next) => {
@@ -380,14 +550,79 @@ export const startPlatform = async (
     },
     shutdown: () => {
       shuttingDown ??= (async () => {
+        const deadlineAt = Date.now() + shutdownDeadlineMs;
+
         await gateway?.close();
-        await supervisor.shutdown();
+        await runBeforeStop(deadlineAt);
+        await supervisor.shutdown(deadlineAt);
         await router.close();
       })();
 
       return shuttingDown;
     },
   };
+};
+
+/** The host hooks of `doric.app.hooks/v1` the host runs. */
+export type HostHook = 'onHostStartHook' | 'onHostReadyHook' | 'onHostStopHook';
+
+/**
+ * Runs `hook` of `doric.app.hooks/v1` as `doric`, through
+ * `doric.client(HooksService)`: `Define{contract: 'doric.app.hooks/v1'}` (on
+ * every run: the same id while `hooks/v1`'s provider keeps the definition, a
+ * new one after it restarted), then `Run{contract, hook, input: anyPack(<hook's
+ * input message>, empty)}`. `options.signal` and `options.timeoutMs` apply to
+ * both calls.
+ *
+ * Resolves once `Run` answered: for the sequence hooks (`onHostStartHook`,
+ * `onHostStopHook`) after every handler resolved, in the provider's order
+ * (`onHostStopHook` reversed); for `onHostReadyHook` (observe) after every
+ * handler was called, a handler's failure being the provider's report
+ * (`hook_handler_failed`), not a rejection. No handler: `{}`.
+ *
+ * Rejects with a `ContractError`: a sequence handler's failure with its code
+ * (later handlers not run); `unavailable` when no `hooks/v1` provider is
+ * active within the wait; `cancelled` or `deadline_exceeded` from the
+ * options; any other code `Define` or `Run` answers.
+ */
+export const runHostHook = async (
+  doric: DoricCaller,
+  hook: HostHook,
+  options?: { readonly signal?: AbortSignal; readonly timeoutMs?: number },
+): Promise<void> => {
+  const hooks = doric.client(HooksService);
+  const callOptions = options ?? {};
+  const contract = appHooksContract;
+
+  try {
+    await hooks.define({ contract }, callOptions);
+    await hooks.run(
+      {
+        contract,
+        hook,
+        input: anyPack(hookInputs[hook], create(hookInputs[hook])),
+      },
+      callOptions,
+    );
+  } catch (error) {
+    throw error instanceof ConnectError ? fromConnectError(error) : error;
+  }
+};
+
+/** The contract whose host hooks {@link runHostHook} runs. */
+const appHooksContract = 'doric.app.hooks/v1';
+
+/** Each host hook's input message. */
+const hookInputs = {
+  onHostStartHook: OnHostStartHookInputSchema,
+  onHostReadyHook: OnHostReadyHookInputSchema,
+  onHostStopHook: OnHostStopHookInputSchema,
+} as const;
+
+/** The `startup` sink when the host gives none: discards everything. */
+const silentStartup: StartupSink = {
+  stage: () => undefined,
+  log: () => undefined,
 };
 
 /**
@@ -407,6 +642,7 @@ const withPlatformContracts = (index: CatalogIndex): CatalogIndex => {
     // could add a second file of the same name (`bundle/contracts`).
     file_doric_platform_diagnostics_v1_diagnostics,
     file_doric_platform_bundle_v1_bundle,
+    file_doric_platform_startup_v1_startup,
   ]);
   // Only in the registry: `doric.app.hooks/v1` is not served in process.
   const hooks = createCatalogIndex([file_doric_platform_app_hooks_v1_hooks]);
@@ -433,39 +669,7 @@ const withPlatformContracts = (index: CatalogIndex): CatalogIndex => {
 const readStorageIdentity = async (
   router: Pick<Router, 'serveGateway'>,
 ): Promise<StorageIdentity> => {
-  const client = createClient(
-    BackendService,
-    createTransport({
-      httpClient: async (request) => {
-        const answer = await router.serveGateway(
-          {
-            httpVersion: '2.0',
-            method: request.method,
-            url: request.url,
-            header: request.header,
-            body: request.body ?? createAsyncIterable([]),
-            signal: request.signal ?? new AbortController().signal,
-          },
-          undefined,
-        );
-
-        return {
-          status: answer.status,
-          header: answer.header ?? new Headers(),
-          body: answer.body ?? createAsyncIterable([]),
-          trailer: answer.trailer ?? new Headers(),
-        };
-      },
-      baseUrl: 'http://doric',
-      useBinaryFormat: true,
-      interceptors: [],
-      acceptCompression: [],
-      sendCompression: null,
-      compressMinBytes: 0,
-      readMaxBytes: maxMessageBytes,
-      writeMaxBytes: maxMessageBytes,
-    }),
-  );
+  const client = createClient(BackendService, doricTransport(router));
 
   try {
     const { storageIdentity } = await client.identity({});
@@ -485,6 +689,42 @@ const readStorageIdentity = async (
     throw error instanceof ConnectError ? fromConnectError(error) : error;
   }
 };
+
+/**
+ * The transport of the `doric` caller: each call served by
+ * `router.serveGateway` with no client part.
+ */
+const doricTransport = (router: Pick<Router, 'serveGateway'>) =>
+  createTransport({
+    httpClient: async (request) => {
+      const answer = await router.serveGateway(
+        {
+          httpVersion: '2.0',
+          method: request.method,
+          url: request.url,
+          header: request.header,
+          body: request.body ?? createAsyncIterable([]),
+          signal: request.signal ?? new AbortController().signal,
+        },
+        undefined,
+      );
+
+      return {
+        status: answer.status,
+        header: answer.header ?? new Headers(),
+        body: answer.body ?? createAsyncIterable([]),
+        trailer: answer.trailer ?? new Headers(),
+      };
+    },
+    baseUrl: 'http://doric',
+    useBinaryFormat: true,
+    interceptors: [],
+    acceptCompression: [],
+    sendCompression: null,
+    compressMinBytes: 0,
+    readMaxBytes: maxMessageBytes,
+    writeMaxBytes: maxMessageBytes,
+  });
 
 /** The default `writeLog`: one JSON line per record on stdout. */
 const writeLogLine: LogServiceOptions['write'] = (record, call) => {

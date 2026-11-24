@@ -82,8 +82,10 @@ export interface SupervisorState {
   /** The resolution adopted last: `options.resolved` until a publish. */
   resolved: ResolvedEnvironment;
   entries: Map<string, ResolvedEnvironment['entries'][number]>;
-  /** The `scheduled` entries of `resolved`, in its order. */
+  /** The `scheduled` entries of `resolved` with a host part, in its order. */
   scheduled: string[];
+  /** The `scheduled` entries without a host part: active, never spawned. */
+  hostless: Set<string>;
   /** Each bundle's running generation, in the order they were spawned. */
   readonly generations: Map<string, BundleGeneration>;
   /** Each bundle's newest generation number spawned, running or not. */
@@ -109,16 +111,24 @@ export interface SupervisorState {
   readonly stopped: Promise<void>;
 }
 
-/** Adopts `resolved`: its entries and its scheduled bundles. */
+/**
+ * Adopts `resolved`: its entries and its scheduled bundles, split by
+ * `options.hostPart` into those spawned and the hostless ones.
+ */
 export const adoptResolution = (
   state: SupervisorState,
   resolved: ResolvedEnvironment,
 ): void => {
   state.resolved = resolved;
   state.entries = new Map(resolved.entries.map((entry) => [entry.id, entry]));
-  state.scheduled = resolved.order.filter(
+
+  const hostPart = state.options.hostPart ?? (() => true);
+  const scheduled = resolved.order.filter(
     (id) => state.entries.get(id)?.state === 'scheduled',
   );
+
+  state.hostless = new Set(scheduled.filter((id) => !hostPart(id)));
+  state.scheduled = scheduled.filter((id) => !state.hostless.has(id));
 };
 
 /** The bundle's boot outcome, created on first ask. */

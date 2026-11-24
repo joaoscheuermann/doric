@@ -76,6 +76,8 @@ export interface SupervisorOptions {
    * digest is `''`, so a publish sees no executable change.
    */
   readonly digestOf?: (bundleId: string) => string;
+  /** `PlatformOptions.hostPart`; undefined: every scheduled bundle has a host part. */
+  readonly hostPart?: (bundleId: string) => boolean;
   /**
    * Whether an instance has a work hold now (`doric.generation/v1.Hold`,
    * `GenerationPlatformService.holdsOf`), read by the drain check
@@ -175,8 +177,12 @@ export interface Supervisor extends PublishTarget {
    * (section 7, "Host shutdown"), sends `SIGKILL` to every process alive at
    * the shutdown deadline, and resolves when every process has exited. Never
    * rejects; a second call resolves with the first.
+   *
+   * Ends every process by `deadlineAt` (epoch ms; default `Date.now() +
+   * timings.shutdownDeadlineMs` when the call starts): the level stops are
+   * cut and the rest `SIGKILL`ed at that time.
    */
-  shutdown(): Promise<void>;
+  shutdown(deadlineAt?: number): Promise<void>;
 }
 
 /**
@@ -194,6 +200,7 @@ export const startSupervisor = (options: SupervisorOptions): Supervisor => {
     resolved: options.resolved,
     entries: new Map(),
     scheduled: [],
+    hostless: new Set(),
     generations: new Map(),
     spawnedGenerations: new Map(),
     replacements: new Map(),
@@ -215,10 +222,27 @@ export const startSupervisor = (options: SupervisorOptions): Supervisor => {
 
   adoptResolution(state, options.resolved);
 
+  /** Records a hostless bundle as active, without a process (D5). */
+  const settleHostless = (bundleId: string, digest: string): void => {
+    state.generations.set(bundleId, {
+      bundleId,
+      generation: state.generations.get(bundleId)?.generation ?? 1,
+      signature: signatureOf(state.resolved, bundleId, digest) ?? '',
+    });
+    diagnostics.setState(bundleId, 'active');
+    outcomeOf(state, bundleId).settle('active');
+  };
+
   const replace = async (
     bundleId: string,
     digest: string,
   ): Promise<'active' | 'failed'> => {
+    if (state.hostless.has(bundleId)) {
+      settleHostless(bundleId, digest);
+
+      return 'active';
+    }
+
     const previous = state.current.get(bundleId);
     const running = state.generations.get(bundleId);
     const generation =
@@ -323,6 +347,10 @@ export const startSupervisor = (options: SupervisorOptions): Supervisor => {
         );
       }
 
+      for (const id of state.hostless) {
+        settleHostless(id, digestOf(id));
+      }
+
       for (const id of state.scheduled) {
         outcomeOf(state, id);
         state.generations.set(id, {
@@ -348,7 +376,9 @@ export const startSupervisor = (options: SupervisorOptions): Supervisor => {
       return key === undefined ? undefined : instances.get(key)?.state;
     },
     stopInstance: (key) => stopInstance(state, key),
-    shutdown: () => {
+    shutdown: (deadlineAt) => {
+      const deadline = deadlineAt ?? Date.now() + timings.shutdownDeadlineMs;
+
       state.shuttingDown ??= (async () => {
         startShutdown();
         state.slots.close();
@@ -372,7 +402,7 @@ export const startSupervisor = (options: SupervisorOptions): Supervisor => {
           }
         };
 
-        await within(stopLevels(), timings.shutdownDeadlineMs);
+        await within(stopLevels(), deadline - Date.now());
 
         for (const bundleProcess of processes.values()) {
           kill(bundleProcess);

@@ -1240,6 +1240,26 @@ after a 5 s grace; a failure after the cancel answers `run_cancelled` or
   requests keep today's messages (Q6). Group C is complete; the Express
   routes and Socket.IO stay until group F, and `api.*` enter `provides` in
   S62.
+- 2026-11-24: phase 3, slice S61a, of
+  [`docs/designs/grpc-processes.md`](../designs/grpc-processes.md) (version
+  6.25, A70–A72): `bundle/platform`. The router serves `doric.startup/v1`
+  (`createStartupService(sink)`; requests checked against the proto rules
+  first, an invalid one answers `invalid_input` and the sink hears nothing);
+  `StartupSink` moves to `src/platform/router/platform-services.ts` and the
+  kernel re-exports it. `Platform extends DoricCaller`: `doric.client(service)`
+  calls are served as caller `doric`. `startPlatform` takes `startup`,
+  `hostPart`, `beforeListen(doric)` and `beforeStop(doric, signal)`. Boot: all
+  scheduled bundles active; a required bundle or contract provider not active
+  resolves with `structuralFault` (no identity read, no `beforeListen`, no
+  public listener); else `stage('database_client')`, the identity read,
+  `beforeListen`, then the public listener (a rejecting `beforeListen` shuts
+  everything down and rejects). Shutdown fixes one deadline, closes the
+  listener, runs `beforeStop` until it, then stops the supervisor
+  (`Supervisor.shutdown(deadlineAt?)`). `runHostHook(doric, hook)` defines
+  `doric.app.hooks/v1` before every `Run` (core keeps it in memory only).
+  `stagedHostPart(bundlesDir)` finds `host/command.json`, `host/doric-<id>`
+  or `host/main.mjs`; bundles without a host part are active, never spawned
+  and never stopped. The kernel still boots the running host until S62.
 - 2026-11-23: phase 3, slice S56, of
   [`docs/designs/grpc-processes.md`](../designs/grpc-processes.md): `openui`
   runs as its own process (`src/host/main.ts`, `createOpenuiHost`) serving

@@ -15,6 +15,7 @@ import { createCatalogIndex } from '../../src/platform/catalog-index.js';
 import {
   readStagedCatalogIndex,
   stagedCommandOf,
+  stagedHostPart,
 } from '../../src/platform/staged.js';
 import {
   importDemoFile,
@@ -126,6 +127,34 @@ describe('stagedCommandOf', () => {
   });
 });
 
+describe('stagedHostPart', () => {
+  test('is true for host/command.json, for host/doric-<id> and for host/main.mjs, false for a bundle directory without any of them and for an unknown id', async () => {
+    await withRoot(async (root) => {
+      const stage = async (id: string, file?: string): Promise<void> => {
+        await mkdir(join(root, id, 'host'), { recursive: true });
+
+        if (file !== undefined) {
+          await writeFile(join(root, id, 'host', file), '');
+        }
+      };
+
+      await stage('dev', 'command.json');
+      await stage('binary', 'doric-binary');
+      await stage('module', 'main.mjs');
+      await stage('client');
+      await mkdir(join(root, 'client', 'client'), { recursive: true });
+
+      const hostPart = stagedHostPart(relative(process.cwd(), root));
+
+      assert.equal(hostPart('dev'), true);
+      assert.equal(hostPart('binary'), true);
+      assert.equal(hostPart('module'), true);
+      assert.equal(hostPart('client'), false);
+      assert.equal(hostPart('unknown'), false);
+    });
+  });
+});
+
 describe('readStagedCatalogIndex', () => {
   test('the index of a staged bundle answers what its generated files answer', async () => {
     await withRoot(async (root) => {
@@ -227,6 +256,17 @@ describe('the package export bundle/platform', () => {
         command: join(root, 'demo', 'host', 'doric-demo'),
         args: [],
       });
+    });
+  });
+
+  test('exposes stagedHostPart and runHostHook', async () => {
+    assert.equal(typeof platform.runHostHook, 'function');
+    await withRoot(async (root) => {
+      await mkdir(join(root, 'demo', 'host'), { recursive: true });
+      await writeFile(join(root, 'demo', 'host', 'main.mjs'), '');
+
+      assert.equal(platform.stagedHostPart(root)('demo'), true);
+      assert.equal(platform.stagedHostPart(root)('other'), false);
     });
   });
 });

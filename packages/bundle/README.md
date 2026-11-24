@@ -2905,7 +2905,7 @@ interface StartKernelOptions extends StartHostOptions {
     source: KernelDistributionSource,
   ) => CatalogDistributionProvider;
 }
-interface StartupSink {
+interface StartupSink { // defined in src/platform/router/platform-services.ts; the kernel re-exports it
   stage(name: string): void;
   log(record: {
     level: 'debug' | 'info' | 'warn' | 'error';
@@ -3270,6 +3270,64 @@ of a staged bundle the desktop may need: `manifest.json`, `contracts.json`,
 outside `contracts/` that those import relatively. `distributionFor` builds
 one generation's distribution catalog from the host's catalog snapshot; an
 embedded bundle has no files ([`distribution.ts`](src/loader/distribution.ts)).
+
+## `bundle/platform`
+
+The host side of the platform ([`src/platform/index.ts`](src/platform/index.ts)):
+
+```ts
+function startPlatform(options: PlatformOptions): Promise<Platform>;
+interface PlatformOptions {
+  // ... routerAddress, publicAddress, index, resolved, commandOf, ...
+  readonly startup?: StartupSink; // sink of doric.startup/v1; also hears stage('database_client')
+  readonly hostPart?: (bundleId: string) => boolean; // undefined: every bundle has one
+  readonly beforeListen?: (doric: DoricCaller) => Promise<void>;
+  readonly beforeStop?: (doric: DoricCaller, signal: AbortSignal) => Promise<void>;
+}
+interface DoricCaller {
+  client<S extends DescService>(service: S): Client<S>; // calls served in process as caller `doric`
+}
+interface Platform extends DoricCaller {
+  readonly structuralFault?: string; // "structural providers unavailable: <ids>"
+  readonly routerPort: number;
+  readonly publicPort?: number;
+  publish(next: ResolvedEnvironment): Promise<PublishResult>;
+  shutdown(): Promise<void>; // never rejects
+}
+type HostHook = 'onHostStartHook' | 'onHostReadyHook' | 'onHostStopHook';
+function runHostHook(
+  doric: DoricCaller,
+  hook: HostHook,
+  options?: { signal?: AbortSignal; timeoutMs?: number },
+): Promise<void>;
+function stagedHostPart(bundlesDir: string): (bundleId: string) => boolean;
+```
+
+- The router always serves `doric.startup/v1` (`createStartupService(sink)`,
+  in `router/platform-services.ts`): a request is checked against its proto
+  rules first; an invalid one answers `invalid_input` and the sink hears
+  nothing.
+- Boot: `startPlatform` waits until every scheduled bundle is active. If a
+  required bundle, or the provider of a required contract, is not active, it
+  resolves with `structuralFault` set: no identity read, no `beforeListen`,
+  no public listener. Otherwise it tells the sink `stage('database_client')`,
+  reads the storage identity, awaits `beforeListen`, then binds the public
+  listener. A rejecting `beforeListen` shuts everything down (no
+  `beforeStop`) and `startPlatform` rejects with the same value.
+- `shutdown` fixes one deadline (`timings.shutdownDeadlineMs`), closes the
+  public listener, runs `beforeStop` until that deadline (its failure is
+  ignored), then stops the instances with what is left
+  (`Supervisor.shutdown(deadlineAt?)`) and closes the router.
+- `runHostHook` defines `doric.app.hooks/v1` before every `Run` (core keeps the
+  definition in memory only) and runs the hook as caller `doric`.
+- `hostPart`: a bundle it rejects is hostless: recorded `active`, never
+  spawned, never sent `Stop`. `stagedHostPart(bundlesDir)` accepts a bundle
+  whose `<bundlesDir>/<id>/host/` holds `command.json`, `doric-<id>` or
+  `main.mjs`.
+- Other exports: `createCatalogIndex`, `catalogIndexFromDescriptors`,
+  `CatalogIndex`, `readStagedCatalogIndex`, `stagedCommandOf`,
+  `defaultPublicAddress`, `PublicListenerBindingError`, `StartupSink`,
+  `PublishResult`, `SpawnCommand`.
 
 ## `bundle/client`
 

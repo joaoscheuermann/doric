@@ -23,9 +23,9 @@ import {
   toJson,
 } from '@bufbuild/protobuf';
 import {
-  type FileDescriptorProto,
   FieldDescriptorProto_Label,
   FieldDescriptorProto_Type,
+  type FileDescriptorProto,
   FileDescriptorSetSchema,
   ValueSchema,
 } from '@bufbuild/protobuf/wkt';
@@ -52,12 +52,16 @@ import {
   CatalogService,
   type CatalogSnapshot,
 } from '../../src/contracts/gen/doric/platform/catalog/v1/catalog_pb.js';
-import { file_doric_platform_generation_v1_generation } from '../../src/contracts/gen/doric/platform/generation/v1/generation_pb.js';
-import { file_doric_platform_log_v1_log } from '../../src/contracts/gen/doric/platform/log/v1/log_pb.js';
 import {
   DiagnosticsService,
   file_doric_platform_diagnostics_v1_diagnostics,
 } from '../../src/contracts/gen/doric/platform/diagnostics/v1/diagnostics_pb.js';
+import { file_doric_platform_generation_v1_generation } from '../../src/contracts/gen/doric/platform/generation/v1/generation_pb.js';
+import { file_doric_platform_log_v1_log } from '../../src/contracts/gen/doric/platform/log/v1/log_pb.js';
+import {
+  file_doric_platform_startup_v1_startup,
+  StartupService,
+} from '../../src/contracts/gen/doric/platform/startup/v1/startup_pb.js';
 import { file_doric_settings_v1_settings } from '../../src/contracts/gen/doric/settings/v1/settings_pb.js';
 import { file_doric_storage_backend_v1_backend } from '../../src/contracts/gen/doric/storage/backend/v1/backend_pb.js';
 import { file_doric_tools_v1_tools } from '../../src/contracts/gen/doric/tools/v1/tools_pb.js';
@@ -75,6 +79,7 @@ import {
   createBundleService,
   createCatalogService,
   createDiagnosticsService,
+  createStartupService,
   type PlatformServiceImpl,
 } from '../../src/platform/router/platform-services.js';
 import { callRoutesOf } from '../../src/platform/router/route.js';
@@ -158,10 +163,11 @@ interface RouterEnv {
 const setupRouter = async (
   t: TestContext,
   services: readonly PlatformServiceImpl[],
+  index: CatalogIndex = routerIndex,
 ): Promise<RouterEnv> => {
   const table = new InstanceTable();
   const router = await startRouter({
-    index: routerIndex,
+    index,
     routes: callRoutesOf(resolveCallHost()),
     platformServices: services,
     instances: table,
@@ -843,6 +849,54 @@ describe('doric.bundle/v1', () => {
         environment: 'host',
       },
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// doric.startup/v1 (router)
+
+describe('doric.startup/v1', () => {
+  test('Log refuses a level outside the four and absent fields with invalid_input, and passes fields to the sink as a JSON object', async (t) => {
+    const records: unknown[] = [];
+    const env = await setupRouter(
+      t,
+      [
+        createStartupService({
+          stage: (name) => records.push({ stage: name }),
+          log: ({ level, message, fields }) =>
+            records.push({ level, message, fields: { ...fields } }),
+        }),
+      ],
+      createCatalogIndex([file_doric_platform_startup_v1_startup]),
+    );
+    const token = await env.start('stranger');
+    const client = env.raw(StartupService, token);
+
+    await within(
+      client.log({
+        level: 'warn',
+        message: 'pool configured',
+        fields: { size: 3, image: 'doric', nested: { ok: true, ids: ['a'] } },
+      }),
+      'Log',
+    );
+
+    const badLevel = await failureOf(
+      client.log({ level: 'fatal', message: 'never', fields: {} }),
+    );
+    const noFields = await failureOf(
+      client.log({ level: 'info', message: 'never' }),
+    );
+
+    assert.equal(fromConnectError(badLevel).code, 'invalid_input');
+    assert.equal(fromConnectError(noFields).code, 'invalid_input');
+    assert.deepEqual(records, [
+      {
+        level: 'warn',
+        message: 'pool configured',
+        fields: { size: 3, image: 'doric', nested: { ok: true, ids: ['a'] } },
+      },
+    ]);
   });
 });
 

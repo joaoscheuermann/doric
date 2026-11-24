@@ -19,7 +19,11 @@ import {
   type CatalogIndex,
   createCatalogIndex,
 } from '../../src/platform/catalog-index.js';
-import { type Platform, startPlatform } from '../../src/platform/index.js';
+import {
+  type Platform,
+  type PlatformOptions,
+  startPlatform,
+} from '../../src/platform/index.js';
 import { InstanceTable } from '../../src/platform/router/instances.js';
 import { startRouter } from '../../src/platform/router/listener.js';
 import { callRoutesOf } from '../../src/platform/router/route.js';
@@ -142,7 +146,10 @@ export interface Script {
     | 'describe-platform'
     | 'read-descriptors'
     | 'serve-storage-identity'
-    | 'identity-fails';
+    | 'identity-fails'
+    | 'serve-hooks'
+    | 'start-step'
+    | 'start-step-fails';
   readonly ms?: number;
   readonly count?: number;
 }
@@ -399,6 +406,16 @@ export interface PlatformHost {
 export interface PlatformSetupOptions {
   readonly timings?: Partial<Timings>;
   readonly requiredBundles?: readonly string[];
+  /** `PlatformOptions.required.contracts`; empty when undefined. */
+  readonly requiredContracts?: readonly string[];
+  /** `PlatformOptions.startup`. */
+  readonly startup?: PlatformOptions['startup'];
+  /** `PlatformOptions.hostPart`. */
+  readonly hostPart?: PlatformOptions['hostPart'];
+  /** `PlatformOptions.beforeListen`. */
+  readonly beforeListen?: PlatformOptions['beforeListen'];
+  /** `PlatformOptions.beforeStop`. */
+  readonly beforeStop?: PlatformOptions['beforeStop'];
   /** Scripts of bundles not in `bundles`, `core` for one. */
   readonly scripts?: Readonly<Record<string, Script>>;
   /** `PlatformOptions.publicAddress`; no gateway when undefined. */
@@ -445,9 +462,23 @@ export const bootPlatform = (
     env: { PATH: process.env.PATH },
     timings: { ...testTimings, ...options.timings },
     diagnostics,
-    ...(options.requiredBundles === undefined
+    ...(options.requiredBundles === undefined &&
+    options.requiredContracts === undefined
       ? {}
-      : { required: { bundles: options.requiredBundles, contracts: [] } }),
+      : {
+          required: {
+            bundles: options.requiredBundles ?? [],
+            contracts: options.requiredContracts ?? [],
+          },
+        }),
+    ...(options.startup === undefined ? {} : { startup: options.startup }),
+    ...(options.hostPart === undefined ? {} : { hostPart: options.hostPart }),
+    ...(options.beforeListen === undefined
+      ? {}
+      : { beforeListen: options.beforeListen }),
+    ...(options.beforeStop === undefined
+      ? {}
+      : { beforeStop: options.beforeStop }),
     exit: (code) => {
       exits.push(code);
     },

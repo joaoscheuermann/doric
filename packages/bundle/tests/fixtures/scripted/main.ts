@@ -89,6 +89,24 @@
 // - `identity-fails`: serves `Identity` only, which logs
 //   `identity:<caller bundle id>` and fails with `limit_exceeded`, message
 //   `fixture identity failed`;
+// - `serve-hooks`: a minimal `hooks/v1` (for `core`): `Define` logs
+//   `define:<bundleId>/<generation>/<incarnation>` of its stamped caller,
+//   refuses a `doric.*` contract from any caller but `doric` with
+//   `not_owner`, and answers the same id for the same contract and stamped
+//   caller, a new one otherwise; `Register` logs `register:<bundleId>:<hook>`;
+//   `Run` logs `run:<bundleId>/<generation>/<incarnation>:<hook>`, answers
+//   `not_owner` unless the caller's bundle defined the contract, then calls
+//   each registered handler's `HookHandlerService.Handle` in turn (by
+//   `order`, the unordered last, then registration order) and fails with the
+//   first handler failure's code;
+// - `start-step`: registers an `onHostStartHook` handler (`onHostStart`)
+//   whose step stages `fixture_step`, logs `info` `fixture step` with the
+//   fields `{ bundleId, count: 2 }`, then stages `''` and logs
+//   `invalid-stage:<Doric code>` (or `invalid-stage:accepted`), and logs
+//   `step-ran`;
+// - `start-step-fails`: registers an `onHostStartHook` handler with order 1
+//   whose step logs `step-failed` and fails with `limit_exceeded`, message
+//   `fixture step failed`;
 // - `log-exit`: activates, logs `count` records `record <i>` (`{ index: i }`)
 //   through `context.log`, then calls `process.exit(0)`;
 // - `log-uncaught`: activates, logs `before the throw`, then throws
@@ -122,6 +140,10 @@ import {
 import { createGrpcTransport } from '@connectrpc/connect-node';
 
 import { ContractError } from '../../../src/contracts/error.js';
+import {
+  HookHandlerService,
+  HooksService,
+} from '../../../src/contracts/gen/doric/hooks/v1/hooks_pb.js';
 import { ModelsService } from '../../../src/contracts/gen/doric/models/v1/models_pb.js';
 import { BundleService } from '../../../src/contracts/gen/doric/platform/bundle/v1/bundle_pb.js';
 import { CatalogService } from '../../../src/contracts/gen/doric/platform/catalog/v1/catalog_pb.js';
@@ -137,7 +159,13 @@ import { BackendService } from '../../../src/contracts/gen/doric/storage/backend
 import { callOf } from '../../../src/contracts/metadata.js';
 import { fromConnectError } from '../../../src/contracts/status.js';
 import { runBundle } from '../../../src/index.js';
+import { createHookHandlers } from '../../../src/sdk/host/handlers.js';
 import type { HostContext, ServiceEntry } from '../../../src/sdk/host/index.js';
+import {
+  type StampedCaller,
+  stampedCallerOf,
+} from '../../../src/sdk/host/registrations.js';
+import { onHostStart } from '../../../src/sdk/host/start.js';
 import {
   type DemoMessage,
   demoFile,
@@ -588,13 +616,182 @@ switch (mode) {
       ],
     });
     break;
+  case 'serve-hooks':
+    serveHooks();
+    break;
+  case 'start-step':
+  case 'start-step-fails':
+    startStep(mode === 'start-step-fails');
+    break;
   default:
     run(() => {});
 }
 
 /** The Doric code of a failed call. */
 function codeOf(error: unknown): string {
-  return fromConnectError(ConnectError.from(error)).code;
+  return error instanceof ContractError
+    ? error.code
+    : fromConnectError(ConnectError.from(error)).code;
+}
+
+/** `<bundleId>/<generation>/<incarnation>` of a stamped caller. */
+function keyOf(caller: StampedCaller): string {
+  return `${caller.bundleId}/${caller.generation}/${caller.incarnation}`;
+}
+
+/** The `serve-hooks` mode: a minimal `hooks/v1`. */
+function serveHooks(): void {
+  let host: HostContext | undefined;
+  let next = 0;
+  const definitions = new Map<
+    string,
+    { readonly owner: StampedCaller; readonly id: string }
+  >();
+  const registrations: {
+    readonly contract: string;
+    readonly hook: string;
+    readonly target: string;
+    readonly order: number;
+    readonly index: number;
+  }[] = [];
+  const implementation = {
+    define: (request: { contract: string }, context: HandlerContext) => {
+      const caller = stampedCallerOf(context);
+
+      record(`define:${keyOf(caller)}`);
+
+      if (request.contract.startsWith('doric.') && caller.bundleId !== 'doric') {
+        throw new ContractError(
+          'not_owner',
+          `Bundle ${caller.bundleId} does not provide ${request.contract}.`,
+        );
+      }
+
+      const known = definitions.get(request.contract);
+
+      if (known !== undefined && keyOf(known.owner) === keyOf(caller)) {
+        return { registrationId: known.id };
+      }
+
+      next += 1;
+
+      const id = `d${next}`;
+
+      definitions.set(request.contract, { owner: caller, id });
+
+      return { registrationId: id };
+    },
+    register: (
+      request: { contract: string; hook: string; order?: number },
+      context: HandlerContext,
+    ) => {
+      const caller = stampedCallerOf(context);
+
+      next += 1;
+      registrations.push({
+        contract: request.contract,
+        hook: request.hook,
+        target: keyOf(caller),
+        order: request.order ?? Number.POSITIVE_INFINITY,
+        index: next,
+      });
+      record(`register:${caller.bundleId}:${request.hook}`);
+
+      return { registrationId: `r${next}` };
+    },
+    run: async (
+      request: { contract: string; hook: string; input?: unknown },
+      context: HandlerContext,
+    ) => {
+      const caller = stampedCallerOf(context);
+
+      record(`run:${keyOf(caller)}:${request.hook}`);
+
+      if (definitions.get(request.contract)?.owner.bundleId !== caller.bundleId) {
+        throw new ContractError(
+          'not_owner',
+          `Bundle ${caller.bundleId} does not serve ${request.contract}.`,
+        );
+      }
+
+      const handlers = registrations
+        .filter(
+          (entry) =>
+            entry.contract === request.contract && entry.hook === request.hook,
+        )
+        .sort((a, b) => a.order - b.order || a.index - b.index);
+
+      for (const handler of handlers) {
+        try {
+          await host?.services
+            .use(HookHandlerService, { target: handler.target })
+            .handle({
+              contract: request.contract,
+              hook: request.hook,
+              input: request.input as never,
+            });
+        } catch (error) {
+          throw error instanceof ContractError
+            ? error
+            : fromConnectError(ConnectError.from(error));
+        }
+      }
+
+      return {};
+    },
+  };
+
+  run(
+    (context) => {
+      host = context;
+    },
+    {
+      services: [
+        [
+          HooksService,
+          implementation as unknown as ServiceImpl<typeof HooksService>,
+        ] as ServiceEntry,
+      ],
+    },
+  );
+}
+
+/** The `start-step` and `start-step-fails` modes. */
+function startStep(fails: boolean): void {
+  const hooks = createHookHandlers();
+
+  run(
+    async (context) => {
+      await onHostStart(
+        hooks,
+        context,
+        async (startup) => {
+          if (fails) {
+            record('step-failed');
+            throw new ContractError('limit_exceeded', 'fixture step failed');
+          }
+
+          await startup.stage('fixture_step');
+          await startup.log('info', 'fixture step', { bundleId, count: 2 });
+
+          try {
+            await startup.stage('');
+            record('invalid-stage:accepted');
+          } catch (error) {
+            record(`invalid-stage:${codeOf(error)}`);
+          }
+
+          record('step-ran');
+        },
+        fails ? { order: 1 } : {},
+      );
+    },
+    {
+      services: [
+        [HookHandlerService, hooks.implementation] as ServiceEntry,
+      ],
+    },
+  );
 }
 
 /** The `describe-platform` mode's calls, after the activation. */

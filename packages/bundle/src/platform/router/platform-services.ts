@@ -28,12 +28,12 @@ import {
   type Interceptor,
   type ServiceImpl,
 } from '@connectrpc/connect';
-import { createAsyncIterable } from '@connectrpc/connect/protocol';
 import type {
   UniversalHandler,
   UniversalServerRequest,
   UniversalServerResponse,
 } from '@connectrpc/connect/protocol';
+import { createAsyncIterable } from '@connectrpc/connect/protocol';
 
 import type { StorageIdentity } from '../../contracts/basic/storage.js';
 import type { Call, CallScope } from '../../contracts/call.js';
@@ -58,6 +58,11 @@ import {
   type WriteRequest,
   WriteRequestSchema,
 } from '../../contracts/gen/doric/platform/log/v1/log_pb.js';
+import {
+  LogRequestSchema,
+  StageRequestSchema,
+  StartupService,
+} from '../../contracts/gen/doric/platform/startup/v1/startup_pb.js';
 import { callContextKey, callOf } from '../../contracts/metadata.js';
 import type {
   CatalogSnapshot,
@@ -301,6 +306,69 @@ export const createLogService = (
     },
   },
 });
+
+/**
+ * The host's startup record: where a startup failure is reported, and the
+ * flat lines of the startup log. Both methods are synchronous and must not
+ * throw.
+ */
+export interface StartupSink {
+  /** Sets the stage a startup failure is reported at; the last call wins. */
+  stage(name: string): void;
+  /** One flat startup log line. `fields` is a JSON object. */
+  log(record: {
+    readonly level: 'debug' | 'info' | 'warn' | 'error';
+    readonly fields: Readonly<Record<string, unknown>>;
+    readonly message: string;
+  }): void;
+}
+
+/**
+ * The in-process `doric.startup/v1` (the host process serves it; spec Flows →
+ * "Boot"):
+ * - `Stage{name}` → `sink.stage(name)`, answers `{}`;
+ * - `Log{level, message, fields}` → `sink.log({ level, message, fields })`
+ *   with `fields` as a JSON object, answers `{}`.
+ * Each request is validated with its proto's rules first: an empty or longer
+ * than 64 characters `name`, a `level` outside the four, or an absent
+ * `fields` fails with `invalid_input` and reaches the sink not at all. A
+ * valid request is never refused, whoever calls (every caller may call a
+ * `doric.*` contract). Calls reach the sink in the order the router serves
+ * them; one caller's awaited calls in its order.
+ */
+export const createStartupService = (
+  sink: StartupSink,
+): PlatformServiceImpl<typeof StartupService> => ({
+  service: StartupService,
+  implementation: {
+    stage: (request) => {
+      sink.stage(validated(StageRequestSchema, request).name);
+
+      return {};
+    },
+    log: (request) => {
+      const { level, fields, message } = validated(LogRequestSchema, request);
+
+      if (!isStartupLevel(level) || fields === undefined) {
+        throw new ContractError(
+          'invalid_input',
+          'doric.startup/v1.Log needs a known level and fields.',
+        );
+      }
+
+      sink.log({ level, fields, message });
+
+      return {};
+    },
+  },
+});
+
+const startupLevels: readonly string[] = ['debug', 'info', 'warn', 'error'];
+
+const isStartupLevel = (
+  level: string,
+): level is 'debug' | 'info' | 'warn' | 'error' =>
+  startupLevels.includes(level);
 
 export interface CatalogServiceOptions {
   /**

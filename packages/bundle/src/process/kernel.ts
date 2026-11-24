@@ -28,6 +28,7 @@ import {
   statesOf,
 } from '../loader/platform.js';
 import { readComposition } from '../loader/read.js';
+import type { StartupSink } from '../platform/router/platform-services.js';
 import {
   type ActivationResult,
   activateEnvironment,
@@ -73,17 +74,7 @@ const silentStartup: StartupSink = {
   log: () => undefined,
 };
 
-/** The host's startup record: where a failure is reported, and its log lines. */
-export interface StartupSink {
-  /** Sets the stage a startup failure is reported at. */
-  stage(name: string): void;
-  /** One flat startup log line. */
-  log(record: {
-    readonly level: 'debug' | 'info' | 'warn' | 'error';
-    readonly fields: Readonly<Record<string, unknown>>;
-    readonly message: string;
-  }): void;
-}
+export type { StartupSink };
 
 export interface StartKernelOptions extends StartHostOptions {
   /** Local listener handles shared with installed resident bundles. */
