@@ -214,6 +214,15 @@ export const apiViolations: Readonly<Record<string, MethodViolations>> = {
   [`${terminals}/Resize`]: {
     other: { reason: 'invalid_size', message: 'Invalid terminal dimensions.' },
   },
+  [`${projects}/Watch`]: {
+    other: {
+      reason: 'invalid_input',
+      message: 'Invalid project subscription.',
+    },
+  },
+  [`${threads}/Watch`]: {
+    other: { reason: 'invalid_input', message: 'Invalid thread subscription.' },
+  },
 };
 
 /**

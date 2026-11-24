@@ -1224,6 +1224,22 @@ after a 5 s grace; a failure after the cancel answers `run_cancelled` or
   answers protovalidate refusals with today's reasons: a violation on the
   path field first, else the method's other refusal. Projects, threads,
   the `Watch` streams and `main.ts` follow in S60d.
+- 2026-11-24: phase 3, slice S60d, of
+  [`docs/designs/grpc-processes.md`](../designs/grpc-processes.md) (version
+  6.24): `transport`'s `src/host/main.ts` runs `runBundle` with all eight
+  `doric.api.*` services; `createTransportHost` adds `projects` and
+  `threads` (workspace reads answer `pending` or `value`; `ReadFile` streams
+  `head` then chunks of at most 1,048,576 code units; `ListThreads` and
+  `ListEvents` cut pages under 3 MiB with a cursor only when cut, Q7;
+  `DeleteThread` keeps `204`, Q8). `src/host/process/watch.ts`:
+  `threadWatch` relays `runtime.threads/v1.WatchThread`, `projectWatch`
+  merges `runtime/v2` and `terminal/v1` project watches (`project_snapshot`,
+  `terminal_snapshot`, then held notices; `replay_failed` before both
+  snapshots; `unavailable` on a second snapshot, Q4), `statusWatch`; all end
+  on the call's signal or with `unavailable` on `deactivate`. Invalid `Watch`
+  requests keep today's messages (Q6). Group C is complete; the Express
+  routes and Socket.IO stay until group F, and `api.*` enter `provides` in
+  S62.
 - 2026-11-23: phase 3, slice S56, of
   [`docs/designs/grpc-processes.md`](../designs/grpc-processes.md): `openui`
   runs as its own process (`src/host/main.ts`, `createOpenuiHost`) serving

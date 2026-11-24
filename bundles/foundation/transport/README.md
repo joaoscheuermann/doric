@@ -471,16 +471,19 @@ The target `generate-proto` writes their protobuf-es code into
 `./contracts/gen/*`; `@bufbuild/protobuf` is the dependency that code imports
 ([`project.json`](project.json), [`package.json`](package.json)).
 
-## The process part (slice S60c)
+## The process part (slices S60c, S60d)
 
 [`src/host/process/`](src/host/process) serves the same operations as
-`doric.api.*` services; nothing runs it yet (`main.ts` and the projects and
-threads services, with the `Watch` streams, come in slice S60d).
+`doric.api.*` services. [`src/host/main.ts`](src/host/main.ts) runs it with
+`runBundle`, serving the eight services and the `onHostStartHook` handler;
+the kernel keeps mounting [`src/host/index.ts`](src/host/index.ts) (the
+Express routes and Socket.IO) until group F, and the `api.*` contracts enter
+`provides` in S62.
 
 - **`createTransportHost()`**
   ([`service.ts`](src/host/process/service.ts)) builds, with no I/O, the
-  `config`, `credentials`, `providers`, `host`, `terminals` and `status`
-  services, the `hooks` table, `invalidInput` and `activate`/`deactivate`.
+  `config`, `credentials`, `providers`, `host`, `projects`, `threads`,
+  `terminals` and `status` services, the `hooks` table, `invalidInput` and `activate`/`deactivate`.
   Every method answers `unavailable` "transport is not active." until
   `activate` resolves, if it rejects, and after `deactivate`. `activate`
   builds the ports with `routedTransportPorts(context.services)` and runs
@@ -488,6 +491,24 @@ threads services, with the `Watch` streams, come in slice S60d).
   `apiServices`, the type names of the eight `doric.api.*` services. The
   status `Watch` sends one `ready` item, then ends on the call's signal, or
   with `unavailable` on `deactivate`.
+- **`projects` and `threads`.** A workspace read answers
+  `{pending: {retryAfterSeconds: 1}}` or `{value}` with the route's body.
+  `ReadFile` streams `pending` alone, or `head` then text chunks of at most
+  1,048,576 code units that never split a code point. `ListThreads` and
+  `ListEvents` end a page before 3 MiB (`API_PAGE_MAX_BYTES`) and set the
+  cursor only when they cut it. `GetGit` and `ListBranches` answer
+  `{status, value?}`. `DeleteThread` on an agent Thread keeps `204`.
+- **`Watch` streams** ([`watch.ts`](src/host/process/watch.ts)).
+  `threadWatch` relays `runtime.threads/v1.WatchThread`. `projectWatch`
+  merges `runtime/v2.WatchProject` and `terminal/v1.WatchProject`: it holds
+  notices until both snapshots arrived, then sends `project_snapshot`,
+  `terminal_snapshot` and the held notices; a source failing before both
+  snapshots ends it with `replay_failed`. A second snapshot (a reopened
+  source) ends either stream with `unavailable`; a source's `replay_failed`
+  passes through. `statusWatch` serves the status `Watch`. All end on the
+  call's signal, and with `unavailable` on `deactivate`. A `Watch` request
+  that breaks protovalidate answers `invalid_input` with "Invalid project
+  subscription." or "Invalid thread subscription.".
 - **`routedTransportPorts(services)`**
   ([`routed.ts`](src/host/process/routed.ts)) is a full `TransportPorts` over
   routed calls, converting with `runtime/contracts` `encode`/`decode`. Each

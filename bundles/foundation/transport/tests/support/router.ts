@@ -1,5 +1,5 @@
-// The harness of `transport`'s host part through the router (phase 3, S60c):
-// the `doric.api.*` services of S60c and the `onHostStartHook` handler served
+// The harness of `transport`'s host part through the router (phase 3, S60c/d):
+// the eight `doric.api.*` services and the `onHostStartHook` handler served
 // by `createTestRouter` as `src/host/main.ts` will serve them
 // (`createTransportHost`, its `activate`, its `invalidInput`), with
 // `requires` = inventory row D 336 and recording fakes of the generated
@@ -44,9 +44,11 @@ import { UsageService } from 'usage/contracts/gen/doric/usage/v1/usage_pb.js';
 import { ConfigService } from '../../src/contracts/gen/doric/api/config/v1/config_pb.js';
 import { CredentialsService } from '../../src/contracts/gen/doric/api/credentials/v1/credentials_pb.js';
 import { HostService } from '../../src/contracts/gen/doric/api/host/v1/host_pb.js';
+import { ProjectsService } from '../../src/contracts/gen/doric/api/projects/v1/projects_pb.js';
 import { ProvidersService } from '../../src/contracts/gen/doric/api/providers/v1/providers_pb.js';
 import { StatusService } from '../../src/contracts/gen/doric/api/status/v1/status_pb.js';
 import { TerminalsService } from '../../src/contracts/gen/doric/api/terminals/v1/terminals_pb.js';
+import { ThreadsService as ApiThreadsService } from '../../src/contracts/gen/doric/api/threads/v1/threads_pb.js';
 import {
   createTransportHost,
   type TransportHost,
@@ -132,6 +134,8 @@ export interface Harness {
   readonly credentials: () => Client<typeof CredentialsService>;
   readonly providers: () => Client<typeof ProvidersService>;
   readonly hostApi: () => Client<typeof HostService>;
+  readonly projects: () => Client<typeof ProjectsService>;
+  readonly threads: () => Client<typeof ApiThreadsService>;
   readonly terminals: () => Client<typeof TerminalsService>;
   readonly status: () => Client<typeof StatusService>;
   readonly hooks: () => Client<typeof HookHandlerService>;
@@ -202,6 +206,8 @@ export const harness = (options: HarnessOptions = {}): Harness => {
       [CredentialsService, host.credentials],
       [ProvidersService, host.providers],
       [HostService, host.host],
+      [ProjectsService, host.projects],
+      [ApiThreadsService, host.threads],
       [TerminalsService, host.terminals],
       [StatusService, host.status],
       [HookHandlerService, host.hooks.implementation],
@@ -217,6 +223,8 @@ export const harness = (options: HarnessOptions = {}): Harness => {
     credentials: () => router.client(CredentialsService),
     providers: () => router.client(ProvidersService),
     hostApi: () => router.client(HostService),
+    projects: () => router.client(ProjectsService),
+    threads: () => router.client(ApiThreadsService),
     terminals: () => router.client(TerminalsService),
     status: () => router.client(StatusService),
     hooks: () => router.client(HookHandlerService, { caller: core }),

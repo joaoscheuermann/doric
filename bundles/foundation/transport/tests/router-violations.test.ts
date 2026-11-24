@@ -469,3 +469,24 @@ void test('M4: every reason in apiViolations has the INVALID_ARGUMENT row', () =
     }
   }
 });
+
+void test("Q6: each Watch violation answers invalid_input with today's Socket.IO handshake refusal sentence", () => {
+  for (const [service, field, message] of [
+    [ProjectsService, 'project_id', 'Invalid project subscription.'],
+    [ThreadsService, 'thread_id', 'Invalid thread subscription.'],
+    [ThreadsService, 'after_sequence', 'Invalid thread subscription.'],
+  ] as const) {
+    const method = methodOf(service, 'Watch');
+
+    assert.ok(Object.hasOwn(apiViolations, keyOf(method)), keyOf(method));
+    for (const violations of [
+      [violation([field], 'value is invalid', 'string.uuid')],
+      [violation([], 'a message rule failed', 'message.rule')],
+    ]) {
+      const error = answer(method, violations);
+
+      assert.equal(error.code, 'invalid_input', `${keyOf(method)} ${field}`);
+      assert.equal(error.message, message, `${keyOf(method)} ${field}`);
+    }
+  }
+});
