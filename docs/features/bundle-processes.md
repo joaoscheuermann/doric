@@ -1162,6 +1162,24 @@ after a 5 s grace; a failure after the cancel answers `run_cancelled` or
   (a `warn` only for an error), and nothing after `dispose()`.
   `src/host/stream.ts` is `mcp`'s own copy of `chat`'s `streamOf`. The package
   gains `@connectrpc/connect`, and `storage` moves to `dependencies`.
+- 2026-11-24: phase 3, slice S59c, of
+  [`docs/designs/grpc-processes.md`](../designs/grpc-processes.md) (version
+  6.21): `mcp` runs as its own process. `src/host/main.ts` (`runBundle`)
+  serves `McpService`, `SkillSourcesService`, `ToolHandlerService` and
+  `HookHandlerService`; `src/host/service.ts` `createMcpHost` builds them over
+  S59a's cores and S59b's adapters. Every method answers `unavailable` "mcp is
+  not active." before `activate` resolves, if it rejects, and after
+  `deactivate`. `activate`, in order: the routed ports; defines
+  `mcp.server/v1` and waits for storage; registers the `MCP_TOKEN` credential
+  kind; registers the prompt-started, project-closing and project-ready hooks
+  in one hook table; starts `watchProjectDeletions`; opens the services.
+  `deactivate` closes the services, stops the deletion watch and stops the
+  operations, and never rejects (a failure is logged at `warn`). `Watch` ends
+  on the caller's signal; server connections stay open. The kernel entry
+  stays until S62, which owns the switch: S60 must not give `FinishSignIn` a
+  short deadline (it waits up to 10 minutes); `storage/v1` stays required
+  until phase 4; during a drain two generations may run a `stdio` server
+  twice (RK31).
 - 2026-11-23: phase 3, slice S56, of
   [`docs/designs/grpc-processes.md`](../designs/grpc-processes.md): `openui`
   runs as its own process (`src/host/main.ts`, `createOpenuiHost`) serving
