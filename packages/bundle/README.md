@@ -3331,6 +3331,13 @@ function stagedHostPart(bundlesDir: string): (bundleId: string) => boolean;
   spawned, never sent `Stop`. `stagedHostPart(bundlesDir)` accepts a bundle
   whose `<bundlesDir>/<id>/host/` holds `command.json`, `doric-<id>` or
   `main.mjs`.
+- The gateway serves, each path once, the public methods whose contract has a
+  provider, then the methods exposed to `DESKTOP`. `CatalogIndex.publicMethods()`
+  lists the public methods: every method of a contract-role service of a `HOST`
+  contract whose id starts with `api.`, whatever its `expose`, in file then
+  declaration order, the same array on every call. So `doric.api.*` reaches its
+  provider over Connect and gRPC as caller `doric`; once a publish removes the
+  provider it answers `UNIMPLEMENTED`, `unknown_contract`.
 - Other exports: `createCatalogIndex`, `catalogIndexFromDescriptors`,
   `CatalogIndex`, `readStagedCatalogIndex`, `stagedCommandOf`,
   `defaultPublicAddress`, `PublicListenerBindingError`, `StartupSink`,

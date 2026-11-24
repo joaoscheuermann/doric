@@ -64,6 +64,10 @@
 //   `Watch` resumable): `Echo` answers `g<generation>:<text>`; `Watch` logs
 //   `watch:<text>`, sends the snapshot `g<generation>:snapshot:<text>` and
 //   stays open until the call is cancelled;
+// - `serve-api-demo`: serves `doric.api.demo.v1.DemoService` of `demoFile`
+//   (`api.demo/v1`, a public API contract): `Echo` and `Hidden` (no
+//   `expose`) each log `<method>:<caller bundle id>` (`echo:doric`) and
+//   answer `g<generation>:<text>`;
 // - `watch-demo`: activates, then opens `demo.v1.DemoService`'s `Watch`
 //   `{ text: "h" }` through `context.services.use` with the `resume` request
 //   `after-<last item's text>`, and logs each item as `item:<text>`, then
@@ -222,6 +226,12 @@ const generationTag = `g${process.env.DORIC_GENERATION ?? '?'}`;
 /** `demo.v1.DemoService` of `demo/v1`, its `Watch` resumable. */
 const DemoService = serviceOf(
   demoFile({ id: 'demo/v1', package: 'demo.v1', resumable: true }),
+  'DemoService',
+);
+
+/** `doric.api.demo.v1.DemoService` of `api.demo/v1`. */
+const ApiDemoService = serviceOf(
+  demoFile({ id: 'api.demo/v1', package: 'doric.api.demo.v1' }),
   'DemoService',
 );
 
@@ -551,6 +561,24 @@ switch (mode) {
       ],
     });
     break;
+  case 'serve-api-demo': {
+    const answer =
+      (name: string) => (request: DemoMessage, context: HandlerContext) => {
+        record(`${name}:${callOf(context).caller.bundleId}`);
+
+        return { text: `${generationTag}:${request.text}` };
+      };
+
+    run(() => {}, {
+      services: [
+        [
+          ApiDemoService,
+          { echo: answer('echo'), hidden: answer('hidden') },
+        ] as unknown as ServiceEntry,
+      ],
+    });
+    break;
+  }
   case 'watch-demo':
     run((context) => {
       const resume = {

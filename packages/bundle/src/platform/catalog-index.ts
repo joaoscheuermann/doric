@@ -124,6 +124,15 @@ export interface CatalogIndex {
    * every call.
    */
   desktopMethods(): readonly MethodInfo[];
+  /**
+   * Every method of the public API (A60): the methods of the contract-role
+   * services of every `HOST` contract whose id starts with `api.`
+   * (`api.<resource>/v1`, package `doric.api.<resource>.v1`), in the order of
+   * the files given to {@link createCatalogIndex}, then declaration order.
+   * Whatever their `expose`. The same array on every call; `[]` when the
+   * index holds no such contract.
+   */
+  publicMethods(): readonly MethodInfo[];
   /** Every file given and every file they import, transitively. */
   readonly registry: FileRegistry;
 }
@@ -173,6 +182,7 @@ export const createCatalogIndex = (files: Iterable<DescFile>): CatalogIndex => {
   const services = new Map<string, ServiceInfo>();
   const methods = new Map<string, MethodInfo>();
   const desktop: MethodInfo[] = [];
+  const publicApi: MethodInfo[] = [];
 
   for (const file of ordered) {
     const info = contractOf(file);
@@ -224,6 +234,14 @@ export const createCatalogIndex = (files: Iterable<DescFile>): CatalogIndex => {
         if (entry.expose === 'DESKTOP') {
           desktop.push(entry);
         }
+
+        if (
+          role === 'contract' &&
+          info.environment === 'HOST' &&
+          info.id.startsWith('api.')
+        ) {
+          publicApi.push(entry);
+        }
       }
     }
   }
@@ -247,6 +265,7 @@ export const createCatalogIndex = (files: Iterable<DescFile>): CatalogIndex => {
     service: (fullName: string) => services.get(fullName),
     contract: (id: string) => contracts.get(id),
     desktopMethods: () => desktop,
+    publicMethods: () => publicApi,
     registry,
   });
 };

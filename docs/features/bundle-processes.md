@@ -336,6 +336,13 @@ The platform, the SDK and CI (slices S18–S28):
   at the stage `public_binding`. The catalog index is fixed for the platform's
   life (phase 3 revisits it): a publish changes the served methods only among
   those the index holds.
+  Since S62c2 the gateway serves, each path once, the public methods
+  (`CatalogIndex.publicMethods()`: every method of a contract-role service of
+  a `HOST` contract whose id starts with `api.`, whatever its `expose`) whose
+  contract has a provider, then the methods exposed to `DESKTOP`; so
+  `doric.api.*` reaches its provider over Connect and gRPC as caller `doric`,
+  and answers `UNIMPLEMENTED`, `unknown_contract`, once a publish removes the
+  provider.
 - **SDK:** `bundle` exports `runBundle` (`src/sdk/host/`) with its static
   `services` (A61), where `services.use` reopens resumable streams with
   `UseOptions.resume`, and `BundleDefinition.httpServer`; an `httpPort`
@@ -1414,3 +1421,12 @@ and `papercraft` depends on `comments`.
   gateway) and S62c3 (the boot); served entries get no schema document;
   client contract versions stay until phases 5–6; bundle `version` fields do
   not change. The host still boots the kernel.
+- 2026-11-24: phase 3, slice S62c2, of
+  [`docs/designs/grpc-processes.md`](../designs/grpc-processes.md) (version
+  6.30): new `CatalogIndex.publicMethods()` lists every method of the
+  contract-role services of every `HOST` contract whose id starts with `api.`,
+  whatever its `expose`, in file then declaration order, the same array on
+  every call. The gateway's `servedMethods` serves those whose contract has a
+  provider, then the `DESKTOP` methods, each path once. Decision (Q11): the
+  public API is recognised by the contract id `api.*`. The host still boots
+  the kernel until S62c3.

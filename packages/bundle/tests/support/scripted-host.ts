@@ -142,6 +142,7 @@ export interface Script {
     | 'http-prefix'
     | 'http-server'
     | 'serve-demo'
+    | 'serve-api-demo'
     | 'watch-demo'
     | 'describe-platform'
     | 'read-descriptors'

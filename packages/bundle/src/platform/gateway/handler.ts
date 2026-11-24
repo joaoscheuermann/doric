@@ -67,14 +67,16 @@ export type GatewayRelay = (
 
 /**
  * The methods the gateway serves for `resolved` (section 11, "The routes"):
- * every method of `index.desktopMethods()`, in its order, whose service is a
- * contract's own (`role: 'contract'`), whose contract is a `HOST` contract,
- * and that `resolved.contracts` lists with at least one provider. So a
- * bundle a publish adds has its `DESKTOP` methods served, and one it removes
- * (or quarantines, or disables) no longer has them, unless another provider
- * remains. A method not exposed to `DESKTOP` is never served; neither is a
- * `doric.*` contract's in phase 2 (`doric.api.*` joins in phase 3). Pure;
- * never throws.
+ * (a) every method of `index.publicMethods()` whose contract `resolved.contracts`
+ * lists with at least one provider (the public API, `doric.api.*`, served to
+ * any caller whatever its `expose`); then (b) every method of
+ * `index.desktopMethods()`, in its order, whose service is a contract's own
+ * (`role: 'contract'`), whose contract is a `HOST` contract that is not
+ * `doric.*`, and that `resolved.contracts` lists with at least one provider;
+ * a method in both appears once, at its (a) place. So a bundle a publish
+ * adds has these methods served, and one it removes (or quarantines, or
+ * disables) no longer has them, unless another provider remains. Every
+ * other method is never served. Pure; never throws.
  */
 export const servedMethods = (
   index: CatalogIndex,
@@ -86,15 +88,22 @@ export const servedMethods = (
       .map(({ id }) => id),
   );
 
-  return index
+  const publicApi = index
+    .publicMethods()
+    .filter(({ contract }) => provided.has(contract.id));
+  const served = new Set(publicApi.map(({ path }) => path));
+  const desktop = index
     .desktopMethods()
     .filter(
-      ({ role, contract }) =>
+      ({ path, role, contract }) =>
         role === 'contract' &&
         contract.environment === 'HOST' &&
         !contract.id.startsWith('doric.') &&
-        provided.has(contract.id),
+        provided.has(contract.id) &&
+        !served.has(path),
     );
+
+  return [...publicApi, ...desktop];
 };
 
 export interface GatewayHandlerOptions {

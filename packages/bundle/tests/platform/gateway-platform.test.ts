@@ -41,6 +41,11 @@ import {
 import type { Timings } from '../../src/platform/supervisor/timings.js';
 import { DiagnosticsStore } from '../../src/runtime/index.js';
 import {
+  type DemoClient,
+  demoFile,
+  serviceOf,
+} from '../support/demo-contract.js';
+import {
   commandsOf,
   type FixtureBundle,
   fixtureLog,
@@ -475,5 +480,71 @@ describe('a publish', () => {
       'unknown_contract',
     );
     assert.equal(env.log.countOf('models', 'start'), 0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The public API (S62c2; section 11, "The routes" (a), A60)
+
+describe('the public API on the gateway', () => {
+  const apiDemo = demoFile({ id: 'api.demo/v1', package: 'doric.api.demo.v1' });
+  const apiService = serviceOf(apiDemo, 'DemoService');
+  const apiIndex = createCatalogIndex([
+    file_doric_tools_v1_tools,
+    file_doric_settings_v1_settings,
+    file_doric_models_v1_models,
+    apiDemo,
+  ]);
+  const api: FixtureBundle = {
+    mode: 'serve-api-demo',
+    provides: ['api.demo/v1@1.0.0'],
+  };
+
+  test('an api.* method without expose is served over Connect and gRPC to its provider as doric; a publish that removes the provider answers UNIMPLEMENTED', async (t) => {
+    const env = await setupPlatform(
+      t,
+      { api, models },
+      { publicAddress: '127.0.0.1:0', index: apiIndex },
+    );
+    const grpc = grpcOf(t, env.platform, apiService) as unknown as DemoClient;
+    const json = jsonOf(env.platform, apiService) as unknown as DemoClient;
+
+    assert.equal(
+      (await within(grpc.hidden({ text: 'over-grpc' }), 'hidden', 4_000)).text,
+      'g1:over-grpc',
+    );
+    assert.equal(
+      (await within(json.hidden({ text: 'over-json' }), 'hidden', 4_000)).text,
+      'g1:over-json',
+    );
+    assert.equal(env.log.countOf('api', 'hidden:doric'), 2);
+
+    assertFailure(
+      await failureOf(grpcOf(t, env.platform, ModelsService).resolve({})),
+      Code.Unimplemented,
+      'unknown_contract',
+    );
+    assert.equal(env.log.countOf('models', 'call'), 0);
+
+    assert.equal(
+      (
+        await within(
+          env.platform.publish(resolveHost({ models })),
+          'the publish',
+        )
+      ).status,
+      'published',
+    );
+    assertFailure(
+      await failureOf(grpc.hidden({ text: 'after' })),
+      Code.Unimplemented,
+      'unknown_contract',
+    );
+    assertFailure(
+      await failureOf(json.hidden({ text: 'after' })),
+      Code.Unimplemented,
+      'unknown_contract',
+    );
+    assert.equal(env.log.countOf('api', 'hidden:doric'), 2);
   });
 });

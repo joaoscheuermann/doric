@@ -410,6 +410,93 @@ describe('the catalog index over fixture files', () => {
     );
   });
 
+  test('publicMethods lists the methods of api.* contract services by file order, then declaration order, whatever their expose', () => {
+    const host = (id: string) =>
+      demoContract({
+        id,
+        cardinality: Cardinality.ONE,
+        environment: Environment.HOST,
+      });
+    const first = fixture({
+      name: 'api/first/v1/first.proto',
+      package: 'doric.api.first.v1',
+      contract: host('api.first/v1'),
+      services: [
+        {
+          name: 'FirstService',
+          methods: [
+            { name: 'Get' },
+            { name: 'List', expose: Expose.DESKTOP },
+            {
+              name: 'Watch',
+              expose: Expose.UNSPECIFIED,
+              serverStreaming: true,
+            },
+          ],
+        },
+        {
+          name: 'FirstHandlerService',
+          role: ServiceRole.HANDLER,
+          methods: [{ name: 'Run', expose: Expose.DESKTOP }],
+        },
+        {
+          name: 'FirstAdminService',
+          role: ServiceRole.UNSPECIFIED,
+          methods: [{ name: 'Reset' }],
+        },
+      ],
+    });
+    const second = fixture({
+      name: 'api/second/v1/second.proto',
+      package: 'doric.api.second.v1',
+      contract: host('api.second/v1'),
+      services: [{ name: 'SecondService', methods: [{ name: 'Put' }] }],
+    });
+    const other = fixture({
+      name: 'demo/v1/demo.proto',
+      package: 'doric.demo.v1',
+      contract: host('demo/v1'),
+      services: [
+        {
+          name: 'DemoService',
+          methods: [{ name: 'Show', expose: Expose.DESKTOP }, { name: 'Hide' }],
+        },
+      ],
+    });
+    const firstPaths = [
+      '/doric.api.first.v1.FirstService/Get',
+      '/doric.api.first.v1.FirstService/List',
+      '/doric.api.first.v1.FirstService/Watch',
+      '/doric.api.first.v1.FirstAdminService/Reset',
+    ];
+    const secondPaths = ['/doric.api.second.v1.SecondService/Put'];
+    const index = createCatalogIndex([first, other, second]);
+
+    assert.deepEqual(
+      index.publicMethods().map((entry) => entry.path),
+      [...firstPaths, ...secondPaths],
+    );
+    assert.equal(index.publicMethods(), index.publicMethods());
+
+    const reversed = createCatalogIndex([second, other, first]);
+
+    assert.deepEqual(
+      reversed.publicMethods().map((entry) => entry.path),
+      [...secondPaths, ...firstPaths],
+    );
+
+    const plain = fixture({
+      name: 'plain/v1/plain.proto',
+      package: 'doric.plain.v1',
+      contract: host('plain/v1'),
+      services: [{ name: 'PlainService', methods: [{ name: 'Ping' }] }],
+    });
+    const none = createCatalogIndex([other, plain]);
+
+    assert.deepEqual(none.publicMethods(), []);
+    assert.equal(none.publicMethods(), none.publicMethods());
+  });
+
   const refused: readonly (readonly [
     string,
     () => readonly DescFile[],

@@ -123,8 +123,9 @@ export interface PlatformOptions {
    * the platform contracts served in process (`doric.generation/v1`,
    * `doric.log/v1`, `doric.catalog/v1`, `doric.diagnostics/v1`,
    * `doric.bundle/v1`) are served whether or not it holds them. The gateway
-   * serves the `DESKTOP` methods of it that a resolution provides
-   * (`servedMethods`), and transcodes their JSON with its descriptors.
+   * serves the public API and the `DESKTOP` methods of it that a resolution
+   * provides (`servedMethods`), and transcodes their JSON with its
+   * descriptors.
    */
   readonly index: CatalogIndex;
   /** The host environment's resolution, booted by `startPlatform`. */
@@ -246,8 +247,8 @@ export interface Platform extends DoricCaller {
    * serialized: a call made while one runs waits for it. Never rejects.
    *
    * The gateway follows the resolution the supervisor adopts
-   * (`PublishTarget.adopt`): from then on it serves the `DESKTOP` methods
-   * and the HTTP prefixes of `next`, without a restart, so the methods of a
+   * (`PublishTarget.adopt`): from then on it serves the methods
+   * (`servedMethods`) and the HTTP prefixes of `next`, without a restart, so the methods of a
    * bundle the publish adds are served (a call waits for its active
    * instance, as any call) and those of a bundle it removes answer
    * `UNIMPLEMENTED`; a call or proxied connection already in flight to a
@@ -653,6 +654,7 @@ const withPlatformContracts = (index: CatalogIndex): CatalogIndex => {
       index.service(fullName) ?? platform.service(fullName),
     contract: (id) => index.contract(id) ?? platform.contract(id),
     desktopMethods: () => index.desktopMethods(),
+    publicMethods: () => index.publicMethods(),
     registry: createFileRegistry(
       platform.registry,
       hooks.registry,
