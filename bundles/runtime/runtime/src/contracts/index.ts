@@ -20,6 +20,7 @@ export {
 export * from './executor.js';
 export * from './fences.js';
 export * from './hooks.js';
+export * from './json-codec.js';
 export * from './lease.js';
 export * from './lease-routing.js';
 export * from './model.js';

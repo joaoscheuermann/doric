@@ -908,6 +908,7 @@ of `contractErrorCodes` by who raises them:
 | `provider_error`                                                                                                                                                                                                                                            | `models.provider/v1` calls served by `serveProviderKind` of `llms/rpc` in the provider bundles' host processes: an `LlmProviderError` thrown by the built provider crosses the router as `FAILED_PRECONDITION` with the full error in `details.providerError`; phase 3, slice S43 of [`grpc-processes.md`](../../docs/designs/grpc-processes.md)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | `tool_error`                                                                                                                                                                                                                                                | Tools served by `createToolHandlers` in host parts: a tool error (an `Error` named `ToolErrorObject` with data `{ code, message, toolName?, callId?, diagnostic?, issues? }`) thrown by `execute` or `check` crosses the router as `FAILED_PRECONDITION` with every field of the data in `details.toolError`, without its cause chain, and `core` keeps it through `tools/v1` `Execute` and `Check`; plain errors stay `internal`; phase 3, slice S51a of [`grpc-processes.md`](../../docs/designs/grpc-processes.md)                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | `unknown_session`                                                                                                                                                                                                                                           | `runtime.workspace/v1` in [`runtime`](../../bundles/runtime/runtime/README.md) for a session id it does not hold (`NOT_FOUND`); phase 3, slice S47 of [`grpc-processes.md`](../../docs/designs/grpc-processes.md)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| `invalid_config`, `invalid_credential`, `invalid_provider`, `invalid_project`, `invalid_project_color`, `invalid_thread`, `invalid_project_path`, `invalid_execution`, `invalid_branch`, `invalid_prompt`, `invalid_steer`, `invalid_resume`, `invalid_rewind`, `invalid_interrupt`, `invalid_terminal`, `invalid_cursor`, `invalid_size`, `invalid_credential_id`, `invalid_project_id`, `invalid_thread_id`, `invalid_page`, `invalid_cwd`, `invalid_event_cursor` (`INVALID_ARGUMENT`); `credential_not_found`, `vm_not_found`, `project_not_found`, `project_path_not_found`, `thread_not_found`, `prompt_not_found`, `unknown_prompt`, `missing`, `terminal_missing` (`NOT_FOUND`); `configuration_rejected`, `model_catalog_unreadable`, `compaction_failed` (`UNAVAILABLE`); `internal_error` (`INTERNAL`) | The public API `doric.api.*` of `transport` (phase 3, slice S60 of [`grpc-processes.md`](../../docs/designs/grpc-processes.md)): its refusal reasons that have a row in the error table; its other reasons travel as `FAILED_PRECONDITION`, and `credential_name_taken` stays `ALREADY_EXISTS` |
 
 ### Registration helpers
 
@@ -2761,6 +2762,18 @@ interface BundleDefinition<
   activate(context: HostContext): Promise<void> | void;
   deactivate?(context: HostContext): Promise<void> | void;
   readonly logSink?: (context: HostContext) => LogSink; // in-process sink, for core
+  readonly invalidInput?: InvalidInputAnswer; // the error for a request protovalidate rejects; default invalid_input
+}
+
+type InvalidInputAnswer = (
+  method: DescMethod,
+  violations: readonly InputViolation[], // at least one, in protovalidate's order
+) => ContractError | undefined; // undefined keeps invalid_input
+
+interface InputViolation {
+  readonly field: readonly string[]; // proto field names; list and map subscripts dropped; [] for a message rule
+  readonly ruleId: string; // string.uuid, update_thread_request.change
+  readonly message: string;
 }
 
 interface HostContext {
@@ -2781,6 +2794,15 @@ interface UseOptions<S extends DescService = DescService> {
   readonly scope?: CallScope; // sent as doric-scope-bin on every call, in place of the parent call's scope
 }
 ```
+
+`invalidInput` answers a request that decoded but broke a protovalidate rule
+of its method's input ([`serve.ts`](src/sdk/host/serve.ts)): a unary request,
+a server stream's request, and each message of a client or bidi stream. It is
+called synchronously, before the handler, with the method and every violation;
+a returned `ContractError` ends the call, while `undefined`, a throw or no hook
+keep `ContractError('invalid_input', <protovalidate message>)`. A request that
+does not decode, and a rule that fails to evaluate, never reach it.
+`InputViolation` and `InvalidInputAnswer` are exported from the host SDK.
 
 `runBundle` is `startBundle` with `process.env` and `process.exit`
 ([`run.ts`](src/sdk/host/run.ts)). It reads the spawn environment
@@ -3412,7 +3434,8 @@ interface ConformanceOptions {
 `BundleDefinition` in the test's process and routes its calls, and the
 clients' calls to it, over `createRouterTransport` of `@connectrpc/connect`,
 so each message passes Connect's binary serialization. A request is validated
-with protovalidate first (`invalid_input`); a call to a service that is not
+with protovalidate first, through the same internal `validRequest` as the host
+SDK (`invalid_input`, or the answer of the definition's `invalidInput`); a call to a service that is not
 declared in `requires` fails with `undeclared_requirement` (platform
 contracts, whose id starts with `doric.`, are exempt, as in the real router);
 a declared service

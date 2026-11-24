@@ -84,6 +84,55 @@ const errorTable: Readonly<Record<string, Code>> = {
   replay_failed: Code.Internal,
 };
 
+/**
+ * The public API's rows (S60 §2.2 and §5, Q2): `transport`'s refusal reasons
+ * with the gRPC code each ends a call with. Every other API reason
+ * (`project_active`, `thread_busy`, …) has no row: `FAILED_PRECONDITION`.
+ */
+const apiRows: Readonly<Record<string, Code>> = {
+  // 422 bodies
+  invalid_config: Code.InvalidArgument,
+  invalid_credential: Code.InvalidArgument,
+  invalid_provider: Code.InvalidArgument,
+  invalid_project: Code.InvalidArgument,
+  invalid_project_color: Code.InvalidArgument,
+  invalid_thread: Code.InvalidArgument,
+  invalid_project_path: Code.InvalidArgument,
+  invalid_execution: Code.InvalidArgument,
+  invalid_branch: Code.InvalidArgument,
+  invalid_prompt: Code.InvalidArgument,
+  invalid_steer: Code.InvalidArgument,
+  invalid_resume: Code.InvalidArgument,
+  invalid_rewind: Code.InvalidArgument,
+  invalid_interrupt: Code.InvalidArgument,
+  invalid_terminal: Code.InvalidArgument,
+  invalid_cursor: Code.InvalidArgument,
+  invalid_size: Code.InvalidArgument,
+  // 400 path ids and queries
+  invalid_credential_id: Code.InvalidArgument,
+  invalid_project_id: Code.InvalidArgument,
+  invalid_thread_id: Code.InvalidArgument,
+  invalid_page: Code.InvalidArgument,
+  invalid_cwd: Code.InvalidArgument,
+  invalid_event_cursor: Code.InvalidArgument,
+  // 404
+  credential_not_found: Code.NotFound,
+  vm_not_found: Code.NotFound,
+  project_not_found: Code.NotFound,
+  project_path_not_found: Code.NotFound,
+  thread_not_found: Code.NotFound,
+  prompt_not_found: Code.NotFound,
+  unknown_prompt: Code.NotFound,
+  missing: Code.NotFound,
+  terminal_missing: Code.NotFound,
+  // 503 and 502
+  configuration_rejected: Code.Unavailable,
+  model_catalog_unreadable: Code.Unavailable,
+  compaction_failed: Code.Unavailable,
+  // 500
+  internal_error: Code.Internal,
+};
+
 const errorInfoTypeUrl = 'type.googleapis.com/google.rpc.ErrorInfo';
 
 interface ErrorInfoFields {
@@ -181,15 +230,86 @@ void test('each retired code maps to FAILED_PRECONDITION', () => {
 void test('every code of contractErrorCodes is in a row of the error table or retired', () => {
   const retired: readonly string[] = retiredErrorCodes;
   const missing = contractErrorCodes.filter(
-    (code) => !(code in errorTable) && !retired.includes(code),
+    (code) =>
+      !(code in errorTable) && !(code in apiRows) && !retired.includes(code),
   );
 
   assert.deepEqual(missing, []);
 
   for (const code of contractErrorCodes) {
-    const expected = errorTable[code] ?? Code.FailedPrecondition;
+    const expected =
+      errorTable[code] ?? apiRows[code] ?? Code.FailedPrecondition;
 
     assert.equal(grpcCodeOf(code), expected, code);
+  }
+});
+
+void test('S60a E1: each reason of the public API rows maps to its gRPC code', () => {
+  assert.equal(Object.keys(apiRows).length, 36);
+  assert.equal(
+    Object.entries(apiRows).filter(
+      ([code, grpc]) =>
+        code.startsWith('invalid_') && grpc === Code.InvalidArgument,
+    ).length,
+    23,
+  );
+
+  const wrong = Object.entries(apiRows)
+    .filter(([code, grpc]) => grpcCodeOf(code) !== grpc)
+    .map(
+      ([code, grpc]) => `${code}: ${Code[grpcCodeOf(code)]}, not ${Code[grpc]}`,
+    );
+
+  assert.deepEqual(wrong, []);
+});
+
+void test('S60a E1: toStatus ends an API refusal with its row code and keeps the reason and message', () => {
+  const status = toStatus(
+    new ContractError('project_not_found', 'The project does not exist.'),
+  );
+  const rebuilt = fromStatus(status);
+
+  assert.equal(status.code, Code.NotFound);
+  assert.equal(rebuilt.code, 'project_not_found');
+  assert.equal(rebuilt.message, 'The project does not exist.');
+});
+
+void test('S60a E2: every reason of the public API rows is a ContractErrorCode', () => {
+  const codes: readonly string[] = contractErrorCodes;
+  const missing = Object.keys(apiRows).filter((code) => !codes.includes(code));
+
+  assert.deepEqual(missing, []);
+});
+
+void test('S60a E3: credential_name_taken stays ALREADY_EXISTS and invalid_prompt is INVALID_ARGUMENT (Q2)', () => {
+  assert.equal(grpcCodeOf('credential_name_taken'), Code.AlreadyExists);
+  assert.equal(
+    grpcCodeOf('credential_kind_immutable'),
+    Code.FailedPrecondition,
+  );
+  assert.equal(grpcCodeOf('invalid_prompt'), Code.InvalidArgument);
+});
+
+void test('S60a: API reasons without a row stay FAILED_PRECONDITION', () => {
+  for (const code of [
+    'credential_referenced',
+    'vm_ssh_unavailable',
+    'project_active',
+    'project_files_unavailable',
+    'project_resources_unavailable',
+    'project_ssh_unavailable',
+    'thread_busy',
+    'branch_refused',
+    'compaction_refused',
+    'terminal_unavailable',
+    'conflict',
+    'not_editable',
+    'inactive',
+    'forbidden',
+    'project_files_expired',
+    'project_ssh_expired',
+  ]) {
+    assert.equal(grpcCodeOf(code), Code.FailedPrecondition, code);
   }
 });
 

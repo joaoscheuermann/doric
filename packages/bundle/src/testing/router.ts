@@ -7,15 +7,12 @@
 
 import {
   create,
-  type DescMessage,
   type DescMethod,
   type DescService,
   getOption,
   hasOption,
   type MessageInitShape,
-  type MessageShape,
 } from '@bufbuild/protobuf';
-import { createValidator } from '@bufbuild/protovalidate';
 import {
   type Client,
   createClient,
@@ -51,8 +48,17 @@ import { createHostAssets } from '../sdk/host/assets.js';
 import type { BundleInstance, HostContext } from '../sdk/host/context.js';
 import { createGenerations } from '../sdk/host/generations.js';
 import { createReplays } from '../sdk/host/replay.js';
-import type { BundleDefinition, ServiceEntry } from '../sdk/host/run.js';
-import { callFromStart, currentCall, runInCall } from '../sdk/host/serve.js';
+import type {
+  BundleDefinition,
+  InvalidInputAnswer,
+  ServiceEntry,
+} from '../sdk/host/run.js';
+import {
+  callFromStart,
+  currentCall,
+  runInCall,
+  validRequest,
+} from '../sdk/host/serve.js';
 
 /** What {@link createTestRouter} sets up. */
 export interface TestRouterOptions {
@@ -389,7 +395,12 @@ export const createTestRouter = (
         for (const [service, implementation] of own.values()) {
           router.service(
             service,
-            served(service, implementation, stopped.signal),
+            served(
+              service,
+              implementation,
+              stopped.signal,
+              definition.invalidInput,
+            ),
           );
         }
       });
@@ -627,13 +638,15 @@ type Handler = (input: unknown, context: HandlerContext) => unknown;
  * `implementation`, served as the host SDK serves a `CallStart`: each handler
  * gets the `Call` of {@link callHeader} under `callContextKey` and as
  * `currentCall()`, with a signal that also aborts at its deadline and on
- * `stopped`; the request is validated with protovalidate first; an error
- * fails the call as `toContractError` encodes it.
+ * `stopped`; the request is validated with protovalidate first, a violation
+ * answered by `invalidInput` as the call server does; an error fails the call
+ * as `toContractError` encodes it.
  */
 const served = (
   service: DescService,
   implementation: object,
   stopped: AbortSignal,
+  invalidInput?: InvalidInputAnswer,
 ): ServiceImpl<DescService> => {
   const handlers: Record<string, Handler> = {};
 
@@ -655,8 +668,8 @@ const served = (
         runInCall(call, () =>
           (handler as Handler)(
             streamsRequest
-              ? validEach(method.input, input as AsyncIterable<unknown>)
-              : valid(method.input, input),
+              ? validEach(method, input as AsyncIterable<unknown>, invalidInput)
+              : validRequest(method, input, invalidInput),
             context,
           ),
         );
@@ -752,28 +765,13 @@ const callOfRequest = (context: HandlerContext, stopped: AbortSignal): Call => {
   );
 };
 
-const validator = createValidator();
-
-/** `message`, when it keeps its protovalidate rules; else `invalid_input`. */
-const valid = <Desc extends DescMessage>(
-  schema: Desc,
-  message: unknown,
-): MessageShape<Desc> => {
-  const result = validator.validate(schema, message as MessageShape<Desc>);
-
-  if (result.kind !== 'valid') {
-    throw new ContractError('invalid_input', result.error.message);
-  }
-
-  return message as MessageShape<Desc>;
-};
-
-/** The request messages of a stream, each checked by {@link valid}. */
+/** The request messages of a stream, each checked by {@link validRequest}. */
 async function* validEach(
-  schema: DescMessage,
+  method: DescMethod,
   messages: AsyncIterable<unknown>,
+  invalidInput: InvalidInputAnswer | undefined,
 ): AsyncGenerator<unknown> {
   for await (const message of messages) {
-    yield valid(schema, message);
+    yield validRequest(method, message, invalidInput);
   }
 }

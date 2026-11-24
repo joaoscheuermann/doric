@@ -79,6 +79,7 @@ import {
 } from '../../src/platform/supervisor/timings.js';
 import {
   type HostContext,
+  type InvalidInputAnswer,
   type ServiceEntry,
   startBundle,
 } from '../../src/sdk/host/index.js';
@@ -203,6 +204,8 @@ interface StartOptions {
   /** Default true: the router activates the instance before `start` resolves. */
   readonly activate?: boolean;
   readonly deactivate?: (context: HostContext) => Promise<void> | void;
+  /** The definition's `invalidInput` (S60a). */
+  readonly invalidInput?: InvalidInputAnswer;
 }
 
 interface Env {
@@ -280,6 +283,9 @@ const setup = async (
           ...(startOptions.deactivate === undefined
             ? {}
             : { deactivate: startOptions.deactivate }),
+          ...(startOptions.invalidInput === undefined
+            ? {}
+            : { invalidInput: startOptions.invalidInput }),
         },
         {
           env: {
@@ -727,6 +733,42 @@ describe('unknown contracts', () => {
 
 // ---------------------------------------------------------------------------
 // Errors crossing the router (T2.10)
+
+describe("a provider's invalidInput (S60a V1, through startBundle)", () => {
+  test("a request breaking the provider's protovalidate rules ends with the hook's ContractError; the handler does not run", async (t) => {
+    const env = await setup(t);
+    const calls: Seen[] = [];
+    const methods: string[] = [];
+
+    await env.start('settings', {
+      services: [settingsProvider(calls)],
+      invalidInput: (method, violations) => {
+        methods.push(
+          `${method.name}:${violations.map((v) => v.field.join('.')).join(',')}`,
+        );
+
+        return new ContractError('not_found', 'The registration is malformed.');
+      },
+    });
+    const app = await env.start('app');
+
+    // `RegisterRequest.id` breaks its pattern when empty.
+    const error = await failureOf(
+      app
+        .context()
+        .services.use(SettingsService)
+        .register({ id: '', messageType: 'acme.Thing' }),
+    );
+
+    assertFailure(error, Code.NotFound, 'not_found');
+    assert.equal(
+      fromConnectError(error).message,
+      'The registration is malformed.',
+    );
+    assert.deepEqual(methods, ['Register:id']);
+    assert.equal(calls.length, 0);
+  });
+});
 
 describe("a provider's error", () => {
   /** One code of each family of the table, and a code with no row. */

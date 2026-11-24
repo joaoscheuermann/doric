@@ -1415,6 +1415,11 @@ for every acquisition
 
 ## Other exports of `runtime/contracts`
 
+- **JSON codec** ([`json-codec.ts`](src/contracts/json-codec.ts)): `encode`
+  and `decode` convert today's JSON values to and from the generated messages
+  of `runtime`'s protos, with `runtimeOneofs` (`OneofMapping`, `OneofCase`,
+  `OneofPayload`) mapping the oneofs. Moved from the host in slice S60a so
+  `transport` can use it; `src/host/rpc/codec.ts` re-exports it.
 - **Routed-lease steps**: `leaseStatusOf`, `execRequestOf`, `execResultOf`
   and `runOnProjectLease` run a task on a Project's lease over
   `runtime.lease/v1`: one `Describe`, `expectSandboxId` on every step; the

@@ -8,6 +8,7 @@ import { dirname, resolve } from 'node:path';
 
 import {
   create,
+  type DescMethod,
   type DescService,
   type MessageInitShape,
 } from '@bufbuild/protobuf';
@@ -74,6 +75,31 @@ export type ServiceEntries<
   T extends readonly DescService[] = readonly DescService[],
 > = { readonly [K in keyof T]: ServiceEntry<T[K]> };
 
+/** One protovalidate violation of a request, as the SDK hands it to {@link InvalidInputAnswer}. */
+export interface InputViolation {
+  /**
+   * The path of the violating field from the request message, as proto field names (`['project_id']`,
+   * `['thread_event_log', 'events']`); empty for a message-level rule (a CEL `option (buf.validate.message)`).
+   */
+  readonly field: readonly string[];
+  /** The rule's id (`string.uuid`, `update_thread_request.change`). */
+  readonly ruleId: string;
+  /** protovalidate's message for this violation. */
+  readonly message: string;
+}
+
+/**
+ * Answers a request that decoded but broke a protovalidate rule of `method`'s input. `violations` holds every violation
+ * (at least one), in protovalidate's order. Returns the error the call ends with, or `undefined` to keep the SDK's
+ * `ContractError('invalid_input', <protovalidate message>)`. Called synchronously, before the handler, once per call
+ * (for a client or bidi stream, once per violating request message). A throw is treated as `undefined`. A request that
+ * does not decode never reaches it (`invalid_input`).
+ */
+export type InvalidInputAnswer = (
+  method: DescMethod,
+  violations: readonly InputViolation[],
+) => ContractError | undefined;
+
 /** What a host part gives `runBundle`. */
 export interface BundleDefinition<
   T extends readonly DescService[] = readonly DescService[],
@@ -122,6 +148,11 @@ export interface BundleDefinition<
    * `StopResult` and exits with code 0.
    */
   deactivate?(context: HostContext): Promise<void> | void;
+  /**
+   * The answer to a request that breaks a protovalidate rule (see {@link InvalidInputAnswer}); absent, every such
+   * request ends with `invalid_input`, as before. Applies to every method of `services`.
+   */
+  readonly invalidInput?: InvalidInputAnswer;
 }
 
 /** The process a bundle runs in, as `startBundle` sees it. */
@@ -635,6 +666,9 @@ class HostLink {
       services: definition.services ?? [],
       send: (frame) => this.send(frame),
       signal: this.gone.signal,
+      ...(definition.invalidInput === undefined
+        ? {}
+        : { invalidInput: definition.invalidInput }),
     });
 
     const client = createClient(

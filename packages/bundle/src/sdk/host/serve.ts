@@ -15,7 +15,7 @@ import {
   type MessageShape,
   toBinary,
 } from '@bufbuild/protobuf';
-import { createValidator } from '@bufbuild/protovalidate';
+import { createValidator, type Violation } from '@bufbuild/protovalidate';
 import {
   Code,
   createContextValues,
@@ -43,7 +43,7 @@ import {
 import { toStatus } from '../../contracts/status.js';
 import { maxMessageBytes } from '../../platform/router/control.js';
 import { abortAtDeadline } from '../../runtime/call.js';
-import type { ServiceEntry } from './run.js';
+import type { InvalidInputAnswer, ServiceEntry } from './run.js';
 
 /**
  * The `Call` of a `CallStart`, branded so `isCall` answers true:
@@ -117,6 +117,8 @@ export interface CallServerOptions {
    * in flight.
    */
   readonly signal: AbortSignal;
+  /** `BundleDefinition.invalidInput`; absent keeps `invalid_input`. */
+  readonly invalidInput?: InvalidInputAnswer;
 }
 
 /** The calls the router started on this process's control stream. */
@@ -237,8 +239,8 @@ export const createCallServer = (options: CallServerOptions): CallServer => {
         .set(callerIncarnationKey, start.caller?.incarnation ?? 0),
     });
     const input = streamsRequest
-      ? served.requests(method.input)
-      : decode(method.input, start.payload);
+      ? served.requests(method, options.invalidInput)
+      : decode(method, start.payload, options.invalidInput);
     const output = await running.run(call, () => handler(input, context));
     const responses: AsyncIterable<unknown> | Iterable<unknown> =
       method.methodKind === 'server_streaming' ||
@@ -328,15 +330,85 @@ type Handler = (input: unknown, context: HandlerContext) => unknown;
 
 const validator = createValidator();
 
-/** The request a payload carries; `invalid_input` when it does not decode or breaks its rules. */
-const decode = <Desc extends DescMessage>(
-  schema: Desc,
+/**
+ * The proto field names of a protovalidate path, from the request message: list and map subscripts are dropped
+ * (`items[2].name` is `['items', 'name']`).
+ */
+const fieldNames = (path: Violation['field']): string[] =>
+  path.flatMap((element) =>
+    element.kind === 'list_sub' || element.kind === 'map_sub'
+      ? []
+      : [element.name],
+  );
+
+/**
+ * The error a request of `method` that broke protovalidate's rules ends its call with: `invalidInput`'s answer to
+ * its violations, or `ContractError('invalid_input', message)` when it is absent, answers `undefined` or throws.
+ */
+const refusal = (
+  method: DescMethod,
+  message: string,
+  violations: readonly Violation[],
+  invalidInput: InvalidInputAnswer | undefined,
+): ContractError => {
+  if (invalidInput !== undefined && violations.length > 0) {
+    try {
+      const answer = invalidInput(
+        method,
+        violations.map((violation) => ({
+          field: fieldNames(violation.field),
+          ruleId: violation.ruleId,
+          message: violation.message,
+        })),
+      );
+
+      if (answer !== undefined) {
+        return answer;
+      }
+    } catch {
+      // A throwing answer keeps `invalid_input` (InvalidInputAnswer).
+    }
+  }
+
+  return new ContractError('invalid_input', message);
+};
+
+/**
+ * `message`, a request of `method`, when it keeps its protovalidate rules; else throws the error
+ * {@link refusal} answers. Shared with `bundle/testing`'s router.
+ */
+export const validRequest = (
+  method: DescMethod,
+  message: unknown,
+  invalidInput: InvalidInputAnswer | undefined,
+): MessageShape<DescMessage> => {
+  const result = validator.validate(
+    method.input,
+    message as MessageShape<DescMessage>,
+  );
+
+  if (result.kind !== 'valid') {
+    throw refusal(
+      method,
+      result.error.message,
+      result.violations ?? [],
+      invalidInput,
+    );
+  }
+
+  return message as MessageShape<DescMessage>;
+};
+
+/** The request a payload carries; `invalid_input` when it does not decode, {@link validRequest}'s error when it breaks its rules. */
+const decode = (
+  method: DescMethod,
   payload: Uint8Array,
-): MessageShape<Desc> => {
-  let message: MessageShape<Desc>;
+  invalidInput: InvalidInputAnswer | undefined,
+): MessageShape<DescMessage> => {
+  let message: MessageShape<DescMessage>;
 
   try {
-    message = fromBinary(schema, payload);
+    message = fromBinary(method.input, payload);
   } catch (error) {
     throw new ContractError(
       'invalid_input',
@@ -344,13 +416,7 @@ const decode = <Desc extends DescMessage>(
     );
   }
 
-  const result = validator.validate(schema, message);
-
-  if (result.kind !== 'valid') {
-    throw new ContractError('invalid_input', result.error.message);
-  }
-
-  return message;
+  return validRequest(method, message, invalidInput);
 };
 
 /** The state of one call this process serves: its signal, credit and requests. */
@@ -414,9 +480,10 @@ class ServedCall {
   }
 
   /** The request messages, decoded; one `CallCredit` per message taken. */
-  async *requests<Desc extends DescMessage>(
-    schema: Desc,
-  ): AsyncGenerator<MessageShape<Desc>> {
+  async *requests(
+    method: DescMethod,
+    invalidInput: InvalidInputAnswer | undefined,
+  ): AsyncGenerator<MessageShape<DescMessage>> {
     for (;;) {
       this.signal.throwIfAborted();
 
@@ -424,7 +491,7 @@ class ServedCall {
 
       if (payload !== undefined) {
         this.grant(1);
-        yield decode(schema, payload);
+        yield decode(method, payload, invalidInput);
         continue;
       }
 

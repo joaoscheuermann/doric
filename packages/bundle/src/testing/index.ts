@@ -101,6 +101,10 @@ export const createTestServices = (
   };
 };
 
+export type {
+  InputViolation,
+  InvalidInputAnswer,
+} from '../sdk/host/run.js';
 export {
   type ConformanceOptions,
   runConformance,

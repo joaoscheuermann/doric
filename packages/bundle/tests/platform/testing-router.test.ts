@@ -12,8 +12,9 @@ import { spawnSync } from 'node:child_process';
 import test, { describe } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
-import { create, type DescService } from '@bufbuild/protobuf';
+import { create, type DescMethod, type DescService } from '@bufbuild/protobuf';
 import { type Any, anyPack, EmptySchema } from '@bufbuild/protobuf/wkt';
+import { createValidator } from '@bufbuild/protovalidate';
 import {
   Code,
   ConnectError,
@@ -30,11 +31,19 @@ import {
   StreamResponseSchema,
 } from '../../src/contracts/gen/doric/models/v1/models_pb.js';
 import { StartupService } from '../../src/contracts/gen/doric/platform/startup/v1/startup_pb.js';
-import { SettingsService } from '../../src/contracts/gen/doric/settings/v1/settings_pb.js';
+import {
+  GetRequestSchema,
+  SettingsService,
+} from '../../src/contracts/gen/doric/settings/v1/settings_pb.js';
 import { ToolsService } from '../../src/contracts/gen/doric/tools/v1/tools_pb.js';
 import { callOf } from '../../src/contracts/metadata.js';
 import { fromConnectError } from '../../src/contracts/status.js';
-import type { HostContext, ServiceEntry } from '../../src/sdk/host/index.js';
+import type {
+  HostContext,
+  InputViolation,
+  InvalidInputAnswer,
+  ServiceEntry,
+} from '../../src/sdk/host/index.js';
 import { currentCall } from '../../src/sdk/host/serve.js';
 import { createTestRouter } from '../../src/testing/index.js';
 import { manifest, withRoot, writeBundle } from '../support/fixtures.js';
@@ -852,6 +861,179 @@ describe('createTestRouter: validation and errors', () => {
       router.client(SettingsService).get({ id: 'space/v1' }),
     );
     assertFailure(faked, Code.Unimplemented, 'unknown_contract');
+  });
+});
+
+describe('createTestRouter: invalidInput (S60a V5)', () => {
+  /** One call of a definition's `invalidInput`, as it received it. */
+  interface HookCall {
+    readonly method: DescMethod;
+    readonly violations: readonly InputViolation[];
+  }
+
+  /** `settings/v1` (`id` has `string.min_len = 1`) whose handlers record that they ran. */
+  const settingsBundle = (reached: string[]): ServiceEntry =>
+    partial(SettingsService, {
+      get: () => {
+        reached.push('get');
+
+        return { value: someValue() };
+      },
+      watch: async function* () {
+        reached.push('watch');
+        yield {};
+      },
+    });
+
+  /** Activates `settings/v1` with `invalidInput`; answers the router and the recorded hook calls. */
+  const activated = async (
+    answer: () => ContractError | undefined,
+    reached: string[],
+  ) => {
+    const calls: HookCall[] = [];
+    const invalidInput: InvalidInputAnswer = (method, violations) => {
+      calls.push({
+        method,
+        violations: violations.map((violation) => ({
+          field: [...violation.field],
+          ruleId: violation.ruleId,
+          message: violation.message,
+        })),
+      });
+
+      return answer();
+    };
+    const router = createTestRouter();
+
+    await router.activate<readonly DescService[]>({
+      services: [settingsBundle(reached)],
+      activate: () => {},
+      invalidInput,
+    });
+
+    return { router, calls };
+  };
+
+  /** protovalidate's message for a settings request with an empty id. */
+  const emptyIdMessage = (): string => {
+    const result = createValidator().validate(
+      GetRequestSchema,
+      create(GetRequestSchema, { id: '' }),
+    );
+
+    return result.kind === 'invalid' ? result.error.message : '';
+  };
+
+  const drain = async (stream: AsyncIterable<unknown>): Promise<void> => {
+    for await (const _item of stream) {
+      // reads the stream to its end
+    }
+  };
+
+  test("a violating unary request fails with the hook's ContractError; the handler does not run", async () => {
+    const reached: string[] = [];
+    const { router } = await activated(
+      () => new ContractError('not_found', 'The space is unknown.'),
+      reached,
+    );
+
+    const error = await failureOf(
+      router.client(SettingsService).get({ id: '' }),
+    );
+
+    assertFailure(error, Code.NotFound, 'not_found');
+    assert.equal(fromConnectError(error).message, 'The space is unknown.');
+    assert.deepEqual(reached, []);
+  });
+
+  test("a violating server-stream request fails with the hook's ContractError; the handler does not run", async () => {
+    const reached: string[] = [];
+    const { router } = await activated(
+      () => new ContractError('invalid_scope', 'The id is empty.'),
+      reached,
+    );
+
+    const error = await failureOf(
+      drain(router.client(SettingsService).watch({ id: '' })),
+    );
+
+    assertFailure(error, Code.InvalidArgument, 'invalid_scope');
+    assert.equal(fromConnectError(error).message, 'The id is empty.');
+    assert.deepEqual(reached, []);
+  });
+
+  test("a hook answering undefined keeps invalid_input with protovalidate's message (unary and server stream)", async () => {
+    const reached: string[] = [];
+    const { router, calls } = await activated(() => undefined, reached);
+
+    const unary = await failureOf(
+      router.client(SettingsService).get({ id: '' }),
+    );
+    const stream = await failureOf(
+      drain(router.client(SettingsService).watch({ id: '' })),
+    );
+
+    for (const error of [unary, stream]) {
+      assertFailure(error, Code.InvalidArgument, 'invalid_input');
+      assert.equal(fromConnectError(error).message, emptyIdMessage());
+    }
+
+    assert.equal(calls.length, 2);
+    assert.deepEqual(reached, []);
+  });
+
+  test("a hook that throws keeps invalid_input with protovalidate's message", async () => {
+    const reached: string[] = [];
+    const { router, calls } = await activated(() => {
+      throw new Error('the hook broke');
+    }, reached);
+
+    const error = await failureOf(
+      router.client(SettingsService).get({ id: '' }),
+    );
+
+    assertFailure(error, Code.InvalidArgument, 'invalid_input');
+    assert.equal(fromConnectError(error).message, emptyIdMessage());
+    assert.equal(calls.length, 1);
+    assert.deepEqual(reached, []);
+  });
+
+  test('the hook receives the method and each violation: field names from the root and the rule id', async () => {
+    const { router, calls } = await activated(() => undefined, []);
+
+    await failureOf(router.client(SettingsService).get({ id: '' }));
+    await failureOf(drain(router.client(SettingsService).watch({ id: '' })));
+
+    // Compared by identity: a descriptor is too large for a deepEqual diff.
+    assert.deepEqual(
+      calls.map((call) => call.method.name),
+      ['Get', 'Watch'],
+    );
+    assert.ok(calls[0]?.method === SettingsService.method.get);
+    assert.ok(calls[1]?.method === SettingsService.method.watch);
+
+    for (const call of calls) {
+      assert.deepEqual(call.violations, [
+        {
+          field: ['id'],
+          ruleId: 'string.min_len',
+          message: 'must be at least 1 characters',
+        },
+      ]);
+    }
+  });
+
+  test('a valid request does not reach the hook', async () => {
+    const reached: string[] = [];
+    const { router, calls } = await activated(
+      () => new ContractError('not_found', 'unexpected'),
+      reached,
+    );
+
+    await within(router.client(SettingsService).get({ id: 'space/v1' }), 'get');
+
+    assert.deepEqual(reached, ['get']);
+    assert.equal(calls.length, 0);
   });
 });
 

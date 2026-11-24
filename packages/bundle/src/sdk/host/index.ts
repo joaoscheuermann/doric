@@ -52,6 +52,8 @@ export {
 } from './registrations.js';
 export {
   type BundleDefinition,
+  type InputViolation,
+  type InvalidInputAnswer,
   type RunningBundle,
   runBundle,
   type ServiceEntries,

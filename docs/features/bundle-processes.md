@@ -1180,6 +1180,26 @@ after a 5 s grace; a failure after the cancel answers `run_cancelled` or
   short deadline (it waits up to 10 minutes); `storage/v1` stays required
   until phase 4; during a drain two generations may run a `stdio` server
   twice (RK31).
+- 2026-11-24: phase 3, slice S60a, of
+  [`docs/designs/grpc-processes.md`](../designs/grpc-processes.md) (version
+  6.22): what `transport`'s public API needs from the SDK and `runtime`.
+  `BundleDefinition.invalidInput(method, violations)` (`run.ts` passes it to
+  the call server) answers a request that decoded but broke a protovalidate
+  rule: a unary request, a server stream's request, and each message of a
+  client stream. It gets the method and every `InputViolation { field, ruleId,
+  message }` in protovalidate's order, `field` holding proto field names only
+  (list and map subscripts dropped). A returned `ContractError` ends the call;
+  `undefined`, a throwing hook or no hook keep `invalid_input`; an undecodable
+  request or a rule error never reaches it. `serve.ts` and `createTestRouter`
+  validate through the same internal `validRequest`. `contractErrorCodes` and
+  the error table gain 36 reasons of `doric.api.*`: 23 `invalid_*`
+  (`INVALID_ARGUMENT`), 9 (`NOT_FOUND`), `configuration_rejected`,
+  `model_catalog_unreadable`, `compaction_failed` (`UNAVAILABLE`) and
+  `internal_error` (`INTERNAL`); `credential_name_taken` stays
+  `ALREADY_EXISTS` (decision Q2; S62 amends the protos and inventory B).
+  `runtime`'s JSON⇄message codec moves to `runtime/contracts`
+  (`json-codec.ts`: `encode`, `decode`, `runtimeOneofs`);
+  `src/host/rpc/codec.ts` re-exports it.
 - 2026-11-23: phase 3, slice S56, of
   [`docs/designs/grpc-processes.md`](../designs/grpc-processes.md): `openui`
   runs as its own process (`src/host/main.ts`, `createOpenuiHost`) serving
