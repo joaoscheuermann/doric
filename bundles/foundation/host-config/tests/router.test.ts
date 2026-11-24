@@ -45,8 +45,8 @@ import {
 } from 'bundle/contracts';
 import {
   HookHandlerService,
-  HooksService,
   RegisterRequestSchema as HookRegisterRequestSchema,
+  HooksService,
 } from 'bundle/contracts/gen/doric/hooks/v1/hooks_pb.js';
 import {
   ModelsService,
@@ -59,10 +59,10 @@ import {
   StartupService,
 } from 'bundle/contracts/gen/doric/platform/startup/v1/startup_pb.js';
 import {
-  ListResponseSchema as SecretsListResponseSchema,
   ReferenceSourceService,
   ReferenceSourceServiceListRequestSchema,
   RegisterReferencesRequestSchema,
+  ListResponseSchema as SecretsListResponseSchema,
   SecretsService,
 } from 'bundle/contracts/gen/doric/secrets/v1/secrets_pb.js';
 import {
@@ -95,6 +95,7 @@ import {
   configurationSettingsId,
 } from '../src/host/configuration.js';
 import { createHostConfigServices } from '../src/host/service.js';
+import { packConfiguration, unpackConfiguration } from '../src/testing.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -1078,6 +1079,50 @@ describe('start step', () => {
 
     await assertFails(handleStart(h), 'settings_missing');
     assert.equal(h.calls.includes('models.prepare'), false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The stored value
+
+describe('packConfiguration and unpackConfiguration', () => {
+  test('a codex provider, whose kind keeps no models, reads back without models, exactly as written', () => {
+    const written: ConfigInput = {
+      ...clone(),
+      providers: [
+        {
+          id: 'codex',
+          kind: 'codex',
+          configuration: { token: PROVIDER_TOKEN, fedramp: 'true' },
+        },
+        ...clone().providers,
+      ],
+    };
+
+    const read = unpackConfiguration(packConfiguration(written));
+
+    assert.deepEqual(read, written);
+    assert.equal('models' in (read.providers[0] ?? {}), false);
+  });
+
+  test('a provider whose kind keeps models, stored with no models, still reads models: []', () => {
+    const written: ConfigInput = {
+      ...clone(),
+      providers: [
+        {
+          id: 'local',
+          kind: 'openai',
+          configuration: {},
+          models: [],
+        },
+        ...clone().providers,
+      ],
+    };
+
+    const read = unpackConfiguration(packConfiguration(written));
+
+    assert.deepEqual(read.providers[0]?.models, []);
+    assert.deepEqual(read, written);
   });
 });
 

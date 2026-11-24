@@ -1479,3 +1479,23 @@ whenever its result is `failed`.
   S62d or group E (C3-4). Open item: `packages/bundle` has no helper for the
   basic contracts; moving `withBasicContracts` there needs an exported list
   of basic files or an option of `readStagedCatalogIndex` or `startPlatform`.
+- 2026-11-24: phase 3, slice S62c3b, of
+  [`docs/designs/grpc-processes.md`](../designs/grpc-processes.md) (version
+  6.32): the host's test helper `tests/helpers/platform.ts` boots the platform
+  through `startHostPlatform` (staged `postgres`, `core`, `host-config`,
+  `openai`, `openrouter`, `codex` and `claude`), checks that no kernel runner
+  is left and that the public listener answers, and reads credentials and
+  configuration over `secrets/v1` and `settings/v1` with `host-config/testing`;
+  each platform fixture gets a fresh database (`databaseFixture`).
+  `host-config`'s `unpackConfiguration` drops the implicit empty `models` and
+  `reasonings` lists of provider kinds that keep none, so a stored `codex`
+  provider no longer breaks the boot; `packConfiguration` and
+  `unpackConfiguration` are exported from `host-config/testing`. Decisions:
+  four `reference-race` cases stay `todo` until S62d, since `settings/v1` does
+  no reference check and `host-config` refuses through its in-flight
+  references (C3b-1); `credential-adapter`'s memory cases run on the platform
+  over PostgreSQL instead of `createTestRouter` (C3b-2); the host helper reads
+  configuration through `host-config`'s one reader (C3b-3). Left for S62d:
+  `startHost`'s users in `packages/bundle` and the `core` and `postgres`
+  test support, `memoryFoundation`'s in `packages/storage` and
+  `app/desktop/doric`.

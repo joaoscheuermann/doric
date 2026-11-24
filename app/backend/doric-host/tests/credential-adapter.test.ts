@@ -1,29 +1,79 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { SecretsBackendV1, type StoredSecret } from 'bundle/contracts';
+import type { StoredSecret } from 'bundle/contracts';
+import { BackendService as SecretsBackendService } from 'bundle/contracts/gen/doric/secrets/backend/v1/backend_pb.js';
 import {
   type CredentialService,
   MissingKeyError,
   publicCredential,
 } from 'host-config/testing';
-import { memoryFoundation } from 'storage/memory';
+import { createPostgresBackends } from 'postgres/testing';
 
-import { persistenceFixture } from './helpers/persistence-fixture.js';
-import { type Kernel, kernelOver, startKernel } from './helpers/platform.js';
+import { databaseFixture } from './helpers/persistence-fixture.js';
+import {
+  credentialKey,
+  type Kernel,
+  kernelOver,
+  startKernel,
+} from './helpers/platform.js';
 
 // The CredentialService contract the routes, the workspace service, models and
-// generation rely on, now answered by `secrets/v1` through the kernel adapter.
+// generation rely on, now answered by `secrets/v1` of the `core` process
+// through the kernel-shaped adapter of `helpers/platform.ts`.
 
 const connectionString = process.env.DORIC_TEST_DATABASE_URL;
 
-const kernel = (
+/** A case over a store that holds only its own rows; it needs PostgreSQL. */
+const storeTest = (name: string, run: () => Promise<void>) =>
+  void test(name, { skip: connectionString === undefined }, run);
+
+/**
+ * The platform over a fresh database whose credential store holds only
+ * `rows`, as the backend stored them: each sealed with the test key by the
+ * `postgres` backend itself. The platform reads them with the test key, or
+ * with none when `keyConfigured` is false. Closing it drops the database.
+ */
+const kernel = async (
   options: {
     readonly keyConfigured?: boolean;
     readonly rows?: readonly StoredSecret[];
   } = {},
-): Promise<Kernel> =>
-  startKernel({ foundation: memoryFoundation({ secrets: options }) });
+): Promise<Kernel> => {
+  assert.ok(connectionString);
+  const resources = await databaseFixture(connectionString);
+
+  try {
+    await resources.database.credential.deleteMany();
+    const { secrets } = createPostgresBackends({
+      database: () => resources.database,
+      environment: { DORIC_CREDENTIAL_KEY: credentialKey },
+    });
+    for (const row of options.rows ?? []) await secrets.put(row);
+
+    const booted = await startKernel({
+      database: resources,
+      environment:
+        options.keyConfigured === false
+          ? {}
+          : { DORIC_CREDENTIAL_KEY: credentialKey },
+    });
+
+    return {
+      ...booted,
+      close: async () => {
+        try {
+          await booted.close();
+        } finally {
+          await resources.close();
+        }
+      },
+    };
+  } catch (error) {
+    await resources.close();
+    throw error;
+  }
+};
 
 const withService = async (
   run: (service: CredentialService, kernel: Kernel) => Promise<void>,
@@ -37,69 +87,76 @@ const withService = async (
   }
 };
 
-const stored = (rows: Kernel) =>
-  rows.platform.services.use(SecretsBackendV1).list();
+/** The rows `secrets.backend/v1` stores, as `doric` lists them. */
+const stored = async (rows: Kernel) =>
+  (await rows.platform.client(SecretsBackendService).list({})).secrets;
 
-void test('answers a stored secret only to the host, never in the public view', () =>
-  withService(async (service) => {
-    const created = await service.create({
-      kind: 'API_TOKEN',
-      name: 'openrouter',
-      secret: 'sk_secret',
-    });
+storeTest(
+  'answers a stored secret only to the host, never in the public view',
+  () =>
+    withService(async (service) => {
+      const created = await service.create({
+        kind: 'API_TOKEN',
+        name: 'openrouter',
+        secret: 'sk_secret',
+      });
 
-    assert.equal(created.status, 'saved');
-    if (created.status !== 'saved') return;
-    assert.equal(created.credential.secret, 'sk_secret');
-    assert.deepEqual(service.secrets(), ['sk_secret']);
-    assert.equal(service.byId(created.credential.id).secret, 'sk_secret');
+      assert.equal(created.status, 'saved');
+      if (created.status !== 'saved') return;
+      assert.equal(created.credential.secret, 'sk_secret');
+      assert.deepEqual(service.secrets(), ['sk_secret']);
+      assert.equal(service.byId(created.credential.id).secret, 'sk_secret');
 
-    const view = publicCredential(service.list()[0]);
-    assert.deepEqual(view, {
-      id: created.credential.id,
-      kind: 'API_TOKEN',
-      name: 'openrouter',
-      hasSecret: true,
-    });
-    assert.equal(JSON.stringify(view).includes('sk_secret'), false);
-  }));
-
-void test('refuses to start when a stored secret has no key, but not for an empty one', async () => {
-  await assert.rejects(
-    kernel({
-      keyConfigured: false,
-      rows: [
-        {
-          id: '00000000-0000-4000-8000-000000000001',
-          kind: 'API_TOKEN',
-          name: 'openrouter',
-          secret: 'sk_at_rest',
-        },
-      ],
+      const view = publicCredential(service.list()[0]);
+      assert.deepEqual(view, {
+        id: created.credential.id,
+        kind: 'API_TOKEN',
+        name: 'openrouter',
+        hasSecret: true,
+      });
+      assert.equal(JSON.stringify(view).includes('sk_secret'), false);
     }),
-    { code: 'credential_key_required' },
-  );
+);
 
-  await withService(
-    async (service) => {
-      assert.equal(service.list()[0]?.secret, '');
-      assert.deepEqual(service.secrets(), []);
-    },
-    {
-      keyConfigured: false,
-      rows: [
-        {
-          id: '00000000-0000-4000-8000-000000000001',
-          kind: 'API_TOKEN',
-          name: 'openrouter',
-          secret: '',
-        },
-      ],
-    },
-  );
-});
+storeTest(
+  'refuses to start when a stored secret has no key, but not for an empty one',
+  async () => {
+    await assert.rejects(
+      kernel({
+        keyConfigured: false,
+        rows: [
+          {
+            id: '00000000-0000-4000-8000-000000000001',
+            kind: 'API_TOKEN',
+            name: 'openrouter',
+            secret: 'sk_at_rest',
+          },
+        ],
+      }),
+      { code: 'credential_key_required' },
+    );
 
-void test('redacts a secret it learned after the store was read', () =>
+    await withService(
+      async (service) => {
+        assert.equal(service.list()[0]?.secret, '');
+        assert.deepEqual(service.secrets(), []);
+      },
+      {
+        keyConfigured: false,
+        rows: [
+          {
+            id: '00000000-0000-4000-8000-000000000001',
+            kind: 'API_TOKEN',
+            name: 'openrouter',
+            secret: '',
+          },
+        ],
+      },
+    );
+  },
+);
+
+storeTest('redacts a secret it learned after the store was read', () =>
   withService(async (service) => {
     const learned = 'ghp_learned_in_a_sandbox';
 
@@ -108,9 +165,10 @@ void test('redacts a secret it learned after the store was read', () =>
     // An empty secret is no secret, exactly as the store's own rule reads it.
     service.register('');
     assert.deepEqual(service.secrets(), [learned]);
-  }));
+  }),
+);
 
-void test('keeps, clears, and sets a stored field through one rule', () =>
+storeTest('keeps, clears, and sets a stored field through one rule', () =>
   withService(async (service) => {
     const created = await service.create({
       kind: 'GIT',
@@ -159,32 +217,36 @@ void test('keeps, clears, and sets a stored field through one rule', () =>
       (await service.update('missing', { name: 'x' })).status,
       'missing',
     );
-  }));
+  }),
+);
 
-void test('a name a kind already uses is a conflict, not a second credential', () =>
-  withService(async (service, booted) => {
-    await service.create({ kind: 'API_TOKEN', name: 'key', secret: 'a' });
+storeTest(
+  'a name a kind already uses is a conflict, not a second credential',
+  () =>
+    withService(async (service, booted) => {
+      await service.create({ kind: 'API_TOKEN', name: 'key', secret: 'a' });
 
-    assert.deepEqual(
-      await service.create({ kind: 'API_TOKEN', name: 'key', secret: 'b' }),
-      { status: 'conflict' },
-    );
-    // Another kind may use the same name.
-    assert.equal(
-      (
-        await service.create({
-          kind: 'GIT',
-          name: 'key',
-          username: 'octocat',
-          email: 'octocat@example.com',
-        })
-      ).status,
-      'saved',
-    );
-    assert.equal((await stored(booted)).length, 2);
-  }));
+      assert.deepEqual(
+        await service.create({ kind: 'API_TOKEN', name: 'key', secret: 'b' }),
+        { status: 'conflict' },
+      );
+      // Another kind may use the same name.
+      assert.equal(
+        (
+          await service.create({
+            kind: 'GIT',
+            name: 'key',
+            username: 'octocat',
+            email: 'octocat@example.com',
+          })
+        ).status,
+        'saved',
+      );
+      assert.equal((await stored(booted)).length, 2);
+    }),
+);
 
-void test('keeps a provider key out of an unclaimed-kind fallback', () =>
+storeTest('keeps a provider key out of an unclaimed-kind fallback', () =>
   withService(async (service) => {
     const providerKey = await service.create({
       kind: 'API_TOKEN',
@@ -220,9 +282,10 @@ void test('keeps a provider key out of an unclaimed-kind fallback', () =>
       () => service.byKind('API_TOKEN'),
       /More than one API_TOKEN credential is stored; name the one to use\./u,
     );
-  }));
+  }),
+);
 
-void test('stops resolving a credential once it is deleted', () =>
+storeTest('stops resolving a credential once it is deleted', () =>
   withService(async (service) => {
     const created = await service.create({
       kind: 'API_TOKEN',
@@ -237,9 +300,10 @@ void test('stops resolving a credential once it is deleted', () =>
     assert.equal(service.byKind('API_TOKEN'), undefined);
     assert.deepEqual(service.secrets(), []);
     assert.equal(await service.remove(id), 'missing');
-  }));
+  }),
+);
 
-void test('applies the field rule to a create the route did not check', () =>
+storeTest('applies the field rule to a create the route did not check', () =>
   withService(async (service, booted) => {
     const rejected = await service.create({
       kind: 'GIT',
@@ -266,93 +330,102 @@ void test('applies the field rule to a create the route did not check', () =>
       ).status,
       'saved',
     );
-  }));
+  }),
+);
 
-void test('refuses to write a secret without a key, and still stores a kind without one', () =>
-  withService(
-    async (service, booted) => {
-      await assert.rejects(
-        service.create({ kind: 'API_TOKEN', name: 'key', secret: 'x' }),
-        MissingKeyError,
-      );
-      // Even the empty secret a migration left is a secret write.
-      await assert.rejects(
-        service.update('00000000-0000-4000-8000-000000000001', { secret: '' }),
-        MissingKeyError,
-      );
-      assert.deepEqual(
-        (await stored(booted)).map(({ name }) => name),
-        ['openrouter'],
-      );
+storeTest(
+  'refuses to write a secret without a key, and still stores a kind without one',
+  () =>
+    withService(
+      async (service, booted) => {
+        await assert.rejects(
+          service.create({ kind: 'API_TOKEN', name: 'key', secret: 'x' }),
+          MissingKeyError,
+        );
+        // Even the empty secret a migration left is a secret write.
+        await assert.rejects(
+          service.update('00000000-0000-4000-8000-000000000001', {
+            secret: '',
+          }),
+          MissingKeyError,
+        );
+        assert.deepEqual(
+          (await stored(booted)).map(({ name }) => name),
+          ['openrouter'],
+        );
 
-      const identity = await service.create({
-        kind: 'GIT',
-        name: 'github',
-        username: 'octocat',
-        email: 'octocat@example.com',
-      });
-      assert.equal(identity.status, 'saved');
-    },
-    {
-      keyConfigured: false,
-      rows: [
-        {
-          id: '00000000-0000-4000-8000-000000000001',
-          kind: 'API_TOKEN',
-          name: 'openrouter',
-          secret: '',
-        },
-      ],
-    },
-  ));
+        const identity = await service.create({
+          kind: 'GIT',
+          name: 'github',
+          username: 'octocat',
+          email: 'octocat@example.com',
+        });
+        assert.equal(identity.status, 'saved');
+      },
+      {
+        keyConfigured: false,
+        rows: [
+          {
+            id: '00000000-0000-4000-8000-000000000001',
+            kind: 'API_TOKEN',
+            name: 'openrouter',
+            secret: '',
+          },
+        ],
+      },
+    ),
+);
 
-void test('lists credentials in store order at start, then by name after each save, keeping the order on delete', () =>
-  withService(
-    async (service) => {
-      // `C` order of the store puts the capital first; localeCompare does not.
-      assert.deepEqual(
-        service.list().map(({ name }) => name),
-        ['Zed', 'alpha', 'beta'],
-      );
+storeTest(
+  'lists credentials in store order at start, then by name after each save, keeping the order on delete',
+  () =>
+    withService(
+      async (service) => {
+        // `C` order of the store puts the capital first; localeCompare does not.
+        assert.deepEqual(
+          service.list().map(({ name }) => name),
+          ['Zed', 'alpha', 'beta'],
+        );
 
-      const deleted = await service.remove(
-        '00000000-0000-4000-8000-000000000003',
-      );
-      assert.equal(deleted, 'deleted');
-      assert.deepEqual(
-        service.list().map(({ name }) => name),
-        ['Zed', 'beta'],
-      );
+        const deleted = await service.remove(
+          '00000000-0000-4000-8000-000000000003',
+        );
+        assert.equal(deleted, 'deleted');
+        assert.deepEqual(
+          service.list().map(({ name }) => name),
+          ['Zed', 'beta'],
+        );
 
-      await service.create({ kind: 'API_TOKEN', name: 'gamma', secret: 'g' });
-      assert.deepEqual(
-        service.list().map(({ name }) => name),
-        ['beta', 'gamma', 'Zed'],
-      );
-    },
-    {
-      rows: [
-        {
-          id: '00000000-0000-4000-8000-000000000001',
-          kind: 'API_TOKEN',
-          name: 'beta',
-          secret: 'b',
-        },
-        {
-          id: '00000000-0000-4000-8000-000000000002',
-          kind: 'API_TOKEN',
-          name: 'Zed',
-          secret: 'z',
-        },
-        {
-          id: '00000000-0000-4000-8000-000000000003',
-          kind: 'API_TOKEN',
-          name: 'alpha',
-          secret: 'a',
-        },
-      ],
-    },
-  ));
+        await service.create({ kind: 'API_TOKEN', name: 'gamma', secret: 'g' });
+        assert.deepEqual(
+          service.list().map(({ name }) => name),
+          ['beta', 'gamma', 'Zed'],
+        );
+      },
+      {
+        rows: [
+          {
+            id: '00000000-0000-4000-8000-000000000001',
+            kind: 'API_TOKEN',
+            name: 'beta',
+            secret: 'b',
+          },
+          {
+            id: '00000000-0000-4000-8000-000000000002',
+            kind: 'API_TOKEN',
+            name: 'Zed',
+            secret: 'z',
+          },
+          {
+            id: '00000000-0000-4000-8000-000000000003',
+            kind: 'API_TOKEN',
+            name: 'alpha',
+            secret: 'a',
+          },
+        ],
+      },
+    ),
+);
 
 // The cipher boundary, which moved into the `postgres` backend, read through
 // the same service over a real database.
@@ -360,12 +433,12 @@ void test('lists credentials in store order at start, then by name after each sa
 const databaseTest = (
   name: string,
   run: (
-    resources: Awaited<ReturnType<typeof persistenceFixture>>,
+    resources: Awaited<ReturnType<typeof databaseFixture>>,
   ) => Promise<void>,
 ) =>
   void test(name, { skip: connectionString === undefined }, async () => {
     assert.ok(connectionString);
-    const resources = await persistenceFixture(connectionString);
+    const resources = await databaseFixture(connectionString);
     try {
       await run(resources);
     } finally {
@@ -375,8 +448,8 @@ const databaseTest = (
 
 databaseTest(
   'seals each secret in a fresh versioned envelope that only its key opens',
-  async ({ database }) => {
-    const booted = await kernelOver(database);
+  async ({ database, url }) => {
+    const booted = await kernelOver({ url });
     try {
       const first = await booted.credentials.create({
         kind: 'API_TOKEN',
@@ -405,7 +478,7 @@ databaseTest(
     }
     assert.notEqual(rows[0]?.secret, rows[1]?.secret);
 
-    const reopened = await kernelOver(database);
+    const reopened = await kernelOver({ url });
     try {
       assert.deepEqual(
         reopened.credentials
@@ -419,9 +492,12 @@ databaseTest(
     }
 
     await assert.rejects(
-      kernelOver(database, {
-        DORIC_CREDENTIAL_KEY: 'BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB=',
-      }),
+      kernelOver(
+        { url },
+        {
+          DORIC_CREDENTIAL_KEY: 'BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB=',
+        },
+      ),
       { code: 'credential_unreadable' },
     );
   },
@@ -429,8 +505,8 @@ databaseTest(
 
 databaseTest(
   'treats a blank key as no key and refuses an unusable one at start',
-  async ({ database }) => {
-    const blank = await kernelOver(database, { DORIC_CREDENTIAL_KEY: '  ' });
+  async ({ url }) => {
+    const blank = await kernelOver({ url }, { DORIC_CREDENTIAL_KEY: '  ' });
     try {
       // The seeded provider credential holds an empty secret, so it starts.
       assert.deepEqual(blank.credentials.secrets(), []);
@@ -448,7 +524,7 @@ databaseTest(
 
     for (const key of ['short', '!'.repeat(44)])
       await assert.rejects(
-        kernelOver(database, { DORIC_CREDENTIAL_KEY: key }),
+        kernelOver({ url }, { DORIC_CREDENTIAL_KEY: key }),
         /DORIC_CREDENTIAL_KEY must be 32 base64-encoded bytes\./u,
       );
   },

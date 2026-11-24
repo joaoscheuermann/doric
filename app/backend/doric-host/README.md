@@ -2849,6 +2849,17 @@ PostgreSQL server whose role may create databases and schemas: each case
 creates its own and drops it afterwards
 ([`helpers/host.ts`](tests/helpers/host.ts),
 [`helpers/persistence-fixture.ts`](tests/helpers/persistence-fixture.ts)).
+The cases that boot the platform (`bundles`, `config-settings-migration`,
+`credential-adapter`, `persistence` and `reference-race`) go through
+[`helpers/platform.ts`](tests/helpers/platform.ts), which boots it as the host
+does (`startHostPlatform`, over the staged `postgres`, `core`, `host-config`
+and the `openai`, `openrouter`, `codex` and `claude` model providers), checks
+that no kernel runner is left and that the public listener answers, and reads
+and writes credentials and configuration over `secrets/v1` and `settings/v1`
+with `host-config/testing`. The platform's `postgres` reads the `public`
+schema, so each of these fixtures gets a fresh database of its own
+(`databaseFixture`); `credential-adapter`'s memory cases need the database
+too. Four `reference-race` cases are pending (`todo`) until slice S62d.
 Without it, those cases skip. `DORIC_TEST_SANDBOX=true` also runs the cases
 that start a sandbox. `doric-host-e2e:e2e` requires both variables and fails
 before running any test without them

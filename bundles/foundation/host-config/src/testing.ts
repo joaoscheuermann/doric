@@ -25,3 +25,4 @@ export {
   createCredentialService,
   MissingKeyError,
 } from './host/credentials/service.js';
+export { packConfiguration, unpackConfiguration } from './host/routed.js';

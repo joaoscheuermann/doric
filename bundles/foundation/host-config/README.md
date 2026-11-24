@@ -463,6 +463,13 @@ The bundle reads no environment variable and has no configuration of its own;
     (a credential with `secret` replaced by `hasSecret`,
     [`kind.ts`](src/host/credentials/kind.ts)), `MissingKeyError` and the
     types `Credential`, `CredentialService`, `ConfigService`, `ConfigStore`.
+  - `packConfiguration` and `unpackConfiguration`
+    ([`routed.ts`](src/host/routed.ts)): the configuration as the `Any` of
+    `ConfigurationValue` that `settings/v1` stores, and back. The reader reads
+    every implicit field, so an empty `models` or `reasonings` list reads as
+    `[]` where the provider's kind keeps that list and is absent where it does
+    not (a stored `codex` provider, which keeps none, reads back as it was
+    written).
 
 ## Build and test
 

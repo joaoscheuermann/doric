@@ -51,6 +51,59 @@ const defaults = {
   },
 };
 
+/**
+ * {@link persistenceFixture}'s resources in a fresh database of their own
+ * instead of a schema: the platform's `postgres` process reads the `public`
+ * schema of `DORIC_DATABASE_URL`, so a fixture it serves needs a database.
+ * Same `migration` option and the same answer, `url` naming the database.
+ */
+export async function databaseFixture(
+  connectionString: string,
+  overrides: Pick<Partial<typeof defaults>, 'migration'> = {},
+) {
+  const migration = overrides.migration ?? defaults.migration;
+  const cleanup = cleanupStack();
+  try {
+    const name = `persistence_${randomUUID().replaceAll('-', '')}`;
+    const admin = defaults.connect(connectionString);
+    cleanup.defer(() => admin.end());
+    await admin.connect();
+    await admin.query(`CREATE DATABASE "${name}"`);
+    cleanup.defer(() => admin.query(`DROP DATABASE "${name}" WITH (FORCE)`));
+    const url = new URL(connectionString);
+    url.pathname = `/${name}`;
+    const sql = defaults.connect(url.toString());
+    cleanup.defer(() => sql.end());
+    await sql.connect();
+    await sql.query(await migration());
+    const client = () => {
+      const database = new PrismaClient({
+        adapter: new PrismaPg({ connectionString: url.toString() }),
+      });
+      cleanup.defer(() => database.$disconnect());
+      return database;
+    };
+    return {
+      database: client(),
+      second: client(),
+      url: url.toString(),
+      migrate: (statements: string) => sql.query(statements),
+      close: () => cleanup.close(),
+    };
+  } catch (error) {
+    try {
+      await cleanup.close();
+    } catch (cleanupError) {
+      throw new AggregateError(
+        [error, cleanupError],
+        'Fixture setup and cleanup failed',
+        { cause: cleanupError },
+      );
+    }
+    throw error;
+  }
+}
+
 /** Owns only its fresh schema and connections, including partial setup failures. */
 export async function persistenceFixture(
   connectionString: string,

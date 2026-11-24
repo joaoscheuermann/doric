@@ -6,8 +6,8 @@ import type { ConfigInput, DoricConfig } from 'host-config/testing';
 
 import { legacyLoad, legacyReplace } from './helpers/legacy-config-load.js';
 import {
+  databaseFixture,
   migrationDirectory,
-  persistenceFixture,
 } from './helpers/persistence-fixture.js';
 import { kernelOver } from './helpers/platform.js';
 
@@ -159,7 +159,7 @@ const timeless = ({ updatedAt, ...rest }: DoricConfig) => {
 /** A schema at the previous release with the case's rows. */
 const previousRelease = async (seed: string) => {
   assert.ok(connectionString);
-  const resources = await persistenceFixture(connectionString, {
+  const resources = await databaseFixture(connectionString, {
     migration: migrationsBefore,
   });
   try {
@@ -182,7 +182,7 @@ for (const { name, seed } of cases)
       const legacyReplaced = await legacyReplace(old.database, replacement);
 
       await migrated.migrate(await genericMigration());
-      const kernel = await kernelOver(migrated.database);
+      const kernel = await kernelOver(migrated);
       try {
         // GET /config after the upgrade, byte for byte.
         assert.equal(
@@ -199,7 +199,7 @@ for (const { name, seed } of cases)
       }
 
       // And the replacement reads back the same after a restart.
-      const restarted = await kernelOver(migrated.database);
+      const restarted = await kernelOver(migrated);
       try {
         assert.equal(
           timeless(await restarted.configs.load()),

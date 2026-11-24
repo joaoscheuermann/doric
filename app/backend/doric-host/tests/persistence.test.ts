@@ -6,6 +6,7 @@ import test from 'node:test';
 import { type ConfigInput, defaultConfig } from 'host-config/testing';
 
 import {
+  databaseFixture,
   migrationDirectory,
   persistenceFixture,
 } from './helpers/persistence-fixture.js';
@@ -544,14 +545,14 @@ integrationTest(
 
 integrationTest(
   'refuses to serve a stored secret without the key that wrote it',
-  async ({ credentials, database }) => {
+  async ({ credentials, url }) => {
     await credentials.create({
       kind: 'API_TOKEN',
       name: 'openrouter',
       secret: 'sk_live_value',
     });
 
-    await assert.rejects(kernelOver(database, {}), {
+    await assert.rejects(kernelOver({ url }, {}), {
       code: 'credential_key_required',
     });
   },
@@ -741,7 +742,7 @@ void test('converts a configured provider of the old shape without losing its da
     `${migrationDirectory}/20260927000000_provider_models_and_identity/migration.sql`,
     'utf8',
   );
-  const resources = await persistenceFixture(connectionString, {
+  const resources = await databaseFixture(connectionString, {
     migration: async () => `${baseline}\n${github}\n${store}`,
   });
   try {
@@ -841,7 +842,7 @@ void test('converts a configured provider of the old shape without losing its da
 
     // What `GET /config` answers afterwards: the mapped provider, and the
     // execution model, choices, and turn limit the operator had.
-    const kernel = await kernelOver(resources.database);
+    const kernel = await kernelOver(resources);
     const loaded = await kernel.configs.load().finally(() => kernel.close());
     assert.deepEqual(loaded.configuration.providers, [
       {
@@ -885,10 +886,9 @@ function integrationTest(name: string, run: (stores: Stores) => Promise<void>) {
 
 async function fixture() {
   assert.ok(connectionString);
-  const resources = await persistenceFixture(connectionString);
-  const { database } = resources;
+  const resources = await databaseFixture(connectionString);
   try {
-    const kernel = await kernelOver(database);
+    const kernel = await kernelOver(resources);
     return {
       ...resources,
       configs: kernel.configs,

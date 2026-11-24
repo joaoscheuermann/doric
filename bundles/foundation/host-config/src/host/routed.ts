@@ -18,14 +18,15 @@ import {
   type Models,
   modelKindDescriptorSchema,
 } from 'bundle/contracts';
-import type { ModelsService } from 'bundle/contracts/gen/doric/models/v1/models_pb.js';
 import {
   CatalogResultSchema,
   ModelKindDescriptorSchema,
 } from 'bundle/contracts/gen/doric/models/provider/v1/provider_pb.js';
+import type { ModelsService } from 'bundle/contracts/gen/doric/models/v1/models_pb.js';
 import type { SecretsService } from 'bundle/contracts/gen/doric/secrets/v1/secrets_pb.js';
 import type { SettingsService } from 'bundle/contracts/gen/doric/settings/v1/settings_pb.js';
 import type { ToolsService } from 'bundle/contracts/gen/doric/tools/v1/tools_pb.js';
+import { providerKind } from 'llms';
 
 import { ConfigurationValueSchema } from '../contracts/gen/doric/host_config/configuration/v1/configuration_pb.js';
 import { type ConfigInput, ConfigInputSchema } from './config/schema.js';
@@ -67,8 +68,58 @@ export const packConfiguration = (value: ConfigInput): Any =>
   );
 
 /**
+ * `json`, a configuration's JSON with every implicit field emitted, without the
+ * lists a provider's kind does not keep: proto3 cannot tell an absent list from
+ * an empty one, so the kind decides. A kind the catalog does not know keeps its
+ * lists, for the schema to refuse.
+ */
+const withoutUnkeptLists = (json: JsonValue): JsonValue => {
+  if (json === null || typeof json !== 'object' || Array.isArray(json))
+    return json;
+
+  const { providers } = json;
+
+  if (!Array.isArray(providers)) return json;
+
+  return {
+    ...json,
+    providers: providers.map((entry) => {
+      if (entry === null || typeof entry !== 'object' || Array.isArray(entry))
+        return entry;
+
+      const kind =
+        typeof entry.kind === 'string' ? providerKind(entry.kind) : undefined;
+
+      if (kind === undefined) return entry;
+
+      const { models, ...rest } = entry;
+
+      if (!kind.lists.includes('models')) return rest;
+      if (kind.lists.includes('reasonings') || !Array.isArray(models))
+        return entry;
+
+      return {
+        ...rest,
+        models: models.map((model) => {
+          if (
+            model === null ||
+            typeof model !== 'object' ||
+            Array.isArray(model)
+          )
+            return model;
+
+          const { reasonings: _unkept, ...kept } = model;
+          return kept;
+        }),
+      };
+    }),
+  };
+};
+
+/**
  * The configuration an `Any` of `ConfigurationValue` holds. Every implicit
- * field is read, so an empty `models` or `reasonings` list reads as `[]`.
+ * field is read, so an empty `models` or `reasonings` list reads as `[]` where
+ * the provider's kind keeps that list, and is absent where it does not.
  */
 export const unpackConfiguration = (value: Any | undefined): ConfigInput => {
   const message =
@@ -83,7 +134,9 @@ export const unpackConfiguration = (value: Any | undefined): ConfigInput => {
     );
 
   return ConfigInputSchema.parse(
-    toJson(ConfigurationValueSchema, message, { alwaysEmitImplicit: true }),
+    withoutUnkeptLists(
+      toJson(ConfigurationValueSchema, message, { alwaysEmitImplicit: true }),
+    ),
   );
 };
 
