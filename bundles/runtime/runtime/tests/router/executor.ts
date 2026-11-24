@@ -1,9 +1,10 @@
 // The fake `executor/v1` provider of runtime's router tests (phase 3, slice
 // S48b, contract §5 "Harness"). It serves `ExecutorService` over the domain
 // tests' `scriptedExecutor` (`../support/executor.ts`): each request becomes
-// the domain input, whose `PromptSession` is `runtime/executor`'s
-// `remotePromptSession` (S51b), calling back through `executor.session/v1` as
-// the executor's provider would (caller `executorCaller`). A `HistoryPatch`
+// the domain input, whose `PromptSession` is `runtime/contracts`'
+// `remotePromptSession` (S51b; `runtime/executor` until S62b), calling back
+// through `executor.session/v1` as the executor's provider would (caller
+// `executorCaller`). A `HistoryPatch`
 // answer travels as `historyPatchItems`. It records every call it receives
 // and every session call it makes.
 
@@ -23,6 +24,11 @@ import type {
   ExecutorThread,
   PromptJob,
 } from '../../src/contracts/executor.js';
+import {
+  historyPatchItems,
+  type RemotePromptSession,
+  remotePromptSession,
+} from '../../src/contracts/executor-serving.js';
 import type {
   RecordRequestSchema,
   SessionService,
@@ -38,11 +44,6 @@ import {
   RewindRequestSchema,
   RunRequestSchema,
 } from '../../src/contracts/gen/doric/executor/v1/executor_pb.js';
-import {
-  historyPatchItems,
-  type RemotePromptSession,
-  remotePromptSession,
-} from '../../src/executor.js';
 import { decode, encode, runtimeOneofs } from '../../src/host/rpc/codec.js';
 import {
   type Script,

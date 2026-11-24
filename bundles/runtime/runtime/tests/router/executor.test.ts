@@ -28,13 +28,16 @@ import type {
   PromptSession,
 } from '../../src/contracts/executor.js';
 import {
+  type RemotePromptSession,
+  serveExecutor,
+} from '../../src/contracts/executor-serving.js';
+import {
   type RecordRequestSchema,
   SessionService,
   SteerInputSchema,
 } from '../../src/contracts/gen/doric/executor/session/v1/session_pb.js';
 import { ExecutorService } from '../../src/contracts/gen/doric/executor/v1/executor_pb.js';
 import type { AttachRequestSchema } from '../../src/contracts/gen/doric/runtime/attachments/v1/attachments_pb.js';
-import { type RemotePromptSession, serveExecutor } from '../../src/executor.js';
 import { createExecutorSessions } from '../../src/host/executor-sessions.js';
 import { routedExecutor } from '../../src/host/routed-executor.js';
 import { decode, runtimeOneofs } from '../../src/host/rpc/codec.js';

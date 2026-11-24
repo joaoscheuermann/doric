@@ -6,9 +6,9 @@ import { ContractError, callOf } from 'bundle/contracts';
 import { HooksService } from 'bundle/contracts/gen/doric/hooks/v1/hooks_pb.js';
 import type { HostContext } from 'bundle/host';
 import { ProviderErrorObject } from 'llms';
+import { serveExecutor } from 'runtime/contracts';
 import { SessionService } from 'runtime/contracts/gen/doric/executor/session/v1/session_pb.js';
 import type { ExecutorService } from 'runtime/contracts/gen/doric/executor/v1/executor_pb.js';
-import { serveExecutor } from 'runtime/executor';
 import { ToolErrorObject } from 'tool';
 
 import type { AgentsService } from '../contracts/gen/doric/default/agents/v1/agents_pb.js';

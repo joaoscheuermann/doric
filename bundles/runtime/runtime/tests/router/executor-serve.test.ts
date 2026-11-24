@@ -1,4 +1,5 @@
-// `runtime/executor` (phase 3, slice S51b, contract §4.5, tests B12-B18):
+// `runtime/contracts`' executor helpers (phase 3, slice S51b, contract §4.5,
+// tests B12-B18; moved from `runtime/executor` in S62b, A72):
 // `serveExecutor` served by a bundle under test in a test router, its
 // sessions calling back a recording fake `executor.session/v1`, and
 // `historyPatchItems` read back by S48's `historyPatchOf`. The round trip
@@ -44,6 +45,12 @@ import type {
   SteerInput,
 } from '../../src/contracts/executor.js';
 import {
+  type ExecutorImplementation,
+  historyPatchItems,
+  type RemotePromptSession,
+  serveExecutor,
+} from '../../src/contracts/executor-serving.js';
+import {
   type RecordRequestSchema,
   SessionService,
   SteerInputSchema,
@@ -56,12 +63,6 @@ import {
   PromptJobSchema,
   RunRequestSchema,
 } from '../../src/contracts/gen/doric/executor/v1/executor_pb.js';
-import {
-  type ExecutorImplementation,
-  historyPatchItems,
-  type RemotePromptSession,
-  serveExecutor,
-} from '../../src/executor.js';
 import { decode, encode, runtimeOneofs } from '../../src/host/rpc/codec.js';
 import { historyPatchOf } from '../../src/host/rpc/history.js';
 

@@ -533,8 +533,8 @@ Without a provider of an optional contract, exactly this is left out
   the chat does not draw `load_skill` calls with it.
 - **`default.skill-sources/v1`**: the source skills.
 
-The code imports `runtime/contracts`, `runtime/executor` (a boundary
-exception until S62, `tests/boundary-exceptions.json`), `host-config/contracts`
+The code imports `runtime/contracts` (with the executor helpers
+`serveExecutor` and `RemotePromptSession`), `host-config/contracts`
 and, as types only, `chat/contracts`, and the packages `agent`, `llms`
 (`llms/rpc` included), `messages`, `tool`, `bundle`, `@connectrpc/connect`,
 `mustache` and `zod`. The client part also imports `react` and, from

@@ -74,13 +74,23 @@ never used ([`services/lease.ts`](src/host/services/lease.ts)).
 
 The package is `runtime` ([`package.json`](package.json)). It exports
 `runtime/contracts` ([`src/contracts/index.ts`](src/contracts/index.ts)) and
-`runtime/testing` ([`src/testing.ts`](src/testing.ts)), `runtime/executor`
-([`src/executor.ts`](src/executor.ts): `remotePromptSession`,
-`historyPatchItems` and `serveExecutor`, the helpers an executor bundle uses to
-serve `executor/v1` over `executor.session/v1`), and `runtime/contracts/gen/*`, the
-protobuf-es code `generate-proto` writes from `proto/`. `runtime/contracts` is
+`runtime/testing` ([`src/testing.ts`](src/testing.ts)), and `runtime/contracts/gen/*`, the
+protobuf-es code `generate-proto` writes from `proto/`. `runtime/contracts`
+also holds `remotePromptSession`, `historyPatchItems` and `serveExecutor`
+([`src/contracts/executor-serving.ts`](src/contracts/executor-serving.ts)), the
+helpers an executor bundle uses to serve `executor/v1` over
+`executor.session/v1`; their routed-error helpers (`routed`, `routedError`,
+`parseInput`, `SHUTTING_DOWN`, `THREAD_CONTROL_INACTIVE`) sit in
+[`src/contracts/routed-errors.ts`](src/contracts/routed-errors.ts), which the
+entry does not re-export and `src/host/rpc/errors.ts` re-exports beside
+`detached`. `runtime/contracts` is
 browser-safe: it holds contract refs, zod schemas, types and pure functions,
-and imports only `zod` and `bundle/contracts` at run time; its imports from
+and its run-time imports are `zod`, `bundle/contracts`, the generated code and
+`storage/rpc/chunks`, none of them Node-only
+([`tests/contracts-window.test.ts`](tests/contracts-window.test.ts) bundles it
+for the browser with esbuild and fails on any Node module; `tsconfig.client.json`
+cannot prove it, since Node types reach it through `pino-std-serializers` and
+`undici-types`); its imports from
 `sandbox`, `sandpool` and `host-config/contracts` are type-only (the
 configuration value types are re-exported from `host-config/contracts`,
 [`configuration.ts`](src/contracts/configuration.ts)).

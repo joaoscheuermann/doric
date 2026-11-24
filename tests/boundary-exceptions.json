@@ -6,13 +6,6 @@
       "target": "models.provider/v1",
       "decision": "docs/designs/grpc-processes.md",
       "until": "S62"
-    },
-    {
-      "check": "imports",
-      "bundle": "default",
-      "target": "runtime/executor",
-      "decision": "docs/designs/grpc-processes.md",
-      "until": "S62"
     }
   ]
 }

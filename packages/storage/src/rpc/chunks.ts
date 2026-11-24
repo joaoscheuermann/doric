@@ -2,7 +2,8 @@
 // `docs/designs/grpc-processes.md`, section 17, "Storage until phase 4";
 // section 3, "Size", rule 3): a value crosses as its JSON text in UTF-8, in
 // `bytes` items of at most 1 MiB. Phase 4 deletes this file with
-// `storage.backend/v1`.
+// `storage.backend/v1`. Browser-safe: its only import is `ContractError`;
+// `storage/rpc/chunks` exports it alone, for `runtime/contracts`.
 
 import { ContractError } from 'bundle/contracts';
 

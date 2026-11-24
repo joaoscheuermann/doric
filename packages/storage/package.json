@@ -31,6 +31,12 @@
       "types": "./dist/rpc/index.d.ts",
       "import": "./dist/rpc/index.js",
       "default": "./dist/rpc/index.js"
+    },
+    "./rpc/chunks": {
+      "@org/source": "./src/rpc/chunks.ts",
+      "types": "./dist/rpc/chunks.d.ts",
+      "import": "./dist/rpc/chunks.js",
+      "default": "./dist/rpc/chunks.js"
     }
   },
   "dependencies": {

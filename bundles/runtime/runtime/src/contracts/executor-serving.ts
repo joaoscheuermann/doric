@@ -1,7 +1,9 @@
-// `runtime/executor` (phase 3, slice S51b): the executor-side helpers of
-// `executor/v1` — what a bundle providing it serves and how it calls back
-// through `executor.session/v1`. Node-only; not part of `runtime/contracts`,
-// which client builds import.
+// The executor-side helpers of `executor/v1` (phase 3, slice S51b; moved from
+// `runtime/executor` into `runtime/contracts` in S62b, A72): what a bundle
+// providing `executor/v1` serves and how it calls back through
+// `executor.session/v1`. Browser-safe like the rest of `runtime/contracts`
+// (no Node module: the routed-error helpers come from `./routed-errors.js`,
+// the chunk codec from `storage/rpc/chunks`); only a host part calls them.
 
 import type {
   DescMessage,
@@ -18,10 +20,10 @@ import {
   deadlineOf,
   generationOf,
 } from 'bundle/contracts';
-import { decodeJson, encodeJson } from 'storage/rpc';
+import { decodeJson, encodeJson } from 'storage/rpc/chunks';
 import { z } from 'zod';
 
-import { type Attachment, attachmentSchema } from './contracts/attachments.js';
+import { type Attachment, attachmentSchema } from './attachments.js';
 import {
   type ExecutorCompactionInput,
   type ExecutorCompactionResult,
@@ -34,12 +36,12 @@ import {
   type PromptSession,
   promptJobSchema,
   type SteerInput,
-} from './contracts/executor.js';
+} from './executor.js';
 import {
   type RecordRequestSchema,
   type SessionService,
   SteerInputSchema,
-} from './contracts/gen/doric/executor/session/v1/session_pb.js';
+} from './gen/doric/executor/session/v1/session_pb.js';
 import {
   type CheckpointResponseSchema,
   CompactionPolicyValueSchema,
@@ -47,10 +49,10 @@ import {
   type ExecutorService,
   ExecutorThreadSchema,
   PromptJobSchema,
-} from './contracts/gen/doric/executor/v1/executor_pb.js';
-import { inputSourceSchema } from './contracts/model.js';
-import { decode, encode, runtimeOneofs } from './host/rpc/codec.js';
-import { parseInput, routed } from './host/rpc/errors.js';
+} from './gen/doric/executor/v1/executor_pb.js';
+import { decode, encode, runtimeOneofs } from './json-codec.js';
+import { inputSourceSchema } from './model.js';
+import { parseInput, routed } from './routed-errors.js';
 
 /**
  * A `PromptSession` whose callbacks are `executor.session/v1` calls for one session id. It has no `attachment`

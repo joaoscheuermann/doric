@@ -593,9 +593,9 @@ work as follows. A thrown llms provider error crosses the router as
 `details.providerError` or `details.toolError`, and the caller rebuilds them.
 `tools/v1` 1.6.0 adds `ToolsService.Check`, which `core` relays to the
 registering instance's `ToolHandlerService.Check`. `runtime` exports
-`runtime/executor` (`serveExecutor`, `remotePromptSession`,
-`historyPatchItems`) for executor bundles; `default` imports it under a
-boundary exception until S62. `default`'s process entry (`src/host/main.ts`)
+`serveExecutor`, `remotePromptSession` and `historyPatchItems` from
+`runtime/contracts` (`src/contracts/executor-serving.ts`, since S62b1) for
+executor bundles, and `default` imports them from there. `default`'s process entry (`src/host/main.ts`)
 serves `executor/v1` and `default.agents/v1` and defines `default.hooks/v1`;
 its model calls go through `llms/rpc`'s `modelsLanguageModel` and its tool
 calls make one `Check` before each `Execute`. A cancelled `Run` or `Compact`
@@ -1275,6 +1275,20 @@ after a 5 s grace; a failure after the cancel answers `run_cancelled` or
   fields (`dockerSocketShared` for docker); a failing startup call fails
   `Handle` with its code; `main.ts` serves `HookHandlerService` and registers
   the step in `activate`. The kernel still boots the running host until S62c.
+- 2026-11-24: phase 3, slice S62b1, of
+  [`docs/designs/grpc-processes.md`](../designs/grpc-processes.md) (version
+  6.26): `runtime`'s `src/executor.ts` moves to
+  `src/contracts/executor-serving.ts`, exported from `runtime/contracts`
+  (`serveExecutor`, `remotePromptSession`, `historyPatchItems`); `routed`,
+  `routedError`, `parseInput`, `SHUTTING_DOWN` and `THREAD_CONTROL_INACTIVE`
+  move to `src/contracts/routed-errors.ts` (not re-exported from the entry;
+  `src/host/rpc/errors.ts` re-exports them and keeps `detached`). The export
+  `runtime/executor` is removed; `packages/storage` adds `storage/rpc/chunks`;
+  `default` imports from `runtime/contracts`; the `imports` boundary exception
+  is removed (the `declared` one stays until S62c). Decision: window safety is
+  proven by `tests/contracts-window.test.ts`, which bundles `runtime/contracts`
+  for the browser with esbuild, not by `tsconfig.client.json`, which Node types
+  reach through `pino-std-serializers` and `undici-types`.
 - 2026-11-23: phase 3, slice S56, of
   [`docs/designs/grpc-processes.md`](../designs/grpc-processes.md): `openui`
   runs as its own process (`src/host/main.ts`, `createOpenuiHost`) serving

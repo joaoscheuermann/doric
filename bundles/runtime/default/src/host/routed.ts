@@ -15,10 +15,9 @@ import { configurationValueSchema } from 'host-config/contracts';
 import { ConfigurationValueSchema } from 'host-config/contracts/gen/doric/host_config/configuration/v1/configuration_pb.js';
 import { HostConfigService } from 'host-config/contracts/gen/doric/host_config/v1/host_config_pb.js';
 import { attachmentImageUrl, modelsLanguageModel } from 'llms/rpc';
-import type { PromptSession } from 'runtime/contracts';
+import type { PromptSession, RemotePromptSession } from 'runtime/contracts';
 import { LeaseService } from 'runtime/contracts/gen/doric/runtime/lease/v1/lease_pb.js';
 import { WorkspaceService } from 'runtime/contracts/gen/doric/runtime/workspace/v1/workspace_pb.js';
-import type { RemotePromptSession } from 'runtime/executor';
 
 import { OnBeforeModelRequestHookInputSchema } from '../contracts/gen/doric/default/hooks/v1/hooks_pb.js';
 import { SkillSourcesService } from '../contracts/gen/doric/default/skill_sources/v1/skill_sources_pb.js';
