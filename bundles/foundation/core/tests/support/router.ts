@@ -191,6 +191,16 @@ export interface RoutedCore {
   /** The `ReferenceSourceService.List` requests core made (source names). */
   readonly referenceCalls: readonly string[];
   /**
+   * Holds the next `ReferenceSourceService.List` of `source` until
+   * `release()`: `reached` resolves once that request arrived, and its answer
+   * is read from `references` when released. A request with no hold set is
+   * answered at once; `release()` twice is harmless.
+   */
+  holdReferences(source: string): {
+    readonly reached: Promise<void>;
+    release(): void;
+  };
+  /**
    * The memory secrets backend behind the `secrets.backend/v1` fake, read
    * directly (fakes are not reachable through a router client).
    */
@@ -439,9 +449,35 @@ export const serveCore = async (
   const references = new Map<string, string[]>();
   const failingSources = new Set<string>();
   const referenceCalls: string[] = [];
+  const referenceHolds = new Map<
+    string,
+    { readonly arrived: () => void; readonly released: Promise<void> }
+  >();
+  const holdReferences = (source: string) => {
+    let arrived!: () => void;
+    let release!: () => void;
+    const reached = new Promise<void>((resolve) => {
+      arrived = resolve;
+    });
+    const released = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+
+    referenceHolds.set(source, { arrived, released });
+
+    return { reached, release };
+  };
   const referenceSource: ServiceImpl<typeof ReferenceSourceService> = {
-    list: ({ source }) => {
+    list: async ({ source }) => {
       referenceCalls.push(source);
+
+      const hold = referenceHolds.get(source);
+
+      if (hold !== undefined) {
+        referenceHolds.delete(source);
+        hold.arrived();
+        await hold.released;
+      }
 
       if (failingSources.has(source)) {
         throw new ContractError(
@@ -765,6 +801,7 @@ export const serveCore = async (
     references,
     failingSources,
     referenceCalls,
+    holdReferences,
     secretsBackend: backends.services.use(SecretsBackendV1),
     handlers,
     handlerCalls,

@@ -115,10 +115,9 @@ void test('a stored secret resolves for the host while its description only says
       plain((await secrets.describe(ref(created.id))).credentialDescription),
       plain(created),
     );
-    assert.deepEqual(
-      (await secrets.list({})).credentials.map(plain),
-      [plain(created)],
-    );
+    assert.deepEqual((await secrets.list({})).credentials.map(plain), [
+      plain(created),
+    ]);
     assert.deepEqual(await redactionsOf(secrets), ['sk_secret']);
 
     // The backend stored the row the service wrote.
@@ -458,6 +457,60 @@ void test('a credential a reference source names is not deleted until the source
   });
 });
 
+// S62d1 (Q2): `List` takes its turn in the core's write queue, so a caller
+// that checks its references by `List` (host-config's replacement) cannot
+// read a credential a `Delete` already decided to remove.
+void test('a List that starts while a Delete is checking its references answers after the Delete settled, without the deleted id', async () => {
+  await withSecrets(async (secrets, core) => {
+    const created = (
+      await secrets.create({
+        kind: 'API_TOKEN',
+        name: 'openrouter',
+        secret: 'sk_secret',
+      })
+    ).credentialDescription;
+
+    assert.ok(created !== undefined);
+
+    const { id } = created;
+
+    await core
+      .client(SecretsService, 'notes')
+      .registerReferences({ source: 'notes.refs' });
+    core.references.set('notes.refs', []);
+
+    const gate = core.holdReferences('notes.refs');
+    const deleting = secrets.delete(ref(id));
+
+    await gate.reached;
+
+    let listAnswered = false;
+    const listing = secrets.list({}).then((answer) => {
+      listAnswered = true;
+      return answer;
+    });
+
+    try {
+      // A call that takes no turn in the write queue, started after the
+      // List, answers while the Delete still waits for its reference source.
+      await secrets.kinds({});
+      assert.equal(
+        listAnswered,
+        false,
+        'List answered while a Delete was checking its references',
+      );
+    } finally {
+      gate.release();
+    }
+
+    assert.equal((await deleting).result, 'deleted');
+    assert.deepEqual(
+      (await listing).credentials.map((credential) => credential.id),
+      [],
+    );
+  });
+});
+
 // R-2.1 (revised): secrets/v1.WatchRedactions, the stream the terminal's
 // synchronous chunk redaction keeps its snapshot with.
 
@@ -637,16 +690,19 @@ void test('a stored kind nothing registers is listed, but Resolve, ResolveByKind
       },
     });
     const stored = (
-      await secrets.create({ kind: 'TOKEN_PAIR', name: 'pair', secret: 'sk_pair' })
+      await secrets.create({
+        kind: 'TOKEN_PAIR',
+        name: 'pair',
+        secret: 'sk_pair',
+      })
     ).credentialDescription;
 
     assert.ok(stored !== undefined);
     await pairs.unregister({ registrationId });
 
-    assert.deepEqual(
-      (await secrets.list({})).credentials.map(plain),
-      [plain(stored)],
-    );
+    assert.deepEqual((await secrets.list({})).credentials.map(plain), [
+      plain(stored),
+    ]);
     await rejectsWith(secrets.resolve(ref(stored.id)), 'unknown_kind');
     await rejectsWith(
       secrets.resolveByKind({ kind: 'TOKEN_PAIR', exclude: [] }),

@@ -1506,3 +1506,17 @@ whenever its result is `failed`.
   `startHost`'s users in `packages/bundle` and the `core` and `postgres`
   test support, `memoryFoundation`'s in `packages/storage` and
   `app/desktop/doric`.
+- 2026-11-24: phase 3, slice S62d1, of
+  [`docs/designs/grpc-processes.md`](../designs/grpc-processes.md) (version
+  6.34): `core`'s `secrets/v1.List` takes its turn in core's write queue, so a
+  List that starts during a Delete answers after it settles, without the
+  deleted id; a `host-config` replacement checking its credentials in that
+  window could otherwise store a reference to a removed credential. `Delete`
+  still asks `host-config`'s reference source, which reads `settings/v1.Get`
+  outside the queue. `reference-race.test.ts` runs its four former `todo`
+  cases over `host-config/v1` and `secrets/v1` as `doric`, holding a
+  replacement in flight with the new `tests/helpers/held-catalog.ts`.
+  Decisions: S62d is split into S62d1–S62d4; a delete during a replacement in
+  flight answers `referenced` and the replacement is stored, a replacement
+  after the delete answers `invalid` (Q3); no code for the remaining kernel
+  users, which leave with S67, group F, phase 4 or group E (Q1).

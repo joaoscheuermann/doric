@@ -292,7 +292,8 @@ message }` with the listener's bundle, in the host and `desktopMain` parts
   [`src/desktop/settings.ts`](src/desktop/settings.ts)).
 - **Write queue.** Each activated part (host and `desktopMain`) has one write
   queue: `settings/v1.set` and, on the host, the `secrets/v1` writes
-  (`create`, `update`, `delete`) run one at a time in arrival order, and a
+  (`create`, `update`, `delete`) run one at a time in arrival order, `secrets/v1.List` waits its turn among
+  them (so it never lists a credential an earlier `Delete` removes), and a
   failed task frees the queue. A configuration therefore never names a
   credential that a concurrent delete removes. The queue has no timeout: a
   task that never settles blocks every later write of that part
@@ -537,7 +538,7 @@ when that value is invalid), so a registrant applies its own defaults at
 revision 0. Secrets load the credentials on the first call (shared, retried
 after a failure); kinds and reference sources are released on `InstanceGone`;
 `Delete` asks every live reference source first and fails with a source's error,
-removing nothing; `WatchRedactions` yields the list, then each change, queued on
+removing nothing; `List` answers after every write queued before it; `WatchRedactions` yields the list, then each change, queued on
 every open stream before a write answers; `AddRedaction` refuses an empty
 secret. Events: `Register` refuses a payload message with a field named `type`;
 `Sink` binds an events stream; `Append` stores `{ type, ...payload JSON }`

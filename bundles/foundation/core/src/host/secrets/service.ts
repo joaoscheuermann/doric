@@ -85,6 +85,11 @@ const kindMessage = (definition: {
  * - `WatchRedactions` yields the complete list once loaded, then the list
  *   after each change, until the call ends. A write resolves after its list
  *   was queued on every open stream; a stream that ended does not fail it.
+ * - `List` answers after every write queued before it settled (it takes its
+ *   turn in the core's write queue, `state.writes`), so it never lists a
+ *   credential a `Delete` that started before it removes, nor misses one a
+ *   `Create` that started before it stores. It runs inside no queued write
+ *   of the core's own, so it cannot wait on itself.
  * Credentials load on the first call that needs them.
  */
 export const createSecretsService = (
@@ -225,7 +230,9 @@ export const createSecretsService = (
       return { secret: credential };
     },
     list: async () => ({
-      credentials: (await loaded()).list().map(describe),
+      credentials: await state.writes.run(async () =>
+        (await loaded()).list().map(describe),
+      ),
     }),
     kinds: async (_input, context) => ({
       kinds: (await seenKinds(callOf(context))).map(kindMessage),

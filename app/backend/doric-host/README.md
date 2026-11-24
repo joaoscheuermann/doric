@@ -2875,7 +2875,10 @@ and writes credentials and configuration over `secrets/v1` and `settings/v1`
 with `host-config/testing`. The platform's `postgres` reads the `public`
 schema, so each of these fixtures gets a fresh database of its own
 (`databaseFixture`); `credential-adapter`'s memory cases need the database
-too. Four `reference-race` cases are pending (`todo`) until slice S62d.
+too. `reference-race` calls `host-config/v1` and `secrets/v1` as `doric` and
+holds a replacement in flight with
+[`helpers/held-catalog.ts`](tests/helpers/held-catalog.ts), a local server
+that holds `openrouter`'s `GET /v1/models`.
 Without it, those cases skip. `DORIC_TEST_SANDBOX=true` also runs the cases
 that start a sandbox. `doric-host-e2e:e2e` requires both variables and fails
 before running any test without them

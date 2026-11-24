@@ -1,230 +1,351 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { setTimeout as delay } from 'node:timers/promises';
 
-import type { CredentialCreate } from 'bundle/contracts';
+import { fromJson, type JsonValue } from '@bufbuild/protobuf';
+import { anyPack, ValueSchema } from '@bufbuild/protobuf/wkt';
+import { type CredentialCreate, fromConnectError } from 'bundle/contracts';
+import { SecretsService } from 'bundle/contracts/gen/doric/secrets/v1/secrets_pb.js';
+import { ConfigurationValueSchema } from 'host-config/contracts/gen/doric/host_config/configuration/v1/configuration_pb.js';
+import { HostConfigService } from 'host-config/contracts/gen/doric/host_config/v1/host_config_pb.js';
 import {
   type ConfigInput,
-  createConfigService,
   defaultConfig,
+  providerCredentials,
+  unpackConfiguration,
 } from 'host-config/testing';
 
-import { deferred } from './helpers/credentials.js';
+import { type HeldCatalog, heldCatalog } from './helpers/held-catalog.js';
 import { databaseFixture } from './helpers/persistence-fixture.js';
 import { kernelOver } from './helpers/platform.js';
 
-// A stored configuration's credentials used to be protected by foreign keys.
-// The `host-config` references and the core's single write queue now protect
-// them, and must refuse the same deletes in both orders of a race. The cases
-// call `host-config/v1`'s replacement pipeline and the credential service
-// directly; the transport maps their outcomes to the same statuses as before
-// (replaced 200, rejected 503, referenced 409, deleted 204, missing 404),
-// which bundles/foundation/transport tests the routes for.
+// A stored configuration's credentials used to be protected by foreign keys,
+// then by the kernel's one write queue. On the platform the real `host-config`
+// process protects them: a replacement in flight is a reference source of
+// `secrets/v1` from its credential check until its write settles, and `core`'s
+// `Delete` asks every reference source first. The cases call `host-config/v1`
+// and `secrets/v1` as `doric`; a test catalog server holds a replacement in
+// flight between its credential check and its write (it reads the catalog of
+// the `openrouter` provider every naming below adds).
 
 const connectionString = process.env.DORIC_TEST_DATABASE_URL;
 
-interface Host {
-  replace(configuration: ConfigInput): Promise<string>;
-  current(): Promise<unknown>;
-  create(input: unknown): Promise<string>;
-  remove(id: string): Promise<string>;
-  /** The credential ids the store holds. */
-  stored(): readonly string[];
-  /** Holds the next replacement just before it is stored, until released. */
-  hold(): { readonly reached: Promise<void>; release(): void };
-}
+/** What `host-config/v1.Replace` answered, as the case reads it. */
+type Replaced =
+  | { readonly status: 'replaced' }
+  | { readonly status: 'invalid'; readonly message: string }
+  | { readonly status: 'rejected' };
 
 /**
- * Why a race case stays pending until S62d: on the platform `settings/v1` does
- * no reference check, and `host-config` refuses through its in-flight
- * references, so the race is to be rewritten over `host-config/v1`.
+ * The platform as the race reads it, every call made as `doric`:
+ * - `replace`/`current`: `host-config/v1.Replace{input}` (the configuration as a
+ *   `google.protobuf.Value`) and `Current{}` (its `configuration` as JSON), so
+ *   the real `host-config` process runs the pipeline and keeps its in-flight
+ *   references;
+ * - `create`/`remove`/`stored`: `secrets/v1.Create`, `Delete{credentialRef}`
+ *   and `List`, served by the `core` process.
+ * Any call failing with a `ContractError` fails the case.
  */
-const pendingUntilS62d =
-  'S62d: on the platform settings/v1 does no reference check; host-config refuses through its in-flight references — rewrite the race over host-config/v1';
+interface Host {
+  replace(configuration: ConfigInput): Promise<Replaced>;
+  current(): Promise<ConfigInput>;
+  create(input: CredentialCreate): Promise<string>;
+  remove(id: string): Promise<'deleted' | 'missing' | 'referenced'>;
+  /** The credential ids `secrets/v1.List` answers now. */
+  stored(): Promise<readonly string[]>;
+  /** The held catalog every naming below routes its replacement through. */
+  readonly catalog: HeldCatalog;
+}
 
-const withHost = (
-  name: string,
-  run: (host: Host) => Promise<void>,
-  todo?: string,
-) =>
-  void test(name, { skip: connectionString === undefined, todo }, async () => {
+/** A router call's failure as its Doric error; any other error unchanged. */
+const called = async <T>(request: Promise<T>): Promise<T> => {
+  try {
+    return await request;
+  } catch (error) {
+    throw error instanceof Error && error.name === 'ConnectError'
+      ? fromConnectError(error as Parameters<typeof fromConnectError>[0])
+      : error;
+  }
+};
+
+const withHost = (name: string, run: (host: Host) => Promise<void>) =>
+  void test(name, { skip: connectionString === undefined }, async () => {
     assert.ok(connectionString);
     const resources = await databaseFixture(connectionString);
     try {
-      const kernel = await kernelOver(resources);
+      const catalog = await heldCatalog();
       try {
-        let held:
-          | { readonly reached: () => void; readonly released: Promise<void> }
-          | undefined;
-        const config = createConfigService({
-          store: kernel.configs,
-          credentials: async () => kernel.credentials,
-          tools: () => [],
-          models: {
-            catalog: async () => ({ status: 'absent' }),
-            kind: async () => undefined,
-            // Building the candidate providers is the slow step between the
-            // credential check and the write, which is where a delete can land.
-            prepare: async (input) => {
-              if (typeof input.revision === 'number') return;
-              const gate = held;
-              held = undefined;
-              gate?.reached();
-              await gate?.released;
+        const kernel = await kernelOver(resources);
+        try {
+          const config = kernel.platform.client(HostConfigService);
+          const secrets = kernel.platform.client(SecretsService);
+
+          await run({
+            catalog,
+            replace: async (configuration) => {
+              const { status } = await called(
+                config.replace({
+                  input: fromJson(ValueSchema, configuration as JsonValue),
+                }),
+              );
+              switch (status.case) {
+                case 'replaced':
+                  return { status: 'replaced' };
+                case 'invalid':
+                  return { status: 'invalid', message: status.value.message };
+                case 'rejected':
+                  return { status: 'rejected' };
+                default:
+                  throw new Error('host-config/v1.Replace answered no status.');
+              }
             },
-          },
-        });
-        await run({
-          replace: async (configuration) =>
-            (await config.replace(configuration)).status,
-          current: () => config.current(),
-          create: async (input) => {
-            const written = await kernel.credentials.create(
-              input as CredentialCreate,
-            );
-            assert.equal(written.status, 'saved');
-            assert.ok(written.status === 'saved');
-            return written.credential.id;
-          },
-          remove: (id) => kernel.credentials.remove(id),
-          stored: () => kernel.credentials.list().map(({ id }) => id),
-          hold: () => {
-            const reached = deferred();
-            const released = deferred();
-            held = {
-              reached: () => reached.resolve(),
-              released: released.promise,
-            };
-            return {
-              reached: reached.promise,
-              release: () => released.resolve(),
-            };
-          },
-        });
+            current: async () => {
+              const { doricConfiguration } = await called(config.current({}));
+              const configuration = doricConfiguration?.configuration;
+              assert.ok(configuration, 'Current answered no configuration');
+              return unpackConfiguration(
+                anyPack(ConfigurationValueSchema, configuration),
+              );
+            },
+            create: async (input) => {
+              const { credentialDescription } = await called(
+                secrets.create(input),
+              );
+              assert.ok(credentialDescription, 'Create answered no credential');
+              return credentialDescription.id;
+            },
+            remove: async (id) => {
+              const { result } = await called(
+                secrets.delete({ credentialRef: { id } }),
+              );
+              assert.ok(
+                result === 'deleted' ||
+                  result === 'missing' ||
+                  result === 'referenced',
+                `Delete answered ${result}`,
+              );
+              return result;
+            },
+            stored: async () =>
+              (await called(secrets.list({}))).credentials.map(({ id }) => id),
+          });
+        } finally {
+          await kernel.close();
+        }
       } finally {
-        await kernel.close();
+        await catalog.close();
       }
     } finally {
       await resources.close();
     }
   });
 
-const apiToken = { kind: 'API_TOKEN', name: 'proxy', secret: 'sk_proxy' };
-const gitIdentity = {
+const catalogCredential: CredentialCreate = {
+  kind: 'API_TOKEN',
+  name: 'catalog',
+  secret: 'sk_catalog',
+};
+const apiToken: CredentialCreate = {
+  kind: 'API_TOKEN',
+  name: 'proxy',
+  secret: 'sk_proxy',
+};
+const gitIdentity: CredentialCreate = {
   kind: 'GIT',
   name: 'github',
   username: 'octocat',
   email: 'octocat@example.com',
 };
-const githubToken = { kind: 'API_TOKEN', name: 'github', secret: 'ghp_token' };
+const githubToken: CredentialCreate = {
+  kind: 'API_TOKEN',
+  name: 'github',
+  secret: 'ghp_token',
+};
 
-/** Each way a configuration names a credential. */
+/** `defaultConfig` plus the `openrouter` provider `held`, whose catalog every replacement reads. */
+const withHeld = (
+  catalog: HeldCatalog,
+  token: string,
+  extra: Partial<ConfigInput> = {},
+): ConfigInput => ({
+  ...defaultConfig,
+  providers: [
+    ...defaultConfig.providers,
+    {
+      id: 'held',
+      kind: 'openrouter',
+      configuration: { endpoint: catalog.endpoint, token },
+      models: [{ name: catalog.model, reasonings: [] }],
+    },
+  ],
+  ...extra,
+});
+
+/**
+ * Each way a configuration names a credential. `naming(id, catalogToken,
+ * catalog)` is `defaultConfig` plus, always, an `openrouter` provider `held`
+ * whose `endpoint` is `catalog`'s and whose `models` lists its model (so
+ * every replacement reads the catalog), and the reference under test:
+ * - a provider's token: `held`'s own `token` is `id`;
+ * - the Git identity: `gitCredentialId: id` (`held`'s token is `catalogToken`);
+ * - the GitHub token: `githubCredentialId: id` (`held`'s token is `catalogToken`).
+ * `catalogToken` is an `API_TOKEN` credential the case creates first and never
+ * deletes. `invalidMessage` is today's answer when `id` is not stored.
+ */
 const references: readonly {
   readonly name: string;
-  readonly credential: unknown;
-  readonly naming: (id: string) => ConfigInput;
+  readonly credential: CredentialCreate;
+  readonly naming: (
+    id: string,
+    catalogToken: string,
+    catalog: HeldCatalog,
+  ) => ConfigInput;
+  readonly invalidMessage: string;
 }[] = [
   {
     name: "a provider's token",
     credential: apiToken,
-    naming: (id) => ({
-      ...defaultConfig,
-      providers: [
-        ...defaultConfig.providers,
-        {
-          id: 'proxy',
-          kind: 'openai',
-          configuration: { token: id },
-          models: [],
-        },
-      ],
-    }),
+    naming: (id, _catalogToken, catalog) => withHeld(catalog, id),
+    invalidMessage:
+      'Provider held token references a credential that is not stored.',
   },
   {
     name: 'the Git identity',
     credential: gitIdentity,
-    naming: (id) => ({ ...defaultConfig, gitCredentialId: id }),
+    naming: (id, catalogToken, catalog) =>
+      withHeld(catalog, catalogToken, { gitCredentialId: id }),
+    invalidMessage:
+      'The Git identity references a credential that is not stored.',
   },
   {
     name: 'the GitHub token',
     credential: githubToken,
-    naming: (id) => ({ ...defaultConfig, githubCredentialId: id }),
+    naming: (id, catalogToken, catalog) =>
+      withHeld(catalog, catalogToken, { githubCredentialId: id }),
+    invalidMessage:
+      'The GitHub credential references a credential that is not stored.',
   },
 ];
 
-for (const { name, credential, naming } of references) {
+/** Every credential id `configuration` names. */
+const namedIds = (configuration: ConfigInput): string[] => [
+  ...configuration.providers.flatMap((provider) =>
+    providerCredentials(provider).map(({ id }) => id),
+  ),
+  ...(configuration.gitCredentialId === undefined
+    ? []
+    : [configuration.gitCredentialId]),
+  ...(configuration.githubCredentialId === undefined
+    ? []
+    : [configuration.githubCredentialId]),
+];
+
+/** The invariant: every credential id the stored configuration names is stored. */
+const assertNamesOnlyStored = async (host: Host): Promise<void> => {
+  const stored = await host.stored();
+  for (const id of namedIds(await host.current()))
+    assert.ok(
+      stored.includes(id),
+      `the stored configuration names ${id}, which is not stored`,
+    );
+};
+
+for (const { name, credential, naming, invalidMessage } of references) {
   withHost(
     `keeps ${name} the stored configuration names, until a replacement drops it`,
     async (host) => {
+      const catalogToken = await host.create(catalogCredential);
       const id = await host.create(credential);
 
-      assert.equal(await host.replace(naming(id)), 'replaced');
+      assert.deepEqual(
+        await host.replace(naming(id, catalogToken, host.catalog)),
+        {
+          status: 'replaced',
+        },
+      );
       assert.equal(await host.remove(id), 'referenced');
 
-      assert.equal(await host.replace(defaultConfig), 'replaced');
+      assert.deepEqual(await host.replace(defaultConfig), {
+        status: 'replaced',
+      });
       assert.equal(await host.remove(id), 'deleted');
       assert.equal(await host.remove(id), 'missing');
+      await assertNamesOnlyStored(host);
     },
   );
 
   withHost(
-    `refuses a replacement naming ${name} once a delete landed before its write`,
+    `a delete while a replacement naming ${name} is in flight answers referenced, and the replacement is stored`,
     async (host) => {
+      const catalogToken = await host.create(catalogCredential);
+      const id = await host.create(credential);
+
+      const gate = host.catalog.hold();
+      const replacing = host.replace(naming(id, catalogToken, host.catalog));
+      await gate.reached;
+
+      // The replacement passed its credential check and has not written yet.
+      assert.equal(await host.remove(id), 'referenced');
+      gate.release();
+
+      assert.deepEqual(await replacing, { status: 'replaced' });
+      assert.ok(namedIds(await host.current()).includes(id));
+      assert.ok((await host.stored()).includes(id));
+      await assertNamesOnlyStored(host);
+    },
+  );
+
+  withHost(
+    `a replacement naming ${name} after its delete answers invalid with today's message and keeps the stored configuration`,
+    async (host) => {
+      const catalogToken = await host.create(catalogCredential);
       const id = await host.create(credential);
       const before = await host.current();
 
-      const gate = host.hold();
-      const replacing = host.replace(naming(id));
-      await gate.reached;
-
-      // The credential was stored when the replacement was checked, and the
-      // stored configuration does not name it, so the delete goes through.
       assert.equal(await host.remove(id), 'deleted');
-      gate.release();
-
-      assert.equal(await replacing, 'rejected');
+      assert.deepEqual(
+        await host.replace(naming(id, catalogToken, host.catalog)),
+        {
+          status: 'invalid',
+          message: invalidMessage,
+        },
+      );
       assert.deepEqual(await host.current(), before);
+      await assertNamesOnlyStored(host);
     },
-    pendingUntilS62d,
   );
 }
 
 withHost(
   'never stores a reference to a credential a racing delete removed',
   async (host) => {
-    const naming = references[0]?.naming;
-    assert.ok(naming);
+    const provider = references[0];
+    assert.ok(provider);
+    const { naming, invalidMessage } = provider;
+    const catalogToken = await host.create(catalogCredential);
 
-    for (let attempt = 0; attempt < 10; attempt += 1) {
+    for (let attempt = 0; attempt < 20; attempt += 1) {
       const id = await host.create({
         ...apiToken,
-        name: `proxy-${attempt}`,
+        name: `proxy-${String(attempt)}`,
       });
-      const gate = host.hold();
-      const replacing = host.replace(naming(id));
-      await gate.reached;
-      // The write and the delete now race for the one write queue.
-      gate.release();
+      // Both start together, one delayed by `attempt` ms: the delete on even
+      // attempts, the replacement on odd ones, so that both orders occur.
       const [replaced, deleted] = await Promise.all([
-        replacing,
-        host.remove(id),
+        delay(attempt % 2 === 1 ? attempt : 0).then(() =>
+          host.replace(naming(id, catalogToken, host.catalog)),
+        ),
+        delay(attempt % 2 === 0 ? attempt : 0).then(() => host.remove(id)),
       ]);
 
       assert.ok(
-        (replaced === 'replaced' && deleted === 'referenced') ||
-          (replaced === 'rejected' && deleted === 'deleted'),
-        `replace ${replaced} with delete ${deleted}`,
+        (replaced.status === 'replaced' && deleted === 'referenced') ||
+          (replaced.status === 'invalid' &&
+            replaced.message === invalidMessage &&
+            deleted === 'deleted'),
+        `attempt ${String(attempt)}: replace ${JSON.stringify(replaced)} with delete ${deleted}`,
       );
-
-      const stored = (await host.current()) as {
-        configuration: ConfigInput;
-      };
-      for (const provider of stored.configuration.providers)
-        if (provider.configuration.token !== undefined)
-          assert.ok(host.stored().includes(provider.configuration.token));
-
-      // Leave the next attempt the default configuration.
-      assert.equal(await host.replace(defaultConfig), 'replaced');
+      await assertNamesOnlyStored(host);
     }
   },
-  pendingUntilS62d,
 );
