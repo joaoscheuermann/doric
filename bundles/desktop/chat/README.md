@@ -58,8 +58,9 @@ bundle's complete description.
 | `optional`        | `history.snapshots/v1`, `models/v1`, `comments.added/v1`, `comments.resolved/v1`, `runtime.prompt-finished/v1`, `workspace.hooks/v1`, `settings.models/v1`, `workspace.selection/v1`, `log/v1`, `secrets/v1`                            |
 | `desktopScope`    | `chat.composer/v1`: `projectId`, `threadId`, `promptId`                                                                                                                                                                                 |
 
-The client part requires its own `chat.composer/v1`, which the desktop part
-provides. `comments.added/v1` and `comments.resolved/v1` are event types of the
+The client part calls its own `chat.composer/v1`, which the desktop part
+provides; since slice S62c1 the manifest no longer lists it under `requires`,
+only under `provides` (`chat.composer/v1@1.1.0`). `comments.added/v1` and `comments.resolved/v1` are event types of the
 Thread's log, and `runtime.prompt-finished/v1` is the qualified alias of the
 durable `prompt.finished`; the built-in projection claims all three
 ([`src/client/domain/external-blocks.ts`](src/client/domain/external-blocks.ts),

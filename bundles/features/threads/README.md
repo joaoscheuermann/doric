@@ -28,7 +28,7 @@ describes how bundles are built, loaded and activated.
   `src/contracts/` module; its `package.json` exports only `./package.json`
   ([package.json](package.json)).
 - `requires`:
-  - `tools/v1@^1.2.0`: registers the eight tools ([src/host/index.ts](src/host/index.ts)).
+  - `tools/v1@^1.5.0`: registers the eight tools ([src/host/index.ts](src/host/index.ts)).
   - `runtime.threads/v1@^1.7.0`: every tool's work on the children
     ([src/host/threads.ts](src/host/threads.ts)).
   - `ui/v1@^1.0.0`: defines the two custom elements and creates chat's

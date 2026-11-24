@@ -28,7 +28,8 @@ across bundles.
 | `provides`        | `models.provider/v1@1.4.0`        |
 | `requires`        | `log/v1@^1.0.0`                   |
 
-The manifest has no `optional` contracts and no slots. The bundle has no
+The manifest lists `runtime.attachments/v1` and `secrets/v1` under `optional`
+and has no slots. The bundle has no
 settings, routes, tools, client part or desktop part.
 
 [`package.json`](package.json) names the package `openai` and exports
@@ -66,7 +67,7 @@ reads images through `runtime.attachments/v1`, so the package depends on
 (phase 3, slice S43 of
 [`grpc-processes.md`](../../../docs/designs/grpc-processes.md)).
 
-## Provided contract: `models.provider/v1@1.3.0`
+## Provided contract: `models.provider/v1@1.4.0`
 
 The contract is declared in
 [`packages/bundle/src/contracts/basic/models.ts`](../../../packages/bundle/src/contracts/basic/models.ts)

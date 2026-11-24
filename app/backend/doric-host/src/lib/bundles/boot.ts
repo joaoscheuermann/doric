@@ -94,8 +94,8 @@ const noRequirements: StructuralRequirement = { contracts: [], bundles: [] };
 /** The composition the host boots, with what the startup log says about it. */
 export interface HostComposition {
   /**
-   * What the kernel boots: the composition file, or the object with the chosen
-   * alternatives enabled.
+   * What `startHostPlatform` boots: the composition file, or the object with
+   * the chosen alternatives enabled.
    */
   readonly composition: Composition | { readonly path: string };
   /** The option each alternative takes (`{ sandbox: 'docker' }`). */
@@ -109,8 +109,10 @@ export interface HostComposition {
  * composition boots with each chosen option enabled in place of its default
  * bundle; its overrides still live beside the file. An operator composition
  * is booted as written, and its enabled bundles say which option it uses. A
- * composition that cannot be read is left to the kernel, which refuses it at
- * `bundle_load`.
+ * composition that cannot be read is answered as its path, with no
+ * alternatives and no requirements: `startHostPlatform` reads it again and
+ * rejects with `BundleRecoveryError` (`invalid composition: ...`) before any
+ * bundle process starts.
  */
 export const hostComposition = async (
   variables: Variables,

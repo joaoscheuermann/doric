@@ -205,6 +205,8 @@ The host also leaves when a contract or bundle the composition lists under `requ
 
 The shipped composition requires `runtime/v2`, `executor/v1`, `sandbox/v1`, `models/v1`, `host-config/v1` and the bundle `transport` ([`composition.json`](../../../app/backend/doric-host/composition.json)).
 
+From slice S62c3 of [grpc-processes.md](../../designs/grpc-processes.md) the host boots the platform, and the three paragraphs above describe the kernel path it replaces: `startBundles`, `assertStructural` and `watchStructural` are deleted. `startHostPlatform` ([`boot.ts`](../../../app/backend/doric-host/src/lib/bundles/boot.ts)) logs `Bundle recovery mode` with `reason` (component `startup`) and throws `BundleRecoveryError` before the platform starts when the composition cannot be read or the resolution is in recovery (the core or a chosen foundation provider). The `required` check runs in the platform once the bundle processes started: a missing entry is its `structuralFault` (`structural providers unavailable: <ids>`), and the host logs the same line, shuts the platform down and throws `BundleRecoveryError`. After boot, the quarantine of a required bundle ends the host through the platform's `exit` ([`platform/index.ts`](../../../packages/bundle/src/platform/index.ts)).
+
 On the desktop, the splash shows the recovery, core-failure or bundle-failure state with the reasons and waits for an action, such as disabling a bundle, returning to the default composition or using the last good core; this is described in [Splash and recovery](splash-and-recovery.md).
 
 ## `doric.catalog/v1` and `doric.diagnostics/v1`

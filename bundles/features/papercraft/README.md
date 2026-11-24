@@ -28,22 +28,22 @@ bundles are built and loaded is described in
 [`manifest.json`](manifest.json) declares:
 
 - `id` `papercraft`, `version` `2.1.2`, `engines.doric` `^1.0.0`.
-- `provides`: `papercraft.programs/v1@1.0.0`, `papercraft.cache/v1@1.0.0`,
-  `papercraft.cwd/v1@1.0.0` (an event), `papercraft.open-canvas/v2@2.0.0`,
+- `provides`: `papercraft.programs/v1@1.1.0`, `papercraft.cache/v1@1.0.0`,
+  `papercraft.cwd/v1@1.1.0` (an event), `papercraft.open-canvas/v2@2.0.0`,
   `papercraft.snapshot/v1@1.0.0`, and the client commands
   `papercraft.select/v1`, `papercraft.comment/v1`, `papercraft.pan/v1`,
   `papercraft.isolate/v1`, `papercraft.show-all/v1`, `papercraft.zoom-out/v1`,
   `papercraft.zoom-reset/v1`, `papercraft.zoom-in/v1`, `papercraft.zoom-fit/v1`,
   `papercraft.select-revision/v1` and `papercraft.send/v1`, each `@1.0.0`.
-- `requires`: `files/v1@^1.1.0`, `runtime.lease/v1@^1.1.0`,
-  `comments/v1@^1.0.0`, `ui/v1@^1.0.0`, `navigation/v1@^1.0.0`,
-  `commands/v1@^1.0.0`, `menus/v1@^1.0.0`, `hooks/v1@^1.0.0`,
+- `requires`: `files/v1@^1.4.0`, `runtime.lease/v1@^1.4.0`,
+  `comments/v1@^1.1.0`, `ui/v1@^1.0.0`, `navigation/v1@^1.0.0`,
+  `commands/v1@^1.0.0`, `menus/v1@^1.0.0`, `hooks/v1@^1.1.0`,
   `windows/v1@^1.0.0`, `openui.programs/v1@^1.0.0`, `chat.views/v1@^1.1.0`,
-  `runtime.threads/v1@^1.5.0`, `runtime.hooks/v1@^1.2.0`, `skills/v1@^1.1.0`
-  and `events/v1@^1.0.0`.
-- `optional`: `chat.composer/v1`, `chat.send/v1`, and the events
+  `runtime.threads/v1@^1.8.0`, `runtime.hooks/v1@^1.2.0`, `skills/v1@^1.2.0`
+  and `events/v1@^1.1.0`.
+- `optional`: `chat.composer/v1`, `chat.send/v1`, the events
   `comments.added/v1` and `comments.resolved/v1`, which the client reads off a
-  Thread's log.
+  Thread's log, `log/v1` and `secrets/v1`.
 - `desktopScope`: `papercraft.programs/v1` and `papercraft.cache/v1` are called
   from a window with the keys `projectId` and `threadId`.
 

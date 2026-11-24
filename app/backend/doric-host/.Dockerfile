@@ -50,9 +50,11 @@ RUN npm install --global npm@11.13.0
 # Prisma client is generated before compiling, and the Doric entrypoint is
 # placed at the path expected by its package metadata.
 # Nx's `build-bundles` target is the single definition of the bundle build: it
-# builds every project tagged `type:bundle`, then `stage` stages every
+# builds every project tagged `type:bundle`, then `stage --dev` stages every
 # `bundles/<group>/<id>` that holds a manifest into
-# `app/backend/doric-host/dist/bundles/<id>`. The Nx plugins and the task runner
+# `app/backend/doric-host/dist/bundles/<id>`, writing each built host part's
+# `host/command.json` (`node <bundleDir>/dist/host/main.mjs`), the command the
+# platform spawns the bundle's process with. The Nx plugins and the task runner
 # come from the lockfile; `--ignore-scripts` keeps any lifecycle script from
 # running. `NX_DAEMON=false` keeps
 # the build from starting a background daemon and `--skip-nx-cache` forces
@@ -288,7 +290,8 @@ COPY --from=guest-tools /dropbearmulti /opt/doric/firecracker/dropbearmulti
 COPY --from=agent-builder /workspace /workspace
 WORKDIR /workspace
 
-# Express and Socket.IO share Doric's HTTP listener. Binding to all container
+# Doric's public listener serves the platform gateway (gRPC and Connect, the
+# `doric.api.*` contracts) and its HTTP prefixes. Binding to all container
 # interfaces makes the service reachable through Docker networking, while the
 # port remains overridable when Doric runs outside this image.
 ENV DORIC_HOST=0.0.0.0 \

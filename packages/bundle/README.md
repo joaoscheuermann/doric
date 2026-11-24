@@ -1100,7 +1100,7 @@ its record with `{ cardinality: 'many' }`; the providers are
 [`codex`](../../bundles/providers/codex/README.md),
 [`openai`](../../bundles/providers/openai/README.md) and
 [`openrouter`](../../bundles/providers/openrouter/README.md), and each declares
-`models.provider/v1@1.3.0` in its manifest. `core` watches every record and
+`models.provider/v1@1.4.0` in its manifest. `core` watches every record and
 builds `models/v1` over them
 ([core README](../../bundles/foundation/core/README.md#modelsv1)).
 

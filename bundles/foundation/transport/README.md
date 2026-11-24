@@ -33,13 +33,16 @@ bundles is in the feature docs
 - `manifestVersion`: `1`; `id`: `transport`; `version`: `0.0.2`;
   `engines.doric`: `^1.0.0`;
   `description`: "The host REST routes and Socket.IO namespaces."
-- `provides`: none. The bundle defines no contract, slot, tool or hook.
-- `requires`: `hooks/v1@^1.0.0`, `runtime/v2@^2.0.0`,
-  `runtime.threads/v1@^1.7.0`, `runtime.lease/v1@^1.0.0`, `sandbox/v1@^1.0.0`,
-  `tools/v1@^1.0.0`, `models/v1@^1.0.0`, `secrets/v1@^1.0.0` and
+- `provides`: since slice S62c1, the eight public API contracts
+  `api.config/v1`, `api.credentials/v1`, `api.providers/v1`, `api.host/v1`,
+  `api.projects/v1`, `api.threads/v1`, `api.terminals/v1` and
+  `api.status/v1`, each `@1.0.0`. The bundle defines no slot, tool or hook.
+- `requires`: `hooks/v1@^1.1.0`, `runtime/v2@^2.0.0`,
+  `runtime.threads/v1@^1.9.0`, `runtime.lease/v1@^1.5.0`, `sandbox/v1@^1.1.0`,
+  `tools/v1@^1.6.0`, `models/v1@^1.0.0`, `secrets/v1@^1.3.0` and
   `host-config/v1@^1.0.0`.
-- `optional`: `files/v1`, `git.commands/v1`, `usage/v1`, `resources/v1` and
-  `terminal/v1`. These are the feature bundles' contracts: the transport
+- `optional`: `files/v1`, `git.commands/v1`, `usage/v1`, `resources/v1`,
+  `terminal/v1` and `log/v1`. The first five are the feature bundles' contracts: the transport
   activates without them, and a disabled or quarantined feature bundle does
   not take it down; the routes and the socket reads that call one fail while
   it is absent ([Absent provider](#activation-and-mounting)).

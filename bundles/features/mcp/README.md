@@ -29,12 +29,12 @@ How bundles are built, loaded and composed is in
   `^1.0.0`.
 - `description`: `MCP servers per Project: their tools for the Project's
 prompts, with OAuth sign-in for remote servers.`
-- `provides`: `mcp/v1@1.2.0`, `mcp.server/v1@1.1.0`,
-  `default.skill-sources/v1@1.0.0`.
-- `requires`: `tools/v1@^1.3.0`, `storage/v1@^1.1.0`, `secrets/v1@^1.2.0`,
-  `hooks/v1@^1.0.0`, `log/v1@^1.0.0`, `runtime/v2@^2.0.0`,
-  `runtime.hooks/v1@^1.2.0`, `runtime.lease/v1@^1.1.0`,
-  `runtime.attachments/v1@^1.0.0`, `ui/v1@^1.0.0`,
+- `provides`: `mcp/v1@1.3.0`, `mcp.server/v1@1.2.0`,
+  `default.skill-sources/v1@1.1.0`.
+- `requires`: `tools/v1@^1.5.0`, `storage/v1@^1.1.0`, `secrets/v1@^1.3.0`,
+  `hooks/v1@^1.1.0`, `log/v1@^1.0.0`, `runtime/v2@^2.1.0`,
+  `runtime.hooks/v1@^1.3.0`, `runtime.lease/v1@^1.5.0`,
+  `runtime.attachments/v1@^1.1.0`, `ui/v1@^1.0.0`,
   `workspace.selection/v1@^1.0.0`, `layout.stack/v2@^2.0.0`.
 - `optional`: none.
 - `desktopScope`: a desktop call of `mcp/v1` may carry `projectId`,

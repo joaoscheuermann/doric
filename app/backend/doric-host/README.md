@@ -174,7 +174,8 @@ The targets are defined in [`project.json`](project.json):
 - `build` compiles `src/` into `dist/`, after `build-bundles` and the build of
   every project it depends on.
 - `build-bundles` builds every Nx project tagged `type:bundle`, then stages
-  every bundle into `dist/bundles`; it is never cached.
+  every bundle into `dist/bundles` with `stage --dev`, so each staged host
+  part runs from its source tree's `dist/host/main.mjs`; it is never cached.
 - `migrate` runs `prisma migrate deploy` with
   [`prisma.config.ts`](prisma.config.ts), whose schema and migrations are the
   `postgres` bundle's, against `DORIC_DATABASE_URL`, or
@@ -237,19 +238,20 @@ acquisition fail and the Project end `failed` with `sandbox_acquisition_failed`
 
 ## Configuration
 
-HTTP and Socket.IO share one listener, `0.0.0.0:3000` by default. The host
-process reads the listener and log variables ([`src/index.ts`](src/index.ts)),
-the bundle and composition paths, and `DORIC_SANDBOX_PROVIDER`, the variable
-the shipped composition names in `alternatives.sandbox.env`
-([`src/lib/bundles/boot.ts`](src/lib/bundles/boot.ts)). The foundation and
-core bundles, `postgres` and `core` among them, run in the host process and
-read `DORIC_DATABASE_URL`, `DORIC_CREDENTIAL_KEY` and `DORIC_STORAGE_PATH`
-there; the installed bundles, the sandbox providers among them, run in a
-generation process that inherits the host's environment and read the
-`DORIC_SANDBOX_*` variables there
-([`src/lib/bundles/boot.ts`](src/lib/bundles/boot.ts)).
+The public listener, `0.0.0.0:3000` by default, is the platform's gateway
+([`gateway/index.ts`](../../../packages/bundle/src/platform/gateway/index.ts)).
+The host process reads the listener and log variables
+([`src/index.ts`](src/index.ts)), the bundle and composition paths, and
+`DORIC_SANDBOX_PROVIDER`, the variable the shipped composition names in
+`alternatives.sandbox.env`
+([`src/lib/bundles/boot.ts`](src/lib/bundles/boot.ts)). Every host part of
+every bundle, `postgres` and `core` among them, runs in its own process,
+which inherits the host's environment and reads its own variables there
+(`DORIC_DATABASE_URL`, `DORIC_CREDENTIAL_KEY`, `DORIC_STORAGE_PATH`, the
+`DORIC_SANDBOX_*` variables)
+([`platform/index.ts`](../../../packages/bundle/src/platform/index.ts)).
 
-- `DORIC_HOST` (default `0.0.0.0`): address the HTTP/Socket.IO listener binds
+- `DORIC_HOST` (default `0.0.0.0`): address the public listener binds
   ([`src/index.ts`](src/index.ts)).
 - `DORIC_PORT` (default `3000`): port of that listener, parsed with
   `Number.parseInt`, so only the leading digits count (`3000abc` binds
@@ -423,11 +425,8 @@ The host logs through one pino logger: `info` and above to standard output,
 and `debug` and above to `DORIC_LOG_FILE`
 ([Configuration](#configuration), [`src/index.ts`](src/index.ts)). Each line
 names its `component`: `startup` for the host's own startup lines, the lines
-bundles write through `doric.startup/v1` and the `Bundle recovery mode` lines
-of the host's own `required` checks; `platform` for the platform log, among
-them the kernel's `Bundle recovery mode` line; `bundles` for the records
-bundles write
-through `log/v1`; and `bridge` for the [desktop bridge](#the-desktop-bridge)
+bundles write through `doric.startup/v1` and every `Bundle recovery mode`
+line; and `bundles` for the records bundles write through `doric.log/v1`
 ([`src/lib/bundles/boot.ts`](src/lib/bundles/boot.ts)). The fatal line
 `Doric failed to start` carries no component. How the records are written is
 described in
@@ -627,8 +626,9 @@ Desktop (client parts the desktop downloads through the
 
 Startup runs in named stages. The host keeps one current stage, which starts
 as `bootstrap`, and names its own stages; a bundle names the stage of its start
-step through the platform contract `doric.startup/v1`, which only the host
-kernel provides: `stage(name)` sets the current stage, and
+step through the platform contract `doric.startup/v1`, which the platform's router
+serves in the host process
+([`platform/index.ts`](../../../packages/bundle/src/platform/index.ts)): `stage(name)` sets the current stage, and
 `log({ level, fields, message })` writes one line at `level` (`debug`,
 `info`, `warn` or `error`) with component `startup`
 ([`src/index.ts`](src/index.ts)). The contract's full shape and the table of
@@ -645,22 +645,44 @@ In order:
    ([`src/lib/bundles/boot.ts`](src/lib/bundles/boot.ts)). That reads the
    composition with `composition.overrides.json` applied, discovers the
    staged bundles and resolves generation 1. A composition that cannot be
-   read, or that fails the structural check (a `required` contract no
-   bundle serves, or no runtime), logs `Bundle recovery mode` with `reason`
+   read, or a resolution in recovery (a core or chosen foundation provider
+   that cannot activate), logs `Bundle recovery mode` with `reason`
    (component `startup`) and throws `BundleRecoveryError` before the platform
-   starts. Otherwise it indexes the staged `descriptors.binpb` files
-   (`readStagedCatalogIndex`) and starts the platform (`startPlatform`), which
-   spawns each host part as its own process (`node dist/host/main.mjs` of the
-   staged bundle) in activation order; client-only bundles are active and
-   never spawned. Each bundle's `descriptors.binpb` holds only its own
+   starts
+   ([`catalog.ts`](../../../packages/bundle/src/runtime/catalog.ts)). The
+   composition's `required` contracts and bundles are checked only after the
+   bundle processes start (step 3). Otherwise it indexes the staged
+   `descriptors.binpb` files (`readStagedCatalogIndex`) and starts the
+   platform (`startPlatform`), which spawns each host part as its own process
+   in activation order: the command of the staged bundle's
+   `host/command.json` when it has one, else its `host/doric-<bundleId>`
+   executable
+   ([`staged.ts`](../../../packages/bundle/src/platform/staged.ts)). `build-bundles` stages with `--dev`, which writes a
+   `command.json` pointing at the source tree's
+   `<bundleDir>/dist/host/main.mjs`
+   ([`cli.ts`](../../../packages/bundle/src/build/cli.ts)). Client-only
+   bundles are active and never spawned. Each bundle's `descriptors.binpb` holds only its own
    protos, so the boot merges the generated files of the 12 basic host
    contracts from `bundle/contracts/gen` into the index (`withBasicContracts`;
    the staged descriptors win where both hold a file).
-3. The bundles' start steps run one after another, in activation order, the
-   order of the composition's `enabled` list after the foundation and the
-   core. A step that names a stage runs in
-   it; one that names none runs in the stage the previous step left. With the
-   shipped composition:
+3. Once the boot settled, the platform checks the composition's `required`
+   contracts and bundles: one with no active provider (a missing runtime
+   among them, since `runtime/v2` is required) sets `structuralFault`, and
+   the host logs `Bundle recovery mode` with `reason` (component `startup`),
+   shuts the platform down and throws `BundleRecoveryError`, so startup fails
+   at the stage last set. Only when nothing is missing and a
+   `storage.backend/v1` provider is active does the platform enter
+   `database_client` and read the storage identity
+   ([`platform/index.ts`](../../../packages/bundle/src/platform/index.ts)).
+4. Before the public listener binds (the platform's `beforeListen` step),
+   the host logs `Bundles loaded` with `bundleCount` (the catalog's active
+   entries), `skillCount` (`skills/v1.List`) and `toolCount`
+   (`tools/v1.List`), both called as `doric`, then runs `onHostStartHook`
+   of `doric.app.hooks/v1`: the bundles' start steps, one after another in
+   activation order, the order of the composition's `enabled` list after the
+   foundation and the core. A step that names a stage runs in it; one that
+   names none runs in the stage the previous step left. With the shipped
+   composition:
    - `database_client`: the `core` bundle's start step connects
      `storage.backend/v1`, and the `postgres` bundle creates its client there,
      so an empty or missing `DORIC_DATABASE_URL` fails here. It logs
@@ -681,9 +703,9 @@ In order:
      `executionModel` and `maxTurns`
      ([`host-config/src/host/configuration.ts`](../../../bundles/foundation/host-config/src/host/configuration.ts)).
    - `transport` names no stage, so its step runs in
-     `configuration_activation`: it logs `Network interfaces configured` with
-     `socketNamespaces: ['/status', '/projects', '/threads']`
-     ([`transport/src/kernel.ts`](../../../bundles/foundation/transport/src/kernel.ts)).
+     `configuration_activation`: its process service logs
+     `Network interfaces configured` with `apiServices`
+     ([`transport/src/host/process/service.ts`](../../../bundles/foundation/transport/src/host/process/service.ts)).
    - `sandbox_pool`: the sandbox provider logs `Configuring sandbox pool` with
      `sandboxProviderName`, then `Sandbox pool configured` with
      `sandboxProviderName`, `sandboxImage`, `sandboxResources`, `minIdle`,
@@ -700,20 +722,12 @@ In order:
      ([Host restarts](#host-restarts),
      [`runtime/src/host/lifecycle.ts`](../../../bundles/runtime/runtime/src/host/lifecycle.ts)).
 
-   After the start steps the platform reads the storage identity; a failure
-   there is reported at the last bundle's stage.
-
-4. Before the public listener binds (the platform's `beforeListen` step),
-   the host logs `Bundles loaded` with `bundleCount` (the catalog's active
-   entries), `skillCount` (`skills/v1.List`) and `toolCount`
-   (`tools/v1.List`), both called as `doric`, and runs `onHostStartHook`. At
-   the end of that step it enters `network_binding` and logs
+   At the end of `beforeListen` the host enters `network_binding` and logs
    `Binding HTTP listener` with `address` (`DORIC_HOST:DORIC_PORT`, an IPv6
-   host in brackets); the platform then binds the public listener.
-5. A structural provider that is not active once the platform has started
-   logs `Bundle recovery mode` with `reason`, shuts the platform down and
-   throws `BundleRecoveryError`.
-6. `hostReady` runs `onHostReadyHook` as `doric`; a failure is logged at
+   host in brackets); the platform then binds the public listener, so a
+   bind failure fails at `network_binding`.
+
+5. `hostReady` runs `onHostReadyHook` as `doric`; a failure is logged at
    `warn` as `onHostReadyHook failed` with `code` and `reason`, and startup
    goes on. The host then logs `Doric listening` with `host`, `port`
    (`platform.publicPort`, the bound port, so `DORIC_PORT=0` logs the port
@@ -727,8 +741,9 @@ own lines.
 A failure in any stage logs `Doric failed to start` at level `fatal` with only
 the `stage` field, and the process exits with code 1
 ([`src/index.ts`](src/index.ts)). The error itself is not logged: a start step
-that throws makes `platform.start()` reject without a log line
-([`kernel.ts`](../../../packages/bundle/src/process/kernel.ts)), and a
+that throws makes `onHostStartHook`, and so `startHostPlatform`, reject
+without a log line after the platform shut down what started
+([`src/lib/bundles/boot.ts`](src/lib/bundles/boot.ts)), and a
 `network_binding` failure, such as a port in use, is not logged either. The
 last line before `Doric failed to start` shows how far startup got, for
 instance `Initializing PostgreSQL client` with no
@@ -750,14 +765,14 @@ in a `Bundle recovery mode` line.
   [splash-and-recovery.md](../../../docs/architecture/bundles/splash-and-recovery.md)).
 - A core that cannot activate, or a composition whose `required` contracts or
   bundles are not all active, puts the host in **recovery mode**. The host has
-  no recovery surface of its own. When the core cannot activate, the kernel
-  logs `Bundle recovery mode` through the platform log (component `platform`)
-  with `reason` and `bundles`, each with its `id`, `state` and `reasons`
-  ([`kernel.ts`](../../../packages/bundle/src/process/kernel.ts)). When a
-  `required` entry is not active, the host logs `Bundle recovery mode` with
-  `reason` (component `startup`). In both cases the host stops the platform,
-  and startup fails at the `bundle_load` stage
-  ([`src/lib/bundles/boot.ts`](src/lib/bundles/boot.ts)). A quarantined
+  no recovery surface of its own; in every case it logs `Bundle recovery mode`
+  with `reason` (component `startup`) and throws `BundleRecoveryError`. When
+  the resolution is in recovery (the core cannot activate), this happens
+  before the platform starts, at `bundle_load`. When a `required` entry is
+  not active once the bundle processes started (`structuralFault`), the host
+  first shuts the platform down, and startup fails at the stage last set
+  ([`src/lib/bundles/boot.ts`](src/lib/bundles/boot.ts),
+  [`platform/index.ts`](../../../packages/bundle/src/platform/index.ts)). A quarantined
   sandbox provider, for instance after an invalid `DORIC_SANDBOX_CPUS`, leaves
   `sandbox/v1` without a provider and so takes this path.
 - A required provider lost after boot, when a generation becomes active
@@ -2827,10 +2842,10 @@ plugin of [`nx.json`](../../../nx.json).
 | ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `npx nx run doric-host:build`                    | Builds every project the host depends on, runs `build-bundles`, then compiles `src/` with `tsc` into `dist/`; a type error fails it.                             |
 | `npx nx run doric-host:typecheck`                | Runs `tsc --build tsconfig.json --emitDeclarationOnly` after `build` and every dependency's `typecheck`; checks `src/` only.                                     |
-| `npx nx run doric-host:build-bundles`            | Builds every Nx project tagged `type:bundle` and stages every bundle into `dist/bundles`; never cached.                                                          |
+| `npx nx run doric-host:build-bundles`            | Builds every Nx project tagged `type:bundle` and stages every bundle into `dist/bundles` with `stage --dev`; never cached.                                       |
 | `npx nx run doric-host:test`                     | Builds the host, compiles `src/` and `tests/` into `dist-tests/` (`tsconfig.spec.json`), and runs `dist-tests/tests/*.test.js` with `node --test`; never cached. |
 | `npx nx run doric-host:migrate`                  | Applies the pending migrations to `DORIC_DATABASE_URL` ([Database](#database)); it checks nothing else.                                                          |
-| `npx nx run doric-host-e2e:e2e`                  | Builds the host and runs the full host workflow against a disposable database and Docker sandbox, scripting only the external LLM.                               |
+| `npx nx run doric-host-e2e:e2e`                  | Runs the host workflow on a disposable database and Docker sandbox; cannot pass since S62c3 (it drives Socket.IO and REST) until S62d moves it to `doric.api.*`. |
 | `npx nx run agent:test`                          | The reusable agent loop the host depends on.                                                                                                                     |
 | `node --test scripts/tests/spawn-agent.test.mjs` | The [command-line client](#command-line-client).                                                                                                                 |
 
@@ -2849,9 +2864,10 @@ PostgreSQL server whose role may create databases and schemas: each case
 creates its own and drops it afterwards
 ([`helpers/host.ts`](tests/helpers/host.ts),
 [`helpers/persistence-fixture.ts`](tests/helpers/persistence-fixture.ts)).
-The cases that boot the platform (`bundles`, `config-settings-migration`,
+The cases that boot the platform (`config-settings-migration`,
 `credential-adapter`, `persistence` and `reference-race`) go through
-[`helpers/platform.ts`](tests/helpers/platform.ts), which boots it as the host
+[`helpers/platform.ts`](tests/helpers/platform.ts) (`bundles` imports only
+its `credentialKey`), which boots it as the host
 does (`startHostPlatform`, over the staged `postgres`, `core`, `host-config`
 and the `openai`, `openrouter`, `codex` and `claude` model providers), checks
 that no kernel runner is left and that the public listener answers, and reads

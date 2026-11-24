@@ -69,18 +69,18 @@ feature docs, which state each contract at the level the feature needs:
 
 | Contract                            | Kind    | Host | desktopMain | Window client |
 | ----------------------------------- | ------- | :--: | :---------: | :-----------: |
-| `hooks/v1@1.0.0`                    | service |  ✓   |      ✓      |       ✓       |
-| `log/v1@1.0.0`                      | service |  ✓   |      ✓      |       ✓       |
-| `tools/v1@1.4.0`                    | service |  ✓   |             |               |
-| `skills/v1@1.1.0`                   | service |  ✓   |             |               |
-| `settings/v1@1.0.0`                 | service |  ✓   |      ✓      |               |
-| `secrets/v1@1.2.0`                  | service |  ✓   |             |               |
+| `hooks/v1@1.1.0`                    | service |  ✓   |      ✓      |       ✓       |
+| `log/v1@1.1.0`                      | service |  ✓   |      ✓      |       ✓       |
+| `tools/v1@1.6.0`                    | service |  ✓   |             |               |
+| `skills/v1@1.2.0`                   | service |  ✓   |             |               |
+| `settings/v1@1.1.0`                 | service |  ✓   |      ✓      |               |
+| `secrets/v1@1.3.0`                  | service |  ✓   |             |               |
 | `storage/v1@1.1.0`                  | service |  ✓   |             |               |
-| `events/v1@1.0.0`                   | service |  ✓   |             |               |
-| `models/v1@1.4.0`                   | service |  ✓   |             |               |
-| `core.settings/v1@1.0.0`            | storage |  ✓   |             |               |
-| `core.settings-generation/v1@1.0.0` | storage |  ✓   |             |               |
-| `core.event-hooks/v1@1.0.0`         | hooks   |  ✓   |             |               |
+| `events/v1@1.1.0`                   | service |  ✓   |             |               |
+| `models/v1@1.5.0`                   | service |  ✓   |             |               |
+| `core.settings/v1@1.1.0`            | storage |  ✓   |             |               |
+| `core.settings-generation/v1@1.1.0` | storage |  ✓   |             |               |
+| `core.event-hooks/v1@1.1.0`         | hooks   |  ✓   |             |               |
 | `commands/v1@1.0.0`                 | service |      |      ✓      |       ✓       |
 | `core.commands/v1@1.0.0`            | service |      |      ✓      |               |
 | `windows/v1@1.1.0`                  | service |      |      ✓      |               |
@@ -214,8 +214,8 @@ the core implements that specification.
 Every contract above that the core also provides is reached through
 `services.use`, so the core uses whichever provider the composition chose.
 The runtime lets the core use any basic contract without listing it under
-`requires`, which is why `models.provider/v1` and the core's own contracts are
-not listed ([`services.ts`](../../../packages/bundle/src/runtime/services.ts)).
+`requires`, which is why the core's own contracts are not listed;
+`models.provider/v1` is listed under `optional` since slice S62c1 ([`services.ts`](../../../packages/bundle/src/runtime/services.ts)).
 A `doric.*` contract is never listed by any bundle. The `doric.*` contracts are
 declared in [`platform.ts`](../../../packages/bundle/src/contracts/platform.ts).
 

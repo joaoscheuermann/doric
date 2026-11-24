@@ -249,10 +249,10 @@ Phase 1 adds:
 ### Phase 2: the process model
 
 Phase 2 of the spec (slices S12–S28) builds the process model in
-`packages/bundle`. No shipped bundle runs on it yet: the host still runs
-today's kernel and generation process, and the platform below runs in the
+`packages/bundle`. In phase 2 no shipped bundle ran on it: the host still ran
+the kernel and generation process, and the platform below ran in the
 platform tests, the conformance suite and RK4's benchmark, with fixture
-bundles. Its code is built and it is finished: RK4's numbers fail its rule, and the owner accepted them (AC2.2, A68; see [RK4](#rk4-provisional)).
+bundles; the host boots it since S62c3 (below). Its code is built and it is finished: RK4's numbers fail its rule, and the owner accepted them (AC2.2, A68; see [RK4](#rk4-provisional)).
 
 Contracts, manifests and the build (slices S12–S17):
 
@@ -332,8 +332,10 @@ The platform, the SDK and CI (slices S18–S28):
   serve answers `UNIMPLEMENTED`, `unknown_contract`, and any other path 404
   (`handler.ts`). A
   `doric-client-part` naming a bundle that is not scheduled answers
-  `undeclared_requirement`. A failed bind of the public listener fails the boot
-  at the stage `public_binding`. The catalog index is fixed for the platform's
+  `undeclared_requirement`. A failed bind of the public listener rejects with
+  `PublicListenerBindingError` (`stage: 'public_binding'`); since S62c3 the
+  host enters `network_binding` before the bind and logs that stage on
+  failure (Q13). The catalog index is fixed for the platform's
   life (phase 3 revisits it): a publish changes the served methods only among
   those the index holds.
   Since S62c2 the gateway serves, each path once, the public methods
@@ -589,8 +591,8 @@ are redacted with `secrets/v1.WatchRedactions`' list. `Stop` sends what is left
 `SIGTERM` and `SIGINT` handlers (signals flush and re-raise).
 `BundleDefinition.logSink` lets core write in process (`core.logSink`);
 `StartBundleOptions.logTimings` and `logOutput` serve tests. Bundles that do not
-declare `log/v1` or `secrets/v1` log to stdout until S62 adds both as optional
-to every host part.
+declare `log/v1` or `secrets/v1` log to stdout; since S62c1 every host part
+lists both as optional.
 
 From S43 the host parts serve their contracts beside their kernel entries (see
 [Evolution](#evolution) for each slice); the parts the executor path uses
@@ -634,8 +636,8 @@ and call: `transport` provides the eight `api.*/v1@1.0.0`, `runtime` provides
 `terminal` requires `runtime.lease/v1`. Every `provides` entry of a host
 contract carries its `.proto` header's version, which the repository test
 `tests/provide-versions.test.mjs` (in `npm run lint:test`) checks; client
-contracts and headers that say "until phase 4" are not checked. The host still
-boots the kernel.
+contracts and headers that say "until phase 4" are not checked. In S62c1 the
+host still booted the kernel; S62c3 switched it to the platform (below).
 
 `runtime.threads/v1.ThreadEvents` (proto 1.10.0, since S62b3) answers the
 longest prefix of the events after the cursor whose answer encodes below
@@ -677,11 +679,15 @@ sets the `network_binding` stage and logs `Binding HTTP listener`
 `{address}`; `beforeStop` runs `onHostStopHook`. `hostReady` runs
 `onHostReadyHook` and logs a failure at `warn`; the host then logs
 `Doric listening` with `port: platform.publicPort`. SIGINT and SIGTERM run
-`platform.shutdown()`, then exit 0. A composition that cannot be read or fails
-the structural check (an unserved `required` contract, or no runtime) logs
-`Bundle recovery mode` and throws `BundleRecoveryError` before the platform
-starts; a structural fault after the start does the same after
-`platform.shutdown()`. A bundle process's lines reach the host log through
+`platform.shutdown()`, then exit 0. A composition that cannot be read, or a
+resolution in recovery (the catalog's core or chosen foundation provider
+unavailable), logs `Bundle recovery mode` and throws `BundleRecoveryError`
+before the platform starts. The `required` contracts and bundles, a missing
+runtime among them, are checked only once the bundle processes started: a
+missing one is the platform's `structuralFault`, and the host does the same
+after `platform.shutdown()`, failing at the stage last set. Only when nothing
+is missing does the platform enter `database_client` and read the storage
+identity, before `beforeListen`. A bundle process's lines reach the host log through
 `log/v1` (component `bundles`) and are not ordered against the host's own
 lines. `project.json` stages with `stage --dev <dir> --all bundles`,
 `composition.json` has no `resident` list, and `compose.yaml` gives
@@ -1487,9 +1493,10 @@ whenever its result is `failed`.
   is left and that the public listener answers, and reads credentials and
   configuration over `secrets/v1` and `settings/v1` with `host-config/testing`;
   each platform fixture gets a fresh database (`databaseFixture`).
-  `host-config`'s `unpackConfiguration` drops the implicit empty `models` and
-  `reasonings` lists of provider kinds that keep none, so a stored `codex`
-  provider no longer breaks the boot; `packConfiguration` and
+  `host-config`'s `unpackConfiguration` drops any `models` or `reasonings`
+  list, empty or not, that the provider's kind does not keep (an unknown
+  kind keeps its lists), so a stored `codex` provider no longer breaks the
+  boot; `packConfiguration` and
   `unpackConfiguration` are exported from `host-config/testing`. Decisions:
   four `reference-race` cases stay `todo` until S62d, since `settings/v1` does
   no reference check and `host-config` refuses through its in-flight

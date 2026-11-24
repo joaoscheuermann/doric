@@ -31,6 +31,8 @@ The core's `tools/v1` and `skills/v1` keep each registration with its generation
 
 ### The host process
 
+From slice S62c3 of [grpc-processes.md](../../designs/grpc-processes.md) the host boots the platform, and the steps below describe the kernel path it replaces: every host part runs in its own process, the host creates no Express app, Socket.IO server or desktop bridge, the platform's gateway binds the public listener, and `required` is checked by the platform after the bundle processes start. The current order is in the host README's [Startup and failures](../../../app/backend/doric-host/README.md#startup-and-failures).
+
 The host's entry point is the kernel's owner ([`index.ts`](../../../app/backend/doric-host/src/index.ts), [`boot.ts`](../../../app/backend/doric-host/src/lib/bundles/boot.ts)). In order, it:
 
 1. reads `DORIC_BUNDLES_PATH` and `DORIC_COMPOSITION`, or else the staged bundles and the shipped composition, and applies the composition's alternatives: without `DORIC_COMPOSITION`, each alternative takes the option its variable chooses (`DORIC_SANDBOX_PROVIDER` for `sandbox`), and an operator composition boots as written;

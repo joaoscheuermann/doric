@@ -2,6 +2,13 @@
 
 - Status: `implemented`
 
+> **Branch `feat/grpc-processes`, from slice S62c3.** The host no longer
+> serves an Express app, Socket.IO or the desktop bridge `/doric/bridge`; the
+> public API is `doric.api.*` on the platform's gateway
+> ([grpc-processes.md](../designs/grpc-processes.md), section 12). This doc
+> still describes the REST and Socket.IO API the branch replaces; its rewrite
+> belongs to phase 8 and group F of that spec.
+
 ## Problem
 
 Clients other than the desktop need to drive a Doric host over the network: create Projects and Threads, send prompts, read a Project's workspace, open terminals, edit the configuration and the credentials, and follow a Thread's events live. They need one stable surface for that, which the host serves on its own listener and which keeps answering the same way when the bundles behind it change. The full route and event reference is in the host's README, under [REST API](../../app/backend/doric-host/README.md#rest-api) and [Socket.IO](../../app/backend/doric-host/README.md#socketio); this document describes how the API works across the bundles that serve it.

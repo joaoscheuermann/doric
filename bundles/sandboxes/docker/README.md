@@ -29,7 +29,8 @@ complete description.
 | `provides`        | `sandbox/v1@1.1.0`                                                                        |
 | `requires`        | `hooks/v1@^1.1.0`, `log/v1@^1.0.0`                                                        |
 
-The bundle has no `optional` contracts, slots, settings, tools, routes,
+The manifest lists `secrets/v1` under `optional`. The bundle has no slots,
+settings, tools, routes,
 elements, storage types or `desktopScope`. Its package
 ([`package.json`](package.json)) is `docker`, private, and exports only
 `./package.json`: the bundle has no contracts module of its own, because

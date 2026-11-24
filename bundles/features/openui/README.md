@@ -26,12 +26,12 @@ loaded is described in [`packages/bundle`](../../../packages/bundle/README.md).
 [`manifest.json`](manifest.json) declares:
 
 - `id` `openui`, `version` `2.3.4`, `engines.doric` `^1.0.0`.
-- `provides`: `openui.programs/v1@1.0.0`, `openui.questions/v1@1.0.0` and the
-  event `openui.answered/v1@1.0.0`.
+- `provides`: `openui.programs/v1@1.1.0`, `openui.questions/v1@1.1.0` and the
+  event `openui.answered/v1@1.1.0`.
 - `requires`: `chat.views/v1@^1.1.0`, `chat.send/v1@^1.1.0`,
-  `runtime.threads/v1@^1.8.0`, `runtime.hooks/v1@^1.2.0`, `hooks/v1@^1.0.0`,
-  `events/v1@^1.0.0`, `skills/v1@^1.1.0` and `ui/v1@^1.0.0`.
-- `optional`: `chat.hooks/v2`.
+  `runtime.threads/v1@^1.8.0`, `runtime.hooks/v1@^1.2.0`, `hooks/v1@^1.1.0`,
+  `events/v1@^1.1.0`, `skills/v1@^1.2.0` and `ui/v1@^1.0.0`.
+- `optional`: `chat.hooks/v2`, `log/v1` and `secrets/v1`.
 - `desktopScope`: `openui.programs/v1` and `openui.questions/v1` are called
   from a window with the keys `projectId` and `threadId`.
 

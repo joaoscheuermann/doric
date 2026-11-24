@@ -22,7 +22,7 @@ The manifest of the `git` bundle ([`manifest.json`](../../../bundles/features/gi
   },
   "description": "Git repository management capabilities for the Doric agent.",
   "provides": [
-    "git.commands/v1@1.1.0",
+    "git.commands/v1@1.2.0",
     "git.changes/v1@1.0.0",
     "git.open-comparison/v1@1.0.0",
     "files.decorations/v1@1.0.0"
@@ -79,7 +79,7 @@ A contract id is lowercase segments separated by `.`, the first starting with a 
 
 ### Versions and ranges
 
-An entry of `provides` carries the exact version the bundle provides (`git.commands/v1@1.1.0`); its major must equal the `/v<major>` of the id. An entry of `requires` carries a range (`runtime.lease/v1@^1.1.0`) that must admit exactly one major, the one of the id. `^1.2.0`, `~1.2.0`, `>=1.2.0 <2.0.0` and `1.2.0` qualify for a `/v1` id; `>=1.0.0`, `*` and `^1.0.0 || ^2.0.0` do not, because they admit no major or several. The ranges accept the operators `^`, `~`, `>=`, `<=`, `>`, `<` and `=`, a bare version, `*`, `x` and `X`, joined by spaces and by `||` ([`semver.ts`](../../../packages/bundle/src/runtime/semver.ts), [`manifest.ts`](../../../packages/bundle/src/runtime/manifest.ts)). An entry of `optional` carries no version: it is the bare contract id. How a contract takes a patch, a minor or a major is in [Versioning](versioning.md).
+An entry of `provides` carries the exact version the bundle provides (`git.commands/v1@1.2.0`); its major must equal the `/v<major>` of the id. An entry of `requires` carries a range (`runtime.lease/v1@^1.1.0`) that must admit exactly one major, the one of the id. `^1.2.0`, `~1.2.0`, `>=1.2.0 <2.0.0` and `1.2.0` qualify for a `/v1` id; `>=1.0.0`, `*` and `^1.0.0 || ^2.0.0` do not, because they admit no major or several. The ranges accept the operators `^`, `~`, `>=`, `<=`, `>`, `<` and `=`, a bare version, `*`, `x` and `X`, joined by spaces and by `||` ([`semver.ts`](../../../packages/bundle/src/runtime/semver.ts), [`manifest.ts`](../../../packages/bundle/src/runtime/manifest.ts)). An entry of `optional` carries no version: it is the bare contract id. How a contract takes a patch, a minor or a major is in [Versioning](versioning.md).
 
 ### `provides` and the descriptor
 
