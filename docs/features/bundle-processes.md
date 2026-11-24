@@ -1520,3 +1520,13 @@ whenever its result is `failed`.
   flight answers `referenced` and the replacement is stored, a replacement
   after the delete answers `invalid` (Q3); no code for the remaining kernel
   users, which leave with S67, group F, phase 4 or group E (Q1).
+- 2026-11-24: phase 3, slice S62d2, of
+  [`docs/designs/grpc-processes.md`](../designs/grpc-processes.md) (version
+  6.35): `doric-host-e2e` drives the host over `doric.api.*` with Connect JSON
+  requests, in three cases: the T3.1 flow, the T3.1 refusals and AC3.5. The
+  46 unary refusals answer HTTP 400 `invalid_argument` with their reason;
+  `ProjectsService/ReadFile` and the two `Watch` streams answer the refusal in
+  the Connect end message with HTTP 200. `socket.io-client` leaves
+  `doric-host-e2e`'s `package.json`, and `tests/helpers/socket-inbox.ts` is
+  deleted. Decisions: one `package-lock.json` line, made by this slice only
+  (Q4); AC3.5 does not assert the pause reason (Q7).

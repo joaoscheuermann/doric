@@ -2838,16 +2838,16 @@ Run each command from the repository root. The host's targets are in
 [`project.json`](project.json), plus `typecheck` from the `@nx/js/typescript`
 plugin of [`nx.json`](../../../nx.json).
 
-| Command                                          | What it does and checks                                                                                                                                          |
-| ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `npx nx run doric-host:build`                    | Builds every project the host depends on, runs `build-bundles`, then compiles `src/` with `tsc` into `dist/`; a type error fails it.                             |
-| `npx nx run doric-host:typecheck`                | Runs `tsc --build tsconfig.json --emitDeclarationOnly` after `build` and every dependency's `typecheck`; checks `src/` only.                                     |
-| `npx nx run doric-host:build-bundles`            | Builds every Nx project tagged `type:bundle` and stages every bundle into `dist/bundles` with `stage --dev`; never cached.                                       |
-| `npx nx run doric-host:test`                     | Builds the host, compiles `src/` and `tests/` into `dist-tests/` (`tsconfig.spec.json`), and runs `dist-tests/tests/*.test.js` with `node --test`; never cached. |
-| `npx nx run doric-host:migrate`                  | Applies the pending migrations to `DORIC_DATABASE_URL` ([Database](#database)); it checks nothing else.                                                          |
-| `npx nx run doric-host-e2e:e2e`                  | Runs the host workflow on a disposable database and Docker sandbox; cannot pass since S62c3 (it drives Socket.IO and REST) until S62d moves it to `doric.api.*`. |
-| `npx nx run agent:test`                          | The reusable agent loop the host depends on.                                                                                                                     |
-| `node --test scripts/tests/spawn-agent.test.mjs` | The [command-line client](#command-line-client).                                                                                                                 |
+| Command                                          | What it does and checks                                                                                                                                                                                                           |
+| ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `npx nx run doric-host:build`                    | Builds every project the host depends on, runs `build-bundles`, then compiles `src/` with `tsc` into `dist/`; a type error fails it.                                                                                              |
+| `npx nx run doric-host:typecheck`                | Runs `tsc --build tsconfig.json --emitDeclarationOnly` after `build` and every dependency's `typecheck`; checks `src/` only.                                                                                                      |
+| `npx nx run doric-host:build-bundles`            | Builds every Nx project tagged `type:bundle` and stages every bundle into `dist/bundles` with `stage --dev`; never cached.                                                                                                        |
+| `npx nx run doric-host:test`                     | Builds the host, compiles `src/` and `tests/` into `dist-tests/` (`tsconfig.spec.json`), and runs `dist-tests/tests/*.test.js` with `node --test`; never cached.                                                                  |
+| `npx nx run doric-host:migrate`                  | Applies the pending migrations to `DORIC_DATABASE_URL` ([Database](#database)); it checks nothing else.                                                                                                                           |
+| `npx nx run doric-host-e2e:e2e`                  | Runs the host workflow over `doric.api.*` on a disposable database and Docker sandbox; needs `DORIC_TEST_DATABASE_URL` and `DORIC_TEST_SANDBOX=true`, and creates a sandbox container and volume per case that creates a Project. |
+| `npx nx run agent:test`                          | The reusable agent loop the host depends on.                                                                                                                                                                                      |
+| `node --test scripts/tests/spawn-agent.test.mjs` | The [command-line client](#command-line-client).                                                                                                                                                                                  |
 
 `tests/` is type-checked only by `doric-host:test`. It covers
 ([`tests/`](tests)): the boot and stop of the

@@ -8,7 +8,12 @@ import { setTimeout as delay } from 'node:timers/promises';
 
 import pg from 'pg';
 
-import { credentialKey } from './platform.js';
+/**
+ * 32 zero bytes, base64. A fixed test key, never a deployed one. Here rather
+ * than in `platform.ts`, which imports the host's `src`: the e2e compiles
+ * this helper without it.
+ */
+export const credentialKey = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=';
 
 /*
  * The compiled host as an operator runs it: `node app/backend/doric-host/dist/src/index.js`

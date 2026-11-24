@@ -1,11 +1,15 @@
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
-import test from 'node:test';
+import test, { type TestContext } from 'node:test';
 import { setTimeout as delay } from 'node:timers/promises';
 
 import { defaultConfig } from 'host-config/testing';
-import { io } from 'socket.io-client';
 
+import {
+  ApiError,
+  callApi,
+  openStream,
+  reasonOf,
+} from '../../doric-host/tests/helpers/api.js';
 import {
   freshDatabase,
   startHostProcess,
@@ -23,16 +27,21 @@ import {
   secondPrompt,
 } from '../../doric-host/tests/helpers/integration-provider.js';
 import { cleanupStack } from '../../doric-host/tests/helpers/persistence-fixture.js';
-import { inbox } from '../../doric-host/tests/helpers/socket-inbox.js';
+import { bundlePid } from '../../doric-host/tests/helpers/processes.js';
 
-// The full host: the compiled kernel with its staged bundles, the runtime and
-// Direct in the generation process, PostgreSQL and a real Docker sandbox.
-// Only the model endpoint is scripted; tools, storage, the transport and the
-// sandbox are real. Build doric-host first. Ported from the former
-// workspace-integration test (design 57 §13.2).
+// The full host: the compiled platform host with its staged bundles, each a
+// process of its own, PostgreSQL and a real Docker sandbox. Only the model
+// endpoint is scripted; tools, storage, the transport and the sandbox are
+// real. A client reaches the host as any client outside it does: the public
+// `doric.api.*` services, Connect JSON over `fetch` (AC3.2, T3.1). Build
+// doric-host first.
 
 const connectionString = process.env.DORIC_TEST_DATABASE_URL;
 const enabled = connectionString && process.env.DORIC_TEST_SANDBOX === 'true';
+const skip = enabled
+  ? false
+  : 'Requires DORIC_TEST_DATABASE_URL and DORIC_TEST_SANDBOX=true';
+const bundlesPath = 'app/backend/doric-host/dist/bundles';
 
 interface Project {
   readonly id: string;
@@ -41,15 +50,15 @@ interface Project {
 interface Thread {
   readonly id: string;
   readonly state: string;
-  readonly lastSequence: number;
+  readonly lastSequence?: number;
 }
 interface ThreadEvent {
   readonly projectId: string;
   readonly threadId: string;
-  readonly promptId: string;
+  readonly promptId?: string;
   readonly sequence: number;
   readonly type: string;
-  readonly event: unknown;
+  readonly event?: unknown;
 }
 interface Completion {
   readonly status: string;
@@ -61,14 +70,253 @@ interface Completion {
     readonly requestPromptId?: string;
   };
 }
+/** One item of `ProjectsService/Watch`. */
+interface ProjectItem {
+  readonly projectSnapshot?: {
+    readonly project?: Project;
+    readonly threads?: readonly Thread[];
+  };
+  readonly terminalSnapshot?: unknown;
+  readonly projectUpdated?: Project;
+}
+/** One item of `ThreadsService/Watch`. */
+interface ThreadItem {
+  readonly threadSnapshot?: { readonly events?: readonly ThreadEvent[] };
+  readonly agentEvent?: ThreadEvent;
+  readonly threadUpdated?: Thread;
+}
 const completion = (event: ThreadEvent) => event.event as Completion;
+const finishedOf = (item: ThreadItem) =>
+  item.agentEvent?.type === 'prompt.finished' ? item.agentEvent : undefined;
 
-void test('delegates across isolated conversations sharing a real project sandbox and durable API events', {
-  skip: enabled
-    ? false
-    : 'Requires DORIC_TEST_DATABASE_URL and DORIC_TEST_SANDBOX=true',
-  timeout: 300_000,
-}, async (t) => {
+/**
+ * One request per public RPC whose route refuses an invalid input today
+ * (`transport`'s `apiViolations`, its test `router-violations.test.ts`): the
+ * request breaks one protovalidate rule, and the gateway answers HTTP 400,
+ * Connect code `invalid_argument`, with `reason` as its ErrorInfo reason.
+ * Written as literals here, not imported from `transport`.
+ */
+interface InvalidRequest {
+  /** `doric.api.<resource>.v1.<Service>/<Method>`. */
+  readonly procedure: string;
+  readonly request: Record<string, unknown>;
+  readonly reason: string;
+}
+
+/** A well-formed id no record holds: a body rule is the only one broken. */
+const id = '5f0c2d4e-8a1b-4c3d-9e2f-1a2b3c4d5e6f';
+const notId = 'not-a-uuid';
+const config = 'doric.api.config.v1.ConfigService';
+const credentials = 'doric.api.credentials.v1.CredentialsService';
+const providers = 'doric.api.providers.v1.ProvidersService';
+const projects = 'doric.api.projects.v1.ProjectsService';
+const threads = 'doric.api.threads.v1.ThreadsService';
+const terminals = 'doric.api.terminals.v1.TerminalsService';
+
+const invalidRequests: readonly InvalidRequest[] = [
+  { procedure: `${config}/PutConfig`, request: {}, reason: 'invalid_config' },
+  {
+    procedure: `${credentials}/CreateCredential`,
+    request: { kind: 'api_token', name: 'scripted', secret: 'sk' },
+    reason: 'invalid_credential',
+  },
+  {
+    procedure: `${credentials}/UpdateCredential`,
+    request: { credentialId: id, kind: 'api_token' },
+    reason: 'invalid_credential',
+  },
+  {
+    procedure: `${credentials}/DeleteCredential`,
+    request: { credentialId: notId },
+    reason: 'invalid_credential_id',
+  },
+  {
+    procedure: `${providers}/ListModels`,
+    request: { kind: ' ' },
+    reason: 'invalid_provider',
+  },
+  {
+    procedure: `${projects}/CreateProject`,
+    request: { name: '' },
+    reason: 'invalid_project',
+  },
+  {
+    procedure: `${projects}/UpdateProject`,
+    request: { projectId: id, name: '' },
+    reason: 'invalid_project',
+  },
+  {
+    procedure: `${projects}/ListProjects`,
+    request: { limit: 0 },
+    reason: 'invalid_page',
+  },
+  {
+    procedure: `${projects}/ListThreads`,
+    request: { projectId: id, limit: 101 },
+    reason: 'invalid_page',
+  },
+  {
+    procedure: `${projects}/SetProjectColor`,
+    request: { projectId: id, color: 'black' },
+    reason: 'invalid_project_color',
+  },
+  {
+    procedure: `${projects}/CreateThread`,
+    request: { projectId: id, name: '' },
+    reason: 'invalid_thread',
+  },
+  ...['ListFiles', 'GetTree', 'GetDiff', 'ListChanges'].map(
+    (method): InvalidRequest => ({
+      procedure: `${projects}/${method}`,
+      request: { projectId: id, path: 'a\u0000b' },
+      reason: 'invalid_project_path',
+    }),
+  ),
+  {
+    procedure: `${projects}/GetFileDiff`,
+    request: { projectId: id, repository: '', path: '' },
+    reason: 'invalid_project_path',
+  },
+  ...[
+    'GetProject',
+    'GetProjectSsh',
+    'GetProjectResources',
+    'TerminateProject',
+    'DeleteProject',
+  ].map(
+    (method): InvalidRequest => ({
+      procedure: `${projects}/${method}`,
+      request: { projectId: notId },
+      reason: 'invalid_project_id',
+    }),
+  ),
+  {
+    procedure: `${threads}/UpdateThread`,
+    request: { threadId: id },
+    reason: 'invalid_thread',
+  },
+  {
+    procedure: `${threads}/CreateBranch`,
+    request: { threadId: id, branch: '-feature', cwd: '/workspace' },
+    reason: 'invalid_branch',
+  },
+  {
+    procedure: `${threads}/Prompt`,
+    request: { threadId: id, prompt: ' ' },
+    reason: 'invalid_prompt',
+  },
+  {
+    procedure: `${threads}/Steer`,
+    request: { threadId: id, prompt: 'Go on.', promptId: notId },
+    reason: 'invalid_steer',
+  },
+  {
+    procedure: `${threads}/Resume`,
+    request: { threadId: id, promptId: notId },
+    reason: 'invalid_resume',
+  },
+  {
+    procedure: `${threads}/Interrupt`,
+    request: { threadId: id, promptId: notId },
+    reason: 'invalid_interrupt',
+  },
+  {
+    procedure: `${threads}/Rewind`,
+    request: { threadId: id, promptId: id, prompt: ' ' },
+    reason: 'invalid_rewind',
+  },
+  {
+    procedure: `${threads}/ListEvents`,
+    request: { threadId: id, afterSequence: 1.5 },
+    reason: 'invalid_event_cursor',
+  },
+  ...['GetQueuedPrompt', 'DeleteQueuedPrompt'].map(
+    (method): InvalidRequest => ({
+      procedure: `${threads}/${method}`,
+      request: { threadId: id, promptId: notId },
+      reason: 'invalid_prompt',
+    }),
+  ),
+  {
+    procedure: `${threads}/UpdateQueuedPrompt`,
+    request: { threadId: id, promptId: id, text: 'Later.', revision: -1 },
+    reason: 'invalid_prompt',
+  },
+  ...[
+    'GetThread',
+    'GetGit',
+    'ListBranches',
+    'Compact',
+    'GetUsage',
+    'GetQueue',
+    'ResumeQueue',
+    'TerminateThread',
+    'DeleteThread',
+  ].map(
+    (method): InvalidRequest => ({
+      procedure: `${threads}/${method}`,
+      request: { threadId: notId },
+      reason: 'invalid_thread_id',
+    }),
+  ),
+  {
+    procedure: `${threads}/CreateTerminal`,
+    request: { threadId: id, cols: 0 },
+    reason: 'invalid_terminal',
+  },
+  {
+    procedure: `${terminals}/GetTerminal`,
+    request: { terminalId: 'terminal', after: -1 },
+    reason: 'invalid_cursor',
+  },
+  {
+    procedure: `${terminals}/SendInput`,
+    request: { terminalId: 'terminal', data: 'x'.repeat(65_537) },
+    reason: 'invalid_input',
+  },
+  {
+    procedure: `${terminals}/Resize`,
+    request: { terminalId: 'terminal', cols: 0, rows: 24 },
+    reason: 'invalid_size',
+  },
+];
+
+/**
+ * The refusing RPCs that are server streams: Connect answers their refusal in
+ * the stream's end message (HTTP 200), so the same code and reason arrive
+ * there instead of in a 400.
+ */
+const invalidStreams: readonly InvalidRequest[] = [
+  {
+    procedure: `${projects}/ReadFile`,
+    request: { projectId: id, path: 'a\u0000b' },
+    reason: 'invalid_project_path',
+  },
+  {
+    procedure: `${projects}/Watch`,
+    request: { projectId: notId },
+    reason: 'invalid_input',
+  },
+  {
+    procedure: `${threads}/Watch`,
+    request: { threadId: notId },
+    reason: 'invalid_input',
+  },
+];
+
+/** The {@link ApiError} `call` rejects with; fails the test when it answers. */
+const refusal = async (call: Promise<unknown>): Promise<ApiError> => {
+  try {
+    await call;
+  } catch (error) {
+    assert.ok(error instanceof ApiError, String(error));
+    return error;
+  }
+  return assert.fail('the call was answered');
+};
+
+/** A fresh database, the scripted model and the host process on them. */
+const startFixture = async (t: TestContext) => {
   assert.ok(connectionString);
   const cleanup = cleanupStack();
   t.after(() => cleanup.close());
@@ -81,115 +329,134 @@ void test('delegates across isolated conversations sharing a real project sandbo
     { timeoutMs: 120_000 },
   );
   cleanup.defer(host.close);
-
-  const request = async <T>(
-    path: string,
-    method = 'GET',
-    body?: unknown,
-    status = 200,
-  ): Promise<T> => {
-    const response = await host.request(path, method, body);
-    assert.equal(
-      response.status,
-      status,
-      `${method} ${path}: ${await response.clone().text()}`,
+  const api = <T = Record<string, unknown>>(
+    procedure: string,
+    request: unknown = {},
+  ) => callApi<T>(host.url, `doric.api.${procedure}`, request);
+  const watch = async <T>(procedure: string, request: unknown) => {
+    const stream = await openStream<T>(
+      host.url,
+      `doric.api.${procedure}`,
+      request,
     );
-    return status === 204 ? (undefined as T) : ((await response.json()) as T);
+    cleanup.defer(async () => stream.close());
+    return stream;
   };
-  const subscribe = (
-    namespace: string,
-    auth: Record<string, string | number>,
-  ) => {
-    const socket = io(`${host.url}/${namespace}`, {
-      transports: ['websocket'],
-      reconnection: false,
-      autoConnect: false,
-      forceNew: true,
-      auth,
-    });
-    cleanup.defer(async () => socket.close());
-    const notices = inbox(socket);
-    socket.connect();
-    return notices;
+  /** Every event of the Thread after `afterSequence`, following the pages. */
+  const listEvents = async (threadId: string, afterSequence?: number) => {
+    const events: ThreadEvent[] = [];
+    let cursor = afterSequence;
+    for (;;) {
+      const page = await api<{
+        threadEventLog?: { events?: ThreadEvent[] };
+        nextAfterSequence?: number;
+      }>('threads.v1.ThreadsService/ListEvents', {
+        threadId,
+        ...(cursor === undefined ? {} : { afterSequence: cursor }),
+      });
+      events.push(...(page.threadEventLog?.events ?? []));
+      if (page.nextAfterSequence === undefined) return events;
+      cursor = page.nextAfterSequence;
+    }
   };
 
   // The operator's setup: a credential, then a configuration against the
   // scripted endpoint, whose catalog the replacement reads.
-  const credential = await request<{ id: string }>(
-    '/credentials',
-    'POST',
-    { kind: 'API_TOKEN', name: 'scripted', secret: 'sk-scripted' },
-    201,
-  );
-  await request('/config', 'PUT', {
-    ...defaultConfig,
-    providers: [
-      {
-        id: 'scripted',
-        kind: 'openrouter',
-        configuration: { endpoint: model.endpoint, token: credential.id },
-        models: [{ name: scriptedModel, reasonings: [] }],
+  const configure = async () => {
+    const credential = await api<{ credentialDescription: { id: string } }>(
+      'credentials.v1.CredentialsService/CreateCredential',
+      { kind: 'API_TOKEN', name: 'scripted', secret: 'sk-scripted' },
+    );
+    await api('config.v1.ConfigService/PutConfig', {
+      configuration: {
+        ...defaultConfig,
+        providers: [
+          {
+            id: 'scripted',
+            kind: 'openrouter',
+            configuration: {
+              endpoint: model.endpoint,
+              token: credential.credentialDescription.id,
+            },
+            models: [{ name: scriptedModel, reasonings: [] }],
+          },
+        ],
+        models: {
+          execution: { providerId: 'scripted', model: scriptedModel },
+        },
       },
-    ],
-    models: { execution: { providerId: 'scripted', model: scriptedModel } },
-  });
+    });
+  };
 
-  const project = await request<Project>(
-    '/projects',
-    'POST',
+  return { model, host, api, watch, listEvents, configure };
+};
+
+void test('delegates across isolated conversations sharing a real project sandbox and durable API events', {
+  skip,
+  timeout: 300_000,
+}, async (t) => {
+  const { model, host, api, watch, listEvents, configure } =
+    await startFixture(t);
+  await configure();
+
+  const { project } = await api<{ project: Project }>(
+    'projects.v1.ProjectsService/CreateProject',
     { name: 'Integration project' },
-    202,
   );
-  const projectSocket = subscribe('projects', { projectId: project.id });
-  const snapshot = await projectSocket.wait<{
-    project: Project;
-    threads: Thread[];
-  }>('project:snapshot');
-  assert.deepEqual(snapshot.threads, []);
-  if (snapshot.project.state !== 'ready') {
-    await projectSocket.wait<Project>(
-      'project:updated',
-      (value) => value.state === 'ready',
+  const projectWatch = await watch<ProjectItem>(
+    'projects.v1.ProjectsService/Watch',
+    { projectId: project.id },
+  );
+  const snapshot = (await projectWatch.next()).projectSnapshot;
+  assert.ok(snapshot !== undefined, 'the first item is the projectSnapshot');
+  assert.deepEqual(snapshot.threads ?? [], []);
+  assert.ok(
+    (await projectWatch.next()).terminalSnapshot !== undefined,
+    'the second item is the terminalSnapshot',
+  );
+  if (snapshot.project?.state !== 'ready') {
+    await projectWatch.until(
+      (item) => item.projectUpdated?.state === 'ready',
       180_000,
     );
   }
-  const root = await request<Thread>(
-    `/projects/${project.id}/threads`,
-    'POST',
-    { name: 'Root thread' },
-    201,
+
+  const { thread: root } = await api<{ thread: Thread }>(
+    'projects.v1.ProjectsService/CreateThread',
+    { projectId: project.id, name: 'Root thread' },
   );
-  const rootSocket = subscribe('threads', { threadId: root.id });
-  await rootSocket.wait('thread:snapshot');
-  const prompt = await request<{ promptId: string }>(
-    `/threads/${root.id}/prompt`,
-    'POST',
-    { prompt: parentPrompt },
-    202,
+  const rootWatch = await watch<ThreadItem>('threads.v1.ThreadsService/Watch', {
+    threadId: root.id,
+  });
+  assert.ok((await rootWatch.next()).threadSnapshot !== undefined);
+  const prompt = await api<{ promptId: string }>(
+    'threads.v1.ThreadsService/Prompt',
+    { threadId: root.id, prompt: parentPrompt },
   );
-  const resumed = await rootSocket.wait<ThreadEvent>(
-    'agent:event',
-    (value) =>
-      value.type === 'prompt.finished' &&
-      completion(value).source.kind === 'result',
-    120_000,
+  const resumed = finishedOf(
+    await rootWatch.until((item) => {
+      const finished = finishedOf(item);
+      return (
+        finished !== undefined && completion(finished).source.kind === 'result'
+      );
+    }, 120_000),
   );
+  assert.ok(resumed !== undefined);
   assert.deepEqual(model.failures, []);
   assert.equal(completion(resumed).status, 'completed');
   assert.equal(completion(resumed).text, 'Parent verified the shared file.');
   const source = completion(resumed).source;
   assert.equal(source.requestPromptId, prompt.promptId);
-  const children = await request<{ items: Thread[] }>(
-    `/projects/${project.id}/threads?parentThreadId=${root.id}`,
+  const children = await api<{ threadPage: { items?: Thread[] } }>(
+    'projects.v1.ProjectsService/ListThreads',
+    { projectId: project.id, parentThreadId: root.id },
   );
-  assert.equal(children.items.length, 1);
-  const child = children.items[0];
+  assert.equal(children.threadPage.items?.length, 1);
+  const child = children.threadPage.items?.[0];
   assert.ok(child !== undefined);
   assert.equal(source.threadId, child.id);
-  const childEvents = await request<{ events: ThreadEvent[] }>(
-    `/threads/${child.id}/events`,
-  );
-  const childDone = childEvents.events.find(
+  const childEvents = await listEvents(child.id);
+  const childDone = childEvents.find(
     (value) => value.type === 'prompt.finished',
   );
   assert.ok(childDone);
@@ -200,37 +467,40 @@ void test('delegates across isolated conversations sharing a real project sandbo
     promptId: prompt.promptId,
   });
   assert.equal(completion(childDone).status, 'completed');
-  assert.ok(childEvents.events.some(({ type }) => type === 'tool.finished'));
+  assert.ok(childEvents.some(({ type }) => type === 'tool.finished'));
   // The parent's queue.updated follows prompt.finished, and ready follows it, so
   // this barrier makes the log below complete rather than racing its last event.
-  await rootSocket.wait<Thread>(
-    'thread:updated',
-    (value) => value.state === 'ready' && value.lastSequence > resumed.sequence,
+  await rootWatch.until(
+    ({ threadUpdated }) =>
+      threadUpdated?.state === 'ready' &&
+      (threadUpdated.lastSequence ?? 0) > resumed.sequence,
   );
 
-  // REST, live delivery, and exclusive-cursor reconnect replay describe the same durable records.
-  const rootEvents = await request<{ events: ThreadEvent[] }>(
-    `/threads/${root.id}/events`,
-  );
+  // ListEvents, live delivery, and the exclusive-cursor replay of a new Watch
+  // describe the same durable records.
+  const rootEvents = await listEvents(root.id);
   assert.deepEqual(
-    rootSocket.values<ThreadEvent>('agent:event'),
-    rootEvents.events,
+    rootWatch
+      .items()
+      .flatMap(({ agentEvent }) =>
+        agentEvent === undefined ? [] : [agentEvent],
+      ),
+    rootEvents,
   );
-  const cursor = rootEvents.events[1]?.sequence;
+  const cursor = rootEvents[1]?.sequence;
   assert.ok(cursor !== undefined);
-  const replay = subscribe('threads', {
+  const replay = await watch<ThreadItem>('threads.v1.ThreadsService/Watch', {
     threadId: root.id,
     afterSequence: cursor,
   });
-  const replayed = await replay.wait<{ events: ThreadEvent[] }>(
-    'thread:snapshot',
-  );
-  const restReplay = await request<{ events: ThreadEvent[] }>(
-    `/threads/${root.id}/events?afterSequence=${cursor}`,
-  );
-  assert.deepEqual(replayed.events, restReplay.events);
+  const replayed = (await replay.next()).threadSnapshot;
+  assert.ok(replayed !== undefined, 'the first item is the threadSnapshot');
+  replay.close();
+  const listedReplay = await listEvents(root.id, cursor);
+  assert.deepEqual(replayed.events ?? [], listedReplay);
+  assert.ok(listedReplay.length > 0);
   assert.ok(
-    replayed.events.every(
+    listedReplay.every(
       (value) =>
         value.projectId === project.id &&
         value.threadId === root.id &&
@@ -238,60 +508,63 @@ void test('delegates across isolated conversations sharing a real project sandbo
     ),
   );
 
-  const childSocket = subscribe('threads', { threadId: child.id });
-  await childSocket.wait('thread:snapshot');
-  const human = await request<{ promptId: string }>(
-    `/threads/${child.id}/prompt`,
-    'POST',
-    { prompt: followup },
-    202,
+  const childWatch = await watch<ThreadItem>(
+    'threads.v1.ThreadsService/Watch',
+    {
+      threadId: child.id,
+    },
   );
-  const humanDone = await childSocket.wait<ThreadEvent>(
-    'agent:event',
-    (value) =>
-      value.type === 'prompt.finished' && value.promptId === human.promptId,
+  assert.ok((await childWatch.next()).threadSnapshot !== undefined);
+  const human = await api<{ promptId: string }>(
+    'threads.v1.ThreadsService/Prompt',
+    { threadId: child.id, prompt: followup },
   );
+  const humanDone = finishedOf(
+    await childWatch.until(
+      (item) => finishedOf(item)?.promptId === human.promptId,
+    ),
+  );
+  assert.ok(humanDone !== undefined);
   assert.equal(completion(humanDone).status, 'completed');
   assert.deepEqual(completion(humanDone).source, { kind: 'user' });
   // ready follows result-routing, so this is a barrier rather than a timing-based negative assertion.
-  await childSocket.wait<Thread>(
-    'thread:updated',
-    (value) =>
-      value.state === 'ready' && value.lastSequence >= humanDone.sequence,
+  await childWatch.until(
+    ({ threadUpdated }) =>
+      threadUpdated?.state === 'ready' &&
+      (threadUpdated.lastSequence ?? 0) >= humanDone.sequence,
   );
-  assert.deepEqual(
-    (await request<{ events: ThreadEvent[] }>(`/threads/${root.id}/events`))
-      .events,
-    rootEvents.events,
-  );
+  assert.deepEqual(await listEvents(root.id), rootEvents);
 
-  const sibling = await request<Thread>(
-    `/projects/${project.id}/threads`,
-    'POST',
-    { name: 'Sibling thread' },
-    201,
+  const { thread: sibling } = await api<{ thread: Thread }>(
+    'projects.v1.ProjectsService/CreateThread',
+    { projectId: project.id, name: 'Sibling thread' },
   );
-  const siblingSocket = subscribe('threads', { threadId: sibling.id });
-  await siblingSocket.wait('thread:snapshot');
-  const second = await request<{ promptId: string }>(
-    `/threads/${sibling.id}/prompt`,
-    'POST',
-    { prompt: secondPrompt },
-    202,
+  const siblingWatch = await watch<ThreadItem>(
+    'threads.v1.ThreadsService/Watch',
+    { threadId: sibling.id },
   );
-  const secondDone = await siblingSocket.wait<ThreadEvent>(
-    'agent:event',
-    (value) =>
-      value.type === 'prompt.finished' && value.promptId === second.promptId,
-    120_000,
+  assert.ok((await siblingWatch.next()).threadSnapshot !== undefined);
+  const second = await api<{ promptId: string }>(
+    'threads.v1.ThreadsService/Prompt',
+    { threadId: sibling.id, prompt: secondPrompt },
   );
+  const secondDone = finishedOf(
+    await siblingWatch.until(
+      (item) => finishedOf(item)?.promptId === second.promptId,
+      120_000,
+    ),
+  );
+  assert.ok(secondDone !== undefined);
   assert.equal(completion(secondDone).status, 'completed');
   assert.equal(
     completion(secondDone).text,
     'Independent root verified the shared file.',
   );
   // One sandbox served the Project's three Threads.
-  assert.equal((await request<unknown[]>('/vms')).length, 1);
+  assert.equal(
+    (await api<{ vms?: unknown[] }>('host.v1.HostService/ListVms')).vms?.length,
+    1,
+  );
 
   // Each conversation's model history is its own: what the endpoint saw.
   const seen = (text: string) =>
@@ -317,150 +590,136 @@ void test('delegates across isolated conversations sharing a real project sandbo
   assert.ok(seen(marker).length > 0);
   assert.deepEqual(model.failures, []);
 
-  await request(`/projects/${project.id}/terminate`, 'POST', {});
-  await projectSocket.wait<Project>(
-    'project:updated',
-    (value) => value.state === 'cancelled',
+  await api('projects.v1.ProjectsService/TerminateProject', {
+    projectId: project.id,
+  });
+  await projectWatch.until(
+    ({ projectUpdated }) => projectUpdated?.state === 'cancelled',
     120_000,
   );
   for (const thread of [root, child, sibling]) {
     assert.equal(
-      (await request<Thread>(`/threads/${thread.id}`)).state,
+      (
+        await api<{ thread: Thread }>('threads.v1.ThreadsService/GetThread', {
+          threadId: thread.id,
+        })
+      ).thread.state,
       'cancelled',
     );
   }
-  await request(`/projects/${project.id}`, 'DELETE', undefined, 204);
-  await request(`/projects/${project.id}`, 'GET', undefined, 404);
-  for (const thread of [root, child, sibling])
-    await request(`/threads/${thread.id}`, 'GET', undefined, 404);
+  for (const stream of [projectWatch, rootWatch, childWatch, siblingWatch])
+    stream.close();
+  await api('projects.v1.ProjectsService/DeleteProject', {
+    projectId: project.id,
+  });
+  const gone = await refusal(
+    api('projects.v1.ProjectsService/GetProject', { projectId: project.id }),
+  );
+  assert.equal(gone.status, 404);
+  assert.equal(gone.code, 'not_found');
+  assert.equal(reasonOf(gone), 'project_not_found');
+  for (const thread of [root, child, sibling]) {
+    const missing = await refusal(
+      api('threads.v1.ThreadsService/GetThread', { threadId: thread.id }),
+    );
+    assert.equal(missing.status, 404, thread.id);
+    assert.equal(missing.code, 'not_found', thread.id);
+    assert.equal(reasonOf(missing), 'thread_not_found', thread.id);
+  }
 
   assert.equal(await host.stop(), 0);
 });
 
-/** The generation processes the host forked: its children running the runner. */
-const generationPids = (hostPid: number): number[] =>
-  execFileSync('ps', ['-A', '-o', 'pid=,ppid=,command='], { encoding: 'utf8' })
-    .split('\n')
-    .map((line) => line.trim().split(/\s+/u))
-    .filter(
-      ([, ppid, ...command]) =>
-        ppid === String(hostPid) && command.join(' ').includes('runner-main'),
-    )
-    .map(([pid]) => Number(pid));
-
-void test('a generation process that dies under a running prompt pauses it, and the respawned one resumes it', {
-  skip: enabled
-    ? false
-    : 'Requires DORIC_TEST_DATABASE_URL and DORIC_TEST_SANDBOX=true',
+void test('a request breaking a rule of a refusing RPC answers INVALID_ARGUMENT with its route reason', {
+  skip,
   timeout: 300_000,
 }, async (t) => {
-  assert.ok(connectionString);
-  const cleanup = cleanupStack();
-  t.after(() => cleanup.close());
-  const database = await freshDatabase(connectionString);
-  cleanup.defer(database.close);
-  const model = await scriptedEndpoint();
-  cleanup.defer(model.close);
-  const host = await startHostProcess(
-    { DORIC_DATABASE_URL: database.url },
-    { timeoutMs: 120_000 },
-  );
-  cleanup.defer(host.close);
-  const request = async <T>(
-    path: string,
-    method = 'GET',
-    body?: unknown,
-    status = 200,
-  ): Promise<T> => {
-    const response = await host.request(path, method, body);
-    assert.equal(
-      response.status,
-      status,
-      `${method} ${path}: ${await response.clone().text()}`,
+  const { host } = await startFixture(t);
+
+  for (const { procedure, request, reason } of invalidRequests) {
+    const error = await refusal(callApi(host.url, procedure, request));
+    assert.equal(error.status, 400, procedure);
+    assert.equal(error.code, 'invalid_argument', procedure);
+    assert.equal(reasonOf(error), reason, procedure);
+  }
+  for (const { procedure, request, reason } of invalidStreams) {
+    const error = await refusal(
+      openStream(host.url, procedure, request).then(async (stream) => {
+        try {
+          return await stream.next();
+        } finally {
+          stream.close();
+        }
+      }),
     );
-    return (await response.json()) as T;
-  };
-  const credential = await request<{ id: string }>(
-    '/credentials',
-    'POST',
-    { kind: 'API_TOKEN', name: 'scripted', secret: 'sk-scripted' },
-    201,
-  );
-  await request('/config', 'PUT', {
-    ...defaultConfig,
-    providers: [
-      {
-        id: 'scripted',
-        kind: 'openrouter',
-        configuration: { endpoint: model.endpoint, token: credential.id },
-        models: [{ name: scriptedModel, reasonings: [] }],
-      },
-    ],
-    models: { execution: { providerId: 'scripted', model: scriptedModel } },
-  });
-  const project = await request<Project>(
-    '/projects',
-    'POST',
+    assert.equal(error.code, 'invalid_argument', procedure);
+    assert.equal(reasonOf(error), reason, procedure);
+  }
+
+  assert.equal(await host.stop(), 0);
+});
+
+void test("killing default's process under a running prompt brings a new default process, and the prompt finishes", {
+  skip,
+  timeout: 300_000,
+}, async (t) => {
+  const { model, host, api, listEvents, configure } = await startFixture(t);
+  await configure();
+  const { project } = await api<{ project: Project }>(
+    'projects.v1.ProjectsService/CreateProject',
     { name: 'Respawn project' },
-    202,
   );
   for (let attempt = 0; ; attempt += 1) {
-    const state = (await request<Project>(`/projects/${project.id}`)).state;
+    const { state } = (
+      await api<{ project: Project }>(
+        'projects.v1.ProjectsService/GetProject',
+        {
+          projectId: project.id,
+        },
+      )
+    ).project;
     if (state === 'ready') break;
     assert.ok(attempt < 900 && state !== 'failed', `Project ${state}`);
     await delay(200);
   }
-  const thread = await request<Thread>(
-    `/projects/${project.id}/threads`,
-    'POST',
-    { name: 'Respawn thread' },
-    201,
+  const { thread } = await api<{ thread: Thread }>(
+    'projects.v1.ProjectsService/CreateThread',
+    { projectId: project.id, name: 'Respawn thread' },
   );
-  const prompt = await request<{ promptId: string }>(
-    `/threads/${thread.id}/prompt`,
-    'POST',
-    { prompt: heldPrompt },
-    202,
+  const prompt = await api<{ promptId: string }>(
+    'threads.v1.ThreadsService/Prompt',
+    { threadId: thread.id, prompt: heldPrompt },
   );
   await model.held;
 
-  const assertedPid = host.child.pid;
-  assert.ok(assertedPid !== undefined);
-  const [lost] = generationPids(assertedPid);
-  assert.ok(lost !== undefined, 'the host runs a generation process');
+  const hostPid = host.child.pid;
+  assert.ok(hostPid !== undefined);
+  const lost = await bundlePid(bundlesPath, hostPid, 'default');
+  assert.ok(lost !== undefined, 'the host runs a default process');
   process.kill(lost, 'SIGKILL');
 
-  // A request in flight when the process dies fails with it; the cases
-  // read the host once the kernel has seen the loss and respawned.
+  let respawned: number | undefined;
   for (let attempt = 0; ; attempt += 1) {
-    const pids = generationPids(assertedPid);
-    if (pids.length > 0 && !pids.includes(lost)) break;
-    assert.ok(attempt < 300, 'the generation process was never respawned');
+    respawned = await bundlePid(bundlesPath, hostPid, 'default');
+    if (respawned !== undefined && respawned !== lost) break;
+    assert.ok(attempt < 300, 'no new default process came up');
     await delay(100);
   }
 
   let events: readonly ThreadEvent[] = [];
   for (let attempt = 0; ; attempt += 1) {
-    events = (
-      await request<{ events: ThreadEvent[] }>(`/threads/${thread.id}/events`)
-    ).events.filter(({ promptId }) => promptId === prompt.promptId);
+    events = (await listEvents(thread.id)).filter(
+      ({ promptId }) => promptId === prompt.promptId,
+    );
     if (events.some(({ type }) => type === 'prompt.finished')) break;
     assert.ok(attempt < 600, JSON.stringify(events));
     await delay(200);
   }
-
-  const paused = events.find(({ type }) => type === 'prompt.paused');
-  assert.deepEqual(paused?.event, {
-    type: 'prompt.paused',
-    reason: 'host_restarted',
-  });
   const finished = events.find(({ type }) => type === 'prompt.finished');
   assert.ok(finished !== undefined);
   assert.equal(completion(finished).status, 'completed');
   assert.equal(completion(finished).text, heldAnswer);
-  assert.ok(events.indexOf(paused as ThreadEvent) < events.indexOf(finished));
-  // A new process serves the host now, and the prompt reached the model twice.
-  assert.ok(!generationPids(assertedPid).includes(lost));
+  // The held request was lost with the process; the new one asked again.
   assert.equal(
     model.requests.filter(({ messages }) =>
       JSON.stringify(messages).includes(heldPrompt),

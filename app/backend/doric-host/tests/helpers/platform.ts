@@ -37,6 +37,7 @@ import pino from 'pino';
 
 import { startHostPlatform } from '../../src/lib/bundles/boot.js';
 import { ApiError, callApi } from './api.js';
+import { credentialKey } from './host.js';
 import { childProcesses, spawnedBundles } from './processes.js';
 
 /*
@@ -52,8 +53,8 @@ import { childProcesses, spawnedBundles } from './processes.js';
 /** The built bundles the host stages in `dist/bundles`. */
 export const bundlesPath = 'app/backend/doric-host/dist/bundles';
 
-/** 32 zero bytes, base64. A fixed test key, never a deployed one. */
-export const credentialKey = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=';
+/** The fixed test credential key, kept in `host.ts` (no `src` import) for the e2e. */
+export { credentialKey };
 
 /** The foundation the helper's composition chooses for both backends: the staged `postgres`. */
 export const testFoundationId = 'postgres';

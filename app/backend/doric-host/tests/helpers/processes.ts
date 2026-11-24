@@ -128,3 +128,20 @@ export const spawnedBundles = async (
       args.join(' '),
   );
 };
+
+/**
+ * The pid of the live process running staged bundle `bundleId` among
+ * `parent`'s direct children (`spawnedBundles` over `childProcesses`), or
+ * `undefined` when none runs it now. Reads `/proc`; never throws for a
+ * process that exits meanwhile.
+ */
+export const bundlePid = async (
+  bundlesPath: string,
+  parent: number,
+  bundleId: string,
+): Promise<number | undefined> => {
+  const children = await childProcesses(parent);
+  const spawned = await spawnedBundles(bundlesPath, children);
+
+  return children[spawned.indexOf(bundleId)]?.pid;
+};

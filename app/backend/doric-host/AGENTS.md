@@ -124,8 +124,9 @@ settings, providers, tools, REST routes, Socket.IO namespaces other than
   [`tests/helpers/host.ts`](tests/helpers/host.ts), `startKernel` and
   `kernelOver` in [`tests/helpers/platform.ts`](tests/helpers/platform.ts),
   `persistenceFixture` in
-  [`tests/helpers/persistence-fixture.ts`](tests/helpers/persistence-fixture.ts)
-  and `inbox` in [`tests/helpers/socket-inbox.ts`](tests/helpers/socket-inbox.ts).
+  [`tests/helpers/persistence-fixture.ts`](tests/helpers/persistence-fixture.ts),
+  `openStream` and `reasonOf` in [`tests/helpers/api.ts`](tests/helpers/api.ts)
+  and `bundlePid` in [`tests/helpers/processes.ts`](tests/helpers/processes.ts).
 - Gate a test that needs PostgreSQL on `DORIC_TEST_DATABASE_URL`, as
   [`tests/persistence.test.ts`](tests/persistence.test.ts) does. Gate a case
   that starts a sandbox on `DORIC_TEST_SANDBOX === 'true'` as well, as
