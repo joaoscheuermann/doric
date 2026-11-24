@@ -2,16 +2,20 @@
 // `comments.added/v1` or `comments.resolved/v1` body in today's encoding (the
 // kernel's zod payload, the anchor flat with `form`) or in the message's JSON
 // (`core`'s `events/v1` 1.1.0: the anchor nested by its oneof case, fields at
-// their default left out) reads as the payload in today's shape.
+// their default left out) reads as the payload in today's shape. The readers
+// live in `comments/contracts` (S62b), so the window's readers in `chat` and
+// `papercraft` share them.
 
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 
+import * as contracts from '../src/contracts/index.js';
 import {
   commentsAddedEvent,
+  commentsAddedOf,
   commentsResolvedEvent,
+  commentsResolvedOf,
 } from '../src/contracts/index.js';
-import { commentsAddedOf, commentsResolvedOf } from '../src/host/rows.js';
 
 /** A 1.x `comments.added/v1` body without `type`, as the zod payload declares it. */
 const added1x = {
@@ -82,6 +86,11 @@ const forms = [
     },
   },
 ] as const;
+
+test('S62b: `comments/contracts` exports both stored-row readers', () => {
+  assert.equal(typeof contracts.commentsAddedOf, 'function');
+  assert.equal(typeof contracts.commentsResolvedOf, 'function');
+});
 
 describe('commentsAddedOf', () => {
   test('C20: a 1.x body reads as itself, and passes today’s schema', () => {

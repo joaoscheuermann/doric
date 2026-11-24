@@ -5,6 +5,8 @@
 // of a user-turn line and the chip of an agent's reply block — so it is stated
 // once here, in terms of the fold.
 
+import { commentsResolvedOf } from 'comments/contracts';
+
 import type { TurnComment } from '../../contracts/index.js';
 
 /** The author the agent's replies are written under (`comment_reply`). */
@@ -106,12 +108,17 @@ export const foldResolved = (
   );
 };
 
-/** Reads a `comments.resolved/v1` payload, else `undefined`. */
+/**
+ * Reads a `comments.resolved/v1` payload, else `undefined`. Either stored
+ * encoding (`commentsResolvedOf`): a message-JSON reopen without `resolved`
+ * reads `{commentId, resolved: false}`. Never throws.
+ */
 export const resolvedFrom = (
   payload: unknown,
 ): { readonly commentId: string; readonly resolved: boolean } | undefined => {
-  if (typeof payload !== 'object' || payload === null) return undefined;
-  const record = payload as Record<string, unknown>;
+  const body: unknown = commentsResolvedOf(payload) ?? payload;
+  if (typeof body !== 'object' || body === null) return undefined;
+  const record = body as Record<string, unknown>;
   return typeof record.commentId === 'string' &&
     record.commentId.length > 0 &&
     typeof record.resolved === 'boolean'

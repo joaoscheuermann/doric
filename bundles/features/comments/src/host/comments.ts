@@ -34,11 +34,12 @@ import {
   type CommentTarget,
   type CommentTargetKey,
   commentsAddedEvent,
+  commentsAddedOf,
   commentsMethods,
   commentsResolvedEvent,
+  commentsResolvedOf,
 } from '../contracts/index.js';
 import { type CommentsPorts, kernelCommentsPorts } from './ports.js';
-import { commentsAddedOf, commentsResolvedOf } from './rows.js';
 
 /** A record without the keys whose value is `undefined`: absent means absent. */
 const definedFields = <T extends object>(value: T): T =>

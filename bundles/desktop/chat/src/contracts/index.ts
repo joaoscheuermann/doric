@@ -16,6 +16,7 @@ import {
   type CommentAddInput,
   type CommentTarget,
   commentAddInputSchema,
+  commentsAddedOf,
 } from 'comments/contracts';
 import type { ErrorInfo } from 'desktop/reads';
 import type { AnyLexicalExtension, Klass, LexicalNode } from 'lexical';
@@ -1046,10 +1047,17 @@ export interface CommentThreadOpenDetail {
  */
 export const MESSAGE_KIND = 'message';
 
-/** Reads one `comments.added/v1` payload as a turn comment, else `undefined`. */
+/**
+ * Reads one `comments.added/v1` payload as a turn comment, else `undefined`.
+ * Either stored encoding (`commentsAddedOf` of `comments/contracts`): a
+ * message-JSON body reads as today's, its anchor flat; a body neither encoding
+ * accepts is read as before. A `target` is answered as the decoder answers it.
+ * Never throws.
+ */
 export const turnCommentFrom = (payload: unknown): TurnComment | undefined => {
-  if (typeof payload !== 'object' || payload === null) return undefined;
-  const record = payload as Record<string, unknown>;
+  const body: unknown = commentsAddedOf(payload) ?? payload;
+  if (typeof body !== 'object' || body === null) return undefined;
+  const record = body as Record<string, unknown>;
   const commentId = record.commentId;
   const target = record.target;
   const text = record.text;

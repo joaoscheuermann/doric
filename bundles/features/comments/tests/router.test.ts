@@ -30,8 +30,11 @@ import {
   CommentSchema,
   type CommentTargetSchema,
 } from '../src/contracts/gen/doric/comments/v1/comments_pb.js';
-import type { CommentTarget } from '../src/contracts/index.js';
-import { commentsAddedOf, commentsResolvedOf } from '../src/host/rows.js';
+import {
+  type CommentTarget,
+  commentsAddedOf,
+  commentsResolvedOf,
+} from '../src/contracts/index.js';
 import { tool } from '../src/host/tools/comment-reply.js';
 import { commentsHarness } from './support/harness.js';
 import {

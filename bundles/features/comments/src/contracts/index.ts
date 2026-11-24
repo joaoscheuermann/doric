@@ -311,3 +311,5 @@ export const commentsResolvedEvent = defineEvent({
     resolved: z.boolean(),
   }),
 });
+
+export * from './rows.js';

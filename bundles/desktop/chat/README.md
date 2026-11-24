@@ -802,7 +802,9 @@ the shapes not given here are in the contract sections above.
   - `READER_NAME`, re-exported from `desktop/ui/identity`: the platform's fixed
     name of the reader.
 - **Function:** `turnCommentFrom(payload: unknown): TurnComment | undefined`
-  reads a `comments.added/v1` payload: it answers `undefined` unless
+  reads a `comments.added/v1` payload, first through `comments/contracts`'s
+  `commentsAddedOf` (so a row in the message's JSON encoding reads too) and
+  else as stored: it answers `undefined` unless
   `commentId` is a non-empty string, `target` is present and `text` is a
   string, and keeps `author` when it is a string and `inReplyTo` when it is a
   non-empty string.
@@ -881,7 +883,8 @@ no cached first draw without `history`, and no model icon without `models/v1`.
 - **The agent's comment replies.** A `comment_reply` call that has not failed
   is drawn as a row of the agent's reply block, not as a tool row, with a pin
   coloured by the comment thread's state (`done`, `await` or `open`, folded from
-  `comments.added/v1` and `comments.resolved/v1`)
+  `comments.added/v1` and `comments.resolved/v1`, each row read in either
+  stored encoding through `commentsAddedOf` and `commentsResolvedOf`)
   ([`src/client/domain/comment-threads.ts`](src/client/domain/comment-threads.ts)).
 - **Pending turns.** A sent prompt appears at once as a pending turn, drawn
   dimmed, until the log holds it; the comments it carries are drawn as sent

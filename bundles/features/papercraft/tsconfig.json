@@ -27,6 +27,9 @@
     },
     {
       "path": "../files"
+    },
+    {
+      "path": "../comments"
     }
   ],
   "exclude": ["src/client/**", "src/desktop/**"]

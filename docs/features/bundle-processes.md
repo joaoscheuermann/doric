@@ -1307,6 +1307,16 @@ after a 5 s grace; a failure after the cancel answers `run_cancelled` or
   `schemas/<id>.json`, no schema file written); the kernel's dry activation
   stays. No real bundle's `contracts.json` changes until S62c lists
   `api.*/v1` and `executor.session/v1`.
+- 2026-11-24: phase 3, slice S62b2, of
+  [`docs/designs/grpc-processes.md`](../designs/grpc-processes.md) (version
+  6.26): `comments`' `src/host/rows.ts` moves to `src/contracts/rows.ts` and
+  is exported from `comments/contracts`, names and signatures unchanged, with
+  no shim (`codec.ts`, `comments.ts` and `ports.ts` import it from
+  `../contracts/index.js`). `chat` (`turnCommentFrom`, `resolvedFrom`) and
+  `papercraft` (`commentsOfEvents`) read stored comment rows through
+  `commentsAddedOf` and `commentsResolvedOf` and fall back to the row as
+  stored, so rows in the message's JSON encoding read correctly;
+  `papercraft` now depends on `comments`.
 - 2026-11-23: phase 3, slice S56, of
   [`docs/designs/grpc-processes.md`](../designs/grpc-processes.md): `openui`
   runs as its own process (`src/host/main.ts`, `createOpenuiHost`) serving

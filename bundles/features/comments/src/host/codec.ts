@@ -31,11 +31,12 @@ import {
   type CommentAnchor,
   type CommentListInput,
   type CommentResolveInput,
+  type CommentsAddedPayload,
+  type CommentsResolvedPayload,
   type CommentTarget,
   commentSchema,
   commentsAddedEvent,
 } from '../contracts/index.js';
-import type { CommentsAddedPayload, CommentsResolvedPayload } from './rows.js';
 
 /** A record without the keys whose value is `undefined`: absent means absent. */
 const definedFields = <T extends object>(value: T): T =>

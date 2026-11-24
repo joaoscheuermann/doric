@@ -1,8 +1,10 @@
 // The stored `comments.added/v1` and `comments.resolved/v1` bodies, read in
 // either encoding a Thread log holds from S62 until the phase-4 migration
-// (phase 3, S52a, D2): today's zod payload (the kernel's `events/v1`) and the
-// message's JSON (`core`'s `events/v1` 1.1.0, the anchor nested by its oneof
-// case).
+// (phase 3, S52a, D2; moved to `comments/contracts` in S62b so the window's
+// readers in `chat` and `papercraft` share it): today's zod payload (the
+// kernel's `events/v1`) and the message's JSON (`core`'s `events/v1` 1.1.0,
+// the anchor nested by its oneof case). Browser-safe: `@bufbuild/protobuf`,
+// generated code and zod only.
 
 import {
   type DescMessage,
@@ -12,12 +14,9 @@ import {
 } from '@bufbuild/protobuf';
 import type { z } from 'zod';
 
-import { CommentsAddedSchema } from '../contracts/gen/doric/comments/added/v1/added_pb.js';
-import { CommentsResolvedSchema } from '../contracts/gen/doric/comments/resolved/v1/resolved_pb.js';
-import {
-  commentsAddedEvent,
-  commentsResolvedEvent,
-} from '../contracts/index.js';
+import { CommentsAddedSchema } from './gen/doric/comments/added/v1/added_pb.js';
+import { CommentsResolvedSchema } from './gen/doric/comments/resolved/v1/resolved_pb.js';
+import { commentsAddedEvent, commentsResolvedEvent } from './index.js';
 
 /** A `comments.added/v1` payload in today's shape (the anchor flat, keyed by `form`). */
 export type CommentsAddedPayload = z.output<typeof commentsAddedEvent.payload>;

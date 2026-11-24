@@ -44,8 +44,10 @@ The bundle has two parts and no settings, slots, skills, routes or UI.
   `CommentsV1`, the method specs `commentsMethods`, the two event definitions
   `commentsAddedEvent` and `commentsResolvedEvent`, the schemas
   `commentAnchorSchema`, `commentTargetSchema`, `commentSchema`,
-  `commentAddInputSchema` and `commentTargetKeySchema`, and
-  `COMMENT_ID_PATTERN`.
+  `commentAddInputSchema` and `commentTargetKeySchema`,
+  `COMMENT_ID_PATTERN`, and the stored-row decoders `commentsAddedOf` and
+  `commentsResolvedOf` ([`src/contracts/rows.ts`](src/contracts/rows.ts)),
+  which read a row in either stored encoding.
 - **Host** ([`src/host/index.ts`](src/host/index.ts)). `activate` does, in
   order: provides the `comments/v1` service; registers `comments.added/v1`
   and `comments.resolved/v1` with `events/v1`; registers the `comment_reply`
@@ -239,7 +241,7 @@ Every read takes a Thread's whole log through `runtime.threads/v1`
 - A row is read in either stored encoding: today's JSON, or the message JSON
   that a routed `events/v1` append writes (implicit fields kept). Both coexist
   in the log from S62 until phase 4
-  ([`src/host/rows.ts`](src/host/rows.ts)).
+  ([`src/contracts/rows.ts`](src/contracts/rows.ts)).
 - A Thread the runtime does not know reads as no comments.
 
 Nothing is held in the process: a restarted host, a fresh activation, a

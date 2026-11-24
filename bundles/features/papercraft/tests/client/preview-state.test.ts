@@ -236,3 +236,88 @@ test('a comment on another kind of target with the same id lists nothing', () =>
     [],
   );
 });
+
+/*
+ * S62b, C1: a log holds a comment row in today's JSON (the anchor flat, keyed
+ * by `form`) or in the message's JSON (`core`'s `events/v1` 1.1.0: the anchor
+ * nested by its oneof case, fields at their default left out). Either reads
+ * as the same comment.
+ */
+
+/** A comment on the preview as today's row writes it. */
+const addedToday = (commentId: string): PreviewLogEvent => ({
+  type: 'comments.added/v1',
+  promptId: 'q1',
+  createdAt: '2026-11-24T12:00:01.000Z',
+  event: {
+    commentId,
+    text: 'o botão sumiu no escuro',
+    author: 'jao',
+    createdAt: '2026-11-24T12:00:00.000Z',
+    target: TARGET,
+  },
+});
+
+/** The same comment as the message's JSON: `type`, the anchor nested by its case. */
+const addedMessageJson = (commentId: string): PreviewLogEvent => ({
+  type: 'comments.added/v1',
+  promptId: 'q1',
+  createdAt: '2026-11-24T12:00:01.000Z',
+  event: {
+    type: 'comments.added/v1',
+    commentId,
+    text: 'o botão sumiu no escuro',
+    author: 'jao',
+    createdAt: '2026-11-24T12:00:00.000Z',
+    target: {
+      kind: 'artifact',
+      id: 'checkout-7f3a',
+      revision: 1,
+      anchor: { source: { path: 'src/Checkout.tsx', line: 42 } },
+    },
+  },
+});
+
+test("a message-JSON comment reads as its today's-JSON twin, its anchor flat", () => {
+  const today = commentsOfEvents([addedToday('c1')], 'checkout-7f3a');
+  const message = commentsOfEvents([addedMessageJson('c1')], 'checkout-7f3a');
+
+  assert.deepEqual(today, [
+    {
+      commentId: 'c1',
+      text: 'o botão sumiu no escuro',
+      author: 'jao',
+      revision: 1,
+      anchor: { form: 'source', path: 'src/Checkout.tsx', line: 42 },
+      createdAt: '2026-11-24T12:00:00.000Z',
+      resolved: false,
+      promptId: 'q1',
+    },
+  ]);
+  assert.deepEqual(message, today);
+  assert.deepEqual(
+    commentsOfEvents([addedMessageJson('c1')], 'checkout-7f3a', 'artifact'),
+    today,
+  );
+});
+
+test('a message-JSON reopen without `resolved` after a resolve leaves the comment open', () => {
+  const comments = commentsOfEvents(
+    [
+      addedMessageJson('c1'),
+      resolved('c1', true),
+      {
+        type: 'comments.resolved/v1',
+        promptId: 'q-reopen',
+        event: { type: 'comments.resolved/v1', commentId: 'c1' },
+      },
+    ],
+    'checkout-7f3a',
+  );
+
+  assert.deepEqual(
+    comments.map((comment) => [comment.commentId, comment.resolved]),
+    [['c1', false]],
+  );
+  assert.equal(threadsOf(comments)[0]?.state, 'open');
+});

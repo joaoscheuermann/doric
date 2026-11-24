@@ -52,7 +52,7 @@ The package ([`package.json`](package.json)) exports `./contracts`,
 `@openuidev/react-lang` 1.0.2 and `@openuidev/react-ui` 0.18.1 (exact
 versions), `esbuild` 0.28.2, `tailwindcss` and `@tailwindcss/oxide` 4.3.3,
 `jdenticon`, `lucide-react`, React 19, `zod` 4 and the workspace packages
-`bundle`, `desktop`, `openui` and `runtime`.
+`bundle`, `comments`, `desktop`, `openui` and `runtime`.
 
 ## Parts and build output
 
@@ -325,8 +325,11 @@ client registers a projector that claims it and draws nothing
   (`{ projectId; threadId? }`) with `callScopeOf`, `PreviewTool`
   (`'select' | 'comment' | 'pan'`), `RevisionReading`, and the command ids
   above as constants (`OPEN_CANVAS_COMMAND`, `SEND_COMMAND`, …).
-- Structural copies, so that the bundle imports no `files`, `comments` or
-  `chat` package and its client and desktop parts no `runtime` package
+- Structural copies, so that the bundle imports no `files` or `chat`
+  package and of `comments` only the row decoders `commentsAddedOf` and
+  `commentsResolvedOf` of `comments/contracts`, which the client's
+  `commentsOfEvents` uses to read a stored row in either encoding
+  ([`src/client/domain/preview-state.ts`](src/client/domain/preview-state.ts)), and its client and desktop parts no `runtime` package
   (the host reads `files/v1` through its copy; the client reads
   `runtime.threads/v1` through its copy): `files/v1` (`FilesV1`),
   `comments/v1` (`CommentsV1`, with

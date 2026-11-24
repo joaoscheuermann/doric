@@ -7,6 +7,8 @@
 // under — and groups them into threads: a root and its replies, `done` once
 // resolved, `await` while the agent spoke last, `open` otherwise.
 
+import { commentsAddedOf, commentsResolvedOf } from 'comments/contracts';
+
 import type { CommentAnchor } from '../../contracts/index.js';
 
 /** One event of a Thread's durable log, as any consumer reads it. */
@@ -94,7 +96,11 @@ const commentOf = (event: PreviewLogEvent): PreviewComment | undefined => {
  * comment is the other registry's event; this reducer only interprets what
  * targets the preview. Given a `kind`, a comment targets the preview only when
  * its target's kind matches too, so another kind's target with the same id
- * never enters.
+ * never enters. Each `comments.added/v1` and `comments.resolved/v1` body is
+ * read in either stored encoding (`commentsAddedOf` / `commentsResolvedOf` of
+ * `comments/contracts`, falling back to the body as stored): a message-JSON
+ * comment reads with its anchor flat and its implicit fields, and a
+ * message-JSON reopen without `resolved` sets `resolved: false`. Never throws.
  */
 export const commentsOfEvents = (
   events: readonly PreviewLogEvent[],
@@ -106,7 +112,7 @@ export const commentsOfEvents = (
 
   for (const event of events) {
     if (event.type === 'comments.resolved/v1') {
-      const payload = record(event.event);
+      const payload = record(commentsResolvedOf(event.event) ?? event.event);
       const commentId = stringOrUndefined(payload?.commentId);
 
       if (commentId !== undefined && typeof payload?.resolved === 'boolean')
@@ -117,8 +123,9 @@ export const commentsOfEvents = (
 
     if (event.type !== 'comments.added/v1') continue;
 
-    const comment = commentOf(event);
-    const target = record(record(event.event)?.target);
+    const body: unknown = commentsAddedOf(event.event) ?? event.event;
+    const comment = commentOf({ ...event, event: body });
+    const target = record(record(body)?.target);
 
     if (
       comment === undefined ||

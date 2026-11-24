@@ -16,10 +16,11 @@ import { RuntimeThreadsV1, type ThreadEvent } from 'runtime/contracts';
 import type { ToolInput, ToolOutput, UnboundTool } from 'tool';
 
 import {
+  type CommentsAddedPayload,
+  type CommentsResolvedPayload,
   commentsAddedEvent,
   commentsResolvedEvent,
 } from '../contracts/index.js';
-import type { CommentsAddedPayload, CommentsResolvedPayload } from './rows.js';
 
 /**
  * The two boundaries the registry reaches: the Thread log it folds and the
