@@ -126,6 +126,25 @@ input ([`src/desktop/composer-service.ts`](src/desktop/composer-service.ts)).
   `message` flush and the bundle runtime withdraws the service; the state lives
   only in the main process's memory and goes with it, so every Thread's draft
   and stack is lost and the next activation starts empty.
+- **Host** ([`src/host/main.ts`](src/host/main.ts), `createChatHost` in
+  [`src/host/service.ts`](src/host/service.ts)): a bundle process, built but
+  not yet started (the manifest stays at version 1 until phase 5). It serves
+  `ComposerService` (`chat.composer/v1`) over one shared
+  `createComposerState` keyed by (projectId, threadId), and
+  `ComposerFlushHandlerService`, running the `message` flush in process
+  (another kind answers `invalid_input`). A remote kind is flushed through the
+  newest registrant's handler with the caller's deadline and scope;
+  registrations go through `RegistrationTable` in
+  [`src/host/flushes.ts`](src/host/flushes.ts) (`message` is the chat's, a
+  conflict answers `registration_conflict`), and `Unregister` removes only the
+  caller's own. An anchor the wire cannot hold
+  ([`src/host/codec.ts`](src/host/codec.ts)) leaves the item on the stack; a
+  remote answer without target or anchor case, or with an unknown pseudo, is
+  `invalid_output`. Before activation every method answers `unavailable`
+  "chat is not active."; Watch ends on `callOf(context).signal`
+  ([`src/host/stream.ts`](src/host/stream.ts)). It requires nothing. The
+  window keeps the desktop part's composer until phase 5, and nothing calls
+  the host's Flush before then.
 
 The client part's code is layered in `src/client/`: `views/` (the content of
 `<chat-view>` and `<chat-composer>`), `elements/` (the custom elements),

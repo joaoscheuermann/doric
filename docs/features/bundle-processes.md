@@ -1112,6 +1112,24 @@ after a 5 s grace; a failure after the cancel answers `run_cancelled` or
   the item). One flush per draft runs at a time, queued in call order; each
   removes only the ids it flushed from the stack as it then stands, announcing
   `removed` only for those still there; a rejecting flush changes nothing.
+- 2026-11-23: phase 3, slice S58b, of
+  [`docs/designs/grpc-processes.md`](../designs/grpc-processes.md) (version
+  6.20): `chat`'s host process (`bundles/desktop/chat/src/host/`,
+  `createChatHost`) serves `ComposerService` (`chat.composer/v1`, one shared
+  `createComposerState` per (projectId, threadId)) and
+  `ComposerFlushHandlerService` for kind `message`, run in process (other kinds
+  answer `invalid_input`). Remote kinds flush through the newest registrant's
+  handler with the caller's deadline and scope; registrations go through
+  `RegistrationTable` (`message` is held by chat, a conflict answers
+  `registration_conflict`), and `Unregister` removes only the caller's own. An
+  anchor the wire cannot hold leaves the item on the stack; a remote answer
+  without target or anchor case, or with an unknown pseudo, is
+  `invalid_output`. Everything answers `unavailable` "chat is not active."
+  until activation; Watch ends on `callOf(context).signal`. The host part
+  requires nothing. The window keeps its local composer until phase 5 and
+  nothing calls the host's Flush before then; `chat`'s manifest stays at
+  version 1 until phase 5 (S62). New dependencies: `@connectrpc/connect`, dev
+  `@bufbuild/protovalidate`.
 - 2026-11-23: phase 3, slice S56, of
   [`docs/designs/grpc-processes.md`](../designs/grpc-processes.md): `openui`
   runs as its own process (`src/host/main.ts`, `createOpenuiHost`) serving

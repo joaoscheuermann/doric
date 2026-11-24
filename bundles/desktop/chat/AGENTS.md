@@ -165,6 +165,11 @@ another bundle's data after its tool: the owner of the tool observes
   [`src/desktop/index.ts`](src/desktop/index.ts), with the flush in a module
   beside [`src/shared/message-flush.ts`](src/shared/message-flush.ts), and
   dispose the registration in the cleanup `activate` returns.
+- Keep `chat`'s manifest at version 1 until phase 5: a version 2 manifest
+  fails the build while [`src/desktop/index.ts`](src/desktop/index.ts) still
+  provides `chat.composer/v1`. The host part in `src/host/` shares
+  [`src/shared/composer-state.ts`](src/shared/composer-state.ts); end its Watch
+  streams on `callOf(context).signal`, not `context.signal`.
 - Flush the composer's stack only after the host has accepted the prompt, and
   put back on the stack, under its id, every item whose comment write fails.
 - Add the title of every error code the chat shows to
