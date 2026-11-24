@@ -1042,7 +1042,7 @@ export interface CommentThreadOpenDetail {
  * anchored to the range the reader selected in it. The selection gesture in
  * the conversation (`comment-selection.tsx`) writes the target into the
  * stack item's `data` as `{ target: CommentTarget }`, and the flush this
- * bundle registers (`src/desktop/message-flush.ts`) reads it back.
+ * bundle registers (`src/shared/message-flush.ts`) reads it back.
  */
 export const MESSAGE_KIND = 'message';
 

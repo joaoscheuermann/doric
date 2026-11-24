@@ -3,7 +3,8 @@
 // the bundle that turns a text selection in a conversation message into a stack
 // item — so it is also the one that says what that item flushes to: one
 // `comments/v1.add` with the target the selection recorded and the note the
-// reader wrote.
+// reader wrote. Shared by the desktop and host parts, which both register it
+// with their composer state.
 //
 // The item's `data` follows the stack's convention (`ComposerItemData`):
 // `{ target: CommentTarget, inReplyTo? }`, where the target's `id` is the prompt

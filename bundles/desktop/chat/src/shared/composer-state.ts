@@ -1,7 +1,8 @@
 // The composer's state, keyed by `(projectId, threadId)`: the Thread's draft
-// text and its comment stack, one state in the main process. Pure on purpose —
-// the service around it (`composer-service.ts`) only reads the call's scope and
-// hands it the watches, so the rules themselves are tested without the bridge.
+// text and its comment stack. Shared by the desktop and host parts: the desktop
+// part's `composer-service.ts` and the host part each hold one state. Pure on
+// purpose — the services around it only read the call's scope and hand it the
+// watches, so the rules themselves are tested without a bridge or a router.
 //
 // The stack's items are drafts: nothing here touches the log. The flush is the
 // only way an item leaves the stack — the owner of the item's kind decides, in
@@ -32,23 +33,45 @@ interface Draft {
   readonly key: string;
   text: string;
   items: ComposerItem[];
+  /** 0 when created, raised by one before each delta it sends. */
+  revision: number;
+  /** The draft's flushes settle here in call order: one runs at a time. */
+  flushing?: Promise<unknown>;
 }
 
-/** One watch: the listener, kept until it disposes. */
-type Watcher = (item: ComposerWatchItem) => void;
+/**
+ * One watch's listener: each item with the draft's revision after it. The snapshot carries the revision the draft
+ * has when the watch starts (0 for a draft never changed). A listener that throws is logged; the others and the
+ * change itself go on.
+ */
+export type ComposerWatcher = (
+  item: ComposerWatchItem,
+  revision: number,
+) => void;
+
+/** How the state finds the flush of a kind. */
+export interface ComposerStateOptions {
+  /**
+   * The flush of a kind that `registerFlush` did not register, read once per item at each flush; `undefined` keeps
+   * the item drafted. Default: none. A kind registered through `registerFlush` never reaches it.
+   */
+  readonly flushOf?: (kind: string) => ComposerFlush | undefined;
+}
 
 /** The composer's state machine. */
 export interface ComposerState {
   /** The Thread's portrait: its words and its stack, empty until written. */
   read(projectId: string | undefined, threadId: string): ComposerSnapshot;
   /**
-   * The portrait first, then every delta — the shape of
-   * `runtime.threads/v1.watchThread`. One watch per listener; `dispose` ends it.
+   * The portrait first (with the current revision), then every delta with
+   * the revision after it — the shape of `runtime.threads/v1.watchThread`.
+   * Creates the draft (revision 0) when it does not exist. One watch per
+   * listener; `dispose` ends it.
    */
   watch(
     projectId: string | undefined,
     threadId: string,
-    listener: Watcher,
+    listener: ComposerWatcher,
   ): Disposable;
   /** Sets the Thread's words; every watch sees the delta. */
   setText(projectId: string | undefined, threadId: string, text: string): void;
@@ -71,7 +94,15 @@ export interface ComposerState {
    * Runs the flush each item's kind registered, takes the flushed items off
    * the stack and answers each with the comment writes the sender performs.
    * An item whose flush answers no write stays drafted, and so does an item
-   * whose kind has no flush: only the owner says how a draft becomes durable.
+   * whose kind has no flush (`registerFlush`, then `options.flushOf`): only
+   * the owner says how a draft becomes durable.
+   *
+   * Flushes of one draft run one at a time, in call order; each reads the
+   * stack as it stands when it starts, so items added meanwhile are not
+   * flushed by it and edits apply at once. When every item settled, each
+   * flushed id still on the stack leaves it (one `removed` delta per id, in
+   * reverse stack order). A flush that rejects rejects the call; nothing
+   * leaves the stack and no delta is sent.
    */
   flush(context: ComposerFlushContext): Promise<readonly ComposerFlushed[]>;
   /** The owner of a kind registers how its items flush; a second is a conflict. */
@@ -93,9 +124,10 @@ const rootOf = (item: ComposerItem): string | undefined => {
 /** Creates the composer's state, with the flushes given already registered. */
 export const createComposerState = (
   flushes: ReadonlyMap<string, ComposerFlush> = new Map(),
+  options: ComposerStateOptions = {},
 ): ComposerState => {
   const drafts = new Map<string, Draft>();
-  const watchers = new Map<string, Set<Watcher>>();
+  const watchers = new Map<string, Set<ComposerWatcher>>();
   const registered = new Map(flushes);
 
   const draftOf = (projectId: string | undefined, threadId: string): Draft => {
@@ -104,21 +136,78 @@ export const createComposerState = (
 
     if (held !== undefined) return held;
 
-    const draft: Draft = { key, text: '', items: [] };
+    const draft: Draft = { key, text: '', items: [], revision: 0 };
     drafts.set(key, draft);
 
     return draft;
   };
 
-  const emit = (key: string, item: ComposerWatchItem): void => {
-    for (const listener of watchers.get(key) ?? []) {
+  /** The flush of `kind`, read when the flush runs: a registered one wins. */
+  const flushOf = (kind: string): ComposerFlush | undefined =>
+    registered.get(kind) ?? options.flushOf?.(kind);
+
+  const emit = (draft: Draft, item: ComposerWatchItem): void => {
+    draft.revision += 1;
+    const revision = draft.revision;
+    for (const listener of watchers.get(draft.key) ?? []) {
       try {
-        listener(item);
+        listener(item, revision);
       } catch (error) {
         // One failing watch never stops the others, nor the write itself.
         console.error('Doric: a composer watch failed:', error);
       }
     }
+  };
+
+  /** One flush of `draft`, over the stack as it stands when it starts. */
+  const flushDraft = async (
+    draft: Draft,
+    context: ComposerFlushContext,
+  ): Promise<readonly ComposerFlushed[]> => {
+    const read = [...draft.items];
+    if (read.length === 0) return [];
+
+    const flushed: ComposerFlushed[] = [];
+    const held: ComposerItem[] = [];
+
+    // Stack order is flush order, so a root is written before its replies;
+    // a reply whose root stays drafted stays drafted with it, because the
+    // log never holds a reply to a comment it has not recorded.
+    for (const item of read) {
+      const root = rootOf(item);
+      if (root !== undefined && held.some((other) => other.id === root)) {
+        held.push(item);
+        continue;
+      }
+      const flush = flushOf(item.kind);
+      // A kind whose owner has registered no flush keeps its items: nothing
+      // has said how they become durable, so they stay drafted.
+      if (flush === undefined) {
+        held.push(item);
+        continue;
+      }
+      // The flush answers the writes the sender performs. An item leaves
+      // only when its flush answered a write; a flush that throws leaves
+      // the whole stack where it was, so the sender can try again.
+      const answered = await flush(item, context);
+      if (answered.length === 0) {
+        held.push(item);
+        continue;
+      }
+      flushed.push({ item, writes: answered });
+    }
+
+    // Only the flushed ids leave, from the stack as it stands now: an item
+    // added or removed while the flush awaited keeps that change, and an id
+    // already removed is not announced again.
+    const gone = new Set(flushed.map(({ item }) => item.id));
+    const leaving = draft.items.filter(({ id }) => gone.has(id));
+    draft.items = draft.items.filter(({ id }) => !gone.has(id));
+    for (const { id } of leaving.reverse()) {
+      emit(draft, { kind: 'removed', threadId: context.threadId, id });
+    }
+
+    return flushed;
   };
 
   return {
@@ -138,18 +227,22 @@ export const createComposerState = (
 
     watch(projectId, threadId, listener) {
       const draft = draftOf(projectId, threadId);
-      const watchersOfKey = watchers.get(draft.key) ?? new Set<Watcher>();
+      const watchersOfKey =
+        watchers.get(draft.key) ?? new Set<ComposerWatcher>();
       watchers.set(draft.key, watchersOfKey);
       watchersOfKey.add(listener);
 
       // The portrait first: a watcher never waits for the next change to see
       // the draft as it stands.
-      listener({
-        kind: 'snapshot',
-        threadId,
-        text: draft.text,
-        items: [...draft.items],
-      });
+      listener(
+        {
+          kind: 'snapshot',
+          threadId,
+          text: draft.text,
+          items: [...draft.items],
+        },
+        draft.revision,
+      );
 
       let done = false;
 
@@ -166,7 +259,7 @@ export const createComposerState = (
     setText(projectId, threadId, text) {
       const draft = draftOf(projectId, threadId);
       draft.text = text;
-      emit(draft.key, { kind: 'text', threadId, text });
+      emit(draft, { kind: 'text', threadId, text });
     },
 
     addItem(projectId, input) {
@@ -186,7 +279,7 @@ export const createComposerState = (
         note: input.note ?? '',
       };
       draft.items.push(item);
-      emit(draft.key, { kind: 'added', threadId: input.threadId, item });
+      emit(draft, { kind: 'added', threadId: input.threadId, item });
 
       return item;
     },
@@ -198,7 +291,7 @@ export const createComposerState = (
       if (draft === undefined || current === undefined) return;
       const next: ComposerItem = { ...current, note };
       draft.items[index] = next;
-      emit(draft.key, { kind: 'updated', threadId, item: next });
+      emit(draft, { kind: 'updated', threadId, item: next });
     },
 
     removeItem(projectId, threadId, id) {
@@ -206,53 +299,31 @@ export const createComposerState = (
       const index = draft?.items.findIndex((item) => item.id === id) ?? -1;
       if (draft === undefined || index < 0) return;
       draft.items.splice(index, 1);
-      emit(draft.key, { kind: 'removed', threadId, id });
+      emit(draft, { kind: 'removed', threadId, id });
     },
 
-    async flush(context) {
+    flush(context) {
       const draft = drafts.get(keyOf(context.projectId, context.threadId));
-      if (draft === undefined || draft.items.length === 0) return [];
+      if (draft === undefined) return Promise.resolve([]);
 
-      const flushed: ComposerFlushed[] = [];
-      const held: ComposerItem[] = [];
+      // One flush of a draft at a time: a later one starts once the earlier
+      // settled, either way, and so reads the stack the earlier one left. With
+      // none pending it starts at once, as a lone flush always has.
+      const pending = draft.flushing;
+      const run =
+        pending === undefined
+          ? flushDraft(draft, context)
+          : pending.then(() => flushDraft(draft, context));
+      const settled = run.then(
+        () => undefined,
+        () => undefined,
+      );
+      draft.flushing = settled;
+      void settled.then(() => {
+        if (draft.flushing === settled) delete draft.flushing;
+      });
 
-      // Stack order is flush order, so a root is written before its replies;
-      // a reply whose root stays drafted stays drafted with it, because the
-      // log never holds a reply to a comment it has not recorded.
-      for (const item of draft.items) {
-        const root = rootOf(item);
-        if (root !== undefined && held.some((other) => other.id === root)) {
-          held.push(item);
-          continue;
-        }
-        const flush = registered.get(item.kind);
-        // A kind whose owner has registered no flush keeps its items: nothing
-        // has said how they become durable, so they stay drafted.
-        if (flush === undefined) {
-          held.push(item);
-          continue;
-        }
-        // The flush answers the writes the sender performs. An item leaves
-        // only when its flush answered a write; a flush that throws leaves
-        // the whole stack where it was, so the sender can try again.
-        const answered = await flush(item, context);
-        if (answered.length === 0) {
-          held.push(item);
-          continue;
-        }
-        flushed.push({ item, writes: answered });
-      }
-
-      draft.items = held;
-      for (const { item } of [...flushed].reverse()) {
-        emit(draft.key, {
-          kind: 'removed',
-          threadId: context.threadId,
-          id: item.id,
-        });
-      }
-
-      return flushed;
+      return run;
     },
 
     registerFlush(kind, flush) {

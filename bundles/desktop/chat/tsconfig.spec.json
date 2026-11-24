@@ -21,6 +21,8 @@
     "src/client/stores/**/*.ts",
     "src/client/utility/**/*.ts",
     "src/desktop/**/*.ts",
+    "src/shared/**/*.ts",
+    "src/host/**/*.ts",
     "tests/*.ts"
   ],
   "references": [

@@ -597,7 +597,7 @@ export const installStoryHost = (host: StoryHost = {}): void => {
           : Promise.resolve(queue);
       },
     }),
-    // The composer as `chat.composer/v1` keeps it (`src/desktop/composer-state.ts`):
+    // The composer as `chat.composer/v1` keeps it (`src/shared/composer-state.ts`):
     // the portrait first, then a delta for every write, so a note written in
     // place (a stack line, the inline comment entry) reaches the stack and
     // stands again when the conversation mounts once more.

@@ -9,9 +9,9 @@
 
 import type { Cleanup, DesktopContext } from 'bundle/contracts';
 
+import { createComposerState } from '../shared/composer-state.js';
+import { MESSAGE_KIND, messageFlush } from '../shared/message-flush.js';
 import { composerService } from './composer-service.js';
-import { createComposerState } from './composer-state.js';
-import { MESSAGE_KIND, messageFlush } from './message-flush.js';
 
 export function activate({ services }: DesktopContext): Cleanup {
   const state = createComposerState();
@@ -31,4 +31,4 @@ export {
   MESSAGE_KIND,
   messageFlush,
   messageTargetOf,
-} from './message-flush.js';
+} from '../shared/message-flush.js';

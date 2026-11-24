@@ -143,7 +143,7 @@ another bundle's data after its tool: the owner of the tool observes
 - Read every stored prompt back through `parsePromptEnvelope` or
   `promptMessage`. Never send or show a prompt by another path.
 - Keep the composer's state in
-  [`src/desktop/composer-state.ts`](src/desktop/composer-state.ts), free of the
+  [`src/shared/composer-state.ts`](src/shared/composer-state.ts), free of the
   bridge and of every contract call. It is keyed by the call scope's
   `projectId` and the Thread the input names: give every method of
   `chat.composer/v1` but `registerFlush` the `threadId` in its input, and pass
@@ -153,7 +153,7 @@ another bundle's data after its tool: the owner of the tool observes
   [`src/contracts/index.ts`](src/contracts/index.ts), add its spec to
   `chatComposerMethods` there, and read its `expose`, `input` and `output` from
   that spec in [`src/desktop/composer-service.ts`](src/desktop/composer-service.ts);
-  implement it in [`src/desktop/composer-state.ts`](src/desktop/composer-state.ts);
+  implement it in [`src/shared/composer-state.ts`](src/shared/composer-state.ts);
   and call it from a window only through `composerFor` in
   [`src/client/api/composer.ts`](src/client/api/composer.ts), with the
   Thread's `projectId` and `threadId` as its scope, as `threadScope` builds it:
@@ -163,7 +163,7 @@ another bundle's data after its tool: the owner of the tool observes
 - Keep `registerFlush` unexposed to windows. Register the flush of a comment
   kind the chat owns with `state.registerFlush(kind, flush)` in `activate` of
   [`src/desktop/index.ts`](src/desktop/index.ts), with the flush in a module
-  beside [`src/desktop/message-flush.ts`](src/desktop/message-flush.ts), and
+  beside [`src/shared/message-flush.ts`](src/shared/message-flush.ts), and
   dispose the registration in the cleanup `activate` returns.
 - Flush the composer's stack only after the host has accepted the prompt, and
   put back on the stack, under its id, every item whose comment write fails.

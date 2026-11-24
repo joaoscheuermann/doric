@@ -13,7 +13,7 @@ import {
 } from 'bundle/contracts';
 
 import { ChatComposerV1, chatComposerMethods } from '../contracts/index.js';
-import type { ComposerState } from './composer-state.js';
+import type { ComposerState } from '../shared/composer-state.js';
 
 /** The `projectId` a call's scope names, when it names one. */
 const projectOf = (call: Call | undefined): string | undefined => {

@@ -1102,6 +1102,16 @@ after a 5 s grace; a failure after the cancel answers `run_cancelled` or
   export reads and hook work stay inside the request. Concurrent `cwdAt`
   lookups for one (project, thread, turn) share one promise, so two Library
   calls join one job. The kernel entry stays until S62.
+- 2026-11-23: phase 3, slice S58a, of
+  [`docs/designs/grpc-processes.md`](../designs/grpc-processes.md) (version
+  6.19): `chat`'s `composer-state.ts` and `message-flush.ts` move to
+  `bundles/desktop/chat/src/shared/`, shared by the desktop part and the host
+  part of S58b. Each draft has a `revision` (0, then +1 per change), passed to
+  watch listeners and carried by the snapshot. `createComposerState` takes
+  `flushOf(kind)`, read at flush time (`registerFlush` wins; `undefined` keeps
+  the item). One flush per draft runs at a time, queued in call order; each
+  removes only the ids it flushed from the stack as it then stands, announcing
+  `removed` only for those still there; a rejecting flush changes nothing.
 - 2026-11-23: phase 3, slice S56, of
   [`docs/designs/grpc-processes.md`](../designs/grpc-processes.md): `openui`
   runs as its own process (`src/host/main.ts`, `createOpenuiHost`) serving

@@ -120,7 +120,7 @@ input ([`src/desktop/composer-service.ts`](src/desktop/composer-service.ts)).
 - **Desktop** ([`src/desktop/index.ts`](src/desktop/index.ts)): on activation
   it creates an empty composer state, registers the flush of the `message`
   comment kind with it
-  ([`src/desktop/message-flush.ts`](src/desktop/message-flush.ts); flushes are
+  ([`src/shared/message-flush.ts`](src/shared/message-flush.ts); flushes are
   described under [`chat.composer/v1`](#chatcomposerv1-desktopmain-100)), and
   provides `chat.composer/v1` over that state. Deactivation disposes the
   `message` flush and the bundle runtime withdraws the service; the state lives
@@ -445,7 +445,7 @@ A bundle that wants a refresh after its own tool observes `onThreadUpdateHook`.
 
 The draft every window shares: each Thread's draft text and comment stack
 ([`src/desktop/composer-service.ts`](src/desktop/composer-service.ts),
-[`src/desktop/composer-state.ts`](src/desktop/composer-state.ts)). The state is
+[`src/shared/composer-state.ts`](src/shared/composer-state.ts)). The state is
 keyed by `(projectId, threadId)`, with `projectId` read from the call's scope
 (`''` for a call with no Project in scope), and is held in the main process's
 memory only: nothing writes it to disk.
@@ -576,7 +576,7 @@ interface ComposerFlushed {
   `anchor` answers one write
   `{ target, text, commentId: item.id, inReplyTo?, author? }`, where `text` is
   the trimmed note; any other item answers none
-  ([`src/desktop/message-flush.ts`](src/desktop/message-flush.ts)). Another
+  ([`src/shared/message-flush.ts`](src/shared/message-flush.ts)). Another
   kind's owner registers its flush from its own desktop part.
 - An item's `elementTag` names the element that draws its line in the stack.
   When the tag is not `chat-comment-line` and is defined in the window, the
