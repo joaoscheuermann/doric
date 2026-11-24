@@ -15,10 +15,11 @@ import {
   type HostContext,
   type HostServices,
 } from 'bundle/host';
-import type {
-  PromptResult,
-  ResumeResult,
-  SteerResult,
+import {
+  type PromptResult,
+  type ResumeResult,
+  readThreadEventLog,
+  type SteerResult,
 } from 'runtime/contracts';
 import {
   type PromptResult as PromptResultMessage,
@@ -144,7 +145,7 @@ export const routedOpenuiPorts = (
     threads: {
       rows: (threadId) =>
         routed(async () => {
-          const { threadEventLog } = await threads().threadEvents({
+          const threadEventLog = await readThreadEventLog(threads(), {
             id: threadId,
             afterSequence: 0,
           });

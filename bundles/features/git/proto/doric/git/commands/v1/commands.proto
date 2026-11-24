@@ -1,4 +1,4 @@
-// `git.commands/v1` (host, 1.1.0): a Thread's Git summary and local
+// `git.commands/v1` (host, 1.2.0): a Thread's Git summary and local
 // branches, the branch switch, Discard, and the Project's changes, diff and
 // one file's comparison. The `git` bundle provides it.
 //
@@ -8,6 +8,9 @@
 // lease). The Project reads (`Changes` to `FileDiff`) run on the current
 // lease of the Project of the call's scope and answer its lease state. None
 // acquires a lease, and every refusal is an answer, never an error.
+//
+// 1.2.0: `Discard` takes `all`; an explicit empty `paths` without `all` is
+// refused.
 syntax = "proto3";
 
 package doric.git.commands.v1;

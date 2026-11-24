@@ -7,8 +7,9 @@
 //
 // A refusal is a gRPC status whose `google.rpc.ErrorInfo` has `domain`
 // "doric" and `reason` the REST error code of today: `invalid_thread_id`,
-// `invalid_thread`, `invalid_cwd`, `invalid_branch`, `invalid_prompt`,
-// `invalid_steer`, `invalid_resume`, `invalid_rewind`, `invalid_interrupt`,
+// `invalid_thread`, `invalid_cwd`, `invalid_branch`, `invalid_prompt` (also
+// the queued edit's outcome `invalid_prompt`, today's 409), `invalid_steer`,
+// `invalid_resume`, `invalid_rewind`, `invalid_interrupt`,
 // `invalid_event_cursor` and `invalid_terminal` (`INVALID_ARGUMENT`),
 // `thread_not_found`, `prompt_not_found`, `unknown_prompt` and `missing`
 // (`NOT_FOUND`), `thread_<status>` of a refused change, `thread_busy`,

@@ -495,8 +495,11 @@ Express routes and Socket.IO) until group F, and the `api.*` contracts enter
   `{pending: {retryAfterSeconds: 1}}` or `{value}` with the route's body.
   `ReadFile` streams `pending` alone, or `head` then text chunks of at most
   1,048,576 code units that never split a code point. `ListThreads` and
-  `ListEvents` end a page before 3 MiB (`API_PAGE_MAX_BYTES`) and set the
-  cursor only when they cut it. `GetGit` and `ListBranches` answer
+  `ListEvents` end a page before 3 MiB (`API_PAGE_MAX_BYTES`). `ListThreads`
+  sets the cursor only when it cuts the page; `ListEvents` reads one
+  `runtime.threads/v1.ThreadEvents` page and sets `nextAfterSequence` to the
+  last kept event's sequence whenever its page ends before `lastSequence`, cut
+  by `transport` or by `runtime`. `GetGit` and `ListBranches` answer
   `{status, value?}`. `DeleteThread` on an agent Thread keeps `204`.
 - **`Watch` streams** ([`watch.ts`](src/host/process/watch.ts)).
   `threadWatch` relays `runtime.threads/v1.WatchThread`. `projectWatch`

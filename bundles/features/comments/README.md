@@ -82,7 +82,9 @@ The bundle has two parts and no settings, slots, skills, routes or UI.
   streams ([`events.ts`](../../runtime/runtime/src/contracts/events.ts)).
 - `runtime.threads/v1` (provided by
   [`runtime`](../../runtime/runtime/README.md)): `threadEvents({ id,
-afterSequence: 0 })` to read one Thread's whole log, and
+afterSequence: 0 })` to read one Thread's whole log (in the process, through
+  `readThreadEventLog` of `runtime/contracts`, since `ThreadEvents` answers
+  pages under 3 MiB), and
   `projectThreads(projectId)` to list a Project's Threads
   ([`src/host/comments.ts`](src/host/comments.ts)).
 - `tools/v1` (provided by [`core`](../../foundation/core/README.md)):

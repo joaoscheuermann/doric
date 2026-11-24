@@ -98,6 +98,11 @@ export interface Harness {
   /** What the fakes answer while set. */
   readonly failures: Failures;
   /**
+   * While `pageSize` is set, `runtime.threads/v1.ThreadEvents` cuts every page
+   * to that many events and keeps the log's `lastSequence` (the 1.10.0 cut).
+   */
+  readonly paging: { pageSize?: number };
+  /**
    * Every call the fakes received, in order: `events.register:<type>`,
    * `events.sink`, `events.append:<type>`, `tools.register:<name>`,
    * `threads.threadEvents:<id>`, `threads.projectThreads:<projectId>`.
@@ -163,6 +168,7 @@ const timestamp = '2026-01-01T00:00:00.000Z';
 export const harness = (log: ThreadLog = threadLog()): Harness => {
   const host = createCommentsHost();
   const failures: Failures = {};
+  const paging: { pageSize?: number } = {};
   const timeline: string[] = [];
   const eventRegisters: Recorded<JsonValue>[] = [];
   const sinks: Recorded<JsonValue>[] = [];
@@ -250,10 +256,14 @@ export const harness = (log: ThreadLog = threadLog()): Harness => {
 
           if (rows.length === 0) return {};
 
+          const after = rows.filter(
+            (row) => row.sequence > request.afterSequence,
+          );
+
           return {
             threadEventLog: create(ThreadEventLogSchema, {
-              events: rows
-                .filter((row) => row.sequence > request.afterSequence)
+              events: after
+                .slice(0, paging.pageSize ?? after.length)
                 .map((row) =>
                   fromJson(ThreadEventSchema, row as unknown as JsonValue),
                 ),
@@ -323,6 +333,7 @@ export const harness = (log: ThreadLog = threadLog()): Harness => {
     router,
     log,
     failures,
+    paging,
     timeline,
     eventRegisters,
     sinks,

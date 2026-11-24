@@ -9,8 +9,14 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import test from 'node:test';
 
-import { type JsonObject, toJson } from '@bufbuild/protobuf';
+import {
+  fromJson,
+  type JsonObject,
+  type JsonValue,
+  toJson,
+} from '@bufbuild/protobuf';
 import { ContractError } from 'bundle/contracts';
+import { ThreadEventSchema } from 'runtime/contracts/gen/doric/runtime/v2/runtime_pb.js';
 
 import {
   AnswerResponseSchema,
@@ -283,6 +289,49 @@ void test('R12: a row as the kernel wrote it and a row as the routed append stor
       },
     });
   }
+});
+
+void test('S62b 16: Status reads every row of a log ThreadEvents cuts into pages of two', async (t) => {
+  const world = await activated(t);
+  for (let index = 0; index < 4; index += 1)
+    world.row(threadId, 'p1', 'text.delta', { delta: `part ${index}` });
+  world.row(threadId, 'a1', 'openui.answered/v1', {
+    questionPromptId: 'q1',
+    digest: digestOf(questions),
+    answers: [{ id: 'db', options: ['Postgres'] }],
+  });
+  world.threadsAnswers.threadEvents = (request) => {
+    const rows = world.log.filter((row) => row.threadId === request.id);
+    return {
+      threadEventLog: {
+        events: rows
+          .filter((row) => row.sequence > request.afterSequence)
+          .slice(0, 2)
+          .map((row) =>
+            fromJson(ThreadEventSchema, row as unknown as JsonValue),
+          ),
+        lastSequence: rows.at(-1)?.sequence ?? 0,
+      },
+    };
+  };
+
+  const response = await world
+    .questions()
+    .status({ promptId: 'q1', questions });
+
+  assert.deepEqual(toJson(StatusResponseSchema, response), {
+    questionState: {
+      answered: { answers: [{ id: 'db', options: ['Postgres'] }] },
+    },
+  });
+  assert.deepEqual(
+    world.callsOf('threads.threadEvents').map(({ request }) => request),
+    [
+      { id: threadId, afterSequence: 0 },
+      { id: threadId, afterSequence: 2 },
+      { id: threadId, afterSequence: 4 },
+    ],
+  );
 });
 
 void test('R13: a no-break-space label and a label of 61 astral characters pass protovalidate but are invalid_input, and nothing is called', async (t) => {

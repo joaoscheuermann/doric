@@ -1,4 +1,4 @@
-// `runtime.threads/v1` (host, 1.9.0): the Threads of the workspace, served by
+// `runtime.threads/v1` (host, 1.10.0): the Threads of the workspace, served by
 // `runtime`. Two groups of methods share the service:
 //
 // - The controls a running parent prompt has over its direct children
@@ -14,6 +14,9 @@
 //
 // 1.9.0: `watchThread` and `viewThread` become server streams; a snapshot's
 // events stop before 3 MiB and the rest follow as `event` items.
+// 1.10.0: `ThreadEvents` answers the events after the cursor up to 3 MiB; a
+// cut answer's last sequence is below `last_sequence`, and the next call
+// continues there.
 syntax = "proto3";
 
 package doric.runtime.threads.v1;
@@ -138,8 +141,8 @@ service ThreadsService {
   rpc Compact(CompactRequest) returns (CompactResponse) {
     option (doric.platform.v1.method).expose = EXPOSE_DESKTOP;
   }
-  // The whole log after a cursor, with the Thread's last sequence; absent
-  // when there is no Thread by that id.
+  // The events after a cursor, up to 3 MiB, with the Thread's last sequence;
+  // absent when there is no Thread by that id.
   rpc ThreadEvents(ThreadEventsRequest) returns (ThreadEventsResponse);
   // The stored events after a cursor, with no record check (replay).
   rpc StoredEventsAfter(StoredEventsAfterRequest) returns (StoredEventsAfterResponse);
@@ -456,7 +459,7 @@ message QueuedPrompt {
   bool editable = 4;
 }
 
-// The whole log after a cursor, with the Thread's last sequence.
+// The events after a cursor, up to 3 MiB, with the Thread's last sequence.
 message ThreadEventLog {
   // The events after the cursor, in order.
   repeated doric.runtime.v2.ThreadEvent events = 1;
@@ -1118,7 +1121,7 @@ message CompactResponse {
   }];
 }
 
-// Asks the whole log after a cursor.
+// Asks the log after a cursor.
 message ThreadEventsRequest {
   // The Thread's id.
   string id = 1;

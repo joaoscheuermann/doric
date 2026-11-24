@@ -17,7 +17,7 @@ import {
   type HostServices,
 } from 'bundle/host';
 import { FilesService } from 'files/contracts/gen/doric/files/v1/files_pb.js';
-import type { SteerResult } from 'runtime/contracts';
+import { readThreadEventLog, type SteerResult } from 'runtime/contracts';
 import {
   type SteerResult as SteerResultMessage,
   ThreadsService,
@@ -213,7 +213,7 @@ export const routedPapercraftPorts = (
     threads: {
       eventsAfter: (threadId, afterSequence, call) =>
         within(call, async () => {
-          const { threadEventLog } = await threads().threadEvents({
+          const threadEventLog = await readThreadEventLog(threads(), {
             id: threadId,
             afterSequence,
           });

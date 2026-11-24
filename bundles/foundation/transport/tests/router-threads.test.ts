@@ -443,6 +443,46 @@ void test('R-thr-events: an uncut log has no nextAfterSequence; afterSequence is
   ]);
 });
 
+void test('S62b 17: a runtime page cut before lastSequence (under 3 MiB) answers nextAfterSequence = its last sequence', async (t) => {
+  const h = await served(
+    t,
+    threadsAnswering('threadEvents', () => ({
+      events: [threadEvent(3), threadEvent(4)],
+      lastSequence: 9,
+    })),
+  );
+
+  assertMessage(
+    ListEventsResponseSchema,
+    await h.threads().listEvents({ threadId, afterSequence: 2 }),
+    {
+      threadEventLog: {
+        events: [threadEvent(3), threadEvent(4)],
+        lastSequence: 9,
+      },
+      nextAfterSequence: 4,
+    },
+    'the cut page and its next cursor',
+  );
+  assert.deepEqual(requestsOf(h, 'threads.threadEvents'), [
+    { id: threadId, afterSequence: 2 },
+  ]);
+});
+
+void test('S62b 17: an empty runtime page answers no nextAfterSequence', async (t) => {
+  const h = await served(
+    t,
+    threadsAnswering('threadEvents', () => ({ events: [], lastSequence: 9 })),
+  );
+
+  assertMessage(
+    ListEventsResponseSchema,
+    await h.threads().listEvents({ threadId, afterSequence: 9 }),
+    { threadEventLog: { events: [], lastSequence: 9 } },
+    'an empty page without a next cursor',
+  );
+});
+
 void test('R-thr-events/Q3: a log runtime refuses as limit_exceeded passes through unchanged', async (t) => {
   const h = await served(
     t,

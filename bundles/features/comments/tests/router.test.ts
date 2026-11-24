@@ -623,6 +623,36 @@ void test('C10: List answers the Thread’s comments in log order, filters by ki
   ]);
 });
 
+void test('S62b 16: a log ThreadEvents cuts into pages of two is read whole: List folds every comments.* row', async (t) => {
+  const h = await activated(t);
+  const comments: JsonValue[] = [];
+
+  for (const text of ['um', 'dois', 'três', 'quatro', 'cinco']) {
+    comments.push(
+      domainOf(
+        (await h.comments().add({ target: wireTarget(onElement), text }))
+          .comment,
+      ),
+    );
+  }
+  const last = comments.at(-1) as JsonObject;
+  await h
+    .comments()
+    .resolve({ commentId: String(last.commentId), resolved: true });
+
+  h.paging.pageSize = 2;
+  h.threadEvents.length = 0;
+
+  assert.deepEqual(await listed(h), [
+    ...comments.slice(0, -1),
+    { ...last, resolved: true },
+  ]);
+  assert.ok(
+    h.threadEvents.length > 1,
+    'the log was read over more than one page',
+  );
+});
+
 void test('C11: List without a projectId is invalid_scope', async (t) => {
   const h = await activated(t);
 

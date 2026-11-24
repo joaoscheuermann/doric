@@ -159,7 +159,8 @@ The question schemas, all strict, where "text" is a string that is not blank
 A question is its `promptId` and its digest: the hex SHA-256 of
 `JSON.stringify(questions)`. The same questions written by another prompt are
 another question. Every call reads the Thread's log again through
-`runtime.threads/v1.threadEvents` from sequence 0; nothing is cached
+`runtime.threads/v1.threadEvents` from sequence 0 (in the process, every page
+through `readThreadEventLog` of `runtime/contracts`); nothing is cached
 ([`src/host/questions.ts`](src/host/questions.ts)).
 
 - `status` answers `answered` with the answers of the first

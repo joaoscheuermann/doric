@@ -9,11 +9,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { create, toJson } from '@bufbuild/protobuf';
+import { create, fromJson, type JsonValue, toJson } from '@bufbuild/protobuf';
 import { anyPack } from '@bufbuild/protobuf/wkt';
 import { ContractError } from 'bundle/contracts';
 import { HookHandlerServiceHandleResponseSchema } from 'bundle/contracts/gen/doric/hooks/v1/hooks_pb.js';
 import { OnPromptStartedHookInputSchema } from 'runtime/contracts/gen/doric/runtime/hooks/v1/hooks_pb.js';
+import { ThreadEventSchema } from 'runtime/contracts/gen/doric/runtime/v2/runtime_pb.js';
 
 import { instructText } from '../src/host/library.js';
 import {
@@ -216,4 +217,39 @@ void test('H5: the library job a hook starts calls Describe, Exec and Content af
     assert.equal(call.aborted, false, call.method);
     assert.deepEqual(call.scope, { projectId }, call.method);
   }
+});
+
+void test('S62b 15: a log ThreadEvents cuts into pages of two is applied whole before the cursor moves to lastSequence', async (t) => {
+  const world = await activated(t);
+  for (let index = 0; index < 4; index += 1)
+    world.row('p0', 'text.delta', { delta: `part ${index}` });
+  world.row('p0', 'papercraft.cwd/v1', { cwd: '/w/app' });
+  world.threadsAnswers.threadEvents = (request) => {
+    const rows = world.log.filter((row) => row.threadId === request.id);
+    return {
+      threadEventLog: {
+        events: rows
+          .filter((row) => row.sequence > request.afterSequence)
+          .slice(0, 2)
+          .map((row) =>
+            fromJson(ThreadEventSchema, row as unknown as JsonValue),
+          ),
+        lastSequence: rows.at(-1)?.sequence ?? 0,
+      },
+    };
+  };
+
+  await world.promptStarted('p1', '/w/app');
+
+  assert.deepEqual(
+    world.callsOf('threads.threadEvents').map(({ request }) => request),
+    [
+      { id: threadId, afterSequence: 0 },
+      { id: threadId, afterSequence: 2 },
+      { id: threadId, afterSequence: 4 },
+    ],
+  );
+  // The cwd row at sequence 5 was applied: the same cwd appends nothing.
+  assert.deepEqual(world.callsOf('events.append'), []);
+  assert.deepEqual(world.cwds(), ['/w/app']);
 });

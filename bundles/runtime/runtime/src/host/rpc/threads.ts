@@ -62,7 +62,9 @@ import {
   StoredThreadResponseSchema,
   TerminateResponseSchema,
   TerminateThreadResponseSchema,
+  ThreadEventLogSchema,
   ThreadEventsRequestSchema,
+  type ThreadEventsResponse,
   ThreadEventsResponseSchema,
   ThreadResponseSchema,
   ThreadSnapshotSchema,
@@ -86,6 +88,13 @@ import { detachedItems, type StreamSink } from './streams.js';
  * in its own `event` item.
  */
 export const SNAPSHOT_MAX_BYTES = 3 * 1024 * 1024;
+
+/**
+ * The largest encoded `ThreadEventsResponse`: 3 MiB, as the `WatchThread`
+ * snapshot ({@link SNAPSHOT_MAX_BYTES}). A single event larger than it still
+ * goes alone.
+ */
+export const THREAD_EVENTS_MAX_BYTES = 3 * 1024 * 1024;
 
 /** `value` parsed by today's input schema of `runtime.threads/v1.<method>`. */
 const input = <S extends z.ZodType>(
@@ -152,6 +161,42 @@ const splitSnapshot = (item: WatchThreadResponse): WatchThreadResponse[] => {
       }),
     ),
   ];
+};
+
+/**
+ * A `ThreadEventsResponse` cut to the longest prefix of its events that keeps
+ * it under {@link THREAD_EVENTS_MAX_BYTES}, at least one event; its
+ * `lastSequence` stays. `thread_event_log` is field 1 with a one-byte tag, as
+ * `snapshot` is, so {@link itemBytes} measures it.
+ */
+const cutThreadEvents = (
+  response: ThreadEventsResponse,
+): ThreadEventsResponse => {
+  const log = response.threadEventLog;
+  if (
+    log === undefined ||
+    toBinary(ThreadEventsResponseSchema, response).byteLength <
+      THREAD_EVENTS_MAX_BYTES
+  )
+    return response;
+  let bytes = toBinary(ThreadEventLogSchema, {
+    ...log,
+    events: [],
+  }).byteLength;
+  let kept = 0;
+  for (const event of log.events) {
+    const share = toBinary(
+      ThreadEventLogSchema,
+      create(ThreadEventLogSchema, { events: [event] }),
+    ).byteLength;
+    if (kept > 0 && itemBytes(bytes + share) >= THREAD_EVENTS_MAX_BYTES) break;
+    bytes += share;
+    kept += 1;
+  }
+
+  return create(ThreadEventsResponseSchema, {
+    threadEventLog: { ...log, events: log.events.slice(0, kept) },
+  });
 };
 
 /**
@@ -462,6 +507,18 @@ export const routedThreadsService = (
         const parsed = input('compact', methods.compact.input, { id });
         return await service.threads.compact(parsed.id);
       }),
+    /**
+     * `ThreadEvents{id, afterSequence}`: the events after the cursor, in order —
+     * the longest prefix whose `ThreadEventsResponse` encodes below
+     * {@link THREAD_EVENTS_MAX_BYTES}, at least one event when any follows the
+     * cursor — and `lastSequence`, the Thread's last sequence (the uncut log's,
+     * unchanged by the cut). A non-empty answer whose last event's sequence is
+     * below `lastSequence` was cut; the caller continues with that sequence as
+     * `afterSequence`. An answer under the limit is today's, unchanged. No
+     * Thread by that id: `threadEventLog` absent. Fails as today (`invalid_input`
+     * for the request); a single event above 4 MiB still fails `limit_exceeded`
+     * in the SDK.
+     */
     threadEvents: (request) =>
       answer(ThreadEventsResponseSchema, async ({ service }) => {
         const { id, afterSequence } = input(
@@ -472,7 +529,7 @@ export const routedThreadsService = (
         return {
           threadEventLog: await service.threads.events(id, afterSequence),
         };
-      }),
+      }).then(cutThreadEvents),
     storedEventsAfter: (request) =>
       answer(StoredEventsAfterResponseSchema, async ({ threads }) => {
         const { id, afterSequence } = input(

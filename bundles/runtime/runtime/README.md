@@ -946,6 +946,13 @@ type RemoveQueuedResult =
 of [Usage](#usage). `threadEvents` answers every event after `afterSequence`,
 with no limit, and `lastSequence` is the larger of the record's `lastSequence`
 and the last event's sequence ([`service.ts`](src/host/domain/service.ts)).
+Over the router, `runtime.threads/v1.ThreadEvents` (1.10.0) answers the
+longest prefix of those events whose answer encodes below
+`THREAD_EVENTS_MAX_BYTES` (3 MiB), at least one event, with `lastSequence`
+unchanged ([`rpc/threads.ts`](src/host/rpc/threads.ts)); a non-empty page whose
+last sequence is below `lastSequence` was cut, and the next cursor is that
+sequence. The manifest still provides `runtime.threads/v1@1.8.0` until slice
+S62c.
 
 `instruct` gives a Thread an instruction from the calling bundle: a steer whose
 source is `{ kind: 'bundle', bundleId, reason, retain? }`, where `bundleId` is
@@ -1435,6 +1442,15 @@ for every acquisition
   `runtime.lease/v1`: one `Describe`, `expectSandboxId` on every step; the
   first `leaseStatus` failure becomes the `{ status }` answer, other failures
   keep their code, message and details. Used by `files`.
+- **Whole Thread log** ([`thread-events.ts`](src/contracts/thread-events.ts)):
+  `readThreadEventLog(threads, { id, afterSequence }, { signal? })` calls
+  `threadEvents` page by page, each next cursor the previous page's last
+  sequence, until a page is empty or reaches its `lastSequence`, and answers
+  one log with the events joined and the largest `lastSequence`; `undefined`
+  when a page answers no log (the Thread is gone, also between pages); a
+  call's failure unchanged; `invalid_output` when a page does not advance.
+  Against a provider that does not cut it makes one call. Used by the routed
+  hosts of `comments`, `openui` and `papercraft`.
 - **Thread sessions**: `withThreadSession` opens
   `runtime.workspace/v1.OpenThread`, runs its task on the `ready` item, answers
   `missing`, `inactive` or `pending` without running the task, and ends the

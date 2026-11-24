@@ -648,7 +648,9 @@ sequence at which the Thread loaded the `papercraft` skill (a `tool.started` of
 ([`src/host/library.ts`](src/host/library.ts)).
 
 - `onPromptStartedHook`: reads the Thread's new events through
-  `runtime.threads/v1.threadEvents` (a failed read ends the hook); appends
+  `runtime.threads/v1.threadEvents` (in the process, every page after the
+  cursor through `readThreadEventLog` of `runtime/contracts`, so no event is
+  skipped when `ThreadEvents` cuts a page; a failed read ends the hook); appends
   `papercraft.cwd/v1 { cwd }` when `cwd` differs from the last bound one. It
   stops there while the Thread has not loaded the skill. Otherwise it builds
   the library instruct from the last answer recorded for `cwd`

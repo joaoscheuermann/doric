@@ -207,17 +207,27 @@ const threadPageOf = (page: {
   return pageOf(page.items.slice(0, kept));
 };
 
-/** `ListEvents`' `{threadEventLog, nextAfterSequence?}`, the events cut under 3 MiB (D6). */
+/**
+ * `ListEvents`' `{threadEventLog, nextAfterSequence?}`: the events of one
+ * `runtime.threads/v1.ThreadEvents` page, cut under 3 MiB (D6). The page
+ * ends before the log when transport cut it or when runtime did (its last
+ * event's sequence below `lastSequence`); then `nextAfterSequence` is the last
+ * kept event's sequence. A page that reaches `lastSequence` (or is empty) has
+ * none.
+ */
 const eventLogOf = (log: {
   readonly events: readonly { readonly sequence: number }[];
+  readonly lastSequence: number;
 }): unknown => {
-  const logOf = (events: readonly { readonly sequence: number }[]) =>
-    events.length === log.events.length
-      ? { threadEventLog: log }
-      : {
-          threadEventLog: { ...log, events },
-          nextAfterSequence: events.at(-1)?.sequence,
-        };
+  const logOf = (events: readonly { readonly sequence: number }[]) => {
+    const cut = events.length !== log.events.length;
+    const last = events.at(-1)?.sequence;
+    const threadEventLog = cut ? { ...log, events } : log;
+
+    return cut || (last !== undefined && last < log.lastSequence)
+      ? { threadEventLog, nextAfterSequence: last }
+      : { threadEventLog };
+  };
   const kept = keptBefore(
     log.events,
     (events) => sizeOf(threadsApi.ListEventsResponseSchema, logOf(events)),

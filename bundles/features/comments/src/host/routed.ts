@@ -11,7 +11,7 @@ import {
   type HostContext,
   type HostServices,
 } from 'bundle/host';
-import type { ThreadEvent } from 'runtime/contracts';
+import { readThreadEventLog, type ThreadEvent } from 'runtime/contracts';
 import { ThreadsService } from 'runtime/contracts/gen/doric/runtime/threads/v1/threads_pb.js';
 import type { ThreadEvent as ThreadEventMessage } from 'runtime/contracts/gen/doric/runtime/v2/runtime_pb.js';
 
@@ -68,7 +68,7 @@ export const routedCommentsPorts = (
   return {
     threadEvents: (threadId) =>
       routed(async () => {
-        const { threadEventLog } = await threads().threadEvents({
+        const threadEventLog = await readThreadEventLog(threads(), {
           id: threadId,
           afterSequence: 0,
         });

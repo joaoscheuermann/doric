@@ -32,6 +32,7 @@ export * from './sandbox.js';
 export * from './scope.js';
 export * from './sessions.js';
 export * from './storage.js';
+export * from './thread-events.js';
 export * from './threads.js';
 export * from './tool-host/index.js';
 export * from './usage.js';

@@ -1317,6 +1317,21 @@ after a 5 s grace; a failure after the cancel answers `run_cancelled` or
   `commentsAddedOf` and `commentsResolvedOf` and fall back to the row as
   stored, so rows in the message's JSON encoding read correctly;
   `papercraft` now depends on `comments`.
+- 2026-11-24: phase 3, slice S62b3, of
+  [`docs/designs/grpc-processes.md`](../designs/grpc-processes.md) (version
+  6.27): `runtime.threads/v1.ThreadEvents` answers the longest prefix of the
+  events that encodes below `THREAD_EVENTS_MAX_BYTES` (3 MiB), at least one
+  event, with `lastSequence` unchanged (proto header 1.10.0; the manifest
+  stays `runtime.threads/v1@1.8.0` until S62c). `readThreadEventLog`
+  (`runtime/contracts`) reads the whole log, each next cursor the last
+  event's sequence, answering `undefined` when the Thread is gone and
+  `invalid_output` when a page does not advance; the routed hosts of
+  `comments`, `openui` and `papercraft` read through it. `transport`'s
+  `ListEvents` sets `nextAfterSequence` whenever its page ends before
+  `lastSequence`. Proto comments only: `api.credentials/v1` lists
+  `credential_name_taken` under `ALREADY_EXISTS`, `api.threads/v1` the
+  queued edit's `invalid_prompt` under `INVALID_ARGUMENT` (both 1.0.0), and
+  `git.commands/v1`'s header says 1.2.0.
 - 2026-11-23: phase 3, slice S56, of
   [`docs/designs/grpc-processes.md`](../designs/grpc-processes.md): `openui`
   runs as its own process (`src/host/main.ts`, `createOpenuiHost`) serving
