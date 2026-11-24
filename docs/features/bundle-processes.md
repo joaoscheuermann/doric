@@ -1144,6 +1144,24 @@ after a 5 s grace; a failure after the cancel answers `run_cancelled` or
   `mcpToolDefinition`; `openStdio` runs over an `McpLease`, and a sandbox
   without `start` or answering `unsupported_operation` keeps today's "cannot
   keep a process running" message. The process follows in S59b and S59c.
+- 2026-11-24: phase 3, slice S59b, of
+  [`docs/designs/grpc-processes.md`](../designs/grpc-processes.md) (version
+  6.21): `mcp`'s routed adapters, still with no process (S59c).
+  `src/host/codec.ts` (`serverInputOf`, which checks a routed input again with
+  today's zod schema and answers `invalid_input` "Invalid input for mcp/v1
+  <Method>." with the issues; `serverViewMessageOf`,
+  `skillSourceEntryMessageOf`); `src/host/lease.ts` `routedMcpLease`
+  (`runOnProjectLease` with scope `{projectId}` only; `stdio` started through
+  `LeaseService.Start`, detached, resolving at `started`;
+  `unsupported_operation` keeps today's text); `src/host/routed.ts`
+  (`detached`, `routedSecrets`, `routedTools`, `routedAttach` in chunks of at
+  most 1 MiB, `routedMcpPorts`, `watchProjectDeletions`). Only Create's and
+  Update's credential check and a tool call's image attach run in the
+  caller's call; the rest is detached. `watchProjectDeletions` opens
+  `runtime/v2.Watch` again 5 s after it ends, cleanly or with an error
+  (a `warn` only for an error), and nothing after `dispose()`.
+  `src/host/stream.ts` is `mcp`'s own copy of `chat`'s `streamOf`. The package
+  gains `@connectrpc/connect`, and `storage` moves to `dependencies`.
 - 2026-11-23: phase 3, slice S56, of
   [`docs/designs/grpc-processes.md`](../designs/grpc-processes.md): `openui`
   runs as its own process (`src/host/main.ts`, `createOpenuiHost`) serving

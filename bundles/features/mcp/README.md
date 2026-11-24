@@ -81,6 +81,26 @@ Host modules:
   "cannot keep a process running" message.
 - [src/host/stdio.ts](src/host/stdio.ts): the MCP SDK transport over a sandbox
   process.
+- [src/host/codec.ts](src/host/codec.ts): the routed messages of `mcp/v1` and
+  `default.skill-sources/v1`. `serverInputOf` checks a routed input again with
+  today's zod schema and answers `invalid_input`, "Invalid input for mcp/v1
+  <Method>.", with the issues; `serverViewMessageOf` and
+  `skillSourceEntryMessageOf` build the answers.
+- [src/host/lease.ts](src/host/lease.ts): `routedMcpLease`, the `McpLease` over
+  the router: it runs on the Project's lease (`runOnProjectLease`, scope
+  `{projectId}` only) and starts a `stdio` process through
+  `LeaseService.Start`, detached, resolving at `started`. An
+  `unsupported_operation` refuses the start, so `open.ts` gives today's text.
+- [src/host/routed.ts](src/host/routed.ts): the routed ports for the bundle's
+  coming process (S59c), not yet started: `detached`, `routedSecrets`,
+  `routedTools`, `routedAttach` (the bytes in chunks of at most 1 MiB),
+  `routedMcpPorts` and `watchProjectDeletions`, which opens `runtime/v2.Watch`
+  again 5 s after the stream ends, cleanly or with an error (logged at `warn`
+  only for an error), and opens nothing after `dispose()`. Only Create's and
+  Update's credential check and a tool call's image attach run in the caller's
+  call; every other routed call is detached from it.
+- [src/host/stream.ts](src/host/stream.ts): `streamOf`, `mcp`'s own copy of
+  `chat`'s.
 - [src/host/tools.ts](src/host/tools.ts): tool names, result text and
   `executeMcpTool`, the one tool call shared by `toDoricTool` (the kernel's
   tool definition) and `mcpToolDefinition` (for the bundle's future process).
