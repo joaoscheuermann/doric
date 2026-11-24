@@ -202,7 +202,14 @@ complete list of checks and outputs is in [Build tooling](#build-tooling).
   listed in `provides` (`… but not declared in provides.`), and every
   `provides` entry is provided, defined or registered by some part:
   `provides declares <contract>, but no part provides, defines or registers it during activate.`
-  ([`record.ts`](src/build/record.ts)).
+  ([`record.ts`](src/build/record.ts)). Besides what it records, the host
+  part provides the contract of every contract-role service of a `HOST` or
+  `HOOKS` contract in its static `services` list, and every `provides` id
+  whose `.proto` marks it a hooks, event, settings or storage-type contract
+  and that no service serves; both satisfy the `provides` check
+  ([`host-provides.ts`](src/build/host-provides.ts)). For a version 2
+  manifest, a served contract missing from `provides` fails with
+  `<source>: the host part serves <id>, which provides does not declare.`
 - Every contract a part reaches with `services.use` or with `use` of the
   `hooks/v1` facade is listed in `requires` or `optional`, unless the bundle
   provides it or it is a platform `doric.*` contract, which is never declared.
@@ -3634,9 +3641,23 @@ function recordActivation(options: {
   activate: Activate;
 }): Promise<readonly RecordedContract[]>;
 function checkRecording(
-  manifest: ManifestV1,
+  manifest: Manifest,
   recorded: readonly RecordedContract[],
+  served?: readonly HostProvide[], // default []
 ): readonly string[];
+interface HostProvide {
+  readonly id: string;
+  readonly kind: Exclude<DescriptorKind, 'command'>;
+  readonly cardinality: DescriptorEntry['cardinality'];
+  readonly source: string; // `src/host/main.ts:12` or the .proto file name
+  readonly declared: string | undefined; // the version provides lists
+}
+function hostProvides(input: {
+  manifest: Manifest;
+  recorded: readonly RecordedContract[];
+  services: readonly StaticServiceEntry[];
+  index: CatalogIndex;
+}): readonly HostProvide[];
 function contractDocument(contract: RecordedContract): ContractDocument;
 function schemaPath(contractId: string): string;
 ```
@@ -3650,8 +3671,23 @@ a `defineCommand` value; every other call is an inert no-op and
 ([`record.ts`](src/build/record.ts)). `checkRecording` lists every problem: a
 contract recorded twice in one environment, a contract not declared in
 `provides`, a basic contract with another cardinality than the platform's, a
-method exposed against the platform's table, and a `provides` entry nothing
-recorded.
+method exposed against the platform's table, for a version 2 manifest a
+`served` contract `provides` does not declare, and a `provides` entry that
+nothing recorded and no `served` contract has.
+
+`hostProvides` ([`host-provides.ts`](src/build/host-provides.ts)) answers,
+for a manifest of any version and without duplicates, the contracts the host
+part provides beyond its recording: first, in `services` order, the contract
+of each contract-role service of a `HOST` or `HOOKS` contract; then, in
+`provides` order, each id whose `.proto` marks it `hooks`, `event`,
+`settings` or `storage-type` and declares no contract-role service. It skips
+ids the recording holds in `host` or `desktopMain` (so `chat.composer/v1`
+stays with the desktop composer), and never throws. `buildBundle` reads the
+static `services` and the build index before `checkRecording`, passes the
+result as `served`, and appends to `contracts.json` a `host` entry for each
+served contract `provides` lists: the declared version, kind and cardinality
+from the `.proto`, `local: false` and the path `schemas/<id>.json`, for which
+no schema file is written. The kernel's dry activation still runs.
 
 **Parts** ([`parts.ts`](src/build/parts.ts)). Each part with a source entry is
 rebuilt into a cleared output folder with esbuild, bundled as ESM; inline

@@ -35,6 +35,7 @@ import {
   parseManifest,
 } from '../runtime/manifest.js';
 import { installDomShim } from './dom-shim.js';
+import { hostProvides } from './host-provides.js';
 import { checkRecording, recordActivation } from './record.js';
 import {
   contractDocument,
@@ -551,6 +552,15 @@ export const checkContractEnvironment = (input: {
  * `dist/contracts/gen` writes an empty set (zero bytes). The file is deleted
  * first, so a failed build leaves no stale one. `contracts.json` is still
  * written until phase 6.
+ *
+ * Host provides (A61, A63, A70): after the dry activation the build reads
+ * the host part's static `services` and the build index, and
+ * {@link hostProvides} answers what the host part provides beyond the
+ * recording. They count in `checkRecording`; each one `provides` declares
+ * gets a `host` entry in `contracts.json` after the recorded entries, with
+ * the declared version, its kind and cardinality, `local: false` and the
+ * path `schemas/<id>.json`, where no document is written. A contract the
+ * desktopMain part records gets no host entry, in any manifest version.
  */
 export const buildBundle = async (
   bundleDir: string,
@@ -677,14 +687,15 @@ export const buildBundle = async (
     }
   }
 
-  const problems = checkRecording(manifest, recorded);
+  const services = await readStaticServices(root);
+  const index = await loadBuildIndex(root, services);
+  const served = hostProvides({ manifest, recorded, services, index });
+  const problems = checkRecording(manifest, recorded, served);
 
   if (problems.length > 0) {
     throw new BuildError(problems.join('\n'));
   }
 
-  const services = await readStaticServices(root);
-  const index = await loadBuildIndex(root, services);
   const environmentProblems = checkContractEnvironment({
     manifest,
     recorded,
@@ -741,6 +752,22 @@ export const buildBundle = async (
       environment: contract.environment,
       cardinality: contract.cardinality,
       local,
+      schema: schemaPath(contract.id),
+    });
+  }
+
+  for (const contract of served) {
+    if (contract.declared === undefined) {
+      continue;
+    }
+
+    entries.push({
+      id: contract.id,
+      version: contract.declared,
+      kind: contract.kind,
+      environment: 'host',
+      cardinality: contract.cardinality,
+      local: false,
       schema: schemaPath(contract.id),
     });
   }

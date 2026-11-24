@@ -1289,6 +1289,24 @@ after a 5 s grace; a failure after the cancel answers `run_cancelled` or
   proven by `tests/contracts-window.test.ts`, which bundles `runtime/contracts`
   for the browser with esbuild, not by `tsconfig.client.json`, which Node types
   reach through `pino-std-serializers` and `undici-types`.
+- 2026-11-24: phase 3, slice S62a, of
+  [`docs/designs/grpc-processes.md`](../designs/grpc-processes.md) (version
+  6.26, A61, A63, A70): `packages/bundle/src/build/host-provides.ts` adds
+  `HostProvide` and `hostProvides({manifest, recorded, services, index})`:
+  the `HOST`/`HOOKS` contracts of contract-role services in the host part's
+  static `services` list, plus `provides` ids whose `.proto` marks them
+  hooks, event, settings or storage-type and that no service serves; ids
+  recorded on `host` or `desktopMain` are skipped (`chat.composer/v1` stays
+  with the desktop composer). `checkRecording(manifest, recorded, served?)`
+  counts served contracts for "provides declares …"; for version 2 manifests
+  only, a served contract missing from `provides` fails with
+  "<source>: the host part serves <id>, which provides does not declare."
+  (S62c applies it to every version). `buildBundle` reads the static
+  services and build index before `checkRecording` and appends a `host`
+  entry per served contract `provides` lists (`local: false`,
+  `schemas/<id>.json`, no schema file written); the kernel's dry activation
+  stays. No real bundle's `contracts.json` changes until S62c lists
+  `api.*/v1` and `executor.session/v1`.
 - 2026-11-23: phase 3, slice S56, of
   [`docs/designs/grpc-processes.md`](../designs/grpc-processes.md): `openui`
   runs as its own process (`src/host/main.ts`, `createOpenuiHost`) serving

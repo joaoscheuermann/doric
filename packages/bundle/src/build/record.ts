@@ -18,6 +18,7 @@ import {
   parseContractEntry,
   partLists,
 } from '../runtime/manifest.js';
+import type { HostProvide } from './host-provides.js';
 import type { RecordedContract } from './schemas.js';
 
 const inert: Disposable = Object.freeze({ dispose: () => undefined });
@@ -243,10 +244,24 @@ export const recordActivation = async (options: {
   return recorded;
 };
 
-/** Build-time checks of a recording against the manifest. */
+/**
+ * Build-time checks of a recording against the manifest. Answers the
+ * problems, each a message for a person, in the order: per recorded
+ * contract (duplicate, not declared, cardinality against the platform's,
+ * exposure); then per `served` contract that `provides` does not declare,
+ * for a version 2 manifest only (S62a; every version from S62c):
+ * "<source>: the host part serves <id>, which provides does not declare.";
+ * then per `provides` id that no recorded and no `served` contract has:
+ * "provides declares <id>, but no part provides, defines or registers it
+ * during activate." (message unchanged).
+ *
+ * `served` defaults to `[]`, which keeps today's answer for every existing
+ * call. Never throws.
+ */
 export const checkRecording = (
   manifest: Manifest,
   recorded: readonly RecordedContract[],
+  served: readonly HostProvide[] = [],
 ): readonly string[] => {
   const errors: string[] = [];
   const provides = new Map<string, string>();
@@ -297,8 +312,21 @@ export const checkRecording = (
     }
   }
 
+  if (manifest.manifestVersion === 2) {
+    for (const contract of served) {
+      if (!provides.has(contract.id)) {
+        errors.push(
+          `${contract.source}: the host part serves ${contract.id}, which provides does not declare.`,
+        );
+      }
+    }
+  }
+
   for (const id of provides.keys()) {
-    if (!recorded.some((contract) => contract.id === id)) {
+    if (
+      !recorded.some((contract) => contract.id === id) &&
+      !served.some((contract) => contract.id === id)
+    ) {
       errors.push(
         `provides declares ${id}, but no part provides, defines or registers it during activate.`,
       );

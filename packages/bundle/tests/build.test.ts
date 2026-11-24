@@ -3,6 +3,26 @@ import { access, mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import test from 'node:test';
 
+import { create, setExtension, toBinary } from '@bufbuild/protobuf';
+import { base64Encode } from '@bufbuild/protobuf/wire';
+import {
+  DescriptorProtoSchema,
+  type FileDescriptorProto,
+  FileDescriptorProtoSchema,
+  FileOptionsSchema,
+  MessageOptionsSchema,
+} from '@bufbuild/protobuf/wkt';
+import {
+  Cardinality,
+  ContractOptionSchema,
+  contract as contractOption,
+  Environment,
+  EventOptionSchema,
+  event as eventOption,
+  file_doric_platform_v1_options,
+  HooksOptionSchema,
+  hooks as hooksOption,
+} from 'bundle/contracts/gen/doric/platform/v1/options_pb.js';
 import { z } from 'zod';
 
 import { readStaticServices } from '../src/build/cli.js';
@@ -21,12 +41,15 @@ import {
   contractDocument,
   manifestV1Schema,
   platformSchemaDocuments,
+  readInstalledBundle,
   recordActivation,
+  resolveEnvironment,
   runCli,
   stageBundles,
 } from '../src/index.js';
 import {
   contractsUrl,
+  descriptorFor,
   manifest,
   skillSource,
   withRoot,
@@ -889,3 +912,376 @@ runBundle({ services: [[DemoService, {}]], activate: () => undefined });
     });
   });
 }
+
+// Host provides (spec `docs/designs/grpc-processes.md`, A61, A63, A70; S62a):
+// besides what its kernel `activate` records, a host part provides the
+// contract of every contract-role service its static `services` list serves
+// and every `provides` id whose `.proto` marks a hooks or event contract.
+
+/**
+ * The files of a host part whose static `services` list serves `entries`
+ * (`[service, generated module below src/contracts/gen]`): `main.ts`, a
+ * stand-in module per service so esbuild resolves it, and the `bundle`
+ * stand-in. The build reads the services against the package's own protos.
+ */
+const servingFiles = (
+  entries: readonly (readonly [service: string, module: string])[],
+): Record<string, string> => ({
+  'src/host/main.ts': mainWith(
+    entries
+      .map(
+        ([service, module]) =>
+          `import { ${service} } from '../contracts/gen/${module}.js';`,
+      )
+      .join('\n'),
+    entries.map(([service]) => `[${service}, {}]`),
+  ),
+  ...Object.fromEntries(
+    entries.map(([service, module]) => [
+      `src/contracts/gen/${module}.ts`,
+      `export const ${service} = {};\n`,
+    ]),
+  ),
+  'node_modules/bundle/package.json': JSON.stringify({
+    name: 'bundle',
+    type: 'module',
+    exports: { '.': './index.js' },
+  }),
+  'node_modules/bundle/index.js': 'export const runBundle = () => undefined;\n',
+});
+
+/** `models.provider/v1` (HOST, MANY): its contract service `ProviderService`. */
+const providerService = [
+  'ProviderService',
+  'doric/models/provider/v1/provider_pb',
+] as const;
+
+/** `tools/v1` (HOST, ONE): its contract service `ToolsService`. */
+const toolsService = ['ToolsService', 'doric/tools/v1/tools_pb'] as const;
+
+/** `tools/v1`'s handler service `ToolHandlerService`. */
+const toolHandlerService = [
+  'ToolHandlerService',
+  'doric/tools/v1/tools_pb',
+] as const;
+
+const readContractsJson = async (dir: string): Promise<unknown> =>
+  JSON.parse(await readFile(join(dir, 'dist', 'contracts.json'), 'utf8'));
+
+const missing = async (path: string): Promise<boolean> =>
+  access(path).then(
+    () => false,
+    () => true,
+  );
+
+/**
+ * The source of a module as protoc-gen-es generates it for `proto`, as tsc
+ * leaves it below a bundle's `dist/contracts/gen`: `file_<name>` hydrated
+ * with `fileDesc`, importing the options file through this package's export.
+ */
+const generatedModule = (
+  exportName: string,
+  proto: FileDescriptorProto,
+): string => `import { fileDesc } from ${JSON.stringify(
+  import.meta.resolve('@bufbuild/protobuf/codegenv2'),
+)};
+import { file_doric_platform_v1_options } from ${JSON.stringify(
+  import.meta.resolve('bundle/contracts/gen/doric/platform/v1/options_pb.js'),
+)};
+
+export const ${exportName} = /*@__PURE__*/ fileDesc(${JSON.stringify(
+  base64Encode(toBinary(FileDescriptorProtoSchema, proto)),
+)}, [file_doric_platform_v1_options]);
+`;
+
+/** `demo/hooks/v1/hooks.proto`: the hooks contract `demo.hooks/v1`, no service. */
+const demoHooksProto = (): FileDescriptorProto => {
+  const options = create(FileOptionsSchema);
+
+  setExtension(
+    options,
+    hooksOption,
+    create(HooksOptionSchema, { id: 'demo.hooks/v1' }),
+  );
+
+  return create(FileDescriptorProtoSchema, {
+    name: 'demo/hooks/v1/hooks.proto',
+    package: 'demo.hooks.v1',
+    syntax: 'proto3',
+    dependency: [file_doric_platform_v1_options.proto.name],
+    messageType: [create(DescriptorProtoSchema, { name: 'OnThingHook' })],
+    options,
+  });
+};
+
+/**
+ * `demo/added/v1/added.proto`: the contract `demo.added/v1` (HOST, MANY),
+ * no service, whose message `DemoAdded` is the payload of that event type.
+ */
+const demoAddedProto = (): FileDescriptorProto => {
+  const options = create(FileOptionsSchema);
+
+  setExtension(
+    options,
+    contractOption,
+    create(ContractOptionSchema, {
+      id: 'demo.added/v1',
+      cardinality: Cardinality.MANY,
+      environment: Environment.HOST,
+    }),
+  );
+
+  const messageOptions = create(MessageOptionsSchema);
+
+  setExtension(
+    messageOptions,
+    eventOption,
+    create(EventOptionSchema, { type: 'demo.added/v1' }),
+  );
+
+  return create(FileDescriptorProtoSchema, {
+    name: 'demo/added/v1/added.proto',
+    package: 'demo.added.v1',
+    syntax: 'proto3',
+    dependency: [file_doric_platform_v1_options.proto.name],
+    messageType: [
+      create(DescriptorProtoSchema, {
+        name: 'DemoAdded',
+        options: messageOptions,
+      }),
+    ],
+    options,
+  });
+};
+
+for (const manifestVersion of [1, 2] as const) {
+  void test(`a v${manifestVersion} fixture whose provides lists a HOST contract only its static services serve builds, and contracts.json lists it once on host without a schema document`, async () => {
+    await withRoot(async (root) => {
+      const dir = await writeBundle(root, 'demo', {
+        manifest: environmentManifest(manifestVersion, [
+          'models.provider/v1@1.2.0',
+        ]),
+        files: servingFiles([providerService]),
+      });
+      const { descriptor } = await buildBundle(dir);
+      const expected = [
+        {
+          id: 'models.provider/v1',
+          version: '1.2.0',
+          kind: 'service',
+          environment: 'host',
+          cardinality: 'many',
+          local: false,
+          schema: 'schemas/models.provider/v1.json',
+        },
+      ];
+
+      assert.deepEqual(descriptor.contracts, expected);
+      assert.deepEqual(
+        ((await readContractsJson(dir)) as { contracts: unknown }).contracts,
+        expected,
+      );
+      assert.ok(
+        await missing(
+          join(dir, 'dist', 'schemas', 'models.provider', 'v1.json'),
+        ),
+        'no schema document is written for a served-only contract',
+      );
+    });
+  });
+
+  void test(`a v${manifestVersion} fixture that lists a HOST contract neither served nor recorded fails with "provides declares"`, async () => {
+    await withRoot(async (root) => {
+      const dir = await writeBundle(root, 'demo', {
+        manifest: environmentManifest(manifestVersion, ['tools/v1@1.0.0']),
+      });
+
+      await assert.rejects(buildBundle(dir), (error: unknown) => {
+        assert.ok(error instanceof BuildError, String(error));
+        assert.ok(
+          error.message.includes(
+            'provides declares tools/v1, but no part provides, defines or registers it during activate.',
+          ),
+          error.message,
+        );
+
+        return true;
+      });
+    });
+  });
+
+  void test(`a v${manifestVersion} fixture serving only ToolHandlerService and listing tools/v1 fails with "provides declares tools/v1"`, async () => {
+    await withRoot(async (root) => {
+      const dir = await writeBundle(root, 'demo', {
+        manifest: environmentManifest(manifestVersion, ['tools/v1@1.0.0']),
+        files: servingFiles([toolHandlerService]),
+      });
+
+      await assert.rejects(buildBundle(dir), (error: unknown) => {
+        assert.ok(error instanceof BuildError, String(error));
+        assert.ok(
+          error.message.includes(
+            'provides declares tools/v1, but no part provides, defines or registers it during activate.',
+          ),
+          error.message,
+        );
+
+        return true;
+      });
+    });
+  });
+}
+
+void test('a v2 fixture whose main.ts serves a HOST contract provides does not list fails naming its line; the same v1 fixture builds without an entry for it', async () => {
+  await withRoot(async (root) => {
+    const files = {
+      'dist/host/index.js': providing('demo.api/v1'),
+      ...servingFiles([toolsService]),
+    };
+    const v2 = await writeBundle(root, 'v2', {
+      manifest: environmentManifest(2, ['demo.api/v1@1.0.0']),
+      files,
+    });
+
+    await assert.rejects(buildBundle(v2), (error: unknown) => {
+      assert.ok(error instanceof BuildError, String(error));
+      assert.ok(
+        error.message.includes(
+          'src/host/main.ts:6: the host part serves tools/v1, which provides does not declare.',
+        ),
+        error.message,
+      );
+
+      return true;
+    });
+
+    const v1 = await writeBundle(root, 'v1', {
+      manifest: environmentManifest(1, ['demo.api/v1@1.0.0']),
+      files,
+    });
+    const { descriptor } = await buildBundle(v1);
+
+    assert.deepEqual(
+      descriptor.contracts.map(({ id, environment }) => [id, environment]),
+      [['demo.api/v1', 'host']],
+    );
+  });
+});
+
+void test('a v2 fixture whose provides lists a hooks and an event contract of its own .proto builds without a recording, with their kinds and cardinalities on host', async () => {
+  await withRoot(async (root) => {
+    const dir = await writeBundle(root, 'demo', {
+      manifest: environmentManifest(2, [
+        'demo.hooks/v1@1.0.0',
+        'demo.added/v1@1.3.0',
+      ]),
+      files: {
+        'dist/contracts/gen/demo/hooks/v1/hooks_pb.js': generatedModule(
+          'file_demo_hooks_v1_hooks',
+          demoHooksProto(),
+        ),
+        'dist/contracts/gen/demo/added/v1/added_pb.js': generatedModule(
+          'file_demo_added_v1_added',
+          demoAddedProto(),
+        ),
+      },
+    });
+    const { descriptor } = await buildBundle(dir);
+
+    assert.deepEqual(descriptor.contracts, [
+      {
+        id: 'demo.hooks/v1',
+        version: '1.0.0',
+        kind: 'hooks',
+        environment: 'host',
+        cardinality: 'one',
+        local: false,
+        schema: 'schemas/demo.hooks/v1.json',
+      },
+      {
+        id: 'demo.added/v1',
+        version: '1.3.0',
+        kind: 'event',
+        environment: 'host',
+        cardinality: 'many',
+        local: false,
+        schema: 'schemas/demo.added/v1.json',
+      },
+    ]);
+  });
+});
+
+void test('a v1 fixture whose desktopMain part records a HOST contract that main.ts also serves builds, and lists it on desktopMain only', async () => {
+  await withRoot(async (root) => {
+    const dir = await writeBundle(root, 'demo', {
+      manifest: environmentManifest(1, ['tools/v1@1.0.0']),
+      files: {
+        'dist/desktop/index.js': providing('tools/v1'),
+        ...servingFiles([toolsService]),
+      },
+    });
+    const { descriptor } = await buildBundle(dir);
+
+    assert.deepEqual(
+      descriptor.contracts.map(({ id, environment }) => [id, environment]),
+      [['tools/v1', 'desktopMain']],
+    );
+  });
+});
+
+void test('the catalog resolves a staged v1 fixture whose provides lists a served-only contract: no consistency quarantine, and the fixture provides it', async () => {
+  await withRoot(async (root) => {
+    const dir = await writeBundle(root, 'demo', {
+      manifest: environmentManifest(1, ['models.provider/v1@1.0.0']),
+      files: servingFiles([providerService]),
+    });
+    const staged = join(root, 'staged');
+
+    await buildBundle(dir);
+    await stageBundles(staged, [dir]);
+
+    const installed = await readInstalledBundle(join(staged, 'demo'));
+    const coreSource = manifest('core', {
+      provides: ['hooks/v1@1.0.0', 'tools/v1@1.0.0', 'skills/v1@1.0.0'],
+    });
+    const resolved = resolveEnvironment(
+      {
+        candidates: [
+          {
+            id: 'core',
+            source: { kind: 'installed', dir: '/bundles/core' },
+            manifest: manifestV1Schema.parse(coreSource),
+            descriptor: descriptorFor(coreSource),
+            errors: [],
+          },
+          {
+            id: 'demo',
+            source: { kind: 'installed', dir: installed.dir },
+            ...(installed.read === undefined
+              ? {}
+              : { manifest: installed.read.manifest }),
+            ...(installed.descriptor === undefined
+              ? {}
+              : { descriptor: installed.descriptor }),
+            errors: installed.errors,
+          },
+        ],
+        composition: { core: 'core', enabled: ['core', 'demo'], providers: {} },
+        platformVersion: '1.0.0',
+        generation: 1,
+      },
+      'host',
+    );
+    const demo = resolved.entries.find((entry) => entry.id === 'demo');
+
+    // The consistency check quarantines with `invalid_descriptor`.
+    assert.deepEqual(demo?.reasons, []);
+    assert.equal(demo?.state, 'scheduled');
+    assert.deepEqual(
+      resolved.contracts
+        .find((entry) => entry.id === 'models.provider/v1')
+        ?.providers.map(({ bundleId }) => bundleId),
+      ['demo'],
+    );
+  });
+});
