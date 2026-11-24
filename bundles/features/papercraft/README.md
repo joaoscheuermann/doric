@@ -87,6 +87,25 @@ take their kernel services as ports
 ([`src/host/ports.ts`](src/host/ports.ts), `PapercraftPorts`,
 `kernelPapercraftPorts`).
 
+The host also runs as its own process ([`src/host/main.ts`](src/host/main.ts),
+`runBundle`; [`src/host/service.ts`](src/host/service.ts),
+`createPapercraftHost`). Its services answer `unavailable` until `activate`,
+which reads the skill, registers the cwd event, the two runtime hooks and the
+skill, in that order; a refused skill registration is skipped without retry.
+Requests are parsed again with the zod schemas and refused with
+`invalid_input` ([`src/host/codec.ts`](src/host/codec.ts)); `Read` sends each
+file in chunks of at most 1 MiB. The ports are routed
+([`src/host/routed.ts`](src/host/routed.ts), `routedPapercraftPorts`:
+`files/v1` scoped to `{projectId}`, bytes through `ReadBytes`), and the
+sandbox runs through `routedPapercraftLease`
+([`src/host/lease.ts`](src/host/lease.ts), chunked `PutFile`/`GetFile`).
+The process loads native packages with `context.assets.require` and reads
+the skill and runner with `context.assets.read`. Library jobs and lease runs
+are detached; concurrent `cwdAt` lookups for one turn share one promise, so
+two Library calls join one job. The process adds the dependencies
+`@connectrpc/connect` and `files`, and `@bufbuild/protovalidate` for
+development.
+
 ## Contracts provided
 
 All are exported from `papercraft/contracts`

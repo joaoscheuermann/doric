@@ -1084,6 +1084,24 @@ after a 5 s grace; a failure after the cancel answers `run_cancelled` or
   `src/host/`. The skill is read in `activate` (`readSkillBesideModule`), the
   runner lazily (`readRunnerBesideModule`, failure remembered). The process
   comes in S57b.
+- 2026-11-23: phase 3, slice S57b, of
+  [`docs/designs/grpc-processes.md`](../designs/grpc-processes.md) (version
+  6.18): `papercraft` runs as its own process (`src/host/main.ts`,
+  `runBundle`; `src/host/service.ts`, `createPapercraftHost` over the S57a
+  cores). Requests are parsed again with zod (`src/host/codec.ts`), a refusal
+  answering `invalid_input`; `Read` streams files in chunks of at most 1 MiB.
+  The sandbox goes through `routedPapercraftLease` (`src/host/lease.ts`, over
+  `runOnProjectLease`, chunked `PutFile`/`GetFile`), Project files through
+  `routedPapercraftPorts` (`src/host/routed.ts`; `files/v1` with the scope
+  `{projectId}` only, bytes through `ReadBytes`). `activate` reads the skill,
+  registers the cwd event (`registerCwdEvent`), the two hooks, then the skill
+  (`registerSkill`: a refusal is skipped without retry); the services answer
+  `unavailable` until then. Native packages load through
+  `context.assets.require`, the skill and runner through `context.assets.read`
+  (needs `host.assets`, slice S62). Library jobs and lease runs are detached;
+  export reads and hook work stay inside the request. Concurrent `cwdAt`
+  lookups for one (project, thread, turn) share one promise, so two Library
+  calls join one job. The kernel entry stays until S62.
 - 2026-11-23: phase 3, slice S56, of
   [`docs/designs/grpc-processes.md`](../designs/grpc-processes.md): `openui`
   runs as its own process (`src/host/main.ts`, `createOpenuiHost`) serving
