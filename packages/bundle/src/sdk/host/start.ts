@@ -3,18 +3,15 @@
 
 import type { JsonObject } from '@bufbuild/protobuf';
 
-
 import type { Call } from '../../contracts/call.js';
 import { OnHostStartHookInputSchema } from '../../contracts/gen/doric/platform/app/hooks/v1/hooks_pb.js';
-import { StartupService } from '../../contracts/gen/doric/platform/startup/v1/startup_pb.js';
-
 import type { HostContext } from './context.js';
-import {
-  contractErrorOf,
-  type HandlerRegistration,
-  type HookHandlerOptions,
-  type HookHandlers,
+import type {
+  HandlerRegistration,
+  HookHandlerOptions,
+  HookHandlers,
 } from './handlers.js';
+import { hostStartup } from './host-startup.js';
 
 /** The startup record a start step writes (`doric.startup/v1`). */
 export interface HostStartup {
@@ -58,23 +55,7 @@ export const onHostStart = (
     context,
     OnHostStartHookInputSchema,
     async (_input, call) => {
-      const client = context.services.use(StartupService);
-      const reported = async (request: Promise<unknown>): Promise<void> => {
-        try {
-          await request;
-        } catch (error) {
-          throw contractErrorOf(error);
-        }
-      };
-
-      await step(
-        {
-          stage: (name) => reported(client.stage({ name })),
-          log: (level, message, fields = {}) =>
-            reported(client.log({ level, message, fields })),
-        },
-        call,
-      );
+      await step(hostStartup(context), call);
     },
     options,
   );

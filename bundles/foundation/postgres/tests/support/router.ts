@@ -1,14 +1,15 @@
 import test from 'node:test';
 
-import type { Client } from '@connectrpc/connect';
+import type { Client, ServiceImpl } from '@connectrpc/connect';
 import type {
   SecretsBackend,
   StorageBackend,
   StorageCapabilities,
 } from 'bundle/contracts';
+import { StartupService } from 'bundle/contracts/gen/doric/platform/startup/v1/startup_pb.js';
 import { BackendService as SecretsBackendService } from 'bundle/contracts/gen/doric/secrets/backend/v1/backend_pb.js';
 import { BackendService as StorageBackendService } from 'bundle/contracts/gen/doric/storage/backend/v1/backend_pb.js';
-import type { HostContext } from 'bundle/host';
+import { type HostContext, hostStartup, type ServiceEntry } from 'bundle/host';
 import { createTestRouter } from 'bundle/testing';
 import type { ConformanceHarness } from 'storage/conformance';
 import {
@@ -41,18 +42,33 @@ export interface RoutedPostgres {
     readonly secrets: Client<typeof SecretsBackendService>;
   };
   readonly backends: PostgresBackends;
-  /** What `connect` wrote through the context's log (`router.logs`). */
-  readonly logs: readonly { readonly level: string; readonly message: string }[];
+  /** What the bundle wrote through the context's log (`router.logs`). */
+  readonly logs: readonly {
+    readonly level: string;
+    readonly message: string;
+  }[];
+  /**
+   * What the fake `doric.startup/v1` received, in order: `['stage', name]`
+   * and `['log', level, message, fields]` (`fields` `{}` when unset).
+   */
+  readonly startup: readonly StartupRecord[];
   /** Stops the router and closes the backends. */
   dispose(): Promise<void>;
 }
 
+/** One request the fake `doric.startup/v1` received. */
+export type StartupRecord =
+  | readonly ['stage', string]
+  | readonly ['log', string, string, unknown];
+
 /**
- * `createPostgresBackends({ environment, database, limits, log })` served with
- * `[StorageBackendService, serveStorageBackend(...)]` and
+ * `createPostgresBackends({ environment, database, limits, startup })` served
+ * with `[StorageBackendService, serveStorageBackend(...)]` and
  * `[SecretsBackendService, serveSecretsBackend(...)]` on a fresh
- * `createTestRouter()`, activated with an `activate` that keeps the context
- * for the log, as `main.ts` does. `environment` defaults to `{}`.
+ * `createTestRouter()` whose fake `doric.startup/v1` records what it receives,
+ * activated with an `activate` that keeps the context, as `main.ts` does:
+ * `startup` forwards to `hostStartup(context)` once it is set. `environment`
+ * defaults to `{}`.
  */
 export const servePostgres = async (options: {
   readonly database?: () => TestClient['database'];
@@ -60,13 +76,46 @@ export const servePostgres = async (options: {
   readonly limits?: Partial<StorageCapabilities>;
 }): Promise<RoutedPostgres> => {
   let context: HostContext | undefined;
+  const startup: StartupRecord[] = [];
   const backends = createPostgresBackends({
     environment: options.environment ?? {},
     ...(options.database === undefined ? {} : { database: options.database }),
     ...(options.limits === undefined ? {} : { limits: options.limits }),
-    log: { info: (message, fields) => context?.log.info(message, fields) },
+    startup: {
+      stage: async (name) => {
+        if (context !== undefined) await hostStartup(context).stage(name);
+      },
+      log: async (level, message, fields) => {
+        if (context !== undefined)
+          await hostStartup(context).log(level, message, fields);
+      },
+    },
   });
-  const router = createTestRouter();
+  const fakeStartup: Partial<ServiceImpl<typeof StartupService>> = {
+    stage: (request) => {
+      startup.push(['stage', request.name]);
+
+      return {};
+    },
+    log: (request) => {
+      startup.push([
+        'log',
+        request.level,
+        request.message,
+        request.fields ?? {},
+      ]);
+
+      return {};
+    },
+  };
+  const router = createTestRouter({
+    fakes: [
+      [
+        StartupService,
+        fakeStartup as ServiceImpl<typeof StartupService>,
+      ] as ServiceEntry,
+    ],
+  });
 
   await router.activate({
     services: [
@@ -89,6 +138,7 @@ export const servePostgres = async (options: {
     raw,
     backends,
     logs: router.logs,
+    startup,
     dispose: async () => {
       await router.control.stop();
       await backends.close();

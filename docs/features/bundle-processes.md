@@ -1260,6 +1260,21 @@ after a 5 s grace; a failure after the cancel answers `run_cancelled` or
   `stagedHostPart(bundlesDir)` finds `host/command.json`, `host/doric-<id>`
   or `host/main.mjs`; bundles without a host part are active, never spawned
   and never stopped. The kernel still boots the running host until S62.
+- 2026-11-24: phase 3, slice S61b, of
+  [`docs/designs/grpc-processes.md`](../designs/grpc-processes.md) (version
+  6.25): `bundle/host` exports `hostStartup(context)`, a `doric.startup/v1`
+  record (`stage`, `log`) whose client is made only when called;
+  `onHostStart` hands its step this object. `postgres`:
+  `PostgresBackendsOptions.startup` replaces `log`; `Connect` records
+  `database_client`, logs `Initializing PostgreSQL client`, connects (with the
+  legacy-row check), then logs `PostgreSQL client initialized`; `main.ts`
+  passes `startup`, a no-op before `activate`. `docker` and `firecracker`:
+  `registerSandboxPoolStep(hooks, context, environment)` registers on
+  `onHostStartHook` a step that stages `sandbox_pool` and logs `Configuring
+  sandbox pool` then `Sandbox pool configured` with the `logSandboxPool`
+  fields (`dockerSocketShared` for docker); a failing startup call fails
+  `Handle` with its code; `main.ts` serves `HookHandlerService` and registers
+  the step in `activate`. The kernel still boots the running host until S62c.
 - 2026-11-23: phase 3, slice S56, of
   [`docs/designs/grpc-processes.md`](../designs/grpc-processes.md): `openui`
   runs as its own process (`src/host/main.ts`, `createOpenuiHost`) serving

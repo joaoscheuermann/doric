@@ -6,12 +6,12 @@
 
 import {
   ContractError,
-  type Log,
   type SecretsBackend,
   type StorageBackend,
   secretsBackendMethods,
   storageBackendMethods,
 } from 'bundle/contracts';
+import type { HostStartup } from 'bundle/host';
 
 import { createDatabaseHandle } from './database.js';
 import type { PostgresOptions } from './options.js';
@@ -20,13 +20,10 @@ import { storageOperations } from './storage/backend.js';
 
 export interface PostgresBackendsOptions extends PostgresOptions {
   /**
-   * Where `storage.connect` writes its two startup lines, at `info` with
-   * empty fields: `Initializing PostgreSQL client` before connecting and
-   * `PostgreSQL client initialized` after the connection and the legacy-row
-   * check succeeded. Absent: nothing is written. It is never awaited, and a
-   * throw from it is not caught (the host SDK's `Log` never throws).
+   * The startup record `storage.connect` reports through (`doric.startup/v1`; the process passes
+   * `hostStartup(context)`). Absent: `connect` records and writes nothing. Replaces `log`.
    */
-  readonly log?: Pick<Log, 'info'>;
+  readonly startup?: Pick<HostStartup, 'stage' | 'log'>;
 }
 
 /** The bundle's two backends over one lazily created Prisma client. */
@@ -56,11 +53,15 @@ export interface PostgresBackends {
    *   not need `connect()` first;
    * - `health()` measures `DORIC_STORAGE_PATH` (or the current directory)
    *   with `statfs` and needs no database;
-   * - `connect()` writes the first `log` line, connects the client, then
-   *   refuses a database holding rows in the legacy `project`, `thread` or
-   *   `thread_event` tables with `Error(unmigratedReason)`, then writes the
-   *   second line. It records no startup stage (the host's boot records
-   *   `database_client` around its first storage call).
+   * - `connect()` awaits `startup.stage('database_client')`, then
+   *   `startup.log('info', 'Initializing PostgreSQL client', {})`, connects
+   *   the client and refuses a database holding rows in the legacy
+   *   `project`, `thread` or `thread_event` tables with
+   *   `Error(unmigratedReason)`, then awaits
+   *   `startup.log('info', 'PostgreSQL client initialized', {})`. A missing or
+   *   blank `DORIC_DATABASE_URL` rejects after the stage and the first line;
+   *   a startup call's rejection rejects `connect` with that `ContractError`.
+   *   It reports on every call (no guard once the host has started).
    *
    * `call` is accepted and ignored, as today: no method is cancelled by its
    * signal.
@@ -140,9 +141,14 @@ export const createPostgresBackends = (
       health: () => storage.health(),
       identity: () => storage.identity(),
       connect: async () => {
-        options.log?.info('Initializing PostgreSQL client', {});
+        await options.startup?.stage('database_client');
+        await options.startup?.log(
+          'info',
+          'Initializing PostgreSQL client',
+          {},
+        );
         await handle.connect();
-        options.log?.info('PostgreSQL client initialized', {});
+        await options.startup?.log('info', 'PostgreSQL client initialized', {});
       },
     },
     secrets: {

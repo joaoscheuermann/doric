@@ -24,7 +24,10 @@ const workspaceRoot = join(bundleRoot, '..', '..', '..');
 const EXIT_CONFIG = 70;
 
 /** The services `main.ts` lists, by their full service names. */
-const SANDBOX_SERVICES = ['doric.sandbox.v1.SandboxService'];
+const SANDBOX_SERVICES = [
+  'doric.sandbox.v1.SandboxService',
+  'doric.hooks.v1.HookHandlerService',
+];
 
 /** One entry of `readStaticServices` (`bundle`'s build CLI). */
 interface StaticServiceEntry {
@@ -120,7 +123,7 @@ void test('the build bundles docker’s host part into a runnable main.mjs and k
   assert.doesNotMatch(stderr, /Dynamic require/);
 });
 
-void test('main.ts lists sandbox/v1’s SandboxService statically', async () => {
+void test('main.ts lists sandbox/v1’s SandboxService and hooks/v1’s HookHandlerService statically', async () => {
   const services = await readStaticServices(bundleRoot);
 
   assert.deepEqual(services.map(fullName), SANDBOX_SERVICES);

@@ -50,8 +50,13 @@ backends as a host process with `runBundle` from `bundle/host`, serving
 argument with the contract's zod schema (`invalid_input`) before touching the
 database. `DORIC_DATABASE_URL` is read at the first call that needs the
 database; when missing, that call fails `internal` with "DORIC_DATABASE_URL is
-required." and the next call retries. Activation never fails, and this entry
-records no startup stage. Prisma 7 with the pg adapter has no native engine, so
+required." and the next call retries. Activation never fails. Its `Connect`
+reports through `hostStartup(context)` from `bundle/host`
+(`PostgresBackendsOptions.startup`, which replaced `log`): it records the stage
+`database_client`, logs `Initializing PostgreSQL client`, connects (including
+the legacy-row check), then logs `PostgreSQL client initialized`; before
+`activate` these calls do nothing, and a failing startup call rejects `Connect`
+with its `ContractError`. Prisma 7 with the pg adapter has no native engine, so
 the build bundles the part into `dist/host/main.mjs` (about 7 MB). The manifest
 does not name this entry yet (S62).
 

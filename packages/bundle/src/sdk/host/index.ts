@@ -41,6 +41,7 @@ export {
   type HookHandlers,
   type ToolHandlers,
 } from './handlers.js';
+export { hostStartup } from './host-startup.js';
 export type { LogBatchContext, LogSink } from './log.js';
 export {
   type RegistrationConflictCode,

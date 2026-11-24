@@ -43,7 +43,11 @@ elements, storage types or `desktopScope`. Its package
   such as `Start` on a sandbox without live processes, with
   `unsupported_operation` (`UNIMPLEMENTED`). When an instance is gone
   (`context.instances.onGone`) its leases are released; `deactivate` releases
-  every lease and disposes the pool. The running host keeps the kernel entry
+  every lease and disposes the pool. The process also serves
+  `HookHandlerService` and, in `activate`, registers the start step on
+  `onHostStartHook` with `registerSandboxPoolStep(hooks, context, environment)`
+  ([Start step](#start-step)); a failing startup call fails `Handle` with its
+  code. The running host keeps the kernel entry
   `src/host/index.ts` until the switch (phase 3, slice S44 of
   [`grpc-processes.md`](../../../docs/designs/grpc-processes.md)).
 

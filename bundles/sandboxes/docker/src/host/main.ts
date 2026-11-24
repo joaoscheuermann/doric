@@ -5,11 +5,13 @@
 // (`./index.ts`) until the switch, slice S62.
 
 import { ContractError } from 'bundle/contracts';
-import { runBundle } from 'bundle/host';
+import { HookHandlerService } from 'bundle/contracts/gen/doric/hooks/v1/hooks_pb.js';
+import { createHookHandlers, runBundle } from 'bundle/host';
 import { SandboxService } from 'runtime/contracts/gen/doric/sandbox/v1/sandbox_pb.js';
 
 import { dockerSandboxBinding } from './sandbox.js';
 import { createSandboxService, type SandboxPoolBinding } from './service.js';
+import { registerSandboxPoolStep } from './start.js';
 
 /** The pool `activate` set up; unset before it. */
 let binding: SandboxPoolBinding | undefined;
@@ -22,11 +24,17 @@ const sandbox = createSandboxService(() => {
   return binding;
 });
 
+const hooks = createHookHandlers();
+
 runBundle({
-  services: [[SandboxService, sandbox.implementation]],
-  activate: (context) => {
+  services: [
+    [SandboxService, sandbox.implementation],
+    [HookHandlerService, hooks.implementation],
+  ],
+  activate: async (context) => {
     binding = dockerSandboxBinding({}, context.log);
     context.instances.onGone((instance) => sandbox.dropInstance(instance));
+    await registerSandboxPoolStep(hooks, context, process.env);
   },
   deactivate: async () => {
     await sandbox.releaseAll();

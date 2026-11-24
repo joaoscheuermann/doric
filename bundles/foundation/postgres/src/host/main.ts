@@ -7,17 +7,24 @@
 
 import { BackendService as SecretsBackendService } from 'bundle/contracts/gen/doric/secrets/backend/v1/backend_pb.js';
 import { BackendService as StorageBackendService } from 'bundle/contracts/gen/doric/storage/backend/v1/backend_pb.js';
-import { type HostContext, runBundle } from 'bundle/host';
+import { type HostContext, hostStartup, runBundle } from 'bundle/host';
 import { serveSecretsBackend, serveStorageBackend } from 'storage/rpc';
 
 import { createPostgresBackends } from './backends.js';
 
-/** The instance's context, set by `activate`; `Connect` logs through it. */
+/** The instance's context, set by `activate`; `Connect` reports through it. */
 let context: HostContext | undefined;
 
 /** Built at load with no I/O: the client is created on first use. */
 const postgres = createPostgresBackends({
-  log: { info: (message, fields) => context?.log.info(message, fields) },
+  startup: {
+    stage: async (name) => {
+      await (context && hostStartup(context).stage(name));
+    },
+    log: async (level, message, fields) => {
+      await (context && hostStartup(context).log(level, message, fields));
+    },
+  },
 });
 
 runBundle({
