@@ -1211,6 +1211,19 @@ after a 5 s grace; a failure after the cancel answers `run_cancelled` or
   unknown lease status on a files read answers `409
   project_files_unavailable`. `DeleteThread` keeps `204` (decision Q8). The
   `doric.api.*` services follow in S60c/S60d.
+- 2026-11-24: phase 3, slice S60c, of
+  [`docs/designs/grpc-processes.md`](../designs/grpc-processes.md) (version
+  6.23): `transport`'s process part, not yet run (`src/host/process/`).
+  `createTransportHost` serves `config`, `credentials`, `providers`, `host`,
+  `terminals` and `status` over `routedTransportPorts` (routed calls through
+  `runtime/contracts` `encode`/`decode`; missing provider → `unavailable`;
+  unset always-present answer fields → `invalid_output`), answering
+  `unavailable` "transport is not active." outside activation; the start step
+  logs "Network interfaces configured" with the eight `apiServices`.
+  `invalidApiInput` (`src/host/api/violations.ts`, table `apiViolations`)
+  answers protovalidate refusals with today's reasons: a violation on the
+  path field first, else the method's other refusal. Projects, threads,
+  the `Watch` streams and `main.ts` follow in S60d.
 - 2026-11-23: phase 3, slice S56, of
   [`docs/designs/grpc-processes.md`](../designs/grpc-processes.md): `openui`
   runs as its own process (`src/host/main.ts`, `createOpenuiHost`) serving

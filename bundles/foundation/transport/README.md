@@ -125,7 +125,8 @@ not replace it; a change to it needs a host restart.
   `202` with `Retry-After: 1`, an empty answer `204` with no body, a refusal
   `{ error: { code, message } }`. `apiError` turns a REST refusal into a
   `ContractError`; `apiFailure` passes `unavailable`, `generation_lost`,
-  `limit_exceeded`, `deadline_exceeded` and `cancelled` through and turns any
+  `limit_exceeded`, `deadline_exceeded` and `cancelled` through, reading a
+  `ConnectError` as well as a `ContractError`, and turns any
   other failure into `internal_error`; `answerValue` unwraps an answer;
   `routeInputOf` decodes a message through `runtime/contracts` `decode`. The
   credential body schemas `CredentialCreateSchema` and
@@ -469,6 +470,41 @@ The target `generate-proto` writes their protobuf-es code into
 `src/contracts/gen/`, which Git ignores, and `package.json` exports it as
 `./contracts/gen/*`; `@bufbuild/protobuf` is the dependency that code imports
 ([`project.json`](project.json), [`package.json`](package.json)).
+
+## The process part (slice S60c)
+
+[`src/host/process/`](src/host/process) serves the same operations as
+`doric.api.*` services; nothing runs it yet (`main.ts` and the projects and
+threads services, with the `Watch` streams, come in slice S60d).
+
+- **`createTransportHost()`**
+  ([`service.ts`](src/host/process/service.ts)) builds, with no I/O, the
+  `config`, `credentials`, `providers`, `host`, `terminals` and `status`
+  services, the `hooks` table, `invalidInput` and `activate`/`deactivate`.
+  Every method answers `unavailable` "transport is not active." until
+  `activate` resolves, if it rejects, and after `deactivate`. `activate`
+  builds the ports with `routedTransportPorts(context.services)` and runs
+  `onHostStart`; its start step logs "Network interfaces configured" with
+  `apiServices`, the type names of the eight `doric.api.*` services. The
+  status `Watch` sends one `ready` item, then ends on the call's signal, or
+  with `unavailable` on `deactivate`.
+- **`routedTransportPorts(services)`**
+  ([`routed.ts`](src/host/process/routed.ts)) is a full `TransportPorts` over
+  routed calls, converting with `runtime/contracts` `encode`/`decode`. Each
+  client is created at its first call; a failure becomes a `ContractError`, a
+  missing provider `unavailable`; it sets no deadline of its own;
+  `lease.ssh` goes through `runOnProjectLease`; an answer that leaves an
+  always-present field unset is `invalid_output`. `TransportPorts.tools.list`
+  may answer asynchronously.
+- **`invalidApiInput`** ([`src/host/api/violations.ts`](src/host/api/violations.ts)),
+  passed as `BundleDefinition.invalidInput`, maps protovalidate violations to
+  today's refusals through `apiViolations`, keyed `/<typeName>/<Method>`
+  (path rows built with `idPath`): a violation on the method's path field
+  (`<kind>_id`) answers its path refusal (`invalid_<kind>_id`), any other
+  answers the method's other refusal; a method without an entry keeps
+  `invalid_input`. `PutConfig` keeps protovalidate's message.
+
+`@connectrpc/connect` is a dependency of the package.
 
 ## The `transport/kernel` entry
 

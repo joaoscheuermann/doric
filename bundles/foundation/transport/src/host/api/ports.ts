@@ -1,4 +1,9 @@
-import type { Models, Secrets, Tools } from 'bundle/contracts';
+import type {
+  Models,
+  Secrets,
+  ToolCatalogEntry,
+  Tools,
+} from 'bundle/contracts';
 import type { Files } from 'files/contracts';
 import type { Git } from 'git/contracts';
 import type { Resources } from 'resources/contracts';
@@ -70,7 +75,15 @@ export interface TransportPorts {
     'list' | 'create' | 'snapshot' | 'input' | 'resize' | 'stop'
   >;
   readonly sandbox: Pick<SandboxProviderApi, 'machines' | 'machine'>;
-  readonly tools: Pick<Tools, 'list'>;
+  /**
+   * `Tools.list` (the kernel answers it synchronously), or the catalog entries as `{tool}` (over the router, a
+   * promise); the routes read only each tool's name, description and settings.
+   */
+  readonly tools: {
+    list():
+      | ReturnType<Tools['list']>
+      | Promise<readonly { readonly tool: ToolCatalogEntry }[]>;
+  };
   readonly models: Pick<Models, 'kinds' | 'kind' | 'catalog'>;
   readonly secrets: Pick<
     Secrets,

@@ -1,5 +1,10 @@
 import type { DescMessage, MessageShape } from '@bufbuild/protobuf';
-import { ContractError, isContractError } from 'bundle/contracts';
+import { ConnectError } from '@connectrpc/connect';
+import {
+  ContractError,
+  fromConnectError,
+  isContractError,
+} from 'bundle/contracts';
 import type { Response } from 'express';
 import { decode, type RestError } from 'runtime/contracts';
 
@@ -73,13 +78,17 @@ const passedFailures = new Set([
  * `cancelled` unchanged; anything else `ContractError('internal_error', 'The request could not be completed.')`, its
  * cause dropped. Pure; never throws.
  */
-export const apiFailure = (error: unknown): ContractError =>
-  isContractError(error) && passedFailures.has(error.code)
-    ? error
+export const apiFailure = (error: unknown): ContractError => {
+  const failure =
+    error instanceof ConnectError ? fromConnectError(error) : error;
+
+  return isContractError(failure) && passedFailures.has(failure.code)
+    ? failure
     : new ContractError(
         'internal_error',
         'The request could not be completed.',
       );
+};
 
 /**
  * `answer`'s value for an RPC whose route never answers `pending`; throws `apiError` for a refusal. A `pending` answer

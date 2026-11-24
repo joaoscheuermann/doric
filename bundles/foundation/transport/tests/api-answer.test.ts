@@ -4,7 +4,12 @@ import type { AddressInfo } from 'node:net';
 import test from 'node:test';
 
 import { create } from '@bufbuild/protobuf';
-import { ContractError, isContractError } from 'bundle/contracts';
+import { Code, ConnectError } from '@connectrpc/connect';
+import {
+  ContractError,
+  isContractError,
+  toConnectError,
+} from 'bundle/contracts';
 import express from 'express';
 
 import {
@@ -310,4 +315,32 @@ test("K3: a strict body schema accepts routeInputOf's body (CreateThread → cre
 
   assert.deepEqual(answer, { kind: 'ok', status: 201, value: thread });
   assert.deepEqual(calls, [{ projectId, name: 'Plan' }]);
+});
+
+test('D3 (S60c): apiFailure reads a ConnectError as contractErrorOf does, passing the retryable codes unchanged', () => {
+  for (const code of [
+    'unavailable',
+    'generation_lost',
+    'limit_exceeded',
+    'deadline_exceeded',
+    'cancelled',
+  ]) {
+    const failure = apiFailure(
+      toConnectError(new ContractError(code, `${code} happened`)),
+    );
+
+    assert.ok(isContractError(failure), code);
+    assert.equal(failure.code, code);
+    assert.equal(failure.message, `${code} happened`);
+  }
+
+  for (const error of [
+    toConnectError(new ContractError('credential_missing', 'secret detail')),
+    new ConnectError('secret detail', Code.Unknown),
+  ]) {
+    const failure = apiFailure(error);
+
+    assert.equal(failure.code, 'internal_error');
+    assert.equal(failure.message, 'The request could not be completed.');
+  }
 });
