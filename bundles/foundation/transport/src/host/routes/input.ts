@@ -1,7 +1,8 @@
-import type { RequestHandler, Response } from 'express';
-import { isValidName, normalizeName, storageMessage } from 'runtime/contracts';
+import type { Request, RequestHandler } from 'express';
+import { isValidName, normalizeName, type RestError } from 'runtime/contracts';
 import { z } from 'zod';
 
+import type { ApiAnswer, RouteInput } from '../api/answer.js';
 import { sendError } from '../errors.js';
 
 export const pageInput = z.object({
@@ -29,14 +30,23 @@ export const validateId =
     }
     next();
   };
-export const missing = (response: Response, kind: Resource) =>
-  sendError(response, 404, `${kind}_not_found`, `The ${kind} was not found.`);
-export const conflict = (response: Response, kind: Resource, reason: string) =>
-  sendError(
-    response,
-    409,
-    `${kind}_${reason}`,
-    reason === 'storage_low'
-      ? storageMessage
-      : `The ${kind} cannot perform this operation.`,
-  );
+/** What a route body reads from an Express request (its named path parameters are strings). */
+export const routeInput = (request: Request): RouteInput => ({
+  params: Object.fromEntries(
+    Object.entries(request.params).filter(
+      (entry): entry is [string, string] => typeof entry[1] === 'string',
+    ),
+  ),
+  query: request.query,
+  body: request.body,
+});
+/** A route body's success: `value` with today's `status`. */
+export const ok = <T>(
+  value: T,
+  status: 200 | 201 | 202 | 204 = 200,
+): ApiAnswer<T> => ({ kind: 'ok', status, value });
+/** A route body's refusal: `error`'s status, code and message. */
+export const refused = (error: RestError): ApiAnswer<never> => ({
+  kind: 'refused',
+  error,
+});

@@ -1,44 +1,25 @@
 import express, { type Router } from 'express';
-import type { Runtime, SandboxProviderApi } from 'runtime/contracts';
 
-import { handleHttpError, sendError } from '../errors.js';
+import { sendAnswer } from '../api/answer.js';
+import { hostOperations } from '../api/operations/host.js';
+import type { TransportPorts } from '../api/ports.js';
+import { handleHttpError } from '../errors.js';
+import { routeInput } from './input.js';
 
 /** The routes observing the sandbox provider's running machines. */
 export const createVmsRouter = (
-  sandbox: SandboxProviderApi,
-  runtime: Runtime,
+  ports: Pick<TransportPorts, 'tools' | 'resources' | 'sandbox' | 'runtime'>,
 ): Router => {
   const router = express.Router();
+  const operations = hostOperations(ports);
 
-  router.get('/', async (_request, response) => {
-    response.json(await sandbox.machines());
+  router.get('/', async (request, response) => {
+    sendAnswer(response, await operations.vms(routeInput(request)));
   });
 
   router.get('/:id/ssh', async (request, response) => {
     response.set('Cache-Control', 'no-store');
-
-    const vm = await sandbox.machine(request.params.id ?? '');
-
-    if (vm === undefined) {
-      sendError(response, 404, 'vm_not_found', 'The VM was not found.');
-
-      return;
-    }
-
-    const access = await runtime.vmSsh(vm.id);
-
-    if (access === undefined) {
-      sendError(
-        response,
-        409,
-        'vm_ssh_unavailable',
-        'SSH is unavailable for this VM.',
-      );
-
-      return;
-    }
-
-    response.json({ vm, ...access });
+    sendAnswer(response, await operations.vmSsh(routeInput(request)));
   });
 
   router.use(handleHttpError);

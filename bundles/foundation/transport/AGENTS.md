@@ -34,6 +34,9 @@ the kernel.
   or in a new router there that [`src/host/app.ts`](src/host/app.ts) mounts
   before `handleHttpError`; keep the terminal router mounted first at the
   root, since its `Cache-Control: no-store` covers every route after it.
+  Put the route body in an operation of `src/host/api/operations/` over
+  `TransportPorts`, returning an `ApiAnswer`; the handler only calls
+  `sendAnswer(response, await operations.x(routeInput(request)))`.
 - Answer every refusal with `sendError` of
   [`src/host/errors.ts`](src/host/errors.ts), and use `validateId`, `missing`,
   `conflict`, `pageInput` and `nameInput` of

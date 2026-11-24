@@ -113,7 +113,23 @@ not replace it; a change to it needs a host restart.
   ([`src/host/app.ts`](src/host/app.ts)): `express.json()`, the terminal router
   at the root, then `/vms`, `/config`, `/credentials`, `/resources`,
   `/providers`, `/projects`, `/threads` and `/tools`, and last the error
-  handler `handleHttpError`.
+  handler `handleHttpError`. The vms, resources and tools routers take the
+  services like the others.
+- **Route bodies.** Each route body is an operation of
+  [`src/host/api/operations/`](src/host/api/operations) (`config`,
+  `credentials`, `providers`, `host`, `projects`, `threads`, `terminals`)
+  over `TransportPorts` ([`src/host/api/ports.ts`](src/host/api/ports.ts)), the
+  narrowed services. An operation returns an `ApiAnswer`, and the router only
+  calls `sendAnswer(response, await operations.x(routeInput(request)))`
+  ([`src/host/api/answer.ts`](src/host/api/answer.ts)): `pending` answers
+  `202` with `Retry-After: 1`, an empty answer `204` with no body, a refusal
+  `{ error: { code, message } }`. `apiError` turns a REST refusal into a
+  `ContractError`; `apiFailure` passes `unavailable`, `generation_lost`,
+  `limit_exceeded`, `deadline_exceeded` and `cancelled` through and turns any
+  other failure into `internal_error`; `answerValue` unwraps an answer;
+  `routeInputOf` decodes a message through `runtime/contracts` `decode`. The
+  credential body schemas `CredentialCreateSchema` and
+  `CredentialUpdateSchema` live in `operations/credentials.ts`.
 - **Namespaces.** `registerStatusSocket` opens `/status`
   ([`src/host/sockets/status.ts`](src/host/sockets/status.ts));
   `createWorkspaceSocket` opens `/threads` and `/projects` and returns a
@@ -272,10 +288,10 @@ host's [Routes](../../../app/backend/doric-host/README.md#routes) table.
     characters without NUL (`422 invalid_project_path`); `/files/content`
     requires it, and `/files/diff` requires `repository` and a non-empty
     `path`. The lease outcome maps the same way for all of them
-    (`leaseResponse`): `missing` → `404 project_not_found`, `pending` →
+    (`leaseAnswer` of `src/host/api/operations/projects.ts`): `missing` → `404 project_not_found`, `pending` →
     `202 { status: 'pending' }` with `Retry-After: 1`, `expired` →
     `410 project_files_expired`, `unavailable` →
-    `409 project_files_unavailable`. A ready read
+    `409 project_files_unavailable`, and so does any other lease status. A ready read
     answers its value: a listing as `{ path, entries }`, content as
     `{ path, content, truncated, binary }`, a diff or change list as
     `{ path?, repositories }`, a file diff as the diff itself; `not_found`

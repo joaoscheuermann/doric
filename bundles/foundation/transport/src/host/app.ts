@@ -22,16 +22,13 @@ export const registerHttpRoutes = (
 ): void => {
   app.use(express.json());
   app.use(createTerminalsRouter(services.terminal));
-  app.use('/vms', createVmsRouter(services.sandbox, services.runtime));
+  app.use('/vms', createVmsRouter(services));
   app.use('/config', createConfigRouter(services.configuration));
   app.use('/credentials', createCredentialsRouter(services.secrets));
-  app.use(
-    '/resources',
-    createResourcesRouter(() => services.resources()),
-  );
+  app.use('/resources', createResourcesRouter(services));
   app.use('/providers', createProvidersRouter(services.models));
   app.use('/projects', createProjectsRouter(services));
   app.use('/threads', createThreadsRouter(services));
-  app.use('/tools', createToolsRouter(services.tools));
+  app.use('/tools', createToolsRouter(services));
   app.use(handleHttpError);
 };

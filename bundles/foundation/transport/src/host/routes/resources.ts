@@ -1,18 +1,23 @@
 import { Router } from 'express';
-import type { Resources } from 'resources/contracts';
+
+import { sendAnswer } from '../api/answer.js';
+import { hostOperations } from '../api/operations/host.js';
+import type { TransportPorts } from '../api/ports.js';
+import { routeInput } from './input.js';
 
 /**
  * Reads the machine the host runs on, through the `resources` bundle
- * (`resources/v1.host()`, stage 10 §4). It holds no lease: an answer is
- * always available, so the monitor can poll it without a Project being
- * involved.
+ * (`resources/v1.host()`, stage 10 §4), by `hostOperations`.
  */
-export const createResourcesRouter = (resources: () => Resources): Router => {
+export const createResourcesRouter = (
+  ports: Pick<TransportPorts, 'tools' | 'resources' | 'sandbox' | 'runtime'>,
+): Router => {
   const router = Router();
+  const operations = hostOperations(ports);
 
-  router.get('/', async (_request, response) => {
+  router.get('/', async (request, response) => {
     response.set('Cache-Control', 'no-store');
-    response.json(await resources().host());
+    sendAnswer(response, await operations.resources(routeInput(request)));
   });
 
   return router;

@@ -1200,6 +1200,17 @@ after a 5 s grace; a failure after the cancel answers `run_cancelled` or
   `runtime`'s JSON⇄message codec moves to `runtime/contracts`
   (`json-codec.ts`: `encode`, `decode`, `runtimeOneofs`);
   `src/host/rpc/codec.ts` re-exports it.
+- 2026-11-24: phase 3, slice S60b, of
+  [`docs/designs/grpc-processes.md`](../designs/grpc-processes.md) (version
+  6.22): `transport`'s Express route bodies move, unchanged, into operations
+  (`src/host/api/operations/`) over `TransportPorts`, a narrowed
+  `TransportServices`; each handler is `sendAnswer(response, await
+  operations.x(routeInput(request)))` (`src/host/api/answer.ts`: `ApiAnswer`,
+  `apiError`, `apiFailure`, `answerValue`, `routeInputOf`). Kernel only:
+  mount points, order, statuses and Socket.IO are unchanged, except that an
+  unknown lease status on a files read answers `409
+  project_files_unavailable`. `DeleteThread` keeps `204` (decision Q8). The
+  `doric.api.*` services follow in S60c/S60d.
 - 2026-11-23: phase 3, slice S56, of
   [`docs/designs/grpc-processes.md`](../designs/grpc-processes.md): `openui`
   runs as its own process (`src/host/main.ts`, `createOpenuiHost`) serving
