@@ -1130,6 +1130,20 @@ after a 5 s grace; a failure after the cancel answers `run_cancelled` or
   nothing calls the host's Flush before then; `chat`'s manifest stays at
   version 1 until phase 5 (S62). New dependencies: `@connectrpc/connect`, dev
   `@bufbuild/protovalidate`.
+- 2026-11-23: phase 3, slice S59a, of
+  [`docs/designs/grpc-processes.md`](../designs/grpc-processes.md) (version
+  6.20): `mcp`'s host part moves onto ports, with no new process yet.
+  `src/host/ports.ts` defines `McpPorts` (`storage`, `secrets`, `tools`,
+  `lease`, `log`) and `kernelMcpPorts` (storage and secrets forward exactly the
+  caller's arguments); `src/host/operations.ts` (`createMcpOperations`,
+  `projectOf`) holds the method bodies, and `src/host/index.ts` only wires the
+  kernel, including the project-ready hook moved from `manager.ts`.
+  `createManager({ ports, store, vault })` exposes `sandboxReady`; tool
+  registration is asynchronous, and one landing while its connection closes is
+  unregistered at once. `executeMcpTool` is shared by `toDoricTool` and
+  `mcpToolDefinition`; `openStdio` runs over an `McpLease`, and a sandbox
+  without `start` or answering `unsupported_operation` keeps today's "cannot
+  keep a process running" message. The process follows in S59b and S59c.
 - 2026-11-23: phase 3, slice S56, of
   [`docs/designs/grpc-processes.md`](../designs/grpc-processes.md): `openui`
   runs as its own process (`src/host/main.ts`, `createOpenuiHost`) serving

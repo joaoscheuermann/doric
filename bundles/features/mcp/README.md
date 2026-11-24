@@ -56,18 +56,34 @@ The bundle has no desktop part.
 
 Host modules:
 
+- [src/host/index.ts](src/host/index.ts): wires the kernel only — builds
+  `kernelMcpPorts`, the store, the vault and the manager, registers the
+  runtime hooks (including the `onProjectReadyHook` handler) and provides the
+  contracts from `createMcpOperations`.
+- [src/host/ports.ts](src/host/ports.ts): `McpPorts` (`storage`, `secrets`,
+  `tools`, `lease`, `log`), everything the host part uses from Doric, and
+  `kernelMcpPorts`, which builds them from the kernel's services; `storage`
+  and `secrets` forward exactly the caller's arguments.
+- [src/host/operations.ts](src/host/operations.ts): `createMcpOperations`,
+  the bodies of the `mcp/v1` and `default.skill-sources/v1` methods, with
+  `projectOf` and `serverOf`.
 - [src/host/store.ts](src/host/store.ts): the `mcp.server/v1` documents and
   the per-server and per-Project locks.
 - [src/host/credentials.ts](src/host/credentials.ts): entry resolution,
   secret masking, the `MCP_TOKEN` kind and the OAuth vault.
-- [src/host/manager.ts](src/host/manager.ts): the live connections, tool
-  registration, status and the watchers.
+- [src/host/manager.ts](src/host/manager.ts): `createManager({ ports, store,
+  vault })`, the live connections, tool registration, status, the watchers and
+  `sandboxReady`. Tool registration is asynchronous: a registration that lands
+  while its connection closes is unregistered at once.
 - [src/host/open.ts](src/host/open.ts): opening an `http` or `stdio`
-  connection.
+  connection; `openStdio` starts the process through an `McpLease`, and a
+  sandbox without `start` (or answering `unsupported_operation`) gives the
+  "cannot keep a process running" message.
 - [src/host/stdio.ts](src/host/stdio.ts): the MCP SDK transport over a sandbox
   process.
-- [src/host/tools.ts](src/host/tools.ts): tool names, result text and the
-  Doric tool definition.
+- [src/host/tools.ts](src/host/tools.ts): tool names, result text and
+  `executeMcpTool`, the one tool call shared by `toDoricTool` (the kernel's
+  tool definition) and `mcpToolDefinition` (for the bundle's future process).
 - [src/host/skills.ts](src/host/skills.ts): the Skills extension and the skill
   source entries.
 - [src/host/oauth.ts](src/host/oauth.ts): the OAuth provider and the browser
@@ -353,7 +369,7 @@ OAuth sign-in stored ([src/host/credentials.ts](src/host/credentials.ts)).
 | `secrets/v1`                              | host, client | Registers `MCP_TOKEN`; resolves entry credentials and checks their kind (`resolve`, `describe`); creates, updates, deletes and lists the OAuth credentials ([src/host/credentials.ts](src/host/credentials.ts)). The window lists credentials and creates `API_TOKEN` ones ([src/client/api.ts](src/client/api.ts)). |
 | `tools/v1`                                | host         | Registers and unregisters each server tool; reads `catalog()` to wait for a released name ([src/host/manager.ts](src/host/manager.ts)).                                                                                                                                                                              |
 | `hooks/v1`                                | host         | `whenAvailable(runtime.hooks/v1)` to register the runtime hooks ([src/host/index.ts](src/host/index.ts), [src/host/manager.ts](src/host/manager.ts)).                                                                                                                                                                |
-| `runtime.hooks/v1`                        | host         | `onPromptStartedHook`, `onProjectClosingHook` ([src/host/index.ts](src/host/index.ts)), `onProjectReadyHook` ([src/host/manager.ts](src/host/manager.ts)).                                                                                                                                                           |
+| `runtime.hooks/v1`                        | host         | `onPromptStartedHook`, `onProjectClosingHook`, `onProjectReadyHook` ([src/host/index.ts](src/host/index.ts)).                                                                                                                                                                                                        |
 | `runtime/v2`                              | host         | `watch` for `projectDeleted` notices ([src/host/index.ts](src/host/index.ts)). The function `createdKey` of `runtime/contracts` gives the documents' order ([src/host/store.ts](src/host/store.ts)).                                                                                                                 |
 | `runtime.lease/v1`                        | host         | `withLease` on the Project's sandbox to start a `stdio` process ([src/host/open.ts](src/host/open.ts)).                                                                                                                                                                                                              |
 | `runtime.attachments/v1`                  | host         | `attach` an image a tool result carries ([src/host/tools.ts](src/host/tools.ts)).                                                                                                                                                                                                                                    |

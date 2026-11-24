@@ -22,12 +22,12 @@ that reads the skill source.
   [`tests/boundary-exceptions.json`](../../../tests/boundary-exceptions.json)
   and search it for `"bundle": "mcp"`.
 - Read the Project of every `mcp/v1` and `default.skill-sources/v1` call only through `projectOf`, and every
-  server only through `serverOf`, in `src/host/index.ts`, so that a call
+  server only through `serverOf`, in `src/host/operations.ts`, so that a call
   without a Project is refused and another Project's server answers
   `mcp_server_missing`.
 - Never start a `stdio` server on the host: start it only in
-  `src/host/open.ts`, through `runtime.lease/v1.withLease` and the sandbox's
-  `start`, and pass it only its own resolved entries.
+  `src/host/open.ts`, through the `McpLease` port (`runtime.lease/v1.withLease`
+  in the kernel) and the sandbox's `start`, and pass it only its own resolved entries.
 - Never put a secret in an `mcp.server/v1` document: store a token or a
   client secret only as an `MCP_TOKEN` credential through the vault of
   `src/host/credentials.ts`, and write OAuth state only through that vault
@@ -52,7 +52,7 @@ that reads the skill source.
   it.
 - Add a member to `mcp/v1` in `Mcp` and in `mcpMethods` of
   `src/contracts/index.ts` together, with `expose: 'desktop'` unless only the
-  host may call it, implement it in `src/host/index.ts`, and add each new
+  host may call it, implement it in `src/host/operations.ts`, and add each new
   error code to `mcpErrorCodes`.
 - Add a per-server setting as an optional field of `McpTransport` and of
   `mcpTransportSchema`; the `mcp.server/v1` document in `src/host/store.ts`

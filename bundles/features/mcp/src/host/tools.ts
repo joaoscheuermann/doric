@@ -11,7 +11,12 @@ import type {
   CallToolResult,
   Tool as McpTool,
 } from '@modelcontextprotocol/sdk/types.js';
-import { ContractError, isContractError } from 'bundle/contracts';
+import {
+  type Call,
+  ContractError,
+  isContractError,
+  type Services,
+} from 'bundle/contracts';
 import {
   type AttachInput,
   type Attachment,
@@ -28,6 +33,10 @@ import {
 import { z } from 'zod';
 
 import type { McpToolView } from '../contracts/index.js';
+import type { McpAttach, McpToolSource } from './ports.js';
+
+/** A tool as an MCP server lists it. */
+export type { McpTool };
 
 /** The names tools/v1 accepts. */
 export const toolNamePattern = /^[a-zA-Z0-9_-]{1,64}$/;
@@ -183,15 +192,24 @@ export type CallMcpTool = (
  * ToolErrorObject('invalid_schema') when the server's input schema is not an
  * object JSON Schema.
  */
-export const toDoricTool = ({
-  name,
-  tool,
-  callTool,
-}: {
-  readonly name: string;
-  readonly tool: McpTool;
-  readonly callTool: CallMcpTool;
-}): ToolDefinitionObject<z.ZodObject, z.ZodString> => {
+export const toDoricTool = (
+  source: McpToolSource,
+): ToolDefinitionObject<z.ZodObject, z.ZodString> =>
+  defineMcpTool<Services>(
+    source,
+    (services) => (attachment, call) =>
+      services.use(RuntimeAttachmentsV1, call.scope).attach(attachment, call),
+  );
+
+/**
+ * The definition both flavours share; `attachOf` reads the `attach` port from
+ * what the definition is bound to.
+ */
+const defineMcpTool = <Deps>(
+  source: McpToolSource,
+  attachOf: (deps: Deps) => McpAttach,
+): ToolDefinitionObject<z.ZodObject, z.ZodString, Deps> => {
+  const { name, tool } = source;
   const inputSchema = asJsonObject(tool.inputSchema);
 
   if (inputSchema === undefined) {
@@ -204,30 +222,60 @@ export const toDoricTool = ({
 
   const description = tool.description ?? tool.title;
 
-  return defineTool({
+  return defineTool<z.ZodObject, z.ZodString, Deps>({
     name,
     ...(description === undefined ? {} : { description }),
     input: z.looseObject({}),
     output: z.string(),
     inputSchema,
     strict: false,
-    execute: async (input, call, services) => {
-      const result = await callTool(
-        { name: tool.name, arguments: input },
-        call.signal,
-      );
-      const text = await formatResult(result, (attachment) =>
-        services.use(RuntimeAttachmentsV1, call.scope).attach(attachment, call),
-      );
-
-      if (result.isError === true) {
-        throw new ContractError(
-          'mcp_tool_failed',
-          text === '' ? `The MCP tool ${tool.name} failed.` : text,
-        );
-      }
-
-      return text;
-    },
+    execute: (input, call, deps) =>
+      executeMcpTool(source, input, call, attachOf(deps)),
   });
 };
+
+/** What the process binds an MCP tool to. */
+export interface McpToolDeps {
+  readonly attach: McpAttach;
+}
+
+/**
+ * Runs one MCP tool call as both flavours do: `callTool({name: tool.name, arguments: input}, call.signal)`, then
+ * `formatResult(result, a => attach(a, call))`. Resolves with the text; rejects with `ContractError('mcp_tool_failed',
+ * text || 'The MCP tool <name> failed.')` for a result flagged `isError`, with `callTool`'s rejection, or with
+ * `attach`'s rejection other than `invalid_input`.
+ */
+export const executeMcpTool = async (
+  source: McpToolSource,
+  input: Readonly<Record<string, unknown>>,
+  call: Call,
+  attach: McpAttach,
+): Promise<string> => {
+  const { tool, callTool } = source;
+  const result = await callTool(
+    { name: tool.name, arguments: input },
+    call.signal,
+  );
+  const text = await formatResult(result, (attachment) =>
+    attach(attachment, call),
+  );
+
+  if (result.isError === true) {
+    throw new ContractError(
+      'mcp_tool_failed',
+      text === '' ? `The MCP tool ${tool.name} failed.` : text,
+    );
+  }
+
+  return text;
+};
+
+/**
+ * The same tool over `McpToolDeps` for the process: same name, description, `input` (`looseObject`), `output`,
+ * verbatim `inputSchema`, `strict: false`; executes through `executeMcpTool` with `deps.attach`. Throws
+ * `ToolErrorObject('invalid_schema')` as `toDoricTool` does. Never registrable with the kernel's `tools/v1`.
+ */
+export const mcpToolDefinition = (
+  source: McpToolSource,
+): ToolDefinitionObject<z.ZodObject, z.ZodString, McpToolDeps> =>
+  defineMcpTool<McpToolDeps>(source, (deps) => deps.attach);

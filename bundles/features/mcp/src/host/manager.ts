@@ -12,16 +12,7 @@ import {
   type Tool,
   ToolListChangedNotificationSchema,
 } from '@modelcontextprotocol/sdk/types.js';
-import {
-  ContractError,
-  type Disposable,
-  HooksV1,
-  LogV1,
-  SecretsV1,
-  type Services,
-  ToolsV1,
-} from 'bundle/contracts';
-import { RuntimeHooksV1, RuntimeLeaseV1 } from 'runtime/contracts';
+import { ContractError, type Disposable } from 'bundle/contracts';
 
 import {
   type McpServerView,
@@ -38,12 +29,13 @@ import {
 } from './credentials.js';
 import { createOAuthProvider } from './oauth.js';
 import { isAuthFailure, type Opened, openHttp, openStdio } from './open.js';
+import type { McpPorts } from './ports.js';
 import { listSkills, readSkillText } from './skills.js';
 import type { ServerDocument, ServerStore } from './store.js';
-import { listTools, toDoricTool, toolName, toolView } from './tools.js';
+import { listTools, toolName, toolView } from './tools.js';
 
 interface ManagerOptions {
-  readonly services: Services;
+  readonly ports: McpPorts;
   readonly store: ServerStore;
   readonly vault: OAuthVault;
 }
@@ -89,14 +81,18 @@ export interface McpManager {
     uri: string,
     signal?: AbortSignal,
   ): Promise<string>;
+  /**
+   * Retries the Project's servers whose state is `waiting-for-sandbox` (after an attempt in progress ended); was the
+   * manager's own `onProjectReadyHook` handler. Resolves once each retry ended; rejects only when the store read
+   * fails.
+   */
+  sandboxReady(projectId: string): Promise<void>;
   /** Stops every server; nothing connects any more. */
   dispose(): Promise<void>;
 }
 
 /** How long one tool call may take on its server. */
 const TOOL_TIMEOUT_MS = 300_000;
-/** After every built-in tool (the last one is `git`, at 900). */
-const TOOL_ORDER = 1000;
 /** How many of a process's last stderr lines a failure keeps. */
 const STDERR_LINES = 5;
 /** How long the check of a connection whose tool call failed may take. */
@@ -157,7 +153,7 @@ const sleep = (ms: number): Promise<void> =>
   });
 
 export const createManager = ({
-  services,
+  ports,
   store,
   vault,
 }: ManagerOptions): McpManager => {
@@ -174,7 +170,7 @@ export const createManager = ({
   const releasing = new Map<string, Set<string>>();
   let disposed = false;
 
-  const log = () => services.use(LogV1);
+  const { log } = ports;
 
   const viewOf = (server: ServerDocument): McpServerView => {
     const entry = server.enabled ? live.get(server.id) : undefined;
@@ -256,14 +252,12 @@ export const createManager = ({
     const reused = [...names].filter((name) => pending?.has(name));
     if (reused.length === 0) return;
     const deadline = Date.now() + RELEASE_WAIT_MS;
-    const tools = services.use(ToolsV1, { projectId });
 
     for (;;) {
       // A registry that cannot be read is not waited for.
-      const listed = await tools.catalog().then(
-        (entries) => new Set(entries.map(({ name }) => name)),
-        () => new Set<string>(),
-      );
+      const listed = await ports.tools
+        .listed(projectId)
+        .catch(() => new Set<string>());
       const held = reused.filter((name) => listed.has(name));
 
       if (held.length === 0 || Date.now() >= deadline) {
@@ -412,35 +406,41 @@ export const createManager = ({
       if (registered.has(name)) continue;
 
       try {
-        const definition = toDoricTool({
-          name,
-          tool,
-          callTool: async (request, signal) => {
-            let result: unknown;
+        const registration = await ports.tools.register(
+          {
+            name,
+            tool,
+            callTool: async (request, signal) => {
+              let result: unknown;
 
-            try {
-              result = await connection.client.callTool(
-                { name: request.name, arguments: { ...request.arguments } },
-                CallToolResultSchema,
-                { signal, timeout: TOOL_TIMEOUT_MS },
-              );
-            } catch (error) {
-              if (!signal.aborted) failed(server, entry, connection, error);
-              throw error;
-            }
+              try {
+                result = await connection.client.callTool(
+                  { name: request.name, arguments: { ...request.arguments } },
+                  CallToolResultSchema,
+                  { signal, timeout: TOOL_TIMEOUT_MS },
+                );
+              } catch (error) {
+                if (!signal.aborted) failed(server, entry, connection, error);
+                throw error;
+              }
 
-            return CallToolResultSchema.parse(result);
+              return CallToolResultSchema.parse(result);
+            },
           },
-        });
+          server.projectId,
+        );
+
         registered.set(name, {
-          registration: services.use(ToolsV1).register(definition, {
-            alwaysAvailable: false,
-            order: TOOL_ORDER,
-            projectId: server.projectId,
-          }),
+          registration,
           source: JSON.stringify(tool),
           view: toolView(tool),
         });
+
+        // The connection closed while the registry answered: it keeps nothing.
+        if (connection.closing) {
+          unregister(server.projectId, connection);
+          return;
+        }
       } catch (error) {
         // One tool that cannot be registered leaves the others usable.
         log().warn('An MCP tool was skipped', {
@@ -500,7 +500,8 @@ export const createManager = ({
       return openStdio(
         transport,
         entries,
-        services.use(RuntimeLeaseV1, { projectId: server.projectId }),
+        server.projectId,
+        ports.lease,
         (line) => {
           entry.stderr.push(line);
           entry.stderr.splice(0, entry.stderr.length - STDERR_LINES);
@@ -534,7 +535,7 @@ export const createManager = ({
     try {
       const entries = await resolveEntries(
         transport.kind === 'http' ? transport.headers : transport.env,
-        services.use(SecretsV1),
+        ports.secrets,
       );
       secrets = entries.secrets;
       const opened = await open(server, entry, entries, signal);
@@ -724,24 +725,6 @@ export const createManager = ({
     );
   };
 
-  const readiness = services
-    .use(HooksV1)
-    .whenAvailable(RuntimeHooksV1, (registrar) => {
-      const ready = registrar.onProjectReadyHook(({ projectId }) =>
-        sandboxReady(projectId).catch((error: unknown) => {
-          log().warn(
-            'The MCP servers waiting for a sandbox could not connect',
-            {
-              projectId,
-              error: messageOf(error, []),
-            },
-          );
-        }),
-      );
-
-      return () => ready.dispose();
-    });
-
   return {
     ensureProject: async (projectId) => {
       const closing = closings.get(projectId) ?? 0;
@@ -816,9 +799,9 @@ export const createManager = ({
         },
       };
     },
+    sandboxReady,
     dispose: async () => {
       disposed = true;
-      readiness.dispose();
       watchers.clear();
       const entries = [...live.values()];
       live.clear();

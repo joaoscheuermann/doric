@@ -14,11 +14,12 @@ import {
   StreamableHTTPError,
 } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
-import type { RuntimeLease } from 'runtime/contracts';
+import { isContractError } from 'bundle/contracts';
 
 import { type McpTransport, mcpClientInfoOf } from '../contracts/index.js';
 import type { ResolvedEntries } from './credentials.js';
 import { SignInRequired } from './oauth.js';
+import type { McpLease } from './ports.js';
 import { SKILLS_EXTENSION } from './skills.js';
 import { createSandboxStdioTransport } from './stdio.js';
 
@@ -112,16 +113,17 @@ export const openHttp = async (
 };
 
 /**
- * Starts a `stdio` server in the Project's sandbox, with its own entries
- * added to the sandbox's environment, and connects to it. `waiting` when the
- * Project holds no sandbox lease yet, or lost it while the server started
- * (that client is closed, so its process ends); rejects when the Project is
- * gone or has ended, or when the sandbox cannot keep a process running.
+ * As today, over `lease: McpLease` (D4): runs `task` on `lease.run(projectId, …)`; inside it, `sandbox.start`
+ * absent, or rejecting `ContractError('unsupported_operation')`, rejects with today's Error "The Project sandbox
+ * cannot keep a process running, so it cannot run a stdio MCP server."; the client connects inside the task. Outcome
+ * `ready` → `{kind: 'open', client}`; `missing` / `expired` → today's two Error texts (the client closed); `pending` /
+ * `unavailable` → `{kind: 'waiting'}` (the client closed). Any other rejection propagates.
  */
 export const openStdio = async (
   transport: Extract<McpTransport, { readonly kind: 'stdio' }>,
   entries: ResolvedEntries,
-  lease: Pick<RuntimeLease, 'withLease'>,
+  projectId: string,
+  lease: McpLease,
   onStderr: (line: string) => void,
   signal: AbortSignal,
 ): Promise<Opened> => {
@@ -131,13 +133,11 @@ export const openStdio = async (
   );
   // What the task connected, whatever the lease answers after it.
   const task: { client?: Client } = {};
-  const outcome = await lease.withLease(async (sandbox) => {
+  const outcome = await lease.run(projectId, async (sandbox) => {
     const start = sandbox.start?.bind(sandbox);
 
     if (start === undefined) {
-      throw new Error(
-        'The Project sandbox cannot keep a process running, so it cannot run a stdio MCP server.',
-      );
+      throw new Error(CANNOT_KEEP_PROCESS);
     }
 
     task.client = await connect(
@@ -150,6 +150,15 @@ export const openStdio = async (
             env,
             tty: false,
             onOutput,
+          }).catch((error: unknown) => {
+            if (
+              isContractError(error) &&
+              error.code === 'unsupported_operation'
+            ) {
+              throw new Error(CANNOT_KEEP_PROCESS);
+            }
+
+            throw error;
           }),
         secrets: entries.secrets,
         onStderr,
@@ -179,3 +188,6 @@ export const openStdio = async (
 
   return { kind: 'waiting' };
 };
+
+const CANNOT_KEEP_PROCESS =
+  'The Project sandbox cannot keep a process running, so it cannot run a stdio MCP server.';
