@@ -1,12 +1,17 @@
 // The chat's host adapter (R-ERR): every failure shows the text the semantic
 // preload showed. The main-process guards come first, then the REST route's
 // input checks, then each host outcome maps to the REST route's message.
+// Slice S65a: the host is `runtime.threads/v1`'s generated client
+// (`ThreadsService`) over a fake `HostClients`; its answers are the proto
+// messages, and a failed call's Doric code is `fromConnectError`'s.
 
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 
-import { ContractError } from 'bundle/contracts';
-import { type RuntimeThreads, storageMessage } from 'runtime/contracts';
+import type { Client, ServiceImpl } from '@connectrpc/connect';
+import { ContractError, toConnectError } from 'bundle/contracts';
+import { storageMessage } from 'runtime/contracts';
+import { ThreadsService } from 'runtime/contracts/gen/doric/runtime/threads/v1/threads_pb.js';
 
 import {
   createThreadsApi,
@@ -14,6 +19,7 @@ import {
   invalidResponseMessage,
   unavailableMessage,
 } from '../src/client/api/threads-api.js';
+import { fakeHostClients } from './support/connect.js';
 
 const ID = '11111111-1111-4111-8111-111111111111';
 const PROMPT = '22222222-2222-4222-8222-222222222222';
@@ -29,23 +35,34 @@ const record = {
   updatedAt: '2026-01-01T00:00:00.000Z',
 };
 
-const apiOver = (host: Partial<RuntimeThreads>) => {
-  const calls: string[] = [];
-  const threads = new Proxy(host, {
-    get: (target, name: string) => {
-      const member = target[name as keyof RuntimeThreads];
-      if (typeof member !== 'function') return member;
-      return (...args: unknown[]) => {
-        calls.push(name);
-        return (member as (...a: unknown[]) => unknown)(...args);
-      };
-    },
-  }) as RuntimeThreads;
+type Host = Partial<ServiceImpl<typeof ThreadsService>>;
+
+/** The adapter over a fake host serving `host`; `calls` lists its RPCs. */
+const apiOver = (host: Host) => {
+  const fake = fakeHostClients((router) => {
+    router.service(ThreadsService, host);
+  });
+  const threads: Client<typeof ThreadsService> = fake.hostClients
+    .part('chat')
+    .use(ThreadsService);
   return {
     api: createThreadsApi({ threads: () => threads, history: () => undefined }),
-    calls,
+    get calls() {
+      return fake.calls.map(({ method }) => method.split('/')[1]);
+    },
+    get parts() {
+      return fake.calls.map(({ part }) => part);
+    },
   };
 };
+
+/** A host whose `queue` fails with `error`, as a handler throws it. */
+const failing = (error: unknown) =>
+  apiOver({
+    queue: () => {
+      throw error instanceof ContractError ? toConnectError(error) : error;
+    },
+  }).api;
 
 const rejectsWith = async (promise: Promise<unknown>, message: string) =>
   assert.rejects(promise, (error: unknown) => {
@@ -56,14 +73,17 @@ const rejectsWith = async (promise: Promise<unknown>, message: string) =>
 
 /**
  * Rejects with the adapters' `ClientError` (§6.4): its `code`, its unchanged
- * `message`, and `cause` — the contract error itself, or none.
+ * `message`, and `cause` — the contract error the client read
+ * (`fromConnectError`), or none.
  */
 const rejectsWithClientError = async (
   promise: Promise<unknown>,
   expected: {
     readonly code: string;
     readonly message: string;
-    readonly cause: unknown;
+    readonly cause:
+      | { readonly code: string; readonly message: string }
+      | undefined;
   },
 ) =>
   assert.rejects(promise, (error: unknown) => {
@@ -71,13 +91,20 @@ const rejectsWithClientError = async (
     assert.equal(error.name, 'ClientError');
     assert.equal((error as Error & { code?: unknown }).code, expected.code);
     assert.equal(error.message, expected.message);
-    assert.equal(error.cause, expected.cause);
+    if (expected.cause === undefined) {
+      assert.equal(error.cause, undefined);
+    } else {
+      assert.ok(error.cause instanceof ContractError, 'a contract error');
+      assert.equal(error.cause.code, expected.cause.code);
+      assert.equal(error.cause.message, expected.cause.message);
+    }
     return true;
   });
 
-describe('threads adapter', () => {
+describe('threads adapter over ThreadsService', () => {
   test('guards run before the host and keep their messages', async () => {
-    const { api, calls } = apiOver({});
+    const over = apiOver({});
+    const { api } = over;
     await rejectsWith(api.prompt('', 'hi'), 'The item identifier is invalid.');
     await rejectsWith(
       api.prompt('not-a-uuid', '   '),
@@ -103,16 +130,23 @@ describe('threads adapter', () => {
       api.editQueued(ID, 'nope', 'text', 1),
       'A prompt ID, non-empty text and its revision are required.',
     );
-    assert.deepEqual(calls, []);
+    assert.deepEqual(over.calls, []);
   });
 
   test('a sent prompt answers its receipt; a missing or inactive Thread its REST message', async () => {
     let status: 'accepted' | 'missing' | 'inactive' = 'accepted';
+    const sent: unknown[] = [];
     const { api } = apiOver({
-      prompt: async () =>
-        status === 'accepted' ? { status, promptId: PROMPT } : { status },
+      prompt: ({ id, prompt }) => {
+        sent.push({ id, prompt });
+        return {
+          promptResult:
+            status === 'accepted' ? { status, promptId: PROMPT } : { status },
+        };
+      },
     });
     assert.deepEqual(await api.prompt(ID, 'hello'), { promptId: PROMPT });
+    assert.deepEqual(sent, [{ id: ID, prompt: 'hello' }]);
     status = 'missing';
     await rejectsWith(api.prompt(ID, 'hello'), 'The thread was not found.');
     status = 'inactive';
@@ -139,16 +173,16 @@ describe('threads adapter', () => {
       ],
     } as const;
     for (const [status, message] of outcomes.resume) {
-      const { api } = apiOver({ resume: async () => ({ status }) });
+      const { api } = apiOver({ resume: () => ({ resumeResult: { status } }) });
       await rejectsWith(api.resume(ID, PROMPT), message);
     }
     for (const [status, message] of outcomes.rewind) {
-      const { api } = apiOver({ rewind: async () => ({ status }) });
+      const { api } = apiOver({ rewind: () => ({ status }) });
       await rejectsWith(api.rewind(ID, PROMPT, 'again'), message);
     }
     const resumed = apiOver({
-      resume: async () => ({ status: 'resumed', thread: record as never }),
-      resumeQueue: async () => ({ status: 'storage_low' }),
+      resume: () => ({ resumeResult: { status: 'resumed', thread: record } }),
+      resumeQueue: () => ({ resumeResult: { status: 'storage_low' } }),
     });
     assert.equal((await resumed.api.resume(ID, PROMPT)).id, ID);
     await rejectsWith(resumed.api.resumeQueue(ID), storageMessage);
@@ -157,9 +191,9 @@ describe('threads adapter', () => {
   test('a steer answers whether the running prompt took it or it was queued', async () => {
     const sent: unknown[] = [];
     const { api } = apiOver({
-      steer: async (input) => {
-        sent.push(input);
-        return { status: 'queued', promptId: PROMPT };
+      steer: ({ id, prompt, promptId, interrupt }) => {
+        sent.push({ id, prompt, promptId, interrupt });
+        return { steerResult: { status: 'queued', promptId: PROMPT } };
       },
     });
     assert.deepEqual(
@@ -176,7 +210,7 @@ describe('threads adapter', () => {
       ['missing', 'The thread was not found.'],
       ['inactive', 'The thread cannot perform this operation.'],
     ] as const) {
-      const refused = apiOver({ steer: async () => ({ status }) });
+      const refused = apiOver({ steer: () => ({ steerResult: { status } }) });
       await rejectsWith(
         refused.api.steer(ID, 'late', { promptId: PROMPT }),
         message,
@@ -208,10 +242,10 @@ describe('threads adapter', () => {
       ],
     ] as const;
     for (const [status, message] of cases) {
-      const { api } = apiOver({ editQueued: async () => ({ status }) });
+      const { api } = apiOver({ editQueued: () => ({ status }) });
       await rejectsWith(api.editQueued(ID, PROMPT, 'text', 2), message);
     }
-    const { api } = apiOver({ queuedPrompt: async () => undefined });
+    const { api } = apiOver({ queuedPrompt: () => ({}) });
     await rejectsWith(
       api.queuedPrompt(ID, PROMPT),
       'This prompt is no longer queued.',
@@ -220,14 +254,14 @@ describe('threads adapter', () => {
 
   test('interrupt and queue removal answer nothing on success and map refusals', async () => {
     const { api } = apiOver({
-      pause: async () => 'interrupted',
-      removeQueued: async () => 'removed',
+      pause: () => ({ interruptResult: 'interrupted' }),
+      removeQueued: () => ({ removeQueuedResult: 'removed' }),
     });
     assert.equal(await api.interrupt(ID, PROMPT), undefined);
     assert.equal(await api.removeQueued(ID, PROMPT), undefined);
     const refused = apiOver({
-      pause: async () => 'not_running',
-      removeQueued: async () => 'missing',
+      pause: () => ({ interruptResult: 'not_running' }),
+      removeQueued: () => ({ removeQueuedResult: 'missing' }),
     });
     await rejectsWith(
       refused.api.interrupt(ID, PROMPT),
@@ -240,21 +274,19 @@ describe('threads adapter', () => {
   });
 
   test('a deleted Thread reads as undefined; a malformed record is an invalid response', async () => {
-    const missing = apiOver({ thread: async () => undefined });
+    const missing = apiOver({ thread: () => ({}) });
     assert.equal(await missing.api.get(ID), undefined);
+    const found = apiOver({ thread: () => ({ thread: record }) });
+    assert.equal((await found.api.get(ID))?.id, ID);
+    // A `cwdRepo` the proto's validation would refuse, which this transport
+    // does not run: the adapter's own Thread check refuses it.
     const malformed = apiOver({
-      thread: async () => ({ ...record, cwd: 3 }) as never,
+      thread: () => ({ thread: { ...record, cwdRepo: 'svn' } }),
     });
     await rejectsWith(malformed.api.get(ID), invalidResponseMessage);
   });
 
   test('host failures read as the REST client read them', async () => {
-    const failing = (error: unknown) =>
-      apiOver({
-        queue: async () => {
-          throw error;
-        },
-      }).api;
     await rejectsWith(
       failing(new ContractError('disconnected', 'bridge')).queue(ID),
       unavailableMessage,
@@ -271,12 +303,6 @@ describe('threads adapter', () => {
   });
 
   test('T-20 a contract error keeps its code and itself as the cause; the message is unchanged', async () => {
-    const failing = (error: unknown) =>
-      apiOver({
-        queue: async () => {
-          throw error;
-        },
-      }).api;
     for (const [code, message] of [
       ['disconnected', unavailableMessage],
       ['unavailable', unavailableMessage],
@@ -288,18 +314,12 @@ describe('threads adapter', () => {
       await rejectsWithClientError(failing(contract).queue(ID), {
         code,
         message,
-        cause: contract,
+        cause: { code, message: 'what the bridge said' },
       });
     }
   });
 
   test('T-20 an internal contract error or a foreign throw gives code internal and no cause', async () => {
-    const failing = (error: unknown) =>
-      apiOver({
-        queue: async () => {
-          throw error;
-        },
-      }).api;
     await rejectsWithClientError(
       failing(new ContractError('internal', 'raw host text')).queue(ID),
       { code: 'internal', message: internalMessage, cause: undefined },
@@ -312,20 +332,20 @@ describe('threads adapter', () => {
   });
 
   test('T-20 a refused argument is invalid_input, an unreadable answer invalid_output, both without a cause', async () => {
-    const { api, calls } = apiOver({});
-    await rejectsWithClientError(api.prompt('not-a-uuid', 'hi'), {
+    const over = apiOver({});
+    await rejectsWithClientError(over.api.prompt('not-a-uuid', 'hi'), {
       code: 'invalid_input',
       message: 'The thread ID is invalid.',
       cause: undefined,
     });
-    await rejectsWithClientError(api.resume(ID, 'not-a-uuid'), {
+    await rejectsWithClientError(over.api.resume(ID, 'not-a-uuid'), {
       code: 'invalid_input',
       message: 'A promptId is required.',
       cause: undefined,
     });
-    assert.deepEqual(calls, []);
+    assert.deepEqual(over.calls, []);
     const malformed = apiOver({
-      thread: async () => ({ ...record, cwd: 3 }) as never,
+      thread: () => ({ thread: { ...record, cwdRepo: 'svn' } }),
     });
     await rejectsWithClientError(malformed.api.get(ID), {
       code: 'invalid_output',
@@ -335,32 +355,45 @@ describe('threads adapter', () => {
   });
 
   test('T-20 a missing target is not_found and a refused action conflict, without a cause', async () => {
-    const missing = apiOver({ prompt: async () => ({ status: 'missing' }) });
+    const missing = apiOver({
+      prompt: () => ({ promptResult: { status: 'missing' } }),
+    });
     await rejectsWithClientError(missing.api.prompt(ID, 'hello'), {
       code: 'not_found',
       message: 'The thread was not found.',
       cause: undefined,
     });
     const unknown = apiOver({
-      resume: async () => ({ status: 'unknown_prompt' }),
+      resume: () => ({ resumeResult: { status: 'unknown_prompt' } }),
     });
     await rejectsWithClientError(unknown.api.resume(ID, PROMPT), {
       code: 'not_found',
       message: 'The prompt was not found in this Thread.',
       cause: undefined,
     });
-    const inactive = apiOver({ prompt: async () => ({ status: 'inactive' }) });
+    const inactive = apiOver({
+      prompt: () => ({ promptResult: { status: 'inactive' } }),
+    });
     await rejectsWithClientError(inactive.api.prompt(ID, 'hello'), {
       code: 'conflict',
       message: 'The thread cannot perform this operation.',
       cause: undefined,
     });
-    const notRunning = apiOver({ pause: async () => 'not_running' });
+    const notRunning = apiOver({
+      pause: () => ({ interruptResult: 'not_running' }),
+    });
     await rejectsWithClientError(notRunning.api.interrupt(ID, PROMPT), {
       code: 'conflict',
       message: 'The thread cannot perform this operation.',
       cause: undefined,
     });
+  });
+
+  test('a read is one ThreadsService call of the chat part', async () => {
+    const over = apiOver({ thread: () => ({ thread: record }) });
+    await over.api.get(ID);
+    assert.deepEqual(over.calls, ['Thread']);
+    assert.deepEqual(over.parts, ['chat']);
   });
 
   test('without a history cache the snapshot is null', async () => {

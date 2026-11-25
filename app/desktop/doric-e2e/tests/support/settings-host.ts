@@ -9,6 +9,9 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
+import type { ConnectRouter } from '@connectrpc/connect';
+import { ModelsService } from 'bundle/contracts/gen/doric/models/v1/models_pb.js';
+
 import type { FakeHost } from './harness';
 
 /** The provider and model the prototype's execution picker names. */
@@ -211,6 +214,79 @@ const first = (input: unknown): unknown =>
   Array.isArray(input) ? input[0] : input;
 
 /**
+ * `models/v1.icons`' answer to `requests` over `icons`: each model's own icon,
+ * the provider kind's own, or `null` for none, and the SVG of each name used.
+ */
+const iconAnswers = (
+  icons: Readonly<Record<string, string>>,
+  requests: readonly IconRequest[],
+) => {
+  const answers = requests.map((request) => {
+    const kind =
+      request.kind ??
+      CONFIGURATION.providers.find(
+        (provider) => provider.id === request.providerId,
+      )?.kind;
+    const provider = kindIcon(kind);
+    const known = (name: string | null | undefined) =>
+      name !== null && name !== undefined && icons[name] !== undefined
+        ? name
+        : null;
+
+    return {
+      ...(known(provider) === null ? {} : { provider }),
+      models: request.models.map((model) => known(modelIcon(model))),
+    };
+  });
+  const used = new Set(
+    answers.flatMap((answer) => [
+      ...(answer.provider === undefined ? [] : [answer.provider]),
+      ...answer.models.filter((name): name is string => name !== null),
+    ]),
+  );
+
+  return {
+    svgs: Object.fromEntries(
+      [...used].flatMap((name) =>
+        icons[name] === undefined ? [] : [[name, icons[name]]],
+      ),
+    ),
+    answers,
+  };
+};
+
+/**
+ * `ModelsService.Icons` over Connect (slice S65a: chat's agent mark reads
+ * `models/v1` through the generated client): `iconAnswers`, a model without
+ * an icon as `""`. The settings window's other `models/v1` calls stay on
+ * the Socket.IO fake until its slice.
+ */
+export const serveSettingsConnect = (router: ConnectRouter): void => {
+  const icons = lobehubIcons();
+
+  router.service(ModelsService, {
+    icons: ({ requests }) => {
+      const { svgs, answers } = iconAnswers(
+        icons,
+        requests.map(({ providerId, kind, models }) => ({
+          ...(providerId === undefined ? {} : { providerId }),
+          ...(kind === undefined ? {} : { kind }),
+          models,
+        })),
+      );
+
+      return {
+        svgs,
+        answers: answers.map(({ models, ...answer }) => ({
+          ...answer,
+          models: models.map((name) => name ?? ''),
+        })),
+      };
+    },
+  });
+};
+
+/**
  * Serves `models/v1` (kinds, catalog, icons), `host-config/v1`, `secrets/v1`
  * and `tools/v1`: what the settings window, its execution picker and chat's
  * agent mark read. A replaced configuration is kept, so later reads answer it.
@@ -230,43 +306,12 @@ export const serveSettings = (host: FakeHost): void => {
       ? { status: 'read', models: OPENROUTER_CATALOG }
       : { status: 'absent' };
   });
-  host.serve('models/v1', 'icons', (input) => {
-    const { requests } = first(input) as {
-      requests: readonly IconRequest[];
-    };
-    const answers = requests.map((request) => {
-      const kind =
-        request.kind ??
-        CONFIGURATION.providers.find(
-          (provider) => provider.id === request.providerId,
-        )?.kind;
-      const provider = kindIcon(kind);
-      const known = (name: string | null | undefined) =>
-        name !== null && name !== undefined && icons[name] !== undefined
-          ? name
-          : null;
-
-      return {
-        ...(known(provider) === null ? {} : { provider }),
-        models: request.models.map((model) => known(modelIcon(model))),
-      };
-    });
-    const used = new Set(
-      answers.flatMap((answer) => [
-        ...(answer.provider === undefined ? [] : [answer.provider]),
-        ...answer.models.filter((name): name is string => name !== null),
-      ]),
-    );
-
-    return {
-      svgs: Object.fromEntries(
-        [...used].flatMap((name) =>
-          icons[name] === undefined ? [] : [[name, icons[name]]],
-        ),
-      ),
-      answers,
-    };
-  });
+  host.serve('models/v1', 'icons', (input) =>
+    iconAnswers(
+      icons,
+      (first(input) as { requests: readonly IconRequest[] }).requests,
+    ),
+  );
   host.serve('host-config/v1', 'current', () => stored);
   host.serve('host-config/v1', 'replace', (input) => {
     stored = {

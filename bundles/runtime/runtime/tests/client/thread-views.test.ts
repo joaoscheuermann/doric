@@ -1,93 +1,49 @@
 // The views a window holds on the Threads it shows
 // (docs/designs/thread-archive.md §6, §10.8): `createThreadViews`, moved from
 // the layout with its assertions (`L/tests/thread-views.test.ts:241-333`),
-// and `view` of `runtime.records/v1` over it (bundle isolation T3.9).
+// and `view` of `runtime.records/v1` over it (bundle isolation T3.9). Slice
+// S65a: the views are `runtime.threads/v1`'s server stream `ViewThread` over
+// the generated client (spec `docs/designs/grpc-processes.md`, section 13,
+// "The window from phase 3 to phase 5"); the SDK opens a view that ended with
+// `generation_lost` again, and the other silent ends are followed as before.
 
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 
+import type { MessageInitShape } from '@bufbuild/protobuf';
+import { type Client, createClient } from '@connectrpc/connect';
 import {
   type ConnectionStatus,
   ContractError,
   type Disposable,
-  type StreamListener,
-  type StreamObserver,
+  toConnectError,
 } from 'bundle/contracts';
 
 import { createThreadViews } from '../../src/client/api/thread-views.js';
-import type {
-  ThreadViewInput,
-  ThreadViewItem,
-} from '../../src/contracts/index.js';
+import { activate } from '../../src/client/index.js';
 import {
-  countNotices,
-  createHost,
-  end,
-  flush,
-  mirrorOf,
-  openOf,
-  project,
-  thread,
-  uuid,
-} from './support/hosts.js';
+  ThreadsService,
+  type ViewThreadRequest,
+  type ViewThreadResponseSchema,
+} from '../../src/contracts/gen/doric/runtime/threads/v1/threads_pb.js';
+import type { RuntimeRecords } from '../../src/contracts/index.js';
+import {
+  fakeClientServices,
+  fakeHostClients,
+  settle,
+  streamOf,
+  until,
+} from './support/connect.js';
 
-interface ViewStream {
-  readonly threadId: string;
-  readonly observer: StreamObserver<ThreadViewItem>;
-  disposed: boolean;
-}
+type ViewItem = MessageInitShape<typeof ViewThreadResponseSchema>;
 
-/** `runtime.threads/v1.viewThread`: the boundary the window holds views on. */
-class FakeRuntime {
-  readonly streams: ViewStream[] = [];
+const A = '00000000-0000-4000-8000-00000000000a';
+const B = '00000000-0000-4000-8000-00000000000b';
+const C = '00000000-0000-4000-8000-00000000000c';
 
-  viewThread(
-    input: ThreadViewInput,
-    listener: StreamListener<ThreadViewItem>,
-  ): Disposable {
-    const observer =
-      typeof listener === 'function' ? { next: listener } : listener;
-    const stream: ViewStream = {
-      threadId: input.threadId,
-      observer,
-      disposed: false,
-    };
-    this.streams.push(stream);
-    return {
-      dispose: () => {
-        stream.disposed = true;
-      },
-    };
-  }
-
-  /** The ids with an open stream, one entry per open stream. */
-  get open(): readonly string[] {
-    return this.streams
-      .filter((stream) => !stream.disposed)
-      .map((stream) => stream.threadId)
-      .sort();
-  }
-
-  /** The open stream of `threadId`. */
-  openOf(threadId: string): ViewStream {
-    const stream = this.streams.find(
-      (candidate) => candidate.threadId === threadId && !candidate.disposed,
-    );
-    assert.ok(stream !== undefined, `no open stream for ${threadId}`);
-    return stream;
-  }
-
-  /** The provider ends the open stream of `threadId`. */
-  end(threadId: string, error?: ContractError): void {
-    const stream = this.openOf(threadId);
-    stream.disposed = true;
-    stream.observer.end?.(error);
-  }
-
-  opened(threadId: string): number {
-    return this.streams.filter((stream) => stream.threadId === threadId).length;
-  }
-}
+/** A `ConnectError` the host ends a stream with, read back as `code`. */
+const ended = (code: string, message = 'gone for now') =>
+  toConnectError(new ContractError(code, message));
 
 class FakeConnection {
   current: ConnectionStatus = 'connected';
@@ -108,8 +64,38 @@ class FakeConnection {
   }
 }
 
+/** `runtime.threads/v1.ViewThread` over a fake host, and its openings. */
+const fakeViews = () => {
+  const views = streamOf<ViewThreadRequest, ViewItem>();
+  const host = fakeHostClients((router) => {
+    router.service(ThreadsService, { viewThread: views.serve });
+  });
+  const ids = (openings: readonly { readonly request: ViewThreadRequest }[]) =>
+    openings.map(({ request }) => request.threadId).sort();
+
+  return {
+    host,
+    views,
+    /** The ids with an open stream, one entry per open stream. */
+    open: () => ids(views.open()),
+    opened: (threadId: string) =>
+      views.openings.filter(({ request }) => request.threadId === threadId)
+        .length,
+    openOf: (threadId: string) => {
+      const found = views
+        .open()
+        .find(({ request }) => request.threadId === threadId);
+      assert.ok(found !== undefined, `no open stream for ${threadId}`);
+      return found;
+    },
+  };
+};
+
 const setup = () => {
-  const runtime = new FakeRuntime();
+  const fake = fakeViews();
+  const runtime: Client<typeof ThreadsService> = fake.host.hostClients
+    .part('runtime')
+    .use(ThreadsService);
   const connection = new FakeConnection();
   const timers: (() => void)[] = [];
   const views = createThreadViews({
@@ -126,229 +112,337 @@ const setup = () => {
   const fireTimers = () => {
     for (const run of timers.splice(0)) run();
   };
-  return { runtime, connection, views, fireTimers };
+  return { ...fake, connection, views, fireTimers };
 };
 
-describe('createThreadViews (T-24)', () => {
-  test('set opens one view per new id and ends the views of ids it no longer names', () => {
-    const { runtime, views } = setup();
+describe('createThreadViews over ViewThread (T-24)', () => {
+  test('set opens one view per new id and ends the views of ids it no longer names', async () => {
+    const { views, open, opened } = setup();
 
-    views.set(new Set(['a', 'b']));
-    assert.deepEqual(runtime.open, ['a', 'b']);
+    views.set(new Set([A, B]));
+    await settle();
+    assert.deepEqual(open(), [A, B]);
 
-    views.set(new Set(['b', 'c']));
-    assert.deepEqual(runtime.open, ['b', 'c']);
-    assert.equal(runtime.opened('b'), 1, 'a kept id keeps its stream');
+    views.set(new Set([B, C]));
+    await settle();
+    assert.deepEqual(open(), [B, C]);
+    assert.equal(opened(B), 1, 'a kept id keeps its stream');
   });
 
-  test('the view item changes nothing', () => {
-    const { runtime, views } = setup();
-    views.set(new Set(['a']));
+  test('the view item changes nothing', async () => {
+    const { views, open, opened, openOf } = setup();
+    views.set(new Set([A]));
+    await settle();
 
-    runtime.openOf('a').observer.next({ kind: 'viewing', threadId: 'a' });
+    openOf(A).push({ kind: 'viewing', threadId: A });
+    await settle();
 
-    assert.deepEqual(runtime.open, ['a']);
-    assert.equal(runtime.opened('a'), 1);
+    assert.deepEqual(open(), [A]);
+    assert.equal(opened(A), 1);
   });
 
-  for (const code of [
-    'unavailable',
-    'disconnected',
-    'generation_lost',
-  ] as const) {
-    test(`a silent ${code} end opens the view again once the connection reports connected`, () => {
-      const { runtime, connection, views } = setup();
-      views.set(new Set(['a']));
+  for (const code of ['unavailable', 'disconnected'] as const) {
+    test(`a silent ${code} end opens the view again once the connection reports connected`, async () => {
+      const { views, connection, open, openOf } = setup();
+      views.set(new Set([A]));
+      await settle();
 
       connection.current = 'disconnected';
-      runtime.end('a', new ContractError(code, 'gone for now'));
-      assert.deepEqual(runtime.open, []);
+      openOf(A).end(ended(code));
+      await settle();
+      assert.deepEqual(open(), []);
 
       connection.report('connected');
-      assert.deepEqual(runtime.open, ['a']);
+      await settle();
+      assert.deepEqual(open(), [A]);
     });
   }
 
-  test('a silent end while the connection stays up opens the view again after the delay', () => {
-    const { runtime, views, fireTimers } = setup();
-    views.set(new Set(['a']));
+  test('a generation_lost end is opened again by the client, without the connection or the delay', async () => {
+    const { views, open, opened, openOf, fireTimers } = setup();
+    views.set(new Set([A]));
+    await settle();
 
-    runtime.end('a', new ContractError('unavailable', 'the runtime drains'));
-    assert.deepEqual(runtime.open, []);
+    openOf(A).end(ended('generation_lost', 'Generation 1 exited.'));
+    await until(() => opened(A) === 2, 'the reopened view');
 
+    assert.deepEqual(open(), [A]);
     fireTimers();
-    assert.deepEqual(runtime.open, ['a']);
+    await settle();
+    assert.equal(opened(A), 2, 'the view is not opened a third time');
   });
 
-  test('a not_found end drops the id until the next set names it', () => {
-    const { runtime, connection, views, fireTimers } = setup();
-    views.set(new Set(['a']));
+  test('a silent end while the connection stays up opens the view again after the delay', async () => {
+    const { views, open, openOf, fireTimers } = setup();
+    views.set(new Set([A]));
+    await settle();
 
-    runtime.end('a', new ContractError('not_found', 'no such Thread'));
+    openOf(A).end(ended('unavailable', 'the runtime drains'));
+    await settle();
+    assert.deepEqual(open(), []);
+
+    fireTimers();
+    await settle();
+    assert.deepEqual(open(), [A]);
+  });
+
+  test('a not_found end drops the id until the next set names it', async () => {
+    const { views, connection, open, openOf, fireTimers } = setup();
+    views.set(new Set([A]));
+    await settle();
+
+    openOf(A).end(ended('not_found', 'no such Thread'));
+    await settle();
     connection.report('disconnected');
     connection.report('connected');
     fireTimers();
-    assert.deepEqual(runtime.open, []);
+    await settle();
+    assert.deepEqual(open(), []);
 
-    views.set(new Set(['a']));
-    assert.deepEqual(runtime.open, ['a']);
+    views.set(new Set([A]));
+    await settle();
+    assert.deepEqual(open(), [A]);
   });
 
-  test('close ends every view, and a later set follows again', () => {
-    const { runtime, connection, views, fireTimers } = setup();
-    views.set(new Set(['a', 'b']));
+  test('close ends every view, and a later set follows again', async () => {
+    const { views, connection, open, fireTimers } = setup();
+    views.set(new Set([A, B]));
+    await settle();
 
     views.close();
-    assert.deepEqual(runtime.open, []);
+    await settle();
+    assert.deepEqual(open(), []);
     connection.report('disconnected');
     connection.report('connected');
     fireTimers();
-    assert.deepEqual(runtime.open, []);
+    await settle();
+    assert.deepEqual(open(), []);
     views.close();
 
-    views.set(new Set(['a']));
-    assert.deepEqual(runtime.open, ['a']);
+    views.set(new Set([A]));
+    await settle();
+    assert.deepEqual(open(), [A]);
   });
 
-  test('a view that ends silently after close is not opened again', () => {
-    const { runtime, views, fireTimers } = setup();
-    views.set(new Set(['a']));
-    const stream = runtime.openOf('a');
+  test('a view that ends silently after close is not opened again', async () => {
+    const { views, open, openOf, fireTimers } = setup();
+    views.set(new Set([A]));
+    await settle();
+    const stream = openOf(A);
 
     views.close();
-    stream.observer.end?.(new ContractError('unavailable', 'late end'));
+    stream.end(ended('unavailable', 'late end'));
     fireTimers();
+    await settle();
 
-    assert.deepEqual(runtime.open, []);
+    assert.deepEqual(open(), []);
   });
 });
 
-// T3.9: view of runtime.records/v1 -------------------------------------------
+// T3.9: view of runtime.records/v1, through the client part's activation ----
 
-describe('view (T3.9)', () => {
-  const projectId = uuid(1);
-  const threadId = uuid(11);
-  const seeded = () =>
-    createHost({
-      projects: [project(projectId)],
-      threads: [thread(threadId, projectId)],
+describe('view over ViewThread (T3.9)', () => {
+  const threadId = '00000000-0000-4000-8000-000000000011';
+  const other = '00000000-0000-4000-8000-000000000012';
+
+  /** The runtime's client part activated over a fake host. */
+  const activated = async (t: { after(run: () => unknown): void }) => {
+    const fake = fakeViews();
+    const window = fakeClientServices({
+      bundleId: 'runtime',
+      hostClients: fake.host.hostClients,
     });
-  const streamsOf = (host: ReturnType<typeof seeded>, id: string) =>
-    openOf(host.views).filter(({ input }) => input.threadId === id);
+    const cleanup = await activate({
+      services: window.services,
+    } as unknown as Parameters<typeof activate>[0]);
+    t.after(async () => {
+      if (typeof cleanup === 'function') await cleanup();
+    });
+    const provided = window.provided.find(
+      ({ id }) => id === 'runtime.records/v1',
+    );
+    assert.ok(provided !== undefined);
+    const call = <K extends keyof RuntimeRecords>(name: K) =>
+      (
+        provided.methods as Record<string, { execute(input: unknown): unknown }>
+      )[name];
+    const records = {
+      view: (input: { readonly threadId: string }) =>
+        call('view')?.execute(input) as Disposable,
+      thread: (id: string) => call('thread')?.execute(id),
+      subscribe: (listener: () => void) =>
+        call('subscribe')?.execute(listener) as Disposable,
+    };
+    const streamsOf = (id: string) =>
+      fake.views.open().filter(({ request }) => request.threadId === id);
 
-  test('the first view of a Thread opens one viewThread stream and a second opens none', (t) => {
-    const host = seeded();
-    const records = mirrorOf(t, host);
+    return { ...fake, window, records, streamsOf, cleanup };
+  };
+
+  test('the first view of a Thread opens one ViewThread stream and a second opens none', async (t) => {
+    const { records, views, streamsOf } = await activated(t);
 
     records.view({ threadId });
-    assert.equal(host.views.length, 1);
-    assert.deepEqual(host.views[0]?.input, { threadId });
+    await settle();
+    assert.equal(views.openings.length, 1);
+    assert.equal(views.openings[0]?.request.threadId, threadId);
 
     records.view({ threadId });
-    assert.equal(host.views.length, 1);
-    assert.equal(streamsOf(host, threadId).length, 1);
+    await settle();
+    assert.equal(views.openings.length, 1);
+    assert.equal(streamsOf(threadId).length, 1);
   });
 
-  test('disposing one of two views keeps the stream, and disposing the last ends it', (t) => {
-    const host = seeded();
-    const records = mirrorOf(t, host);
+  test('disposing one of two views keeps the stream, and disposing the last ends it', async (t) => {
+    const { records, views, streamsOf } = await activated(t);
     const first = records.view({ threadId });
     const second = records.view({ threadId });
+    await settle();
 
     first.dispose();
-    assert.equal(streamsOf(host, threadId).length, 1);
+    await settle();
+    assert.equal(streamsOf(threadId).length, 1);
 
     second.dispose();
-    assert.equal(streamsOf(host, threadId).length, 0);
-    assert.equal(host.views.length, 1);
+    await settle();
+    assert.equal(streamsOf(threadId).length, 0);
+    assert.equal(views.openings.length, 1);
   });
 
-  test('each Thread with a view held has its own stream', (t) => {
-    const host = seeded();
-    const records = mirrorOf(t, host);
-    const other = uuid(12);
+  test('each Thread with a view held has its own stream', async (t) => {
+    const { records, streamsOf } = await activated(t);
 
     records.view({ threadId });
     const second = records.view({ threadId: other });
-    assert.equal(streamsOf(host, threadId).length, 1);
-    assert.equal(streamsOf(host, other).length, 1);
+    await settle();
+    assert.equal(streamsOf(threadId).length, 1);
+    assert.equal(streamsOf(other).length, 1);
 
     second.dispose();
-    assert.equal(streamsOf(host, threadId).length, 1);
-    assert.equal(streamsOf(host, other).length, 0);
+    await settle();
+    assert.equal(streamsOf(threadId).length, 1);
+    assert.equal(streamsOf(other).length, 0);
   });
 
-  test('a silent end opens the stream again', (t) => {
-    const host = seeded();
-    const records = mirrorOf(t, host);
+  test('a generation_lost end opens the stream again', async (t) => {
+    const { records, views, streamsOf } = await activated(t);
     records.view({ threadId });
-    const [stream] = host.views;
+    await settle();
+    const [stream] = views.openings;
     assert.ok(stream !== undefined);
 
-    end(stream, new ContractError('unavailable', 'the runtime drains'));
-    assert.equal(streamsOf(host, threadId).length, 0);
+    stream.end(ended('generation_lost', 'Generation 1 exited.'));
+    await until(() => views.openings.length === 2, 'the reopened view');
 
-    host.fireTimers();
-    assert.equal(streamsOf(host, threadId).length, 1);
+    assert.equal(streamsOf(threadId).length, 1);
   });
 
-  test('after a not_found end the next view opens the stream again', (t) => {
-    const host = seeded();
-    const records = mirrorOf(t, host);
+  test('after a not_found end the next view opens the stream again', async (t) => {
+    const { records, views, streamsOf } = await activated(t);
     records.view({ threadId });
-    const [stream] = host.views;
+    await settle();
+    const [stream] = views.openings;
     assert.ok(stream !== undefined);
 
-    end(stream, new ContractError('not_found', 'no such Thread'));
-    host.connection.report('disconnected');
-    host.connection.report('connected');
-    host.fireTimers();
-    assert.equal(streamsOf(host, threadId).length, 0);
+    stream.end(ended('not_found', 'no such Thread'));
+    await settle();
+    assert.equal(streamsOf(threadId).length, 0);
 
     records.view({ threadId });
-    assert.equal(streamsOf(host, threadId).length, 1);
+    await settle();
+    assert.equal(streamsOf(threadId).length, 1);
   });
 
-  test('after a not_found end the next disposal that leaves a view held opens the stream again', (t) => {
-    const host = seeded();
-    const records = mirrorOf(t, host);
+  test('after a not_found end the next disposal that leaves a view held opens the stream again', async (t) => {
+    const { records, views, streamsOf } = await activated(t);
     const first = records.view({ threadId });
     records.view({ threadId });
-    const [stream] = host.views;
+    await settle();
+    const [stream] = views.openings;
     assert.ok(stream !== undefined);
 
-    end(stream, new ContractError('not_found', 'no such Thread'));
-    assert.equal(streamsOf(host, threadId).length, 0);
+    stream.end(ended('not_found', 'no such Thread'));
+    await settle();
+    assert.equal(streamsOf(threadId).length, 0);
 
     first.dispose();
-    assert.equal(streamsOf(host, threadId).length, 1);
+    await settle();
+    assert.equal(streamsOf(threadId).length, 1);
   });
 
-  test('a view changes no read, calls no subscriber and starts no load', async (t) => {
-    const host = seeded();
-    const records = mirrorOf(t, host);
-    const notices = countNotices(t, records);
+  test('closing the client part ends every view', async (t) => {
+    const { records, views, cleanup } = await activated(t);
+    records.view({ threadId });
+    await settle();
+    assert.equal(views.open().length, 1);
+
+    if (typeof cleanup === 'function') await cleanup();
+    await settle();
+
+    assert.equal(views.open().length, 0);
+  });
+
+  test('a view changes no read, calls no subscriber and calls no other host method', async (t) => {
+    const { records, views, host, window } = await activated(t);
+    let notices = 0;
+    const subscription = records.subscribe(() => {
+      notices += 1;
+    });
+    t.after(() => subscription.dispose());
 
     const held = records.view({ threadId });
-    const [stream] = host.views;
+    await settle();
+    const [stream] = views.openings;
     assert.ok(stream !== undefined);
-    stream.observer.next({ kind: 'viewing', threadId });
-    end(stream, new ContractError('not_found', 'no such Thread'));
+    stream.push({ kind: 'viewing', threadId });
+    stream.end(ended('not_found', 'no such Thread'));
     held.dispose();
-    await flush();
+    await settle();
 
-    assert.equal(notices.count(), 0);
-    assert.deepEqual(host.calls, ['viewThread']);
+    assert.equal(notices, 0);
+    assert.deepEqual(
+      host.calls.map(({ method }) => method),
+      ['doric.runtime.threads.v1.ThreadsService/ViewThread'],
+    );
+    assert.deepEqual(window.envelope, []);
     assert.equal(records.thread(threadId), undefined);
   });
 
-  test('closing the mirror ends every view', (t) => {
-    const host = seeded();
-    const records = mirrorOf(t, host);
+  test('every view call carries the runtime part', async (t) => {
+    const { records, host } = await activated(t);
+
     records.view({ threadId });
+    await settle();
 
-    records.close();
-
-    assert.equal(openOf(host.views).length, 0);
+    assert.deepEqual(
+      host.calls.map(({ part }) => part),
+      ['runtime'],
+    );
   });
+});
+
+// The fake itself is the generated client's: a direct call reaches it.
+void test('the fake host serves ViewThread to the generated client', async () => {
+  const fake = fakeViews();
+  const client = createClient(
+    ThreadsService,
+    fake.host.hostClients.part('probe').transport,
+  );
+  const controller = new AbortController();
+  const items: string[] = [];
+  const reading = (async () => {
+    for await (const item of client.viewThread(
+      { threadId: A },
+      { signal: controller.signal },
+    ))
+      items.push(item.threadId);
+  })().catch(() => undefined);
+
+  await until(() => fake.views.openings.length === 1, 'the opening');
+  fake.openOf(A).push({ kind: 'viewing', threadId: A });
+  await until(() => items.length === 1, 'the item');
+  controller.abort();
+  await reading;
+
+  assert.deepEqual(items, [A]);
 });

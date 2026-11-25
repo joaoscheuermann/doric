@@ -3,7 +3,9 @@
 // client, and calls no method of `runtime/v2` or `runtime.threads/v1` until a
 // read or a `follow` asks. Bundle isolation step 7(a): the client reads the
 // host's Projects through `runtime/v2`, and reaches the host through no other
-// contract than it and `runtime.threads/v1`.
+// contract than it and `runtime.threads/v1`. Slice S65a: both are the
+// generated clients of `RuntimeService` and `ThreadsService` over the window's
+// Connect path (`ClientServices.use(<X>Service)`), not envelope host contracts.
 
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
@@ -14,11 +16,18 @@ import type {
   ClientContext,
   ConnectionStatus,
   Disposable,
-  Services,
 } from 'bundle/contracts';
 import { manifestV1Schema } from 'bundle/runtime';
 
 import { activate } from '../../src/client/index.js';
+import { ThreadsService } from '../../src/contracts/gen/doric/runtime/threads/v1/threads_pb.js';
+import { RuntimeService } from '../../src/contracts/gen/doric/runtime/v2/runtime_pb.js';
+import type { RecordsRead } from '../../src/contracts/index.js';
+import {
+  fakeClientServices,
+  fakeHostClients,
+  settle,
+} from './support/connect.js';
 
 const manifest = async () =>
   manifestV1Schema.parse(
@@ -49,95 +58,101 @@ void test('the client part provides only runtime.records/v1', async () => {
   );
 });
 
+const PROJECT = '00000000-0000-4000-8000-000000000001';
+
 void test('activation with an unreachable host calls no host method', async () => {
-  const hostCalls: string[] = [];
-  const provided: string[] = [];
-  /** A host contract whose every method is recorded and rejects as unreachable. */
-  const unreachable = (contract: string) =>
-    new Proxy(Object.create(null) as object, {
-      get: (_target, property) =>
-        typeof property === 'string' && property !== 'then'
-          ? () => {
-              hostCalls.push(`${contract}.${property}`);
-              return Promise.reject(new Error('The host cannot be reached.'));
-            }
-          : undefined,
-    });
-  const connection = {
-    status: (): ConnectionStatus => 'disconnected',
-    subscribe: (): Disposable => ({ dispose: () => undefined }),
-  };
-  const services = {
-    provide: (definition: { readonly id: string }): Disposable => {
-      provided.push(definition.id);
-      return { dispose: () => undefined };
+  // A host that serves nothing: every call would fail.
+  const host = fakeHostClients(() => undefined);
+  const window = fakeClientServices({
+    bundleId: 'runtime',
+    hostClients: host.hostClients,
+    connection: {
+      status: (): ConnectionStatus => 'disconnected',
+      subscribe: (): Disposable => ({ dispose: () => undefined }),
     },
-    use: (contract: { readonly id: string }) =>
-      contract.id === 'doric.connection/v1'
-        ? connection
-        : unreachable(contract.id),
-    whenAvailable: (): Disposable => ({ dispose: () => undefined }),
-  } as unknown as Services;
+  });
 
-  const cleanup = await activate({ services } as unknown as ClientContext);
+  const cleanup = await activate({
+    services: window.services,
+  } as unknown as ClientContext);
+  await settle();
 
-  assert.deepEqual(hostCalls, []);
-  assert.deepEqual(provided, ['runtime.records/v1']);
+  assert.deepEqual(host.calls, []);
+  assert.deepEqual(
+    window.provided.map(({ id }) => id),
+    ['runtime.records/v1'],
+  );
+  assert.deepEqual(window.envelope, [], 'no host contract on the envelope');
   if (typeof cleanup === 'function') await cleanup();
-  assert.deepEqual(hostCalls, []);
+  assert.deepEqual(host.calls, []);
 });
 
-void test('a Projects read reaches the host through runtime/v2 and runtime.threads/v1 only', async () => {
-  const hostCalls: string[] = [];
-  const provided: { readonly id: string; readonly methods: object }[] = [];
-  /** A host contract whose every method is recorded and answers empty. */
-  const recording = (contract: string) =>
-    new Proxy(Object.create(null) as object, {
-      get: (_target, property) =>
-        typeof property === 'string' && property !== 'then'
-          ? () => {
-              hostCalls.push(`${contract}.${property}`);
-              return Promise.resolve({ items: [] });
-            }
-          : undefined,
+void test('a Projects read reaches the host through RuntimeService and ThreadsService only', async () => {
+  const host = fakeHostClients((router) => {
+    router.service(RuntimeService, {
+      projects: () => ({
+        items: [
+          {
+            id: PROJECT,
+            name: 'Checkout',
+            state: 'ready',
+            configRevision: 2,
+            createdAt: '2026-01-01T00:00:00.000Z',
+            updatedAt: '2026-01-02T00:00:00.000Z',
+          },
+        ],
+      }),
+      projectActivity: () => ({ projectActivity: [] }),
     });
-  const connection = {
-    status: (): ConnectionStatus => 'connected',
-    subscribe: (): Disposable => ({ dispose: () => undefined }),
-  };
-  const services = {
-    provide: (definition: {
-      readonly id: string;
-      readonly methods: object;
-    }): Disposable => {
-      provided.push(definition);
-      return { dispose: () => undefined };
-    },
-    use: (contract: { readonly id: string }) =>
-      contract.id === 'doric.connection/v1'
-        ? connection
-        : recording(contract.id),
-    whenAvailable: (): Disposable => ({ dispose: () => undefined }),
-  } as unknown as Services;
+    router.service(ThreadsService, {});
+  });
+  const window = fakeClientServices({
+    bundleId: 'runtime',
+    hostClients: host.hostClients,
+  });
 
-  const cleanup = await activate({ services } as unknown as ClientContext);
-  const records = provided.find(({ id }) => id === 'runtime.records/v1');
+  const cleanup = await activate({
+    services: window.services,
+  } as unknown as ClientContext);
+  const records = window.provided.find(({ id }) => id === 'runtime.records/v1');
   assert.ok(records !== undefined);
   const { projects } = records.methods as {
     readonly projects: { execute(input: undefined): unknown };
   };
   projects.execute(undefined);
-  for (let round = 0; round < 20; round += 1)
-    await new Promise<void>((resolve) => setImmediate(resolve));
+  await settle();
 
-  assert.ok(hostCalls.includes('runtime/v2.projects'), hostCalls.join(', '));
+  const methods = host.calls.map(({ method }) => method);
+  assert.ok(
+    methods.includes('doric.runtime.v2.RuntimeService/Projects'),
+    methods.join(', '),
+  );
   assert.deepEqual(
-    hostCalls.filter(
-      (call) =>
-        !call.startsWith('runtime/v2.') &&
-        !call.startsWith('runtime.threads/v1.'),
+    methods.filter(
+      (method) =>
+        !method.startsWith('doric.runtime.v2.RuntimeService/') &&
+        !method.startsWith('doric.runtime.threads.v1.ThreadsService/'),
     ),
     [],
   );
+  assert.deepEqual(
+    [...new Set(host.calls.map(({ part }) => part))],
+    ['runtime'],
+  );
+  assert.deepEqual(window.envelope, [], 'no host contract on the envelope');
+
+  // The read answers the host's Project as `runtime.records/v1` shows it.
+  const read = projects.execute(undefined) as RecordsRead<readonly unknown[]>;
+  assert.equal(read.status, 'ready');
+  assert.deepEqual(read.value, [
+    {
+      id: PROJECT,
+      name: 'Checkout',
+      state: 'ready',
+      configRevision: 2,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-02T00:00:00.000Z',
+    },
+  ]);
   if (typeof cleanup === 'function') await cleanup();
 });

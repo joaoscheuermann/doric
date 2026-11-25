@@ -18,6 +18,8 @@
 // `terminal/v1` with no terminals.
 
 import type { FakeHost } from './harness';
+import { serveSettingsConnect } from './settings-host';
+import { serveWorkspaceConnect } from './workspace-connect';
 import type { ThreadEventRow } from './workspace-content';
 import { THREADS, type WorkspaceThread } from './workspace-host';
 
@@ -366,7 +368,8 @@ const idOf = (input: unknown): unknown =>
 
 /**
  * Answers the measured Thread with `transcriptLog()` (after `serveWorkspace`,
- * whose answers for the other Threads it keeps), and `terminal/v1` with no
+ * whose answers for the other Threads it keeps), on the Socket.IO fake and
+ * over Connect (`forwardConnect`), and `terminal/v1` with no
  * terminals: the transcript is settled, so no live output is watched.
  */
 export const serveTranscript = (host: FakeHost): void => {
@@ -390,6 +393,15 @@ export const serveTranscript = (host: FakeHost): void => {
         found === undefined ? [] : log.filter((row) => row.sequence > from),
     });
   });
+  // The same Thread and log over Connect, which the chat and the runtime's
+  // records read (S65a); the workspace's other Threads as `serveWorkspace`.
+  host.forwardConnect(
+    serveWorkspaceConnect({
+      threads: [record],
+      logs: new Map([[record.id, log]]),
+      routes: serveSettingsConnect,
+    }).forward,
+  );
   host.serve('terminal/v1', 'list', () => []);
   host.stream('terminal/v1', 'watchProject', (input, push) => {
     const projectId = idOf(input);

@@ -4,18 +4,27 @@
 // while `settings.models/v1` is available, the footer execution picker item.
 // Persistent work runs on the activation services (D9-17).
 
+import { type Client, Code, ConnectError } from '@connectrpc/connect';
 import {
   type Cleanup,
   type ClientContext,
+  type ClientServices,
   CommandsV1,
+  fromConnectError,
   HooksV1,
   MenusV1,
-  ModelsV1,
+  type Models,
   NavigationV1,
   RegionsV1,
   UiV1,
 } from 'bundle/contracts';
+import {
+  IconsRequestSchema,
+  type IconsResponse,
+  ModelsService,
+} from 'bundle/contracts/gen/doric/models/v1/models_pb.js';
 import type { SHELL_CONVERSATION_FOOTER } from 'layout/contracts';
+import { encode } from 'runtime/contracts';
 
 import { ChatHooksV2, SEND_PROMPT_COMMAND } from '../contracts/index.js';
 import { HistorySnapshotsV1 } from './api/history-contract.js';
@@ -57,7 +66,36 @@ import {
 } from './stores/execution-sources.js';
 import { threadChatsStore } from './stores/thread-chats.js';
 
-export function activate({ services }: ClientContext): Cleanup {
+/**
+ * `models/v1.icons` over `ModelsService`'s client: today's answer, a model
+ * without an icon (`""`) as `null`, a provider without `Icons`
+ * (`UNIMPLEMENTED`) as no icons, any other failure as its Doric error.
+ */
+const modelIconsOver = (
+  client: Client<typeof ModelsService>,
+): Pick<Models, 'icons'> => ({
+  icons: async (input) => {
+    let response: IconsResponse;
+    try {
+      response = await client.icons(encode(IconsRequestSchema, input));
+    } catch (error) {
+      if (error instanceof ConnectError && error.code === Code.Unimplemented) {
+        return { svgs: {}, answers: [] };
+      }
+      throw error instanceof ConnectError ? fromConnectError(error) : error;
+    }
+    return {
+      svgs: response.svgs,
+      answers: response.answers.map(({ provider, models }) => ({
+        ...(provider === undefined ? {} : { provider }),
+        models: models.map((name) => (name === '' ? null : name)),
+      })),
+    };
+  },
+});
+
+export function activate(context: ClientContext): Cleanup {
+  const services = context.services as ClientServices;
   initChat(services);
   const hooks = services.use(HooksV1).define(ChatHooksV2);
   setChatHooks(hooks);
@@ -127,8 +165,8 @@ export function activate({ services }: ClientContext): Cleanup {
     setHistory(api);
     return () => setHistory(undefined);
   });
-  const models = services.whenAvailable(ModelsV1, (api) => {
-    setModelsApi(api);
+  const models = services.whenAvailable(ModelsService, (client) => {
+    setModelsApi(modelIconsOver(client));
     return () => setModelsApi(undefined);
   });
   const stopActivity = watchSandboxActivity(threadChatsStore, hooks);

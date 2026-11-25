@@ -10,7 +10,9 @@
 // isolation 6(c)) is the footer's execution picker, drawn while
 // `settings.models/v1` is available.
 
+import { ConnectError } from '@connectrpc/connect';
 import { QueryClientProvider } from '@tanstack/react-query';
+import { ContractError, fromConnectError } from 'bundle/contracts';
 import { defineReactElement } from 'desktop/ui/react-element';
 import { TooltipProvider } from 'desktop/ui/tooltip';
 import {
@@ -19,7 +21,20 @@ import {
   useMemo,
   useSyncExternalStore,
 } from 'react';
-import { RuntimeRecordsV1, RuntimeThreadsV1 } from 'runtime/contracts';
+import {
+  decode,
+  encode,
+  RuntimeRecordsV1,
+  type RuntimeThreads,
+  runtimeOneofs,
+  runtimeThreadsMethods,
+} from 'runtime/contracts';
+import {
+  SetThreadExecutionRequestSchema,
+  type SetThreadExecutionResponse,
+  SetThreadExecutionResponseSchema,
+  ThreadsService,
+} from 'runtime/contracts/gen/doric/runtime/threads/v1/threads_pb.js';
 
 import type { RenderBlock } from '../../contracts/index.js';
 import { GenericBlock } from '../components/molecules/generic-block.js';
@@ -124,19 +139,45 @@ export const ChatThreadTabIconElement = defineReactElement<{
 });
 
 /**
+ * `runtime.threads/v1.setThreadExecution` over `ThreadsService`: the answer
+ * as today's result, a failure as its Doric error (`fromConnectError`), an
+ * answer outside today's schema as `invalid_output`.
+ */
+const setThreadExecution: RuntimeThreads['setThreadExecution'] = async (
+  input,
+) => {
+  let response: SetThreadExecutionResponse;
+  try {
+    response = await chatServices()
+      .use(ThreadsService)
+      .setThreadExecution(encode(SetThreadExecutionRequestSchema, input));
+  } catch (error) {
+    throw error instanceof ConnectError ? fromConnectError(error) : error;
+  }
+  const parsed = runtimeThreadsMethods.setThreadExecution.output.safeParse(
+    decode(SetThreadExecutionResponseSchema, response, runtimeOneofs),
+  );
+  if (!parsed.success)
+    throw new ContractError(
+      'invalid_output',
+      `runtime.threads/v1 setThreadExecution answered outside its schema: ${parsed.error.message}`,
+    );
+  return parsed.data;
+};
+
+/**
  * The footer's execution picker over the window's sources: nothing while no
  * provider of `settings.models/v1` is available.
  */
 function FooterExecutionPicker() {
   const { models, selection } = useExecutionSources();
-  const host = useMemo(() => {
-    const services = chatServices();
-    const threads = services.use(RuntimeThreadsV1);
-    return {
-      records: services.use(RuntimeRecordsV1),
-      setThreadExecution: threads.setThreadExecution.bind(threads),
-    };
-  }, []);
+  const host = useMemo(
+    () => ({
+      records: chatServices().use(RuntimeRecordsV1),
+      setThreadExecution,
+    }),
+    [],
+  );
   if (models === undefined) return null;
   return (
     <ExecutionPicker

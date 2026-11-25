@@ -836,6 +836,12 @@ bundles still loads the chat. Without them the conversation still works: no
 picker without `settings`, no Thread tab and no selection without `workspace`,
 no cached first draw without `history`, and no model icon without `models/v1`.
 
+`runtime.threads/v1`, `runtime.attachments/v1` and `models/v1` are called over
+Connect through `ThreadsService`, `AttachmentsService` and
+`whenAvailable(ModelsService)`; an `UNIMPLEMENTED` `Icons` reads as no icons,
+and host errors are read through `fromConnectError`. `chat.composer/v1` and
+`comments/v1` stay on the window's envelope until phase 5.
+
 ## The conversation
 
 - **History.** A Thread's history is its durable event log on the host; the
@@ -1130,6 +1136,8 @@ npx nx run bundle-chat:build
   tests of the domain rules, the stores, the services and the desktop part
   (`tests/support/desktop.ts` activates the built desktop part);
   `tests/client/*.test.ts` boot one happy-dom window with the built core and
-  chat client parts and a fake host (`tests/client/support/window.ts`).
+  chat client parts and a fake host (`tests/client/support/window.ts`), which
+  answers `window.doric.connect` from a Connect router of fake `HostClients`
+  (`tests/client/support/host-connect.ts`).
 - Stories under `stories/` are CSF3, wrapped by `.storybook/preview.tsx`. No
   target runs them: `typecheck` and `build` only type-check them.

@@ -3,9 +3,11 @@
 // and the chat client part exactly as their builds ship them, plus an
 // optional in-memory "probe" bundle standing for another bundle that extends
 // the conversation. The boundaries faked are the preload API
-// (`window.doric.desktop`) and, behind it, the host's `runtime.threads/v1`
-// and main's shell streams: a test answers them as the host would and reads
-// what they were asked. Main's keybinding routing is played as main plays it:
+// (`window.doric.desktop`) with main's shell streams behind it, and the
+// window's Connect path (`window.doric.connect`, S64) with the host's
+// `ThreadsService`, `AttachmentsService` and `ModelsService.Icons` behind it
+// (`host-connect.ts`, slice S65a): a test answers them as the host would and
+// reads what they were asked. Main's keybinding routing is played as main plays it:
 // the `menus/v1` bindings that match the window's `path` context are the
 // window's table, and a chord the table matches runs its command here.
 
@@ -42,6 +44,14 @@ import { type RuntimeRecords, runtimeRecordsService } from 'runtime/contracts';
 import { createRecordsFake, type RecordsFakeOptions } from 'runtime/testing';
 import { z } from 'zod';
 
+import {
+  type HostAnswer,
+  type OpenStream,
+  serveHostConnect,
+} from './host-connect.js';
+
+export type { HostAnswer, OpenStream } from './host-connect.js';
+
 const here = dirname(fileURLToPath(import.meta.url));
 const CHAT_DIST = resolve(here, '../../../../dist');
 const CORE_DIST = resolve(
@@ -51,36 +61,6 @@ const CORE_DIST = resolve(
 
 const readJson = async (path: string): Promise<unknown> =>
   JSON.parse(await readFile(path, 'utf8')) as unknown;
-
-/** What the host answers for one `<contract>.<method>`. */
-export type HostAnswer = (input: unknown) => unknown;
-
-/** One open stream: the input it was opened with, and its listener. */
-export interface OpenStream {
-  readonly envelope: BridgeCallEnvelope;
-  push(item: unknown): void;
-  end(error?: { code: string; message: string }): void;
-}
-
-/** `runtime.threads/v1` as main routes it: tuple length per method. */
-const threadMethods: Readonly<Record<string, number | null>> = {
-  thread: 1,
-  queue: 1,
-  prompt: null,
-  steer: null,
-  resume: null,
-  rewind: null,
-  pause: null,
-  queuedPrompt: null,
-  editQueued: null,
-  removeQueued: null,
-  resumeQueue: 1,
-  // 1.4.0: sends the Thread's last prompt again.
-  retry: null,
-  // 1.7.0: sets the Thread's provider, model and effort (the footer's
-  // execution picker, drawn by the chat from bundle isolation 6(c)).
-  setThreadExecution: null,
-};
 
 /** `chat.composer/v1` as main routes it: tuple length per method. */
 const composerMethods: Readonly<Record<string, number | null>> = {
@@ -138,58 +118,6 @@ const hostCandidateFor = (modelsV1?: ModelsV1Version): CatalogCandidate => {
     },
     errors: [],
   };
-};
-
-/**
- * `models/v1` as main routes it at `version`: tuple length per method. Only
- * 1.3.0 has `icons`, so at 1.2.0 the window's own stub refuses it.
- */
-const modelsRemote = (version: ModelsV1Version): RemoteContract => ({
-  id: 'models/v1',
-  environment: 'host',
-  bundleId: 'host',
-  version: '1.0.0',
-  contractVersion: version,
-  cardinality: 'one',
-  methods: Object.fromEntries(
-    Object.entries({
-      kinds: 0,
-      kind: 1,
-      catalog: null,
-      ...(version === '1.3.0' ? { icons: null } : {}),
-    }).map(([name, tuple]) => [name, { tuple, local: false, stream: false }]),
-  ),
-});
-
-const threadsRemote: RemoteContract = {
-  id: 'runtime.threads/v1',
-  environment: 'host',
-  bundleId: 'host',
-  version: '1.0.0',
-  contractVersion: '1.3.0',
-  cardinality: 'one',
-  methods: {
-    ...Object.fromEntries(
-      Object.entries(threadMethods).map(([name, tuple]) => [
-        name,
-        { tuple, local: false, stream: false },
-      ]),
-    ),
-    watchThread: { tuple: 2, local: false, stream: true },
-  },
-};
-
-const attachmentsRemote: RemoteContract = {
-  id: 'runtime.attachments/v1',
-  environment: 'host',
-  bundleId: 'host',
-  version: '1.0.0',
-  contractVersion: '1.0.0',
-  cardinality: 'one',
-  methods: {
-    attach: { tuple: null, local: false, stream: false },
-    read: { tuple: null, local: false, stream: false },
-  },
 };
 
 const composerRemote: RemoteContract = {
@@ -455,8 +383,9 @@ export const openChatWindow = async (input: {
   readonly host: Readonly<Record<string, HostAnswer>>;
   readonly probe?: Probe;
   /**
-   * The version of `models/v1` the host exposes, answered by the
-   * `models/v1.<method>` handlers of `host`; without it the host has none.
+   * The version of `models/v1` the host exposes; at 1.3.0 its
+   * `ModelsService.Icons` is answered by the `models/v1.icons` handler of
+   * `host`, at 1.2.0 it is unimplemented; without it the host has none.
    */
   readonly modelsV1?: ModelsV1Version;
   /** What the window's `runtime.records/v1` fake holds; empty without it. */
@@ -563,14 +492,14 @@ export const openChatWindow = async (input: {
         ? {}
         : { probe: { entry: partUrl('probe', '1.0.0') } }),
     },
-    remote: [
-      threadsRemote,
-      attachmentsRemote,
-      composerRemote,
-      commentsRemote,
-      menusRemote,
-      ...(input.modelsV1 === undefined ? [] : [modelsRemote(input.modelsV1)]),
-    ],
+    remote: [composerRemote, commentsRemote, menusRemote],
+    hostProviders: {
+      'runtime.threads/v1': { bundleId: 'host', version: '1.8.0' },
+      'runtime.attachments/v1': { bundleId: 'host', version: '1.0.0' },
+      ...(input.modelsV1 === undefined
+        ? {}
+        : { 'models/v1': { bundleId: 'host', version: input.modelsV1 } }),
+    },
     hostId: 'host-1',
     storageGeneration: 1,
   };
@@ -711,31 +640,6 @@ export const openChatWindow = async (input: {
         return () => commandListeners.delete(listener);
       }
       if (
-        envelope.contract === 'runtime.threads/v1' &&
-        envelope.method === 'watchThread'
-      ) {
-        let open = true;
-        const stream: OpenStream = {
-          envelope,
-          push: (item) => {
-            if (open) listener({ type: 'event', event: item });
-          },
-          end: (error) => {
-            if (!open) return;
-            open = false;
-            listener(
-              error === undefined ? { type: 'end' } : { type: 'end', error },
-            );
-          },
-        };
-        streams.push(stream);
-        return () => {
-          open = false;
-          const index = streams.indexOf(stream);
-          if (index >= 0) streams.splice(index, 1);
-        };
-      }
-      if (
         envelope.contract === 'chat.composer/v1' &&
         envelope.method === 'watch'
       ) {
@@ -781,6 +685,20 @@ export const openChatWindow = async (input: {
       : { [partUrl('probe', '1.0.0')]: { activate: input.probe.activate } }),
   };
 
+  // The host behind `doric:connect`, which `bootstrapWindow` reads from
+  // `window.doric.connect` as the preload exposes it.
+  const hostConnect = serveHostConnect({
+    host: input.host,
+    calls,
+    icons: input.modelsV1 === '1.3.0',
+  });
+  const previousDoric = Object.getOwnPropertyDescriptor(globalThis, 'doric');
+  Object.defineProperty(globalThis, 'doric', {
+    configurable: true,
+    writable: true,
+    value: { connect: hostConnect.api },
+  });
+
   await bootstrapWindow({
     desktop,
     document: window.document as unknown as Document,
@@ -808,10 +726,7 @@ export const openChatWindow = async (input: {
         (envelope) => `${envelope.contract}.${envelope.method}` === method,
       ),
     calls: () => calls,
-    watches: () =>
-      streams.filter(
-        (stream) => stream.envelope.contract === 'runtime.threads/v1',
-      ),
+    watches: () => hostConnect.watches(),
     tabCalls: () => [...tabCalls],
     composerWatches: () =>
       streams.filter(
@@ -834,6 +749,11 @@ export const openChatWindow = async (input: {
         } else {
           Object.defineProperty(globalThis, name, descriptor);
         }
+      }
+      if (previousDoric === undefined) {
+        delete globals.doric;
+      } else {
+        Object.defineProperty(globalThis, 'doric', previousDoric);
       }
     },
   };

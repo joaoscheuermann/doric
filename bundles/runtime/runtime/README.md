@@ -2186,6 +2186,13 @@ fills `contextWindow` from that provider's catalog with
   `not_found`.
 - **Views.** `view` holds one `viewThread` stream per Thread on screen and opens
   it again after a silent end; it reports no failure.
+- **Host calls.** The client part calls `runtime/v2` and `runtime.threads/v1`
+  over Connect: `RuntimeService` and `ThreadsService` clients are built lazily
+  through `services.use`, and [`api/host.ts`](src/client/api/host.ts) adapts
+  them to the `RuntimeHost` and `ThreadsHost` types the mirror, the Project
+  watch and the workspace API still use (`observe()` turns a stream into an
+  observer). `view` opens `ViewThread` and reopens from its cursor after
+  `unavailable` or `disconnected`; the SDK reopens after `generation_lost`.
 - `findThread` and `activity` ask the host once and change no read.
   `connection` follows `doric.connection/v1`. Deactivation ends every watch and
   view.

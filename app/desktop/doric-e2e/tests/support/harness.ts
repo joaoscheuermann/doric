@@ -19,6 +19,7 @@ import {
   createConnectionService,
 } from '../../../doric/src/connection/status';
 import { DesktopPlatform } from '../../../doric/src/platform/app';
+import type { HostForward } from '../../../doric/src/platform/bridge/connect-relay';
 import {
   createPlatformLog,
   type PlatformLog,
@@ -66,6 +67,14 @@ export interface FakeHost {
     method: string,
     handler: (input: unknown, push: (value: unknown) => void) => unknown,
   ): void;
+  /**
+   * Answers the window's Connect calls (`doric:connect`) of the host
+   * contracts with `forward` when `bootPlatform` names no `hostForward`; a
+   * later call replaces it.
+   */
+  forwardConnect(forward: HostForward): void;
+  /** The Connect forward `forwardConnect` set last, if any. */
+  readonly connect: HostForward | undefined;
   close(): Promise<void>;
 }
 
@@ -88,6 +97,7 @@ export const startFakeHost = async (input: {
     (input: unknown, push: (value: unknown) => void) => unknown
   >();
   const cleanups = new Map<string, () => void>();
+  let connect: HostForward | undefined;
   let refusals = 0;
   const http: HttpServer = createServer();
   const io = new Server(http);
@@ -234,6 +244,12 @@ export const startFakeHost = async (input: {
     },
     stream: (contract, method, handler) => {
       streams.set(`${contract} ${method}`, handler);
+    },
+    forwardConnect: (forward) => {
+      connect = forward;
+    },
+    get connect() {
+      return connect;
     },
     close: async () => {
       io.disconnectSockets(true);
@@ -382,7 +398,15 @@ export const bootPlatform = async (input: {
    * the app's `main.ts` does.
    */
   readonly shell?: 'fixture' | 'renderer';
+  /**
+   * Where main forwards the window's Connect calls (`doric:connect`): the
+   * harness's Connect fake of the host's contracts (S64 to S66); default
+   * the host's `forwardConnect`, else main's HTTP/2 forward to the fake
+   * host's URL, which serves none.
+   */
+  readonly hostForward?: HostForward;
 }): Promise<Booted> => {
+  const hostForward = input.hostForward ?? input.host.connect;
   const userData =
     input.userData ?? (await mkdtemp(join(tmpdir(), 'doric-electron-')));
   const shellRoot =
@@ -416,6 +440,7 @@ export const bootPlatform = async (input: {
     ...(input.flushDeadlineMs === undefined
       ? {}
       : { flushDeadlineMs: input.flushDeadlineMs }),
+    ...(hostForward === undefined ? {} : { hostForward }),
   });
 
   // What `main.ts` attaches before `prepare()`: a theme change repaints every

@@ -5,7 +5,12 @@
 // `workspace-content` `files/v1` and `git.commands/v1`).
 
 import type { FakeHost } from './harness';
-import { EXECUTION, serveSettings } from './settings-host';
+import {
+  EXECUTION,
+  serveSettings,
+  serveSettingsConnect,
+} from './settings-host';
+import { serveWorkspaceConnect } from './workspace-connect';
 import {
   CHANGED_FILE,
   CWD,
@@ -179,7 +184,8 @@ const LOGS: ReadonlyMap<string, readonly ThreadEventRow[]> = new Map(
   ]),
 );
 
-const logOf = (threadId: string): readonly ThreadEventRow[] =>
+/** A Thread's durable log, as `watchThread` replays it. */
+export const logOf = (threadId: string): readonly ThreadEventRow[] =>
   LOGS.get(threadId) ?? [];
 
 /**
@@ -439,6 +445,12 @@ export const serveWorkspace = (host: FakeHost): GitCalls => {
 
   serveWorkspaceWrites(host);
   serveSettings(host);
+  // The window's Connect calls (S65a: the runtime's records and the chat):
+  // the same Projects, Threads and logs, and chat's agent mark. The handlers
+  // above stay for the client parts not yet on Connect (S65b–S65d).
+  host.forwardConnect(
+    serveWorkspaceConnect({ routes: serveSettingsConnect }).forward,
+  );
 
   return serveSandbox(host);
 };

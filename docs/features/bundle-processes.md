@@ -740,8 +740,21 @@ indexed from the distributed `descriptors.binpb` (none or unreadable: a warning
 and `unknown_contract`), then the scope; it replaces `windowKey`, drops
 `doric-caller*` and forwards over HTTP/2 to the host. `bundle/client` and
 `@connectrpc/connect` are client externals served once by the window import
-map. No client module calls the host this way until S65, and main reaches the
-host's catalog and status only from S66.
+map. Main reaches the host's catalog and status only from S66.
+
+Since S65a, `runtime`'s and `chat`'s client parts call the host this way.
+`runtime` builds `RuntimeService` and `ThreadsService` clients lazily through
+`services.use`; `api/host.ts` adapts them to `RuntimeHost` and `ThreadsHost` for
+`records`, `project-watch` and `workspace-api`, which are not ported yet, and
+`thread-views` opens `ViewThread` over Connect. `chat` uses `ThreadsService`
+(watch, threads API, `setThreadExecution`, fence watches), `AttachmentsService`
+(default binding) and `whenAvailable(ModelsService)` for icons, where an
+`UNIMPLEMENTED` `Icons` reads as no icons, and reads errors through
+`fromConnectError`; `composer.ts` stays on the envelope until phase 5. The other
+client modules (S65b–S65d) still use the envelope. A catalog manifest accepts
+`host.assets`, and the build's dry activation answers `use(<DescService>)` of a
+host contract with an inert stub after checking the descriptor against the
+part's lists (a descriptor without the contract option is refused).
 
 ## Evolution
 
@@ -1638,3 +1651,14 @@ sandbox pool` then `Sandbox pool configured` with the `logSandboxPool`
   `Stop` before a unary answer reaches its code; the host tests call over
   fetch with the generated schemas, as `@connectrpc/connect-node` is not a
   `doric-host` devDependency.
+- 2026-11-25: phase 3, slice S65a, of
+  [the spec](../designs/grpc-processes.md) (version 6.38): `runtime`'s and
+  `chat`'s client modules call `RuntimeService`, `ThreadsService`,
+  `AttachmentsService` and `ModelsService.Icons` over Connect; each bundle's
+  tests use a fake `HostClients` over `createRouterTransport`, and the desktop
+  e2e harness gains Connect fakes behind `hostForward`. Fixes: `53e2da80`
+  (`catalogManifestSchema` accepts `host.assets`) and `fde5a1a4` (the dry
+  activation answers `use(<DescService>)` of a host contract). Open: the
+  contract-option read is copied in three files; `api/host.ts` stays an adapter
+  until `records`, `project-watch` and `workspace-api` are ported; the e2e cases
+  are unverified.

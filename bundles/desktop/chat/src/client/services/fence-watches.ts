@@ -11,14 +11,10 @@ import {
   type StreamListener,
   toStreamObserver,
 } from 'bundle/contracts';
-import { RuntimeThreadsV1 } from 'runtime/contracts';
+import { ThreadsService } from 'runtime/contracts/gen/doric/runtime/threads/v1/threads_pb.js';
 
 import type { ChatFence } from '../../contracts/index.js';
-import {
-  createThreadWatch,
-  type ThreadStream,
-  type ThreadWatch,
-} from '../api/thread-watch.js';
+import { createThreadWatch, type ThreadWatch } from '../api/thread-watch.js';
 import { type ChatThreadsApi, threadsApi } from '../api/threads-api.js';
 import { threadFences } from '../domain/fences.js';
 import {
@@ -73,8 +69,7 @@ interface Entry {
 const windowDependencies = (): FenceWatchesDependencies => ({
   threads: threadsApi,
   watch: createThreadWatch({
-    stream: () =>
-      chatServices().use(RuntimeThreadsV1) as unknown as ThreadStream,
+    stream: () => chatServices().use(ThreadsService),
     connection: () => chatServices().use(DoricConnectionV1),
   }),
 });

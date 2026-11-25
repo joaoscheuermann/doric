@@ -1,18 +1,34 @@
 // The chat's host adapter (§7.5, §11): the `window.doric.threads.*` members
-// the conversation called, over `runtime.threads/v1`. Each member answers
+// the conversation called, over `runtime.threads/v1`'s generated client
+// (`ThreadsService`, slice S65a), each answer read as today's JSON
+// (`decode`) and each failure's Doric code through `fromConnectError`. Each
+// member answers
 // what the semantic preload answered: the main-process guard runs first
 // (`app/desktop/doric/src/workspace/validation.ts`, same messages), then the REST
 // route's own input checks, and every host outcome becomes the exact message
 // the REST route sent (`bundles/foundation/transport/src/host/routes/threads.ts`, R-ERR).
 // Failures reject with a `ClientError` that keeps the message and names its code (§6.4).
 
-import { isContractError } from 'bundle/contracts';
+import type { DescMessage, MessageShape } from '@bufbuild/protobuf';
+import { type Client, ConnectError } from '@connectrpc/connect';
+import { fromConnectError, isContractError } from 'bundle/contracts';
 import { ClientError } from 'desktop/reads';
+import { decode, runtimeOneofs, storageMessage } from 'runtime/contracts';
 import {
-  type RuntimeThreads,
-  RuntimeThreadsV1,
-  storageMessage,
-} from 'runtime/contracts';
+  EditQueuedResponseSchema,
+  PauseResponseSchema,
+  PromptResponseSchema,
+  QueuedPromptResponseSchema,
+  QueueResponseSchema,
+  RemoveQueuedResponseSchema,
+  ResumeQueueResponseSchema,
+  ResumeResponseSchema,
+  RetryResponseSchema,
+  RewindResponseSchema,
+  SteerResponseSchema,
+  ThreadResponseSchema,
+  ThreadsService,
+} from 'runtime/contracts/gen/doric/runtime/threads/v1/threads_pb.js';
 import { z } from 'zod';
 
 import type { QueuedPrompt, ThreadQueue } from '../domain/queue.js';
@@ -177,26 +193,39 @@ const hostFailureMessage = (error: unknown): string => {
 
 /**
  * A failed host call as the adapters reject with it (§6.4): a contract error
- * whose code is not `internal` keeps its code and becomes the cause; anything
- * else is `internal` with no cause. The message is `hostFailureMessage`'s.
+ * (a Connect failure read through `fromConnectError`) whose code is not
+ * `internal` keeps its code and becomes the cause; anything else is
+ * `internal` with no cause. The message is `hostFailureMessage`'s.
  */
-export const hostFailure = (error: unknown): ClientError =>
-  isContractError(error) && error.code !== 'internal'
+export const hostFailure = (thrown: unknown): ClientError => {
+  const error =
+    thrown instanceof ConnectError ? fromConnectError(thrown) : thrown;
+
+  return isContractError(error) && error.code !== 'internal'
     ? new ClientError(error.code, hostFailureMessage(error), { cause: error })
     : new ClientError('internal', hostFailureMessage(error));
+};
+
+/** The members of `ThreadsService` the adapter calls. */
+export type ThreadsClient = Client<typeof ThreadsService>;
 
 export interface ThreadsApiSources {
-  readonly threads: () => RuntimeThreads;
+  readonly threads: () => ThreadsClient;
   readonly history: () => HistorySnapshots | undefined;
 }
+
+/** Today's JSON of a response: a record of its fields (`decode`). */
+type Answer = Readonly<Record<string, unknown>>;
 
 export const createThreadsApi = (
   sources: ThreadsApiSources,
 ): ChatThreadsApi => {
-  const host = async <T>(
-    run: (threads: RuntimeThreads) => Promise<T>,
-  ): Promise<T> => {
-    let threads: RuntimeThreads;
+  /** One call of the client, its answer as today's JSON. */
+  const host = async <D extends DescMessage>(
+    schema: D,
+    run: (threads: ThreadsClient) => Promise<MessageShape<D>>,
+  ): Promise<Answer> => {
+    let threads: ThreadsClient;
 
     try {
       threads = sources.threads();
@@ -204,17 +233,31 @@ export const createThreadsApi = (
       throw hostFailure(error);
     }
 
+    let message: MessageShape<D>;
+
     try {
-      return await run(threads);
+      message = await run(threads);
     } catch (error) {
       throw hostFailure(error);
     }
+
+    const json = decode(schema, message, runtimeOneofs);
+
+    return isRecord(json) ? json : {};
+  };
+
+  /** The result object an answer holds at `key`, or one without a status. */
+  const resultAt = (answer: Answer, key: string): Answer => {
+    const value = answer[key];
+    return isRecord(value) ? value : {};
   };
 
   return {
     get: async (id) => {
       const checked = threadId(id);
-      const thread = await host((threads) => threads.thread(checked));
+      const { thread } = await host(ThreadResponseSchema, (threads) =>
+        threads.thread({ id: checked }),
+      );
 
       // A deleted Thread is a normal outcome, not a transient failure.
       return thread === undefined ? undefined : threadFrom(thread);
@@ -238,8 +281,11 @@ export const createThreadsApi = (
       identifier(id);
       const text = promptText(prompt);
       const checked = threadId(id);
-      const result = await host((threads) =>
-        threads.prompt({ id: checked, prompt: text }),
+      const result = resultAt(
+        await host(PromptResponseSchema, (threads) =>
+          threads.prompt({ id: checked, prompt: text }),
+        ),
+        'promptResult',
       );
 
       if (result.status === 'missing') return fail('not_found', notFound);
@@ -256,13 +302,16 @@ export const createThreadsApi = (
 
       if (!isUuid(target)) return refuse(promptIdRequired);
 
-      const result = await host((threads) =>
-        threads.steer({
-          id: checked,
-          prompt: text,
-          promptId: target,
-          ...(options.interrupt === true ? { interrupt: true } : {}),
-        }),
+      const result = resultAt(
+        await host(SteerResponseSchema, (threads) =>
+          threads.steer({
+            id: checked,
+            prompt: text,
+            promptId: target,
+            ...(options.interrupt === true ? { interrupt: true } : {}),
+          }),
+        ),
+        'steerResult',
       );
 
       if (result.status === 'steered' || result.status === 'queued')
@@ -273,8 +322,13 @@ export const createThreadsApi = (
 
     retry: async (id) => {
       const checked = threadId(id);
-      const result = await host((threads) => threads.retry({ id: checked }));
-      if (result.status !== 'accepted') return conflict(result.status);
+      const result = resultAt(
+        await host(RetryResponseSchema, (threads) =>
+          threads.retry({ id: checked }),
+        ),
+        'promptResult',
+      );
+      if (result.status !== 'accepted') return conflict(String(result.status));
       return receiptFrom(result.promptId);
     },
 
@@ -285,14 +339,17 @@ export const createThreadsApi = (
 
       if (!isUuid(target)) return refuse(promptIdRequired);
 
-      const result = await host((threads) =>
-        threads.resume({ id: checked, promptId: target }),
+      const result = resultAt(
+        await host(ResumeResponseSchema, (threads) =>
+          threads.resume({ id: checked, promptId: target }),
+        ),
+        'resumeResult',
       );
 
       if (result.status === 'missing') return fail('not_found', notFound);
       if (result.status === 'unknown_prompt')
         return fail('not_found', promptNotFound);
-      if (result.status !== 'resumed') return conflict(result.status);
+      if (result.status !== 'resumed') return conflict(String(result.status));
 
       return threadFrom(result.thread);
     },
@@ -307,7 +364,7 @@ export const createThreadsApi = (
         return refuse('A prompt ID and a non-empty prompt are required.');
       }
 
-      const result = await host((threads) =>
+      const result = await host(RewindResponseSchema, (threads) =>
         threads.rewind({ id: checked, promptId: target, prompt: text }),
       );
 
@@ -333,21 +390,24 @@ export const createThreadsApi = (
       if (!isUuid(target)) return refuse(promptIdRequired);
 
       // The host's stop ignores `promptId`, as the REST route always did.
-      const result = await host((threads) =>
+      const { interruptResult } = await host(PauseResponseSchema, (threads) =>
         threads.pause({ id: checked, promptId: target }),
       );
 
-      if (result === 'missing') return fail('not_found', notFound);
-      if (result !== 'interrupted') return conflict(result);
+      if (interruptResult === 'missing') return fail('not_found', notFound);
+      if (interruptResult !== 'interrupted')
+        return conflict(String(interruptResult));
     },
 
     queue: async (id) => {
       const checked = threadId(id);
-      const queue = await host((threads) => threads.queue(checked));
+      const { threadQueue } = await host(QueueResponseSchema, (threads) =>
+        threads.queue({ id: checked }),
+      );
 
-      return queue === undefined
+      return threadQueue === undefined
         ? fail('not_found', notFound)
-        : (queue as ThreadQueue);
+        : (threadQueue as ThreadQueue);
     },
 
     queuedPrompt: async (id, promptId) => {
@@ -357,13 +417,14 @@ export const createThreadsApi = (
 
       if (!isUuid(target)) return refuse(promptIdRequired);
 
-      const prompt = await host((threads) =>
-        threads.queuedPrompt({ id: checked, promptId: target }),
+      const { queuedPrompt } = await host(
+        QueuedPromptResponseSchema,
+        (threads) => threads.queuedPrompt({ id: checked, promptId: target }),
       );
 
-      return prompt === undefined
+      return queuedPrompt === undefined
         ? fail('not_found', 'This prompt is no longer queued.')
-        : prompt;
+        : (queuedPrompt as QueuedPrompt);
     },
 
     editQueued: async (id, promptId, text, revision) => {
@@ -386,7 +447,7 @@ export const createThreadsApi = (
         );
       }
 
-      const result = await host((threads) =>
+      const result = await host(EditQueuedResponseSchema, (threads) =>
         threads.editQueued({
           id: checked,
           promptId: target,
@@ -395,7 +456,7 @@ export const createThreadsApi = (
         }),
       );
 
-      if (result.status === 'updated') return result.prompt;
+      if (result.status === 'updated') return result.prompt as QueuedPrompt;
 
       return fail(
         result.status === 'conflict' || result.status === 'not_editable'
@@ -416,20 +477,27 @@ export const createThreadsApi = (
 
       if (!isUuid(target)) return refuse(promptIdRequired);
 
-      const result = await host((threads) =>
-        threads.removeQueued({ id: checked, promptId: target }),
+      const { removeQueuedResult } = await host(
+        RemoveQueuedResponseSchema,
+        (threads) => threads.removeQueued({ id: checked, promptId: target }),
       );
 
-      if (result === 'missing') return fail('not_found', notFound);
-      if (result !== 'removed') return conflict(result);
+      if (removeQueuedResult === 'missing') return fail('not_found', notFound);
+      if (removeQueuedResult !== 'removed')
+        return conflict(String(removeQueuedResult));
     },
 
     resumeQueue: async (id) => {
       const checked = threadId(id);
-      const result = await host((threads) => threads.resumeQueue(checked));
+      const result = resultAt(
+        await host(ResumeQueueResponseSchema, (threads) =>
+          threads.resumeQueue({ id: checked }),
+        ),
+        'resumeResult',
+      );
 
       if (result.status === 'missing') return fail('not_found', notFound);
-      if (result.status !== 'resumed') return conflict(result.status);
+      if (result.status !== 'resumed') return conflict(String(result.status));
 
       return threadFrom(result.thread);
     },
@@ -438,6 +506,6 @@ export const createThreadsApi = (
 
 /** The adapter over the chat's activation services. */
 export const threadsApi: ChatThreadsApi = createThreadsApi({
-  threads: () => chatServices().use(RuntimeThreadsV1),
+  threads: () => chatServices().use(ThreadsService),
   history: currentHistory,
 });

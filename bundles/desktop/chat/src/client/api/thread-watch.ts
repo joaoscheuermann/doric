@@ -1,35 +1,42 @@
-// One Thread watch per Thread over `runtime.threads/v1.watchThread` (§7.5),
+// One Thread watch per Thread over `runtime.threads/v1`'s server stream
+// `WatchThread` (§7.5), through the generated client (slice S65a),
 // the port of `app/desktop/doric/src/workspace/events.ts`: a newer watch replaces the
 // older; updates naming another Thread are dropped and foreign events inside
 // a snapshot are filtered; an invalid snapshot or event becomes an `error`
 // update with the fixed message; the cursor is the highest delivered
 // sequence. A host failure shows its message when it has a code and a
-// message, else the generic sentence. Losing the bridge (`disconnected`, or
-// `unavailable`) or the host generation serving the stream (`generation_lost`)
-// reports nothing and resubscribes from the cursor when `doric.connection/v1`
-// reports `connected` again, as the socket reconnected.
+// message, else the generic sentence. `WatchThread` is resumable: the client
+// opens it again itself after `generation_lost`. Losing the bridge
+// (`disconnected`, or `unavailable`) reports nothing and resubscribes from
+// the cursor when `doric.connection/v1` reports `connected` again, as the
+// socket reconnected.
 // The connection status follows a socket of its own, so it can read
 // `connected` while the bridge is still down: then the watch resubscribes
 // after `resubscribeDelayMs` instead, and again for as long as each
 // resubscription ends the same way.
 
+import type { JsonValue } from '@bufbuild/protobuf';
+import { type Client, ConnectError } from '@connectrpc/connect';
 import {
-  type CallArg,
   type ConnectionStatus,
   type Disposable,
   DoricConnectionV1,
-  type StreamObserver,
+  fromConnectError,
 } from 'bundle/contracts';
-import { RuntimeThreadsV1 } from 'runtime/contracts';
+import { decode, runtimeOneofs } from 'runtime/contracts';
+import {
+  ThreadsService,
+  WatchThreadResponseSchema,
+} from 'runtime/contracts/gen/doric/runtime/threads/v1/threads_pb.js';
 
 import type { Thread, ThreadEvent, ThreadUpdate } from '../domain/workspace.js';
 import { chatServices } from '../services/chat-services.js';
 
 /**
- * One item of `watchThread` (`runtime/contracts` `ThreadWatchItem`), named
- * after the `/threads` namespace events, read as loosely as the socket
- * payloads were. A failed replay ends the stream with its error instead of
- * a `workspace:error` item.
+ * One item of `WatchThread` as today's JSON (`runtime/contracts`
+ * `ThreadWatchItem`), named after the `/threads` namespace events, read as
+ * loosely as the socket payloads were. A failed replay ends the stream with
+ * its error instead of a `workspace:error` item.
  */
 export type ThreadStreamItem =
   | {
@@ -48,14 +55,8 @@ export type ThreadStreamItem =
       readonly threadId: unknown;
     };
 
-/** The stream member the chat binds: `runtime.threads/v1.watchThread`. */
-export interface ThreadStream {
-  watchThread(
-    input: { readonly threadId: string; readonly afterSequence: number },
-    listener: StreamObserver<ThreadStreamItem>,
-    call?: CallArg,
-  ): Disposable;
-}
+/** The stream the chat binds: `ThreadsService.WatchThread`'s client. */
+export type ThreadStream = Pick<Client<typeof ThreadsService>, 'watchThread'>;
 
 /** The connection status source (`doric.connection/v1`). */
 export interface ConnectionSource {
@@ -91,11 +92,17 @@ export const streamFailedMessage = 'The Thread event stream failed.';
 /** The delay before subscribing again while the connection reads connected. */
 export const resubscribeDelayMs = 1000;
 
-/** The end codes of a lost bridge or host generation. */
-const lostCodes: readonly unknown[] = [
-  'disconnected',
-  'unavailable',
-  'generation_lost',
+/**
+ * The end codes of a lost bridge. A lost host generation never ends the
+ * stream: the client opens the resumable `WatchThread` again.
+ */
+const lostCodes: readonly unknown[] = ['disconnected', 'unavailable'];
+
+const streamKinds: readonly unknown[] = [
+  'snapshot',
+  'event',
+  'updated',
+  'deleted',
 ];
 
 const timeout = (run: () => void, ms: number): (() => void) => {
@@ -108,6 +115,16 @@ const record = (value: unknown): Record<string, unknown> | undefined =>
     ? (value as Record<string, unknown>)
     : undefined;
 
+/** Whether today's JSON of a `WatchThread` item is one of the four items. */
+const isStreamItem = (
+  value: JsonValue,
+): value is ThreadStreamItem & JsonValue =>
+  streamKinds.includes(record(value)?.kind);
+
+/** A stream's failure as its Doric error (`fromConnectError`); any other error unchanged. */
+const failureOf = (error: unknown): unknown =>
+  error instanceof ConnectError ? fromConnectError(error) : error;
+
 const eventSequence = (value: unknown): number | undefined => {
   const sequence = record(value)?.sequence;
   return typeof sequence === 'number' &&
@@ -117,10 +134,12 @@ const eventSequence = (value: unknown): number | undefined => {
     : undefined;
 };
 
+/** The host's message of a failure with a code, other than `internal`. */
 const errorMessage = (value: unknown): string => {
   const error = record(value);
   return typeof error?.code === 'string' &&
     error.code.length > 0 &&
+    error.code !== 'internal' &&
     typeof error.message === 'string' &&
     error.message.length > 0
     ? error.message
@@ -131,7 +150,8 @@ interface Watch {
   readonly threadId: string;
   readonly listener: (update: ThreadUpdate) => void;
   cursor: number;
-  subscription: Disposable | undefined;
+  /** Cancels the open stream, while one is open. */
+  subscription: AbortController | undefined;
   reconnect: Disposable | undefined;
   /** Cancels the delayed resubscription, while one is scheduled. */
   retry: (() => void) | undefined;
@@ -160,13 +180,8 @@ export const createThreadWatch = (sources: ThreadWatchSources): ThreadWatch => {
     watch.released = true;
     if (watches.get(watch.threadId) === watch) watches.delete(watch.threadId);
     stopWaiting(watch);
-    const subscription = watch.subscription;
+    watch.subscription?.abort();
     watch.subscription = undefined;
-    try {
-      subscription?.dispose();
-    } catch {
-      // A stream that cannot be released is already gone.
-    }
   };
 
   const receive = (watch: Watch, item: ThreadStreamItem): void => {
@@ -274,38 +289,36 @@ export const createThreadWatch = (sources: ThreadWatchSources): ThreadWatch => {
   };
 
   const subscribe = (watch: Watch): void => {
-    let ended = false;
-    const end = (error?: unknown): void => {
-      if (ended) return;
-      ended = true;
-      finish(watch, error);
-    };
-    const observer: StreamObserver<ThreadStreamItem> = {
-      next: (item) => {
-        if (!ended && !watch.released) receive(watch, item);
-      },
-      end,
-    };
+    const controller = new AbortController();
+    const { signal } = controller;
+    watch.subscription = controller;
+    const live = (): boolean =>
+      !signal.aborted && !watch.released && watch.subscription === controller;
 
-    try {
-      const subscription = sources
-        .stream()
-        .watchThread(
-          { threadId: watch.threadId, afterSequence: watch.cursor },
-          observer,
-        );
-      if (
-        typeof (subscription as Partial<Disposable>)?.dispose !== 'function'
-      ) {
-        // Not a stream method: a provider without `watchThread`.
-        end(new Error(streamFailedMessage));
-        return;
+    void (async () => {
+      let failure: unknown;
+      try {
+        for await (const message of sources
+          .stream()
+          .watchThread(
+            { threadId: watch.threadId, afterSequence: watch.cursor },
+            { signal },
+          )) {
+          if (!live()) return;
+          const item = decode(
+            WatchThreadResponseSchema,
+            message,
+            runtimeOneofs,
+          );
+          if (isStreamItem(item)) receive(watch, item);
+        }
+      } catch (error) {
+        failure = failureOf(error) ?? new Error(streamFailedMessage);
       }
-      if (ended || watch.released) subscription.dispose();
-      else watch.subscription = subscription;
-    } catch (error) {
-      end(error ?? new Error(streamFailedMessage));
-    }
+      if (!live()) return;
+      controller.abort();
+      finish(watch, failure);
+    })();
   };
 
   return {
@@ -333,6 +346,6 @@ export const createThreadWatch = (sources: ThreadWatchSources): ThreadWatch => {
 
 /** The watch over the chat's activation services. */
 export const threadWatch: ThreadWatch = createThreadWatch({
-  stream: () => chatServices().use(RuntimeThreadsV1) as unknown as ThreadStream,
+  stream: () => chatServices().use(ThreadsService),
   connection: () => chatServices().use(DoricConnectionV1),
 });

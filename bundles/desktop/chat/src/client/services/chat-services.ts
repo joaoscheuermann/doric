@@ -3,19 +3,22 @@
 // watches, history writes, notifications) runs on these, never on an
 // element's services, so it outlives the conversation that started it.
 
-import { ContractError, type Services } from 'bundle/contracts';
+import { type ClientServices, ContractError } from 'bundle/contracts';
 
 import type { HistorySnapshots } from '../api/history-contract.js';
 
-let activation: Services | undefined;
+let activation: ClientServices | undefined;
 let history: HistorySnapshots | undefined;
 
-export const initChat = (services: Services | undefined): void => {
+export const initChat = (services: ClientServices | undefined): void => {
   activation = services;
 };
 
-/** The activation services; `unavailable` outside an active chat part. */
-export const chatServices = (): Services => {
+/**
+ * The activation services, host contracts over Connect (`ClientServices`);
+ * `unavailable` outside an active chat part.
+ */
+export const chatServices = (): ClientServices => {
   if (activation === undefined) {
     throw new ContractError('unavailable', 'The chat bundle is not active.');
   }

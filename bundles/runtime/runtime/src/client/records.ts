@@ -4,9 +4,11 @@
 // `follow` keeps a Project current through its watch; writes go through the
 // host adapter and put the host's answer into the mirror before they resolve.
 
+import type { Client } from '@connectrpc/connect';
 import type { Disposable } from 'bundle/contracts';
 import { ClientError } from 'desktop/reads';
 
+import type { ThreadsService } from '../contracts/gen/doric/runtime/threads/v1/threads_pb.js';
 import type {
   Project,
   RecordsRead,
@@ -43,6 +45,11 @@ import {
 export interface RecordsHosts {
   readonly runtime: RuntimeHost;
   readonly threads: ThreadsHost;
+  /**
+   * The client whose `ViewThread` streams hold the window's views; without
+   * it, `view` holds no stream.
+   */
+  readonly views?: Pick<Client<typeof ThreadsService>, 'viewThread'>;
   readonly connection: ConnectionSource;
   /** The timer of the watches and views; `defaultSchedule` when absent. */
   readonly schedule?: (run: () => void, ms: number) => () => void;
@@ -282,14 +289,17 @@ export const createRecords = (
 
   // Views ------------------------------------------------------------------
 
-  const views = createThreadViews({
-    runtime: hosts.threads,
-    connection: hosts.connection,
-    schedule,
-  });
+  const views =
+    hosts.views === undefined
+      ? undefined
+      : createThreadViews({
+          runtime: hosts.views,
+          connection: hosts.connection,
+          schedule,
+        });
   const held = new Map<string, number>();
   const syncViews = () => {
-    if (!closed) views.set(new Set(held.keys()));
+    if (!closed) views?.set(new Set(held.keys()));
   };
 
   // Writes -----------------------------------------------------------------
@@ -482,7 +492,7 @@ export const createRecords = (
       for (const entry of follows.values()) entry.stop();
       follows.clear();
       held.clear();
-      views.close();
+      views?.close();
       connection.dispose();
     },
   };
