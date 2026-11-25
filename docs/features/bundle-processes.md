@@ -418,27 +418,8 @@ it, environment `host`). After boot, when an active bundle provides
 `doric`; a failing `Identity` rejects `startPlatform`, and a publish does not
 read it again. The `DiagnosticsStore` is still not reloaded on publish, so a
 bundle a publish adds shows inactive in `catalog.Get` (revisited at S62); the
-gateway does not yet expose these methods to the desktop (S63–S66).
-
-S63a has `startPlatform` serve every member of `doric.catalog/v1`:
-`Distribution` and `ReadArtifact` (`src/platform/distribution.ts`; chunks of
-at most 1 MiB, the file hashed again on disk before answering, else
-`not_found` with `{ sha256 }`), `Watch`, and `Disable` and `ResetComposition`
-(`src/platform/composition-actions.ts`, given by the optional
-`PlatformOptions.composition`, logging to the console). Each member answers
-`UNIMPLEMENTED` when its option is absent. The distribution's `hostBoot` is
-random per platform start. A publish adopts in this order: the supervisor,
-the current resolution and the gateway, then the diagnostics
-(`DiagnosticsStore.adopt`, one record per id unlike `load`, `requires` indexed
-only for new ids), then the distribution, then the open `Watch` calls. A
-`Watch` without `onAdopt` sends its first item and stays open. The gateway
-serves the platform's `DESKTOP` methods; its other platform methods answer
-`UNIMPLEMENTED` instead of 404, and an unserved path still answers a plain
-404 without `unknown_contract`. Known risk accepted by the owner: `Disable`
-and `ResetComposition` are unauthenticated on the public listener (see the
-2026-11-25 group E entry). Open: `platform/distribution.ts` repeats the
-per-bundle body of `loader/distribution.ts`'s `distributionFor`; two `Watch`
-tests depend on timing.
+gateway does not yet expose these methods to the desktop (S63–S66;
+superseded by S63a, below).
 
 S32 adds `host.assets` to manifests v1 and v2: globs relative to the bundle
 directory (refused: empty, absolute, a `.`, `..` or empty segment, a `\`),
@@ -587,6 +568,26 @@ providers, so a bad configuration fails at first use. Each call uses the
 configuration active at call time: a prompt spanning a configuration change no
 longer keeps its first provider (a release-notes item). An unknown provider or
 kind fails `unavailable`, a malformed configuration `invalid_input`.
+
+S63a has `startPlatform` serve every member of `doric.catalog/v1`:
+`Distribution` and `ReadArtifact` (`src/platform/distribution.ts`; chunks of
+at most 1 MiB, the file hashed again on disk before answering, else
+`not_found` with `{ sha256 }`), `Watch`, and `Disable` and `ResetComposition`
+(`src/platform/composition-actions.ts`, given by the optional
+`PlatformOptions.composition`, logging to the console). Each member answers
+`UNIMPLEMENTED` when its option is absent. The distribution's `hostBoot` is
+random per platform start. A publish adopts in this order: the supervisor,
+the current resolution and the gateway, then the diagnostics
+(`DiagnosticsStore.adopt`, one record per id unlike `load`, `requires` indexed
+only for new ids), then the distribution, then the open `Watch` calls. A
+`Watch` without `onAdopt` sends its first item and stays open. The gateway
+serves the platform's `DESKTOP` methods; its other platform methods answer
+`UNIMPLEMENTED` instead of 404, and an unserved path still answers a plain
+404 without `unknown_contract`. Known risk accepted by the owner: `Disable`
+and `ResetComposition` are unauthenticated on the public listener (see the
+2026-11-25 group E entry). Open: `platform/distribution.ts` repeats the
+per-bundle body of `loader/distribution.ts`'s `distributionFor`; two `Watch`
+tests depend on timing.
 
 S41c gives core its process entry `src/host/main.ts`, which calls `runBundle`
 (`bundle/host`) with its nine services listed statically as `[Service,
@@ -757,11 +758,27 @@ below its cursor after a `generation_lost` reopen), reads programs over
 re-encoded as base64 for `papercraft.cache/v1.ensure`, which stays on the
 envelope), lists and resolves comments over `CommentsService` and reports errors
 through `openui`'s `ProgramsService.ReportErrors`; `openui` calls
-`QuestionsService` for Status and Answer and `ProgramsService.ReportErrors`. The
-other client modules (S65c–S65d) still use the envelope. A catalog manifest accepts
-`host.assets`, and the build's dry activation answers `use(<DescService>)` of a
-host contract with an inert stub after checking the descriptor against the
-part's lists (a descriptor without the contract option is refused).
+`QuestionsService` for Status and Answer and `ProgramsService.ReportErrors`.
+Since S65c, `settings` calls `HostConfigService`, `ModelsService`, `ToolsService`
+and `SecretsService` over Connect, each answer read back as today's shape
+through `runtime/contracts`' `decode` (and each request written with `encode`
+where the wire shape differs), since the wire has no `null`; it recognises a
+Connect failure by shape, because it declares no `@connectrpc/connect`, and
+imports `host-config/contracts/gen/...` directly, `host-config` being a
+devDependency. `git` calls `CommandsService` and `SecretsService.List`; `mcp`
+calls `McpService` and `SecretsService`, its `Watch` following `for await` with
+an `AbortController` and resubscribing only after `disconnected` or
+`unavailable`, because the SDK reopens a resumable stream after
+`generation_lost`, and converts its views in `src/client/codec.ts`;
+`claude-login` calls `LoginService`, a `Finish` answer outside
+`credentialDescriptionSchema` reading as `invalid_output` and a `ConnectError`
+without a Doric error detail as `internal`, "The request could not be
+completed." `doric.browser/v1` and `workspace.dashboard/v1` stay on the
+envelope. The other client modules (S65d) still use the envelope. A catalog
+manifest accepts `host.assets`, and the build's dry activation answers
+`use(<DescService>)` of a host contract with an inert stub after checking the
+descriptor against the part's lists (a descriptor without the contract option
+is refused).
 
 ## Evolution
 
@@ -1618,7 +1635,7 @@ sandbox pool` then `Sandbox pool configured` with the `logSandboxPool`
   PC23 is S62d3b; T8 moves to S71 and P9 is met.
 - 2026-11-25: phase 3, slice S62d3b, of
   [`docs/designs/grpc-processes.md`](../designs/grpc-processes.md) (version
-  6.37). PC23 runs on the platform in `doric-host`'s new
+  6.38). PC23 runs on the platform in `doric-host`'s new
   `papercraft-library.test.ts`, over `doric.api.*`, with the platform fixture
   `tests/fixtures/platform-bundles/nodeless-sandbox` (a `sandbox/v1@1.1.0`
   provider whose `Exec` exits 127) in place of `docker`; the kernel fixture
@@ -1644,13 +1661,13 @@ sandbox pool` then `Sandbox pool configured` with the `logSandboxPool`
   which the nx `e2e` target does not pass.
 - 2026-11-25: phase 3, slice S63a, of
   [`docs/designs/grpc-processes.md`](../designs/grpc-processes.md) (version
-  6.38): the platform serves `doric.catalog/v1` in full (`Distribution`,
+  6.39): the platform serves `doric.catalog/v1` in full (`Distribution`,
   `ReadArtifact`, `Watch`, `Disable`, `ResetComposition`) and the gateway
   serves the platform's `DESKTOP` methods; `PlatformOptions.composition`,
   a random `hostBoot`, a fixed publish order and `DiagnosticsStore.adopt`.
 - 2026-11-25: phase 3, slice S63b, of
   [`docs/designs/grpc-processes.md`](../designs/grpc-processes.md) (version
-  6.38): the host passes `composition` to `startPlatform`, so `Disable` and
+  6.40): the host passes `composition` to `startPlatform`, so `Disable` and
   `ResetComposition` work on the booted host; the bridge and
   `socket-buffer.ts` are deleted; the router's drain no longer waits on
   resumable server streams the instance opened as caller. Open: the drain
@@ -1659,7 +1676,7 @@ sandbox pool` then `Sandbox pool configured` with the `logSandboxPool`
   fetch with the generated schemas, as `@connectrpc/connect-node` is not a
   `doric-host` devDependency.
 - 2026-11-25: phase 3, slice S65a, of
-  [the spec](../designs/grpc-processes.md) (version 6.38): `runtime`'s and
+  [the spec](../designs/grpc-processes.md) (version 6.41): `runtime`'s and
   `chat`'s client modules call `RuntimeService`, `ThreadsService`,
   `AttachmentsService` and `ModelsService.Icons` over Connect; each bundle's
   tests use a fake `HostClients` over `createRouterTransport`, and the desktop
@@ -1670,7 +1687,7 @@ sandbox pool` then `Sandbox pool configured` with the `logSandboxPool`
   until `records`, `project-watch` and `workspace-api` are ported; the e2e cases
   are unverified.
 - 2026-11-25: phase 3, slice S65b, of
-  [the spec](../designs/grpc-processes.md) (version 6.38): `papercraft`'s and
+  [the spec](../designs/grpc-processes.md) (version 6.42): `papercraft`'s and
   `openui`'s client modules call `ThreadsService`, `PapercraftProgramsService`,
   `CommentsService`, `QuestionsService` and `ProgramsService.ReportErrors` over
   Connect; `papercraft.cache/v1.ensure`, the comment composer and send stay on
@@ -1678,3 +1695,22 @@ sandbox pool` then `Sandbox pool configured` with the `logSandboxPool`
   `createRouterTransport`; papercraft's `fakeFrames` keeps a strong reference
   to its `MutationObserver` callback. Open: the `ClientServices` casts stay until
   the props are narrowed.
+- 2026-11-25: phase 3, slice S65c, of
+  [the spec](../designs/grpc-processes.md) (version 6.43): `settings`'s, `git`'s,
+  `mcp`'s and `claude-login`'s client modules call `HostConfigService`,
+  `ModelsService`, `ToolsService`, `SecretsService`, `CommandsService`,
+  `McpService` and `LoginService` over Connect; each answer is read back as
+  today's shape through the host's codec where the wire has no `null`, and each
+  Connect failure is read through `fromConnectError`. `doric.browser/v1` and
+  `workspace.dashboard/v1` stay on the envelope, and `mcp`'s `Watch` reopens
+  through the SDK after `generation_lost` and resubscribes itself only after
+  `disconnected` or `unavailable`. Each bundle's tests use a fake `HostClients`
+  over `createRouterTransport`, and the desktop e2e harness fakes the settings
+  services and `git.commands/v1` over Connect
+  (`tests/support/{settings-host,workspace-content,workspace-host,transcript-500}.ts`),
+  where `tests/settings-connect.test.ts` exercises them.
+  Open: the `ClientServices` casts stay until the props are narrowed, and
+  `settings` reads a Connect failure by shape because it declares no
+  `@connectrpc/connect`; no test covers `git`'s Versioning credential list;
+  `chat-connect.test.ts` and `settings-connect.test.ts` build their own forward
+  without the git routes, so a git call there answers `UNIMPLEMENTED`.

@@ -54,7 +54,7 @@ Sources: [openai/src/host/kind.ts](../../bundles/providers/openai/src/host/kind.
 
 - `GET /providers/kinds` answers `{ kinds }`, the advertised kinds `models/v1.kinds()` lists: `openai`, `openrouter` and `claude`. `codex` is not listed, but `models/v1.kind('codex')` describes it, so a configured `codex` provider is built and runs ([bundles/foundation/transport/src/host/routes/providers.ts](../../bundles/foundation/transport/src/host/routes/providers.ts), [bundles/foundation/core/src/host/models/index.ts](../../bundles/foundation/core/src/host/models/index.ts), [bundles/foundation/core/src/host/models/registry.ts](../../bundles/foundation/core/src/host/models/registry.ts)).
 - A record whose descriptor cannot be read is left out of every list ([bundles/foundation/core/src/host/models/registry.ts](../../bundles/foundation/core/src/host/models/registry.ts)).
-- The window learns the kinds, their fields and their models from `models/v1`, which it reaches through the desktop bridge, so it carries no list of kinds of its own ([bundles/desktop/settings/src/client/api/settings-api.ts](../../bundles/desktop/settings/src/client/api/settings-api.ts)).
+- The window learns the kinds, their fields and their models from `models/v1` over Connect, through the generated `ModelsService` (slice S65c), so it carries no list of kinds of its own ([bundles/desktop/settings/src/client/api/settings-api.ts](../../bundles/desktop/settings/src/client/api/settings-api.ts)).
 
 ### The configured providers
 

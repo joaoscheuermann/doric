@@ -644,7 +644,9 @@ comparison it shows.
 
 [`src/client/api/git-api.ts`](src/client/api/git-api.ts) calls
 `git.commands/v1` with a `{ projectId }` or `{ threadId }` scope and checks
-every value before it sends it and every answer it receives:
+every value before it sends it and every answer it receives. From slice S65c
+the call is the generated `CommandsService` over Connect, each answer read back
+to today's shape and each failure read through `fromConnectError`:
 
 - Guards that throw before the call: an id that is empty, longer than 200
   characters or holds a NUL (`The item identifier is invalid.`); a path with
@@ -791,8 +793,9 @@ and `SETTINGS_SECTIONS`.
 [`src/client/domain/credentials.ts`](src/client/domain/credentials.ts).
 
 - It draws nothing until `settings.config/v1` and its draft are loaded. It
-  lists stored credentials with `secrets/v1.list`; a list that is not an
-  array, or holds an entry of another shape or of a kind other than
+  lists stored credentials over Connect with the generated `SecretsService`
+  (slice S65c, `SecretsService.List`); a list that is not an array, or holds
+  an entry of another shape or of a kind other than
   `API_TOKEN`, `USERNAME_PASSWORD` or `GIT`, fails the whole read, and the
   section then offers no credential.
 - Two selects: "Git identity" offers the `GIT` credentials and writes

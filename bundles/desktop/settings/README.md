@@ -701,6 +701,18 @@ where the credentials are in hand.
 [`src/client/api/settings-api.ts`](src/client/api/settings-api.ts) checks each
 input before the call and each answer's shape after it.
 
+Since slice S65c each call is the generated Connect client —
+`HostConfigService`, `ModelsService`, `ToolsService` and `SecretsService` —
+reached through the activation's `ClientServices`; `decode` of
+`runtime/contracts` reads each answer back as today's JSON and `encode` writes
+each request where its wire shape differs (a `null` field of a credential
+update travels absent, since the wire has no `null`). `settings` imports
+`host-config/contracts/gen/...` directly, `host-config` being one of its
+devDependencies rather than a dependency. A failure is read with
+`fromConnectError`; settings declares no `@connectrpc/connect`, so it
+recognises a Connect failure by shape (`name === 'ConnectError'` and a
+`findDetails` function) before reading it.
+
 - **Inputs.** A configuration save: provider ids and kinds and field keys 1
   to 128 characters after trimming, field values and model names 1 to 512
   after trimming, the execution's provider id 1 to 128 and model 1 to 512
@@ -734,8 +746,9 @@ input before the call and each answer's shape after it.
     "The item identifier is invalid." (`guardedIdentifier`), and an id that is
     not a UUID with "The credential ID is invalid.".
 
-  An update sends absent or `null` to keep a field, `''` to clear it, and a
-  value to set it.
+  An update takes an absent field or `null` to keep it (the call carries it
+  absent, since the wire has no `null`), `''` to clear it, and a value to set
+  it.
 
 - **Answers.** An answer of the wrong shape fails with `invalid_output`
   "Doric returned an invalid response.". The credential list leaves out every

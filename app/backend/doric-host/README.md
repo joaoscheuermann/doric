@@ -477,10 +477,12 @@ The kernel runs four kinds of bundle in its own process
   for a contract the core provides or requires
   ([`catalog.ts`](../../../packages/bundle/src/runtime/catalog.ts));
 - the core;
-- the **embedded** bundles, which `startBundles` accepts as in-memory bundles
-  with no directory; the shipped host passes none, and the option serves tests
-  ([`src/index.ts`](src/index.ts),
-  [`src/lib/bundles/boot.ts`](src/lib/bundles/boot.ts));
+- the **embedded** bundles, which the kernel path's `startBundles` accepted as
+  in-memory bundles with no directory
+  ([`partition.ts`](../../../packages/bundle/src/process/partition.ts)); the
+  shipped host passed none and the platform has no such option
+  ([`platform/index.ts`](../../../packages/bundle/src/platform/index.ts),
+  `PlatformOptions`);
 - the bundles the composition lists under `resident`.
 
 In the shipped composition that makes five kernel bundles, in their activation

@@ -286,13 +286,17 @@ services:
 Cancel aborts the hook's signal, which cancels the call in flight and, on the
 host, the sign-in.
 
-The adapter `createClaudeLoginApi(services)` has three members:
-`start(call?)` answers the URL, `finish(call?)` answers the
-`CredentialDescription`, and `openBrowser(url)` calls `doric.browser/v1`'s
-`open`. `openBrowser` passes its rejection through as it is. `start` and
-`finish` turn each rejection into a `ClientError` of `desktop/reads`: a `ContractError` keeps its code and message,
-with the error as `cause` unless its code is `internal`; any other error
-becomes `internal` with the message "The request could not be completed."
+The adapter `createClaudeLoginApi(services)` takes the element's
+`ClientServices` and has three members: `start(call?)` answers the URL,
+`finish(call?)` answers the `CredentialDescription`, and `openBrowser(url)`
+calls `doric.browser/v1`'s `open`. From slice S65c `start` and `finish` call the
+generated `LoginService` over Connect; `openBrowser` passes its rejection
+through as it is. A `Finish` answer outside `credentialDescriptionSchema` is
+`invalid_output`. `start` and `finish` turn each rejection into a `ClientError`
+of `desktop/reads`: a Doric contract error keeps its code and message, with the
+error as `cause` unless its code is `internal`; any other error — a
+`ConnectError` without a Doric error detail included — becomes `internal` with
+the message "The request could not be completed."
 ([`src/client/api.ts`](src/client/api.ts)).
 
 ## Limits
