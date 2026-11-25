@@ -415,3 +415,27 @@ export const kernelOver = (
     DORIC_CREDENTIAL_KEY: credentialKey,
   },
 ): Promise<Kernel> => startKernel({ database, environment });
+
+/** The base environment of the instances: this process's, without `DORIC_*`. */
+export const baseEnvironment = (
+  extra: Readonly<Record<string, string>> = {},
+): NodeJS.ProcessEnv => ({
+  ...Object.fromEntries(
+    Object.entries(process.env).filter(([key]) => !key.startsWith('DORIC_')),
+  ),
+  ...extra,
+});
+
+/** A pino logger whose records the case reads back. */
+export const recorded = () => {
+  const lines: Record<string, unknown>[] = [];
+  const logger = pino(
+    { level: 'debug' },
+    {
+      write: (line: string) =>
+        lines.push(JSON.parse(line) as Record<string, unknown>),
+    },
+  );
+
+  return { lines, logger };
+};

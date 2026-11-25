@@ -30,7 +30,11 @@ import {
 } from '../src/lib/bundles/boot.js';
 import { firstStreamItem } from './helpers/api.js';
 import { freshDatabase } from './helpers/host.js';
-import { credentialKey } from './helpers/platform.js';
+import {
+  baseEnvironment,
+  credentialKey,
+  recorded,
+} from './helpers/platform.js';
 import {
   bundlePid,
   childProcesses,
@@ -61,30 +65,6 @@ const needsDatabase = {
 
 /** The case boots without a database: the boot ends before the identity read. */
 const noDatabase = { timeout: 180_000 } as const;
-
-/** The base environment of the instances: this process's, without `DORIC_*`. */
-const baseEnvironment = (
-  extra: Readonly<Record<string, string>> = {},
-): NodeJS.ProcessEnv => ({
-  ...Object.fromEntries(
-    Object.entries(process.env).filter(([key]) => !key.startsWith('DORIC_')),
-  ),
-  ...extra,
-});
-
-/** A pino logger whose records the case reads back. */
-const recorded = () => {
-  const lines: Record<string, unknown>[] = [];
-  const logger = pino(
-    { level: 'debug' },
-    {
-      write: (line: string) =>
-        lines.push(JSON.parse(line) as Record<string, unknown>),
-    },
-  );
-
-  return { lines, logger };
-};
 
 /** A startup sink that keeps the stages and the lines it is told. */
 const startupRecord = () => {

@@ -2528,6 +2528,9 @@ Every question is answered ([Owner answers](#owner-answers)): version 1's Q1–Q
   - **Known gaps.** A unary forward is not aborted when its window is destroyed (streams are); no test streams end to end through Electron; the desktop e2e run as root needs `--no-sandbox`, which the nx `e2e` target does not pass, so its `privileges` case fails there for that reason only.
   - **Changed.** The status line, section 13, [Phases](#phases), [Files, phase 3](#files-phase-3).
   - **New numbers.** None.
+- 2026-11-25: version 6.37, accepted. Slice S62d3b is built: PC23 on the platform, with no production change.
+  - **PC23.** New `app/backend/doric-host/tests/papercraft-library.test.ts` runs PC23 of [papercraft-openui.md](papercraft-openui.md) over the public `doric.api.*` services, with the new platform fixture `tests/fixtures/platform-bundles/nodeless-sandbox` (a `sandbox/v1@1.1.0` provider whose `Exec` always exits 127 with `sh: <cmd>: not found`) in place of `docker`. It needs PostgreSQL only. The kernel fixture `tests/fixtures/generation-bundles/nodeless-sandbox` is deleted. `recorded()` and `baseEnvironment()` move into `tests/helpers/platform.ts`, and `bundles.test.ts` imports them.
+  - **New numbers.** None.
 
 ## Implementation notes
 

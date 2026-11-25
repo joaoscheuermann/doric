@@ -1567,6 +1567,15 @@ sandbox pool` then `Sandbox pool configured` with the `logSandboxPool`
   D10-6; `unavailable_tool` stays in the shared list until group F; the
   `yaml` parser in each host part's `main.mjs` (about 270 KB) is accepted;
   PC23 is S62d3b; T8 moves to S71 and P9 is met.
+- 2026-11-25: phase 3, slice S62d3b, of
+  [`docs/designs/grpc-processes.md`](../designs/grpc-processes.md) (version
+  6.37). PC23 runs on the platform in `doric-host`'s new
+  `papercraft-library.test.ts`, over `doric.api.*`, with the platform fixture
+  `tests/fixtures/platform-bundles/nodeless-sandbox` (a `sandbox/v1@1.1.0`
+  provider whose `Exec` exits 127) in place of `docker`; the kernel fixture
+  `generation-bundles/nodeless-sandbox` is deleted. `recorded()` and
+  `baseEnvironment()` move into `tests/helpers/platform.ts`. No production
+  change.
 - 2026-11-25: group E's plan and phase 3, slice S64, of
   [`docs/designs/grpc-processes.md`](../designs/grpc-processes.md) (version
   6.37). Plan: S63a → S63b → S64 → S65a–d → S66; `scripts/fake-host` is
