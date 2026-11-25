@@ -27,10 +27,12 @@ import {
 import { provideAppearance } from './appearance.js';
 import { remoteContractRecord } from './bridge.js';
 import { provideBrowser } from './browser.js';
+import { windowHostClients } from './connect.js';
 import { provideConnection } from './connection.js';
 import { type ElementRegistry, provideElements } from './elements.js';
 import { provideClientPlatform, WindowDiagnostics } from './platform.js';
 import type {
+  DoricConnectApi,
   DoricDesktopApi,
   WindowCatalog,
   WindowDescription,
@@ -150,6 +152,13 @@ export class WindowDirectory implements Directory {
 export const activateClientBundles = async (input: {
   readonly catalog: WindowCatalog;
   readonly desktop: DoricDesktopApi;
+  /**
+   * The window's `doric:connect` (`window.doric.connect`): with it, a client
+   * part's `services.use` of a `HOST` contract's generated descriptor
+   * answers a Connect client over it (`windowHostClients(connect,
+   * catalog)`); without it, such a `use` throws `unavailable`.
+   */
+  readonly connect?: DoricConnectApi;
   readonly description: WindowDescription;
   readonly importPart?: ImportPart;
   readonly document?: Document;
@@ -182,6 +191,9 @@ export const activateClientBundles = async (input: {
     generationSignal: controller.signal,
     report: (entry) => diagnostics.report(entry),
     ...(input.now === undefined ? {} : { now: input.now }),
+    ...(input.connect === undefined
+      ? {}
+      : { hostClients: windowHostClients(input.connect, catalog) }),
   };
   const platform = createPrincipal(runtime, {
     bundleId: 'doric',

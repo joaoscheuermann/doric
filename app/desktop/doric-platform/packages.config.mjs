@@ -46,9 +46,16 @@ export const lexicalRoots = [
  * per window, so `desktop/ui` and every bundle reach the same copy.
  * `@bufbuild/protobuf` is shared the same way: every generated module, the
  * platform's and each bundle's, imports it, and its registries and
- * descriptors must be one instance per window (A53).
+ * descriptors must be one instance per window (A53). `@connectrpc/connect`
+ * too: a client part reads a failure with `ConnectError` and
+ * `fromConnectError`, which need one module instance per window (S64).
  */
-export const esmPackages = ['zod', '@base-ui/react', '@bufbuild/protobuf'];
+export const esmPackages = [
+  'zod',
+  '@base-ui/react',
+  '@bufbuild/protobuf',
+  '@connectrpc/connect',
+];
 
 /** Platform-owned packages; their folders carry `PLATFORM_ASSETS_VERSION`. */
 export const bundleContracts = {
@@ -67,6 +74,16 @@ export const bundleContracts = {
     specifier: 'bundle/contracts/gen/',
     source: 'packages/bundle/src/contracts/gen',
     dir: 'contracts/gen',
+  },
+  /**
+   * The client SDK (S64), an entry of the same group, so that it shares the
+   * contracts' modules (`ContractError`, `fromConnectError`) with
+   * `bundle/contracts` in one window.
+   */
+  client: {
+    specifier: 'bundle/client',
+    source: 'packages/bundle/src/sdk/client/index.ts',
+    file: 'client.js',
   },
 };
 

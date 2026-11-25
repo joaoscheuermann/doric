@@ -16,7 +16,9 @@ import {
 } from '@bufbuild/protobuf';
 import { Code, ConnectError, createClient } from '@connectrpc/connect';
 
-import { ContractError } from '../src/contracts/error.js';
+import { SCOPE_MAX_KEYS, SCOPE_MAX_VALUE } from '../src/contracts/call.js';
+import { ContractError, isContractError } from '../src/contracts/error.js';
+import { scopeFromHeader, scopeHeader } from '../src/contracts/metadata.js';
 import { toConnectError } from '../src/contracts/status.js';
 import {
   createClientPart,
@@ -355,5 +357,63 @@ describe('createClientPart', () => {
     assert.equal(sent.length, 0, 'use made no call');
     assert.equal((await client.echo({ text: 'a' })).text, 'ok');
     assert.equal(sent[0]?.headers.get('doric-client-part'), 'app');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// createClientPart: the scope of a client (S64)
+
+describe('createClientPart: scope', () => {
+  test('every call of a client used with a scope carries it in doric-scope-bin', async () => {
+    const { sent, fetch } = fakeFetch();
+    const part = createClientPart({
+      bundleId: 'files',
+      baseUrl: 'http://127.0.0.1:4000',
+      fetch,
+    });
+    const client = part.use(DemoService, {
+      scope: { projectId: 'p1', tenantSlug: 'acme' },
+    }) as unknown as DemoClient;
+
+    await client.echo({ text: 'a' });
+    await client.echo({ text: 'b' });
+
+    assert.equal(sent.length, 2);
+
+    for (const request of sent) {
+      const value = request.headers.get(scopeHeader);
+
+      assert.ok(value !== null, 'the call carries doric-scope-bin');
+      assert.deepEqual(
+        { ...scopeFromHeader(value) },
+        { projectId: 'p1', tenantSlug: 'acme' },
+      );
+    }
+  });
+
+  test('a scope outside the bounds makes use throw invalid_scope and creates nothing', () => {
+    const { sent, fetch } = fakeFetch();
+    const part = createClientPart({
+      bundleId: 'files',
+      baseUrl: 'http://127.0.0.1:4000',
+      fetch,
+    });
+    const tooManyKeys = Object.fromEntries(
+      Array.from({ length: SCOPE_MAX_KEYS + 1 }, (_, index) => [
+        `key${index}`,
+        'v',
+      ]),
+    );
+    const tooLongValue = { projectId: 'x'.repeat(SCOPE_MAX_VALUE + 1) };
+
+    for (const scope of [tooManyKeys, tooLongValue]) {
+      assert.throws(
+        () => part.use(DemoService, { scope }),
+        (error: unknown) =>
+          isContractError(error) && error.code === 'invalid_scope',
+      );
+    }
+
+    assert.equal(sent.length, 0);
   });
 });

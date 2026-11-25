@@ -9,6 +9,7 @@ import {
   type JsonObject,
   type MethodExposure,
   methodExposures,
+  type ProviderInfo,
   windowScopeKey,
 } from 'bundle/contracts';
 import {
@@ -240,6 +241,102 @@ export interface WindowCatalog {
   readonly remote: readonly RemoteContract[];
   readonly hostId: string;
   readonly storageGeneration: number;
+  /**
+   * The provider of each `HOST` contract the generation's host catalog lists,
+   * by contract id: what `services.whenAvailable` of a generated descriptor
+   * reports (phase 3). Absent: none.
+   */
+  readonly hostProviders?: Readonly<Record<string, ProviderInfo>>;
+}
+
+// Connect over IPC (phase 3) -------------------------------------------------
+
+/** The `ipcMain.handle` channel of a window's Connect requests to the host. */
+export const CONNECT_CHANNEL = 'doric:connect';
+
+/** HTTP headers as `[name, value]` pairs, names lower case. */
+export type ConnectHeaders = readonly (readonly [string, string])[];
+
+/**
+ * One Connect-protocol request a window sends on {@link CONNECT_CHANNEL}:
+ * the method path `/<package>.<Service>/<Method>`, the request headers and
+ * the request body as sent over HTTP (a unary call's binary message; a
+ * streaming call's enveloped messages).
+ */
+export interface ConnectRequest {
+  readonly path: string;
+  readonly headers: ConnectHeaders;
+  readonly body: Uint8Array;
+}
+
+export const connectRequestSchema = z
+  .object({
+    path: z.string().regex(/^\/[^/]+\/[^/]+$/),
+    headers: z.array(z.tuple([z.string(), z.string()]).readonly()).readonly(),
+    body: z.instanceof(Uint8Array),
+  })
+  .strict();
+
+/**
+ * What main answers on {@link CONNECT_CHANNEL}: a whole response (a unary
+ * call, or any refusal, as a Connect-protocol error answer), or the head of
+ * a streaming response whose body main posts on the `MessagePort` it sends
+ * the window with the id `stream`.
+ */
+export type ConnectAnswer =
+  | {
+      readonly status: number;
+      readonly headers: ConnectHeaders;
+      readonly body: Uint8Array;
+    }
+  | {
+      readonly status: number;
+      readonly headers: ConnectHeaders;
+      readonly stream: string;
+    };
+
+/**
+ * The page's end of a stream's `MessageChannel`: the DOM `MessagePort`,
+ * typed structurally so that Electron main (no DOM types) can name it.
+ */
+export interface ConnectPort {
+  addEventListener(
+    type: 'message' | 'close',
+    listener: (event: { readonly data?: unknown }) => void,
+  ): void;
+  start(): void;
+  close(): void;
+}
+
+/**
+ * A response as the window's page receives it: whole, or with the port on
+ * which the body arrives. Each message on the port is a `Uint8Array` chunk
+ * of the body, then `null` at its end; a port that closes before `null` is
+ * a body cut short. Closing the page's end cancels the call.
+ */
+export type ConnectReply =
+  | {
+      readonly status: number;
+      readonly headers: ConnectHeaders;
+      readonly body: Uint8Array;
+    }
+  | {
+      readonly status: number;
+      readonly headers: ConnectHeaders;
+      readonly port: ConnectPort;
+    };
+
+/**
+ * What the preload exposes as `window.doric.connect`, with a stream's port
+ * already handed to the page (contextBridge cannot pass ports: the preload
+ * forwards them with `window.postMessage`).
+ */
+export interface DoricConnectApi {
+  /**
+   * Sends one Connect request on {@link CONNECT_CHANNEL}. Rejects only when
+   * the channel is gone (main or the window going away).
+   */
+  request(request: ConnectRequest): Promise<ConnectReply>;
 }
 
 // Bridge calls ---------------------------------------------------------------

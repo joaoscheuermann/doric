@@ -158,6 +158,28 @@ void test('the host also lists the modules its distributed contracts import', as
   });
 });
 
+void test("S64: the host lists a staged bundle's descriptors.binpb, which Electron main reads for the exposure check", async () => {
+  await withRoot(async (root) => {
+    const epsilon = manifest('epsilon');
+
+    await writeBundle(join(root, 'bundles'), 'epsilon', {
+      manifest: epsilon,
+      descriptor: descriptorFor(epsilon),
+      files: {
+        'descriptors.binpb': 'not parsed by the listing\n',
+        'host/index.js': 'export const activate = () => undefined;\n',
+      },
+    });
+
+    const files = await distributionFiles(join(root, 'bundles', 'epsilon'));
+
+    assert.deepEqual(
+      files.map((file) => file.path),
+      ['contracts.json', 'descriptors.binpb', 'manifest.json'],
+    );
+  });
+});
+
 void test('C16: the distribution lists client chunks and their CSS, and its parts name no chunk', async () => {
   await withRoot(async (root) => {
     const epsilon = manifest('epsilon');

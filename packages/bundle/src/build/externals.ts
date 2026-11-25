@@ -34,7 +34,9 @@ export const clientExternals: readonly string[] = [
   'zod/*',
   '@bufbuild/protobuf',
   '@bufbuild/protobuf/*',
+  '@connectrpc/connect',
   'bundle/contracts',
+  'bundle/client',
   '*/contracts',
 ];
 

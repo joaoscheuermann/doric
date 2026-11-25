@@ -1,8 +1,9 @@
 import type { Caller } from '../contracts/call.js';
-import type { Services } from '../contracts/context.js';
+import type { ProviderInfo, Services } from '../contracts/context.js';
 import type { Cardinality } from '../contracts/define.js';
 import type { Environment } from '../contracts/ids.js';
 import type { DiagnosticReport } from '../contracts/platform.js';
+import type { ClientPart } from '../sdk/client/client.js';
 import type { Directory } from './directory.js';
 import { DisposalScope } from './scope.js';
 
@@ -18,6 +19,24 @@ export const emptyCatalogView: ContractCatalogView = Object.freeze({
   cardinality: () => undefined,
   activeProvider: () => undefined,
 });
+
+/**
+ * A window's way to the host's contracts over Connect (phase 3): the client
+ * part of each bundle over the window's transport, and the host providers of
+ * its pinned generation.
+ */
+export interface HostClients {
+  /**
+   * The client part whose calls carry `doric-client-part: <bundleId>`; one
+   * per bundle id, created on first use. Creating it makes no call.
+   */
+  part(bundleId: string): ClientPart;
+  /**
+   * The provider the window's pinned generation lists for a host contract
+   * id (`(doric.platform.v1.contract).id`), or undefined when it lists none.
+   */
+  provider(contractId: string): ProviderInfo | undefined;
+}
 
 /** Shared state of one environment of one generation. */
 export interface ServiceRuntime {
@@ -44,6 +63,14 @@ export interface ServiceRuntime {
     contractId: string,
     signal: AbortSignal | undefined,
   ) => Promise<void> | undefined;
+  /**
+   * A window's Connect clients of host contracts: `services.use` and
+   * `whenAvailable` of a generated service descriptor answer through it
+   * (`ClientServices`). Absent (the kernel, desktopMain, host processes):
+   * `use` of a descriptor throws `ContractError('unavailable')` and
+   * `whenAvailable` of one never calls back.
+   */
+  readonly hostClients?: HostClients;
 }
 
 export interface DeclaredProvide {

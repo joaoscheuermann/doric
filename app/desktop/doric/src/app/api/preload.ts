@@ -6,7 +6,11 @@
 
 import { contextBridge, ipcRenderer } from 'electron';
 
-import { createDesktopApi, type MetaDocument } from './desktop';
+import {
+  createConnectApi,
+  createDesktopApi,
+  type MetaDocument,
+} from './desktop';
 
 /** The platform API; the preload runs before the shell document parses. */
 const desktop = createDesktopApi(
@@ -14,4 +18,7 @@ const desktop = createDesktopApi(
   () => (globalThis as { document?: MetaDocument }).document,
 );
 
-contextBridge.exposeInMainWorld('doric', { desktop: desktop.api });
+contextBridge.exposeInMainWorld('doric', {
+  desktop: desktop.api,
+  connect: createConnectApi(ipcRenderer),
+});

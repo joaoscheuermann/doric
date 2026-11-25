@@ -24,6 +24,7 @@ export type {
   Activate,
   Cleanup,
   ClientContext,
+  ClientServices,
   DesktopContext,
   Disposable,
   HostContext,

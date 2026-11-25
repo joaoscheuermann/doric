@@ -697,6 +697,23 @@ lines. `project.json` stages with `stage --dev <dir> --all bundles`,
 `core`'s `models/v1` `Catalog` writes `Model catalog could not be read`
 whenever its result is `failed`.
 
+The window reaches a host contract over Connect (slice S64): a client part's
+`services.use`/`whenAvailable` of a generated service descriptor answer a
+Connect client through the runtime's `hostClients` (else `unavailable`; a
+`ref<T>()` keeps the envelope), which the desktop window builds with
+`windowHostClients` over `windowFetch` on `window.doric.connect`
+(`doric:connect`). `createClientPart(...).use(ref, { scope })` sends
+`doric-scope-bin` and refuses an out-of-bounds scope with `invalid_scope`.
+Electron main's `createConnectRelay` checks the sender, the request, the
+`doric-client-part`, that the client part is active and that the method is a
+`DESKTOP` method of a `HOST`, non-platform contract of the window's generation,
+indexed from the distributed `descriptors.binpb` (none or unreadable: a warning
+and `unknown_contract`), then the scope; it replaces `windowKey`, drops
+`doric-caller*` and forwards over HTTP/2 to the host. `bundle/client` and
+`@connectrpc/connect` are client externals served once by the window import
+map. No client module calls the host this way until S65, and main reaches the
+host's catalog and status only from S66.
+
 ## Evolution
 
 - 2026-11-22: phase 0 of
@@ -1550,3 +1567,20 @@ sandbox pool` then `Sandbox pool configured` with the `logSandboxPool`
   D10-6; `unavailable_tool` stays in the shared list until group F; the
   `yaml` parser in each host part's `main.mjs` (about 270 KB) is accepted;
   PC23 is S62d3b; T8 moves to S71 and P9 is met.
+- 2026-11-25: group E's plan and phase 3, slice S64, of
+  [`docs/designs/grpc-processes.md`](../designs/grpc-processes.md) (version
+  6.37). Plan: S63a → S63b → S64 → S65a–d → S66; `scripts/fake-host` is
+  retired in group E; main may import `transport`'s generated status client.
+  Known risk accepted: `Disable` and `ResetComposition` stay reachable without
+  authentication on the public listener, since the host runs on a private
+  network reached only through a Tailscale tunnel; without that, bind
+  `DORIC_HOST=127.0.0.1`, filter the listener or authenticate those methods.
+  S64 builds the window's Connect path: the client SDK's `scope`, the
+  runtime's `hostClients`, `descriptors.binpb` in the distribution,
+  `bundle/client` and `@connectrpc/connect` external, `windowFetch` and
+  `windowHostClients`, and main's `createConnectRelay` with a per-generation
+  descriptor index and `hostProviders`. `ClientContext.services` stays
+  `Services`; client parts narrow with `as ClientServices`. Known gaps: a
+  unary forward is not aborted when its window is destroyed; no test streams
+  end to end through Electron; the desktop e2e needs `--no-sandbox` as root,
+  which the nx `e2e` target does not pass.

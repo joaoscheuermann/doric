@@ -34,10 +34,20 @@ describe('window IPC surface', () => {
     await host.close();
   });
 
-  test('the preload exposes only the platform namespace', async () => {
+  test('the preload exposes only the platform namespace and doric:connect', async () => {
     assert.deepEqual(
       await page(workspace.webContents, 'Object.keys(window.doric)'),
-      ['desktop'],
+      ['desktop', 'connect'],
+    );
+  });
+
+  test('window.doric.connect has one function, request, and nothing else', async () => {
+    assert.deepEqual(
+      await page(
+        workspace.webContents,
+        `Object.entries(window.doric.connect ?? {}).map(([name, value]) => [name, typeof value])`,
+      ),
+      [['request', 'function']],
     );
   });
 

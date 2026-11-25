@@ -231,6 +231,27 @@ void test('T3.14: a client chunk leaves generated code and @bufbuild/protobuf to
   );
 });
 
+void test('S64: a client part leaves bundle/client and @connectrpc/connect to the window', async () => {
+  await withBundle(
+    {
+      'src/client/index.ts': [
+        `import { createClientPart, fromConnectError } from 'bundle/client';`,
+        `import { ConnectError } from '@connectrpc/connect';`,
+        `export const activate = () => [createClientPart, fromConnectError, ConnectError];`,
+        '',
+      ].join('\n'),
+    },
+    async (dir) => {
+      await buildParts({ bundleDir: dir, mode: 'production' });
+
+      assert.deepEqual(
+        new Set(importsOf(await read(dir, 'client/index.js'))),
+        new Set(['bundle/client', '@connectrpc/connect']),
+      );
+    },
+  );
+});
+
 void test('T3.14: a client part keeps its own contracts as <id>/contracts and its own generated file as <id>/contracts/gen/<path>', async () => {
   await withBundle(
     {

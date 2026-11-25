@@ -1,3 +1,5 @@
+import { type DescService, getOption, hasOption } from '@bufbuild/protobuf';
+
 import type { HooksProvider } from '../contracts/basic/hooks.js';
 import {
   basicContractSpec,
@@ -16,6 +18,7 @@ import {
   isServiceRef,
 } from '../contracts/define.js';
 import { ContractError, isContractError } from '../contracts/error.js';
+import { contract as contractOption } from '../contracts/gen/doric/platform/v1/options_pb.js';
 import { isPlatformContract } from '../contracts/ids.js';
 import type { AnyServiceRef } from '../contracts/types.js';
 import type { ProviderRecord } from './directory.js';
@@ -302,6 +305,109 @@ const whenAvailable = (
   return disposable;
 };
 
+/** Whether `value` is a generated service descriptor (`DescService`). */
+const isDescService = (value: unknown): value is DescService =>
+  typeof value === 'object' &&
+  value !== null &&
+  (value as { readonly kind?: unknown }).kind === 'service' &&
+  typeof (value as { readonly typeName?: unknown }).typeName === 'string';
+
+/**
+ * A Connect client of a host contract's descriptor through the calling
+ * bundle's window client part; `unavailable` without `hostClients`.
+ */
+const hostClientOf = (
+  principal: Principal,
+  service: DescService,
+  scope: CallScope | undefined,
+): unknown => {
+  const { hostClients } = principal.runtime;
+
+  if (hostClients === undefined) {
+    throw new ContractError(
+      'unavailable',
+      `"${service.typeName}" is a host contract, which this runtime does not reach.`,
+    );
+  }
+
+  return hostClients
+    .part(principal.bundleId)
+    .use(service, scope === undefined ? undefined : { scope });
+};
+
+/**
+ * `whenAvailable` of a descriptor: calls back once, after the current task,
+ * when the window's generation lists a provider of its contract; never
+ * otherwise.
+ */
+const whenHostAvailable = (
+  principal: Principal,
+  service: DescService,
+  // biome-ignore lint/suspicious/noConfusingVoidType: callbacks may return nothing or a cleanup; `void` keeps callbacks that end on a void call assignable, which `undefined` would reject
+  callback: (api: unknown, provider: ProviderInfo) => void | Cleanup,
+): Disposable => {
+  const { runtime } = principal;
+  const { file } = service;
+  const contractId = hasOption(file, contractOption)
+    ? getOption(file, contractOption).id
+    : undefined;
+  const provider =
+    contractId === undefined
+      ? undefined
+      : runtime.hostClients?.provider(contractId);
+
+  if (provider === undefined) {
+    return inertDisposable;
+  }
+
+  const parent = principal.current;
+  const child = parent.child();
+  const report = (error: unknown) =>
+    runtime.report({
+      bundleId: principal.bundleId,
+      kind: 'when_available_failed',
+      message: messageOf(error),
+      details: { contract: contractId },
+    });
+  let disposed = false;
+
+  queueMicrotask(() => {
+    if (disposed) {
+      return;
+    }
+
+    try {
+      const result = principal.runInScope(child, () =>
+        callback(hostClientOf(principal, service, undefined), {
+          bundleId: provider.bundleId,
+          version: provider.version,
+        }),
+      );
+
+      if (typeof result === 'function') {
+        child.onDispose(result);
+      } else if (isPromiseLike(result)) {
+        Promise.resolve(result).then((cleanup: unknown) => {
+          if (typeof cleanup === 'function') {
+            child.onDispose(cleanup as Cleanup);
+          }
+        }, report);
+      }
+    } catch (error) {
+      report(error);
+    }
+  });
+
+  const disposable = toDisposable(() => {
+    disposed = true;
+    child.dispose().catch(report);
+  });
+
+  parent.track(disposable);
+
+  return disposable;
+};
+
 const servicesOf = (principal: Principal, checked: boolean): Services =>
   Object.freeze({
     provide: (definition: AnyServiceDefinition) => {
@@ -317,7 +423,11 @@ const servicesOf = (principal: Principal, checked: boolean): Services =>
         throw error;
       }
     },
-    use: (contract: AnyServiceRef, scope?: CallScope) => {
+    use: (contract: AnyServiceRef | DescService, scope?: CallScope) => {
+      if (isDescService(contract)) {
+        return hostClientOf(principal, contract, scope);
+      }
+
       const contractId = refId(contract);
 
       if (cardinalityOf(principal, contractId) === 'many') {
@@ -335,10 +445,13 @@ const servicesOf = (principal: Principal, checked: boolean): Services =>
       return stubFor(principal, { contractId, useScope: scope }, checked);
     },
     whenAvailable: (
-      contract: AnyServiceRef,
+      contract: AnyServiceRef | DescService,
       // biome-ignore lint/suspicious/noConfusingVoidType: callbacks may return nothing or a cleanup; `void` keeps callbacks that end on a void call assignable, which `undefined` would reject
       callback: (api: unknown, provider: ProviderInfo) => void | Cleanup,
-    ) => whenAvailable(principal, checked, contract, callback),
+    ) =>
+      isDescService(contract)
+        ? whenHostAvailable(principal, contract, callback)
+        : whenAvailable(principal, checked, contract, callback),
   }) as Services;
 
 /** Creates a principal with its checked and unchecked services. */

@@ -51,7 +51,7 @@ describe('the platform import map', () => {
     }
   });
 
-  test('serves exactly React, ReactDOM, Lexical, Base UI, desktop/ui, zod, @bufbuild/protobuf and bundle/contracts', () => {
+  test('serves exactly React, ReactDOM, Lexical, Base UI, desktop/ui, zod, @bufbuild/protobuf, @connectrpc/connect, bundle/contracts and bundle/client', () => {
     const roots = new Set(
       Object.keys(imports).map((specifier) => {
         const parts = specifier.split('/');
@@ -68,6 +68,7 @@ describe('the platform import map', () => {
           'desktop',
           'zod',
           '@bufbuild/protobuf',
+          '@connectrpc/connect',
           'bundle',
         ].includes(root) || root.startsWith('@lexical/'),
         `unexpected platform package ${root}`,
@@ -373,6 +374,25 @@ describe('the generated code in the platform map', () => {
       `${folder}/codegenv2.js`,
     );
     assert.equal(imports['@bufbuild/protobuf/wkt'], `${folder}/wkt.js`);
+  });
+
+  test('serves bundle/client in the platform folder and @connectrpc/connect by npm version (S64)', () => {
+    const version = manifest(
+      join(workspace, 'node_modules/@connectrpc/connect/package.json'),
+    ).version;
+
+    assert.ok(
+      imports['bundle/client']?.startsWith(
+        `${prefix}bundle@${PLATFORM_ASSETS_VERSION}/`,
+      ),
+      `bundle/client → ${imports['bundle/client']}`,
+    );
+    assert.ok(
+      imports['@connectrpc/connect']?.startsWith(
+        `${prefix}@connectrpc/connect@${version}/`,
+      ),
+      `@connectrpc/connect → ${imports['@connectrpc/connect']}`,
+    );
   });
 
   test('leaves every generated file importing only mapped bundle/contracts/gen/… and @bufbuild/protobuf specifiers', () => {

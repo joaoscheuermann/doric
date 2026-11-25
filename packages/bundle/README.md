@@ -3289,6 +3289,7 @@ function distributionParts(
 
 `distributionFiles` lists, with SHA-256 and size and sorted by path, the files
 of a staged bundle the desktop may need: `manifest.json`, `contracts.json`,
+`descriptors.binpb` (Electron main's exposure index, slice S64),
 `desktop/**`, `client/**`, `schemas/**`, `contracts/**/*.js`, and the modules
 outside `contracts/` that those import relatively. `distributionFor` builds
 one generation's distribution catalog from the host's catalog snapshot; an
@@ -3374,14 +3375,20 @@ function stagedHostPart(bundlesDir: string): (bundleId: string) => boolean;
 The client SDK of the process model
 ([`src/sdk/client/index.ts`](src/sdk/client/index.ts), browser-safe), phase 2
 of [`grpc-processes.md`](../../docs/designs/grpc-processes.md#10-the-typescript-sdk).
-No client part uses it yet.
+A window reaches it through `services.use`/`whenAvailable` of a generated
+service descriptor (slice S64): the runtime answers through
+`ServiceRuntime.hostClients`, which the desktop window fills with one
+`createClientPart` per bundle over `window.doric.connect`, and answers
+`unavailable` without it; a `ref<T>()` keeps the envelope.
+`ClientContext.services` stays typed `Services`, so a client part narrows it
+with `as ClientServices`. No client module calls a host contract this way yet.
 
 ```ts
 function createClientPart(options: ClientPartTransportOptions): ClientPart;
 interface ClientPart {
   readonly bundleId: string; // sent as doric-client-part
   readonly transport: Transport; // one per client part
-  use<S extends DescService>(ref: S, options?: ClientUseOptions<S>): Client<S>; // { resume? }
+  use<S extends DescService>(ref: S, options?: ClientUseOptions<S>): Client<S>; // { resume?, scope? }
 }
 function createClientPartTransport(options: ClientPartTransportOptions): Transport;
 interface ClientPartTransportOptions {
@@ -3409,6 +3416,9 @@ not an absolute `http:` or `https:` URL.
 `createClientPart` ([`client.ts`](src/sdk/client/client.ts)) shares one
 transport across the clients its `use` answers; a resumable server-streaming
 method reopens as the host SDK's `services.use` does ([`runBundle`](#runbundle)).
+`ClientUseOptions.scope` is sent on every call of that client as
+`doric-scope-bin`; a scope outside `callScopeSchema`'s bounds is refused with
+`ContractError('invalid_scope')` when `use` is called.
 `fromConnectError` reads a call's Doric code ([Errors](#errors)).
 
 ## `bundle/testing`
@@ -3568,7 +3578,9 @@ function matchesExternal(
 external, so one instance of each exists per window; `frameExternals` are
 those of a frame's import map. A pattern with `*` matches any specifier with
 its prefix and suffix ([`externals.ts`](src/build/externals.ts)).
-`clientExternals` includes `@bufbuild/protobuf` and `@bufbuild/protobuf/*`;
+`clientExternals` includes `@bufbuild/protobuf` and `@bufbuild/protobuf/*`,
+`@connectrpc/connect` and `bundle/client`, which the window import map serves
+once;
 `<package>/contracts/gen/<path>` stays external through the client build's
 plugin, not the list. The import
 map is described in [Platform

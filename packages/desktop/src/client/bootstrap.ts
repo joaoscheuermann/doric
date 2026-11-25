@@ -6,7 +6,11 @@ import { wireClose } from './close.js';
 import { serveShellCommands } from './commands.js';
 import type { ElementRegistry } from './elements.js';
 import { installKeybindings } from './keybindings.js';
-import type { DoricDesktopApi, WindowDescription } from './protocol.js';
+import type {
+  DoricConnectApi,
+  DoricDesktopApi,
+  WindowDescription,
+} from './protocol.js';
 
 export interface BootstrapOptions {
   /**
@@ -38,10 +42,16 @@ const defaultDesktop = (): DoricDesktopApi =>
   (globalThis as unknown as { doric: { desktop: DoricDesktopApi } }).doric
     .desktop;
 
+/** `window.doric.connect`, when the preload exposes it. */
+const defaultConnect = (): DoricConnectApi | undefined =>
+  (globalThis as unknown as { doric?: { connect?: DoricConnectApi } }).doric
+    ?.connect;
+
 export const bootstrapWindow = async (
   options: BootstrapOptions,
 ): Promise<void> => {
   const desktop = options.desktop ?? defaultDesktop();
+  const connect = defaultConnect();
   const document = options.document ?? globalThis.document;
   let failure: { readonly bundleId: string; readonly message: string } | null;
 
@@ -56,6 +66,7 @@ export const bootstrapWindow = async (
     const activation = await activateClientBundles({
       catalog,
       desktop,
+      ...(connect === undefined ? {} : { connect }),
       description,
       document,
       ...(options.importPart === undefined

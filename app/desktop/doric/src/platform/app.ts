@@ -3,6 +3,8 @@
 // artifact cache, one desktopMain utility process per generation, the
 // single IPC dispatcher and the splash and recovery surface.
 
+import { readFile } from 'node:fs/promises';
+import { connect as connectHttp2, type OutgoingHttpHeaders } from 'node:http2';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -12,6 +14,10 @@ import {
   type Diagnostics,
   type NotificationRequest,
 } from 'bundle/contracts';
+import {
+  type CatalogIndex,
+  catalogIndexFromDescriptors,
+} from 'bundle/platform';
 import {
   catalogSnapshot,
   catalogView,
@@ -27,7 +33,12 @@ import {
   statesOf,
   type WireCall,
 } from 'bundle/runtime';
-import type { WindowChrome, WindowFailure, WindowMode } from 'desktop/protocol';
+import type {
+  ConnectHeaders,
+  WindowChrome,
+  WindowFailure,
+  WindowMode,
+} from 'desktop/protocol';
 import {
   app,
   type BrowserWindow,
@@ -50,6 +61,7 @@ import {
   type GenerationView,
   generationView,
 } from './bridge/client-routing';
+import { createConnectRelay, type HostForward } from './bridge/connect-relay';
 import { Dispatcher } from './bridge/dispatcher';
 import {
   type BridgeSocket,
@@ -131,6 +143,11 @@ export interface DesktopPlatformOptions {
   readonly platform?: NodeJS.Platform;
   /** Opens an https URL in the system browser; Electron's `shell` by default. */
   readonly openExternal?: (url: string) => Promise<void>;
+  /**
+   * How `doric:connect` reaches the host (tests); by default an HTTP/2
+   * forward to `hostUrl`.
+   */
+  readonly hostForward?: HostForward;
 }
 
 interface Live {
@@ -139,6 +156,8 @@ interface Live {
   /** `(hostId, hostBoot, host generation)` [S8-22]. */
   readonly key: string;
   readonly retained: readonly DistributionBundle[];
+  /** The index of the generation's distributed `descriptors.binpb` files. */
+  readonly index: CatalogIndex | undefined;
 }
 
 const PLATFORM_CALLER = (generation: number): WireCall['caller'] => ({
@@ -156,6 +175,102 @@ const platformWire = (generation: number, deadline = 0): WireCall => ({
 
 const hostKey = (catalog: DistributionCatalog): string =>
   `${catalog.storage?.hostId ?? ''}\u0000${catalog.hostBoot}\u0000${catalog.generation}`;
+
+/** Headers HTTP/2 refuses, or that `node:http2` sets itself. */
+const http2Refused = new Set([
+  'connection',
+  'host',
+  'keep-alive',
+  'proxy-connection',
+  'transfer-encoding',
+  'upgrade',
+  'content-length',
+]);
+
+/**
+ * Forwards `doric:connect` requests to the host's public listener over one
+ * HTTP/2 session, opened on first use and again after it ends.
+ */
+const http2Forward = (hostUrl: string): HostForward => {
+  let session: ReturnType<typeof connectHttp2> | undefined;
+  const sessionOf = () => {
+    if (session === undefined || session.closed || session.destroyed) {
+      const opened = connectHttp2(hostUrl);
+
+      // A session error fails its open requests; the next request reconnects.
+      opened.on('error', () => {
+        if (session === opened) {
+          session = undefined;
+        }
+      });
+      session = opened;
+    }
+
+    return session;
+  };
+
+  return {
+    request: (input, signal) =>
+      new Promise((resolve, reject) => {
+        const headers: OutgoingHttpHeaders = {
+          ':method': 'POST',
+          ':path': input.path,
+        };
+
+        for (const [name, value] of input.headers) {
+          if (!http2Refused.has(name.toLowerCase())) {
+            headers[name.toLowerCase()] = value;
+          }
+        }
+
+        const stream = sessionOf().request(headers, { signal });
+
+        stream.once('error', reject);
+        stream.once('response', (response) => {
+          const pairs: [string, string][] = [];
+
+          for (const [name, value] of Object.entries(response)) {
+            if (name.startsWith(':') || value === undefined) {
+              continue;
+            }
+
+            for (const one of Array.isArray(value) ? value : [value]) {
+              pairs.push([name, String(one)]);
+            }
+          }
+
+          resolve({
+            status: Number(response[':status']),
+            headers: pairs satisfies ConnectHeaders,
+            body: stream,
+          });
+        });
+        stream.end(input.body);
+      }),
+  };
+};
+
+/** Every `descriptors.binpb` of `bundles` the cache holds. */
+const descriptorSets = async (
+  cache: ArtifactCache,
+  bundles: readonly DistributionBundle[],
+): Promise<Uint8Array[]> => {
+  const sets: Uint8Array[] = [];
+
+  for (const bundle of bundles) {
+    if (!bundle.files.some((file) => file.path === 'descriptors.binpb')) {
+      continue;
+    }
+
+    const path = cache.pathOf(bundle, 'descriptors.binpb');
+
+    if (path !== undefined) {
+      sets.push(new Uint8Array(await readFile(path)));
+    }
+  }
+
+  return sets;
+};
 
 const decodeBase64 = (base64: string): Uint8Array =>
   new Uint8Array(Buffer.from(base64, 'base64'));
@@ -562,6 +677,17 @@ export class DesktopPlatform {
     ipcMain.handle('doric:desktop', (event, request: unknown) =>
       this.dispatcher.handle(event as never, request),
     );
+
+    const relay = createConnectRelay({
+      registry: this.registry,
+      view: (generation) => this.#lives.get(generation)?.view,
+      index: (generation) => this.#lives.get(generation)?.index,
+      forward: this.options.hostForward ?? http2Forward(this.options.hostUrl),
+    });
+
+    ipcMain.handle('doric:connect', (event, request: unknown) =>
+      relay.handle(event, request),
+    );
     this.host.onStatus((status) => {
       this.lifecycle.connectionChanged(status.connected);
 
@@ -877,11 +1003,24 @@ export class DesktopPlatform {
       };
     }
 
+    const index = await descriptorSets(this.cache, bundles)
+      .then((sets) =>
+        sets.length === 0 ? undefined : catalogIndexFromDescriptors(sets),
+      )
+      .catch((error: unknown) => {
+        this.log.warn(
+          { generation, error: messageOf(error) },
+          'The generation has no descriptor index: doric:connect refuses its calls',
+        );
+
+        return undefined;
+      });
     const live: Live = {
       view,
       process,
       key: hostKey(catalog),
       retained: bundles,
+      index,
     };
     const previous = this.#newest;
 
@@ -1303,6 +1442,7 @@ export class DesktopPlatform {
     this.#closeSplash();
     await this.stop();
     ipcMain.removeHandler('doric:desktop');
+    ipcMain.removeHandler('doric:connect');
     protocol.unhandle('doric');
   }
 

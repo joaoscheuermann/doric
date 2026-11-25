@@ -24,6 +24,7 @@ const compare = (left: string, right: string): number =>
 const distributed = (path: string): boolean =>
   path === 'manifest.json' ||
   path === 'contracts.json' ||
+  path === 'descriptors.binpb' ||
   path.startsWith('desktop/') ||
   path.startsWith('client/') ||
   path.startsWith('schemas/') ||

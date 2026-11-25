@@ -154,6 +154,7 @@ export {
   type ContractCatalogView,
   type DeclaredProvide,
   emptyCatalogView,
+  type HostClients,
   Principal,
   type PrincipalOptions,
   type ServiceRuntime,

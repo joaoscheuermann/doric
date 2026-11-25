@@ -21,6 +21,11 @@ export { provideBrowser } from './browser.js';
 export { applyChrome } from './chrome.js';
 export { answerClose, wireClose } from './close.js';
 export { serveShellCommands } from './commands.js';
+export {
+  WINDOW_HOST_URL,
+  windowFetch,
+  windowHostClients,
+} from './connect.js';
 export { provideConnection } from './connection.js';
 export { type ElementRegistry, provideElements } from './elements.js';
 export {

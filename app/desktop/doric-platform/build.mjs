@@ -189,6 +189,11 @@ groups.push({
       file: bundleContracts.file,
       source: join(workspace, bundleContracts.source),
     },
+    {
+      specifier: bundleContracts.client.specifier,
+      file: bundleContracts.client.file,
+      source: join(workspace, bundleContracts.client.source),
+    },
     ...bundleGenerated.map((path) => {
       const file = path.replace(/\.ts$/, '.js');
       return {

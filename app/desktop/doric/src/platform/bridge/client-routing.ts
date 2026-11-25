@@ -4,7 +4,7 @@
 
 import { readFileSync } from 'node:fs';
 
-import type { JsonObject } from 'bundle/contracts';
+import type { JsonObject, ProviderInfo } from 'bundle/contracts';
 import { isPlatformContract } from 'bundle/contracts';
 import {
   type CatalogEntry,
@@ -261,6 +261,23 @@ export const generationView = (input: {
     };
   }
 
+  const hostProviders: Record<string, ProviderInfo> = {};
+
+  for (const contract of catalog.host.contracts) {
+    const provider = contract.providers[0];
+
+    if (
+      contract.environment === 'host' &&
+      !isPlatformContract(contract.id) &&
+      provider !== undefined
+    ) {
+      hostProviders[contract.id] = {
+        bundleId: provider.bundleId,
+        version: provider.bundleVersion,
+      };
+    }
+  }
+
   const windowCatalog: WindowCatalog = {
     generation: input.generation,
     resolved: resolution.client,
@@ -278,6 +295,7 @@ export const generationView = (input: {
     ),
     hostId: catalog.storage?.hostId ?? '',
     storageGeneration: catalog.storage?.storageGeneration ?? 0,
+    hostProviders,
   };
 
   return {
