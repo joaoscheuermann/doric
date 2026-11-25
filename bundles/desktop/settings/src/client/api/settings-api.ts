@@ -11,28 +11,55 @@
 //   (`bundles/foundation/transport/src/host/routes/*`), with their envelope messages;
 // - the response readers of `app/desktop/doric/src/workspace/api.ts`, with
 //   'Doric returned an invalid response.' for a shape they refuse.
+//
+// From slice S65c the host contracts are their generated Connect clients —
+// `HostConfigService`, `ModelsService`, `ToolsService` and `SecretsService` —
+// each answer read back as today's JSON (`runtime/contracts`' `decode`) and
+// each failure as its Doric error (`fromConnectError`); `doric.browser/v1`
+// and `workspace.dashboard/v1` stay on the envelope.
 
 import {
-  type CredentialDescription,
+  type ClientServices,
   credentialFieldsSatisfied,
   type Disposable,
   DoricBrowserV1,
+  fromConnectError,
   isContractError,
   MODEL_ICON_MAX_LENGTH,
   type ModelField,
   type ModelIconAnswers,
   type ModelKindDescriptor,
-  ModelsV1,
-  ref,
-  SecretsV1,
+  modelsMethods,
   type Services,
-  ToolsV1,
 } from 'bundle/contracts';
+import { ModelKindDescriptorSchema } from 'bundle/contracts/gen/doric/models/provider/v1/provider_pb.js';
+import {
+  CatalogResponseSchema,
+  IconsRequestSchema,
+  IconsResponseSchema,
+  KindsResponseSchema,
+  ModelsService,
+} from 'bundle/contracts/gen/doric/models/v1/models_pb.js';
+import {
+  CreateRequestSchema,
+  CreateResponseSchema,
+  CredentialUpdateSchema,
+  ListResponseSchema,
+  SecretsService,
+  UpdateResponseSchema,
+} from 'bundle/contracts/gen/doric/secrets/v1/secrets_pb.js';
+import {
+  CatalogResponseSchema as ToolCatalogResponseSchema,
+  ToolsService,
+} from 'bundle/contracts/gen/doric/tools/v1/tools_pb.js';
 import { ClientError } from 'desktop/reads';
-import type {
-  ConfigReplaceResult,
-  Configuration as HostConfiguration,
-} from 'runtime/contracts';
+import {
+  CurrentResponseSchema,
+  HostConfigService,
+  ReplaceRequestSchema,
+  ReplaceResponseSchema,
+} from 'host-config/contracts/gen/doric/host_config/v1/host_config_pb.js';
+import { decode, encode } from 'runtime/contracts';
 
 import {
   type AutoArchive,
@@ -63,12 +90,6 @@ import {
 } from '../domain/config.js';
 import type { IconRequest } from '../domain/model-icons.js';
 import { WorkspaceDashboardV1 } from './navigation-refs.js';
-
-/**
- * `host-config/v1` (the `/config` pipeline), referenced by id with the
- * runtime's `HostConfiguration` type.
- */
-export const HostConfigurationV1 = ref<HostConfiguration>('host-config/v1');
 
 /**
  * The rejection of every settings adapter call: a `ClientError` whose
@@ -143,13 +164,30 @@ const unexpected = (error: unknown): never => {
   return hostFailure(error, internalMessage);
 };
 
+/** The failure a Connect client throws (`fromConnectError` reads it). */
+type ConnectFailure = Parameters<typeof fromConnectError>[0];
+
+/**
+ * Whether `error` is a Connect client's failure. Read by shape, as Connect's
+ * own `instanceof` does: settings declares no `@connectrpc/connect`.
+ */
+const isConnectFailure = (error: unknown): error is ConnectFailure =>
+  error instanceof Error &&
+  error.name === 'ConnectError' &&
+  typeof (error as { readonly findDetails?: unknown }).findDetails ===
+    'function';
+
+/** A Connect failure as its Doric error (`fromConnectError`); any other error unchanged. */
+const contractError = (error: unknown): unknown =>
+  isConnectFailure(error) ? fromConnectError(error) : error;
+
 const reach = async <Value>(
   operation: () => Promise<Value>,
 ): Promise<Value> => {
   try {
     return await operation();
   } catch (error) {
-    return unexpected(error);
+    return unexpected(contractError(error));
   }
 };
 
@@ -619,7 +657,8 @@ const credentialNotFound = 'The credential was not found.';
 const credentialConflict = 'The credential cannot perform this operation.';
 
 /** The failures `writeCredentials` answered for a create or an update. */
-const credentialWriteFailure = (error: unknown): never => {
+const credentialWriteFailure = (failure: unknown): never => {
+  const error = contractError(failure);
   if (isContractError(error)) {
     switch (error.code) {
       case 'credential_invalid':
@@ -1226,140 +1265,262 @@ export interface SettingsApi {
   openBrowser(url: string): Promise<void>;
 }
 
-const replaced = (result: ConfigReplaceResult): DoricConfiguration => {
+/**
+ * `Icons`' answer as today's: an icon-less model travels as `""`, as the
+ * core sends it, and reads as `null`.
+ */
+const iconsOf = (value: unknown): unknown => {
+  const answers = fieldOf(value, 'answers');
+  if (!isRecord(value) || !Array.isArray(answers)) return value;
+  return {
+    ...value,
+    answers: answers.map((answer: unknown) => {
+      const models = fieldOf(answer, 'models');
+      return isRecord(answer) && Array.isArray(models)
+        ? {
+            ...answer,
+            models: models.map((name: unknown) => (name === '' ? null : name)),
+          }
+        : answer;
+    }),
+  };
+};
+
+/**
+ * A wire kind as today's: the wire cannot tell an absent `options` from an
+ * empty one, so a field that is not `enum` with none reads as without them.
+ */
+const kindOf = (value: unknown): unknown => {
+  const fields = fieldOf(value, 'fields');
+  if (!isRecord(value) || !Array.isArray(fields)) return value;
+  return {
+    ...value,
+    fields: fields.map((field: unknown) => {
+      if (!isRecord(field)) return field;
+      const { options, ...rest } = field;
+      return field.kind !== 'enum' &&
+        Array.isArray(options) &&
+        options.length === 0
+        ? rest
+        : field;
+    }),
+  };
+};
+
+/** A replacement's answer (`{status, …}`) as the configuration it activated. */
+const replaced = (result: unknown): DoricConfiguration => {
+  if (!isRecord(result)) return invalidResponse();
   if (result.status === 'replaced')
     return doricConfigurationFrom(result.config);
-  if (result.status === 'invalid') return fail('invalid_input', result.message);
+  if (result.status === 'invalid' && typeof result.message === 'string')
+    return fail('invalid_input', result.message);
   return fail('internal', 'The Doric configuration could not be activated.');
 };
 
+/** A record's `key` field, or `undefined` for anything else. */
+const fieldOf = (value: unknown, key: string): unknown =>
+  isRecord(value) ? value[key] : undefined;
+
 /** The adapter over one bundle activation's services. */
-export const createSettingsApi = (services: Services): SettingsApi => ({
-  config: {
-    get: async () =>
-      doricConfigurationFrom(
-        await reach(() => services.use(HostConfigurationV1).current()),
-      ),
-    update: async (configuration) => {
-      const input = desktopConfiguration(configuration);
-      let result: ConfigReplaceResult;
-      try {
-        result = await services.use(HostConfigurationV1).replace(input);
-      } catch (error) {
-        // The route answered any failure of the replacement as a rejection;
-        // a host out of reach never got that far.
-        if (isContractError(error) && unreachable.has(error.code))
-          return fail(error.code, unavailableMessage, error);
-        return fail(
-          'internal',
-          'The Doric configuration could not be activated.',
-        );
-      }
-      return replaced(result);
-    },
-  },
-  tools: {
-    catalog: async () =>
-      toolCatalogFrom(await reach(() => services.use(ToolsV1).catalog())),
-  },
-  providers: {
-    kinds: async () => {
-      const kinds = await reach(() => services.use(ModelsV1).kinds());
-      if (!Array.isArray(kinds)) return invalidResponse();
-      return kinds.map(providerKindFrom);
-    },
-    models: async (values) => {
-      const guarded = guardedProviderValues(values);
-      const kindId = guarded.kind.trim();
-      if (kindId.length < 1 || kindId.length > 128) return invalidProvider();
-      const models = services.use(ModelsV1);
-      const kind = await reach(() => models.kind(kindId));
-      if (kind === undefined || !fieldsAccepted(kind, guarded.configuration))
-        return invalidProvider();
-      const read = await reach(() =>
-        models.catalog({ kind: kind.id, configuration: guarded.configuration }),
-      );
-      if (read.status !== 'read')
-        return fail(
-          'internal',
-          'The provider model catalog could not be read.',
-        );
-      return catalogFrom(read.models);
-    },
-    icons: async (requests) => {
-      if (requests.length === 0) return { svgs: {}, answers: [] };
-      return iconAnswersFrom(
-        await reach(() =>
-          services.use(ModelsV1).icons({
-            // Copies, since the contract's request is not read-only.
-            requests: requests.map(({ kind, configuration, models }) => ({
-              kind,
-              configuration: { ...configuration },
-              models: [...models],
-            })),
-          }),
+export const createSettingsApi = (services: Services): SettingsApi => {
+  const client = services as ClientServices;
+  return {
+    config: {
+      get: async () =>
+        doricConfigurationFrom(
+          fieldOf(
+            decode(
+              CurrentResponseSchema,
+              await reach(() => client.use(HostConfigService).current({})),
+            ),
+            'doricConfiguration',
+          ),
         ),
-        requests,
-      );
+      update: async (configuration) => {
+        const input = desktopConfiguration(configuration);
+        let result: unknown;
+        try {
+          result = decode(
+            ReplaceResponseSchema,
+            await client
+              .use(HostConfigService)
+              .replace(encode(ReplaceRequestSchema, { input })),
+          );
+        } catch (failure) {
+          // The route answered any failure of the replacement as a rejection;
+          // a host out of reach never got that far.
+          const error = contractError(failure);
+          if (isContractError(error) && unreachable.has(error.code))
+            return fail(error.code, unavailableMessage, error);
+          return fail(
+            'internal',
+            'The Doric configuration could not be activated.',
+          );
+        }
+        return replaced(result);
+      },
     },
-  },
-  credentials: {
-    list: async () => {
-      const listed = await reach(() => services.use(SecretsV1).list());
-      if (!Array.isArray(listed)) return invalidResponse();
-      return listed
-        .filter((entry) => !isUnmanagedCredential(entry))
-        .map(credentialFrom);
+    tools: {
+      catalog: async () =>
+        toolCatalogFrom(
+          fieldOf(
+            decode(
+              ToolCatalogResponseSchema,
+              await reach(() => client.use(ToolsService).catalog({})),
+            ),
+            'entries',
+          ),
+        ),
     },
-    create: async (input) => {
-      const create = routeCreate(guardedCredentialCreate(input));
-      let created: CredentialDescription;
-      try {
-        created = await services.use(SecretsV1).create(create);
-      } catch (error) {
-        return credentialWriteFailure(error);
-      }
-      return credentialFrom(created);
+    providers: {
+      kinds: async () => {
+        const kinds = fieldOf(
+          decode(
+            KindsResponseSchema,
+            await reach(() => client.use(ModelsService).kinds({})),
+          ),
+          'kinds',
+        );
+        if (!Array.isArray(kinds)) return invalidResponse();
+        return kinds.map((kind) => providerKindFrom(kindOf(kind)));
+      },
+      models: async (values) => {
+        const guarded = guardedProviderValues(values);
+        const kindId = guarded.kind.trim();
+        if (kindId.length < 1 || kindId.length > 128) return invalidProvider();
+        const models = client.use(ModelsService);
+        const { modelKindDescriptor } = await reach(() =>
+          models.kind({ id: kindId }),
+        );
+        if (modelKindDescriptor === undefined) return invalidProvider();
+        const parsed = modelsMethods.kind.output.safeParse(
+          decode(ModelKindDescriptorSchema, modelKindDescriptor),
+        );
+        if (!parsed.success) return invalidResponse();
+        const kind = parsed.data;
+        if (kind === undefined || !fieldsAccepted(kind, guarded.configuration))
+          return invalidProvider();
+        const read = fieldOf(
+          decode(
+            CatalogResponseSchema,
+            await reach(() =>
+              models.catalog({
+                kind: kind.id,
+                configuration: guarded.configuration,
+              }),
+            ),
+          ),
+          'catalogResult',
+        );
+        if (fieldOf(read, 'status') !== 'read')
+          return fail(
+            'internal',
+            'The provider model catalog could not be read.',
+          );
+        return catalogFrom(fieldOf(read, 'models'));
+      },
+      icons: async (requests) => {
+        if (requests.length === 0) return { svgs: {}, answers: [] };
+        const answer = await reach(() =>
+          client.use(ModelsService).icons(
+            encode(IconsRequestSchema, {
+              requests: requests.map(({ kind, configuration, models }) => ({
+                kind,
+                configuration,
+                models,
+              })),
+            }),
+          ),
+        );
+        return iconAnswersFrom(
+          iconsOf(decode(IconsResponseSchema, answer)),
+          requests,
+        );
+      },
     },
-    update: async (id, input) => {
-      const credentialId = routeCredentialId(guardedIdentifier(id));
-      const update = routeUpdate(guardedCredentialUpdate(input));
-      let updated: CredentialDescription;
-      try {
-        updated = await services
-          .use(SecretsV1)
-          .update({ id: credentialId }, update);
-      } catch (error) {
-        return credentialWriteFailure(error);
-      }
-      return credentialFrom(updated);
+    credentials: {
+      list: async () => {
+        const listed = fieldOf(
+          decode(
+            ListResponseSchema,
+            await reach(() => client.use(SecretsService).list({})),
+          ),
+          'credentials',
+        );
+        if (!Array.isArray(listed)) return invalidResponse();
+        return listed
+          .filter((entry) => !isUnmanagedCredential(entry))
+          .map(credentialFrom);
+      },
+      create: async (input) => {
+        const create = routeCreate(guardedCredentialCreate(input));
+        let created: unknown;
+        try {
+          created = fieldOf(
+            decode(
+              CreateResponseSchema,
+              await client
+                .use(SecretsService)
+                .create(encode(CreateRequestSchema, create)),
+            ),
+            'credentialDescription',
+          );
+        } catch (error) {
+          return credentialWriteFailure(error);
+        }
+        return credentialFrom(created);
+      },
+      update: async (id, input) => {
+        const credentialId = routeCredentialId(guardedIdentifier(id));
+        // A field the update keeps is absent: the wire has no `null`.
+        const update = routeUpdate(guardedCredentialUpdate(input));
+        let updated: unknown;
+        try {
+          updated = fieldOf(
+            decode(
+              UpdateResponseSchema,
+              await client.use(SecretsService).update({
+                ref: { id: credentialId },
+                update: encode(CredentialUpdateSchema, update),
+              }),
+            ),
+            'credentialDescription',
+          );
+        } catch (error) {
+          return credentialWriteFailure(error);
+        }
+        return credentialFrom(updated);
+      },
+      remove: async (id) => {
+        const credentialId = routeCredentialId(guardedIdentifier(id));
+        const { result } = await reach(() =>
+          client
+            .use(SecretsService)
+            .delete({ credentialRef: { id: credentialId } }),
+        );
+        if (result === 'missing') return fail('not_found', credentialNotFound);
+        if (result === 'referenced')
+          return fail('conflict', credentialConflict);
+      },
     },
-    remove: async (id) => {
-      const credentialId = routeCredentialId(guardedIdentifier(id));
-      const result = await reach(() =>
-        services.use(SecretsV1).delete({ id: credentialId }),
-      );
-      if (result === 'missing') return fail('not_found', credentialNotFound);
-      if (result === 'referenced') return fail('conflict', credentialConflict);
+    dashboard: {
+      active: () =>
+        dashboardAvailable
+          ? services.use(WorkspaceDashboardV1).active()
+          : undefined,
+      show: (id) => {
+        if (dashboardAvailable) services.use(WorkspaceDashboardV1).show(id);
+      },
+      subscribe: (listener) =>
+        dashboardAvailable
+          ? services.use(WorkspaceDashboardV1).subscribe(listener)
+          : { dispose: () => undefined },
     },
-  },
-  dashboard: {
-    active: () =>
-      dashboardAvailable
-        ? services.use(WorkspaceDashboardV1).active()
-        : undefined,
-    show: (id) => {
-      if (dashboardAvailable) services.use(WorkspaceDashboardV1).show(id);
+    openBrowser: async (url) => {
+      await services.use(DoricBrowserV1).open(url);
     },
-    subscribe: (listener) =>
-      dashboardAvailable
-        ? services.use(WorkspaceDashboardV1).subscribe(listener)
-        : { dispose: () => undefined },
-  },
-  openBrowser: async (url) => {
-    await services.use(DoricBrowserV1).open(url);
-  },
-});
+  };
+};
 
 /**
  * Whether a `workspace.dashboard/v1` provider answers: the contract is optional,

@@ -1,5 +1,7 @@
 // Credential writes over `secrets/v1` answer the window with the messages the
-// `/credentials` routes sent, and no secret ever comes back.
+// `/credentials` routes sent, and no secret ever comes back. From slice S65c
+// the settings part reaches `secrets/v1` as `SecretsService` over Connect
+// (`support/host.ts`).
 
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
@@ -204,16 +206,25 @@ describe('writing a credential', () => {
       },
     );
 
+    // Over `SecretsService.Update` (slice S65c) a field the window keeps is
+    // absent from the `CredentialUpdate` message: the wire has no `null`.
     assert.deepEqual(received, {
       name: 'Renamed',
-      username: null,
-      email: null,
       secret: '',
     });
   });
 });
 
 describe('listing credentials', () => {
+  test('T3.13 settings lists the credentials over secrets/v1: one SecretsService.List call of the settings part', async () => {
+    await settingsOver({ list: () => [token] }, async (api, calls) => {
+      assert.deepEqual(await api.credentials.list(), [token]);
+      assert.deepEqual(calls, [
+        { method: 'doric.secrets.v1.SecretsService/List', part: 'settings' },
+      ]);
+    });
+  });
+
   test('lists every credential in its public shape', async () => {
     await settingsOver(
       {

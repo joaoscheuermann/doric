@@ -8,25 +8,36 @@
 //    route's status (a lease state stays data, `pending` with `Retry-After: 1`;
 //    a Thread without a runtime or a lease is the route's 200 body);
 // 4. a failed call is an `Error` with the message the REST path showed.
+//
+// From slice S65c the host is `CommandsService`'s generated client over
+// Connect: `commandsOf` reads its messages back as today's answers, and a
+// failure as its Doric error (`fromConnectError`).
 
+import { type Client, ConnectError } from '@connectrpc/connect';
 import {
   type CallScope,
+  type ClientServices,
+  fromConnectError,
   isContractError,
   type Services,
 } from 'bundle/contracts';
 import type { ProjectLeaseState } from 'files/contracts';
 
 import {
-  type ChangesRead,
-  type Discard,
-  type FileDiffRead,
-  type Git,
-  GitCommandsV1,
-  type LeaseOutcome,
-  type ProjectChangeStatus,
-  type ProjectChangesResult,
-  type ProjectFileChange,
-  type ProjectFileDiffResult,
+  type Branches as BranchesMessage,
+  CommandsService,
+  type ThreadGit as ThreadGitMessage,
+} from '../../contracts/gen/doric/git/commands/v1/commands_pb.js';
+import type {
+  ChangesRead,
+  Discard,
+  FileDiffRead,
+  Git,
+  LeaseOutcome,
+  ProjectChangeStatus,
+  ProjectChangesResult,
+  ProjectFileChange,
+  ProjectFileDiffResult,
 } from '../../contracts/index.js';
 import type {
   GitBranches,
@@ -126,7 +137,9 @@ const host = async <Value>(operation: () => Promise<Value>): Promise<Value> => {
   try {
     return await operation();
   } catch (error) {
-    throw hostFailure(error);
+    throw hostFailure(
+      error instanceof ConnectError ? fromConnectError(error) : error,
+    );
   }
 };
 
@@ -355,8 +368,14 @@ export interface GitApi {
 const pathOf = (path: string): { readonly path?: string } =>
   path === '' ? {} : { path };
 
+/** The `git.commands/v1` calls the window makes. */
+type GitCalls = Pick<
+  Git,
+  'status' | 'branches' | 'switchBranch' | 'discard' | 'changes' | 'fileDiff'
+>;
+
 /** The calls over `git.commands/v1`; `git` binds a Project or Thread scope. */
-export const createGitApi = (git: (scope: CallScope) => Git): GitApi => ({
+export const createGitApi = (git: (scope: CallScope) => GitCalls): GitApi => ({
   changes: async (projectId, path) => {
     const id = identifier(projectId);
     const at = relativePath(path);
@@ -446,6 +465,124 @@ export const createGitApi = (git: (scope: CallScope) => Git): GitApi => ({
   },
 });
 
-/** The calls bound to a part's services. */
+// The Connect client ---------------------------------------------------------
+
+/**
+ * A `{status, value?}` answer as today's outcome: `value` read by `readValue`
+ * when `status` is `ready`; a ready answer without one is `invalid_output`.
+ */
+const outcomeOf = <M, V>(
+  response: { readonly status: string; readonly value?: M },
+  readValue: (value: M) => V,
+): { readonly status: string; readonly value?: V } => {
+  if (response.status !== 'ready') return { status: response.status };
+  if (response.value === undefined) return invalidResponse();
+  return { status: response.status, value: readValue(response.value) };
+};
+
+/** A message's fields without its `$typeName`. */
+const fieldsOf = <M extends { readonly $typeName: string }>(
+  message: M,
+): Omit<M, '$typeName'> => {
+  const { $typeName: _typeName, ...fields } = message;
+  return fields;
+};
+
+/** `ThreadGit` as today's summary: an absent `upstream` or `operation` is `null`. */
+const threadGitOf = (message: ThreadGitMessage): unknown =>
+  message.repo
+    ? {
+        ...fieldsOf(message),
+        upstream: message.upstream ?? null,
+        operation: message.operation ?? null,
+        dirty:
+          message.dirty === undefined ? undefined : fieldsOf(message.dirty),
+      }
+    : { repo: false };
+
+/** `Branches` as today's list. */
+const branchesOf = (message: BranchesMessage): unknown => ({
+  branches: message.branches.map(fieldsOf),
+  ...(message.blocked === undefined ? {} : { blocked: message.blocked }),
+});
+
+/** A read's `path` when present. */
+const readPathOf = (read: { readonly path?: string }) =>
+  read.path === undefined ? {} : { path: read.path };
+
+/**
+ * `git.commands/v1` as today's answers over `CommandsService`'s client: each
+ * message read back to the shape the host's codec wrote it from (the
+ * readers above check it); a status outside the contract stays as sent.
+ */
+const commandsOf = (
+  client: Pick<
+    Client<typeof CommandsService>,
+    'status' | 'branches' | 'switchBranch' | 'discard' | 'changes' | 'fileDiff'
+  >,
+): GitCalls =>
+  ({
+    status: async (threadId) =>
+      outcomeOf(await client.status({ threadId }), threadGitOf),
+    branches: async (threadId) =>
+      outcomeOf(await client.branches({ threadId }), branchesOf),
+    switchBranch: async (input) => {
+      const response = await client.switchBranch(input);
+      return response.status === 'refused'
+        ? { status: response.status, message: response.message ?? '' }
+        : outcomeOf(response, branchesOf);
+    },
+    discard: async ({ threadId, cwd, repository, paths }) => {
+      const response = await client.discard({
+        threadId,
+        cwd,
+        repository,
+        ...(paths === undefined ? { all: true } : { paths: [...paths] }),
+      });
+      switch (response.status) {
+        case 'refused':
+          return { status: response.status, message: response.message ?? '' };
+        case 'failed':
+          return {
+            status: response.status,
+            message: response.message ?? '',
+            discarded: [...response.discarded],
+          };
+        default:
+          return outcomeOf(response, (value) => ({
+            discarded: [...value.discarded],
+          }));
+      }
+    },
+    changes: async (input) =>
+      outcomeOf(await client.changes(input), (read) =>
+        read.status === 'read'
+          ? {
+              status: read.status,
+              ...readPathOf(read),
+              repositories: read.repositories.map((repository) => ({
+                ...fieldsOf(repository),
+                changes: repository.changes.map(fieldsOf),
+              })),
+            }
+          : { status: read.status },
+      ),
+    fileDiff: async (input) =>
+      outcomeOf(await client.fileDiff(input), (read) =>
+        read.status === 'read'
+          ? {
+              status: read.status,
+              diff: read.diff === undefined ? undefined : fieldsOf(read.diff),
+            }
+          : { status: read.status },
+      ),
+  }) as GitCalls;
+
+/**
+ * The calls bound to a part's services: `CommandsService` over Connect,
+ * scoped to the call's Project or Thread.
+ */
 export const gitApiOf = (services: Services): GitApi =>
-  createGitApi((scope) => services.use(GitCommandsV1, scope));
+  createGitApi((scope) =>
+    commandsOf((services as ClientServices).use(CommandsService, scope)),
+  );

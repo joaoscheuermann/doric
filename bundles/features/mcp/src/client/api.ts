@@ -1,32 +1,36 @@
 // The MCP part's host adapter: the only code that calls `mcp/v1`,
-// `secrets/v1` and `doric.browser/v1`. Every `mcp/v1` call is bound to the
-// scope of the Project it is about (`services.use(McpV1, { projectId })`),
-// which is what the host reads; a call is never made without one.
+// `secrets/v1` and `doric.browser/v1`. From slice S65c `mcp/v1` and
+// `secrets/v1` are their generated `McpService` and `SecretsService` clients
+// over Connect, and a failure is its Doric error (`fromConnectError`);
+// `doric.browser/v1` stays on the envelope. Every `mcp/v1` call is bound to
+// the scope of the Project it is about (`services.use(McpService,
+// { projectId })`), which is what the host reads; a call is never made
+// without one.
 //
 // The watch follows one Project's servers. Every (re)subscribe delivers the
-// whole list, which replaces the pane's rows. A dropped connection
-// (`disconnected`, `unavailable`) or a lost host generation
-// (`generation_lost`) reports nothing and subscribes again, as the layout's
-// Project watch does: when the connection reports `connected`, or after one
-// second when it never went down. Any other failure ends the watch with
-// `mcpWatchFailed`.
+// whole list, which replaces the pane's rows. `Watch` is resumable, so the
+// SDK reopens it after a lost host generation. A dropped connection
+// (`disconnected`, `unavailable`) reports nothing and subscribes again, as
+// the layout's Project watch does: when the connection reports `connected`,
+// or after one second when it never went down. Any other failure ends the
+// watch with `mcpWatchFailed`.
 
+import { ConnectError } from '@connectrpc/connect';
 import {
+  type ClientServices,
   type CredentialDescription,
   type Disposable,
   DoricBrowserV1,
   DoricConnectionV1,
+  fromConnectError,
   isContractError,
-  SecretsV1,
   type Services,
-  type StreamObserver,
 } from 'bundle/contracts';
+import { SecretsService } from 'bundle/contracts/gen/doric/secrets/v1/secrets_pb.js';
 
-import {
-  type McpServerInput,
-  type McpServerView,
-  McpV1,
-} from '../contracts/index.js';
+import { McpService } from '../contracts/gen/doric/mcp/v1/mcp_pb.js';
+import type { McpServerInput, McpServerView } from '../contracts/index.js';
+import { credentialOf, serverInputMessageOf, serverViewOf } from './codec.js';
 
 /** The message a watch that failed for good shows in the pane. */
 const mcpWatchFailed = "The Project's MCP servers could not be read.";
@@ -78,13 +82,27 @@ export interface McpApi {
   watch(projectId: string, handlers: McpWatchHandlers): Disposable;
 }
 
+/** A Connect failure as its Doric error (`fromConnectError`); any other error unchanged. */
+const contractError = (error: unknown): unknown =>
+  error instanceof ConnectError ? fromConnectError(error) : error;
+
+/** Runs a host call; a failure is thrown as its Doric error. */
+const reach = async <T>(call: () => Promise<T>): Promise<T> => {
+  try {
+    return await call();
+  } catch (error) {
+    throw contractError(error);
+  }
+};
+
 /** A stream that ended this way comes back by subscribing again. */
 const recoverable = (error: unknown): boolean =>
   isContractError(error) &&
-  ['disconnected', 'unavailable', 'generation_lost'].includes(error.code);
+  ['disconnected', 'unavailable'].includes(error.code);
 
 export const createMcpApi = (services: Services): McpApi => {
-  const mcp = (projectId: string) => services.use(McpV1, { projectId });
+  const client = services as ClientServices;
+  const mcp = (projectId: string) => client.use(McpService, { projectId });
 
   const watch = (projectId: string, handlers: McpWatchHandlers): Disposable => {
     let active = true;
@@ -103,6 +121,7 @@ export const createMcpApi = (services: Services): McpApi => {
       clearWaits();
       if (!active) return;
       let ended = false;
+      const controller = new AbortController();
 
       const end = (error: unknown): void => {
         if (!active || ended) return;
@@ -111,20 +130,23 @@ export const createMcpApi = (services: Services): McpApi => {
         if (recoverable(error)) waitForConnection();
         else if (error !== undefined) handlers.failed(mcpWatchFailed);
       };
-      const observer: StreamObserver<readonly McpServerView[]> = {
-        next: (servers) => {
-          if (active && !ended) handlers.servers(servers);
-        },
-        end,
-      };
 
-      try {
-        const opened = mcp(projectId).watch(observer);
-        if (ended || !active) opened.dispose();
-        else stream = opened;
-      } catch (error) {
-        end(error);
-      }
+      stream = { dispose: () => controller.abort() };
+      void (async () => {
+        try {
+          for await (const { servers } of mcp(projectId).watch(
+            {},
+            { signal: controller.signal },
+          )) {
+            if (!active || ended) return;
+            handlers.servers(servers.map(serverViewOf));
+          }
+          end(undefined);
+        } catch (error) {
+          if (controller.signal.aborted) return;
+          end(contractError(error));
+        }
+      })();
     };
 
     const waitForConnection = (): void => {
@@ -154,18 +176,54 @@ export const createMcpApi = (services: Services): McpApi => {
   };
 
   return {
-    create: (projectId, input) => mcp(projectId).create(input),
-    update: (projectId, id, input) => mcp(projectId).update({ ...input, id }),
-    remove: (projectId, id) => mcp(projectId).remove({ id }),
-    signIn: async (projectId, id) => (await mcp(projectId).signIn({ id })).url,
-    finishSignIn: (projectId, id) => mcp(projectId).finishSignIn({ id }),
+    create: (projectId, input) =>
+      reach(async () =>
+        serverViewOf(
+          (
+            await mcp(projectId).create({
+              mcpServerInput: serverInputMessageOf(input),
+            })
+          ).mcpServerView,
+        ),
+      ),
+    update: (projectId, id, input) =>
+      reach(async () =>
+        serverViewOf(
+          (
+            await mcp(projectId).update({
+              id,
+              mcpServerInput: serverInputMessageOf(input),
+            })
+          ).mcpServerView,
+        ),
+      ),
+    remove: (projectId, id) =>
+      reach(async () => {
+        await mcp(projectId).remove({ id });
+      }),
+    signIn: (projectId, id) =>
+      reach(async () => (await mcp(projectId).signIn({ id })).url),
+    finishSignIn: (projectId, id) =>
+      reach(async () =>
+        serverViewOf((await mcp(projectId).finishSignIn({ id })).mcpServerView),
+      ),
     openBrowser: (url) => services.use(DoricBrowserV1).open(url),
-    credentials: async () =>
-      (await services.use(SecretsV1).list()).filter(
-        (credential) => credential.kind !== MCP_TOKEN_KIND,
+    credentials: () =>
+      reach(async () =>
+        (await client.use(SecretsService).list({})).credentials
+          .map(credentialOf)
+          .filter((credential) => credential.kind !== MCP_TOKEN_KIND),
       ),
     createCredential: ({ name, secret }) =>
-      services.use(SecretsV1).create({ kind: API_TOKEN_KIND, name, secret }),
+      reach(async () =>
+        credentialOf(
+          (
+            await client
+              .use(SecretsService)
+              .create({ kind: API_TOKEN_KIND, name, secret })
+          ).credentialDescription,
+        ),
+      ),
     watch,
   };
 };

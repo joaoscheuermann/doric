@@ -1,9 +1,12 @@
 // One real settings window in this process: a happy-dom window as the
 // globals, the window platform of `desktop/client`, the core's client part
 // and the settings client part exactly as their builds ship them. The
-// boundaries faked are the preload API (`window.doric.desktop`) and, behind
-// it, the host contracts the bridge reaches: a test answers them as the host
-// would and reads what they were asked.
+// boundaries faked are the preload API (`window.doric.desktop`) with the
+// bridge's envelope behind it, and the window's Connect path
+// (`window.doric.connect`, S64) with the host's `HostConfigService`,
+// `ModelsService`, `ToolsService` and `SecretsService` behind it
+// (`host-connect.ts`, slice S65c): a test answers them as the host would and
+// reads what they were asked.
 
 import { readFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
@@ -30,6 +33,10 @@ import {
 } from 'desktop/client';
 import { Window } from 'happy-dom';
 
+import { type HostAnswer, serveHostConnect } from './host-connect.js';
+
+export type { HostAnswer } from './host-connect.js';
+
 const here = dirname(fileURLToPath(import.meta.url));
 const SETTINGS_DIST = resolve(here, '../../../../dist');
 const CORE_DIST = resolve(
@@ -40,17 +47,21 @@ const CORE_DIST = resolve(
 const readJson = async (path: string): Promise<unknown> =>
   JSON.parse(await readFile(path, 'utf8')) as unknown;
 
-/** What the host answers for one `<contract>.<method>`. */
-export type HostAnswer = (input: unknown) => unknown;
+/**
+ * The host contracts the settings part reaches over Connect (slice S65c),
+ * served by `host-connect.ts`, with the bundle that provides each.
+ */
+const connectContracts: Readonly<Record<string, string>> = {
+  'host-config/v1': 'host',
+  'models/v1': 'core',
+  'tools/v1': 'core',
+  'secrets/v1': 'core',
+};
 
-/** The host contracts the settings part requires, with their call shapes. */
+/** The host contracts still routed over the envelope, with their call shapes. */
 const hostContracts: Readonly<
   Record<string, Readonly<Record<string, number | null>>>
 > = {
-  'host-config/v1': { current: 0, replace: null },
-  'models/v1': { kinds: 0, kind: 1, catalog: null, icons: null },
-  'tools/v1': { catalog: 0 },
-  'secrets/v1': { list: 0, create: null, update: 2, delete: null },
   // A Thread's provider, model and effort, set from the footer picker.
   'runtime.threads/v1': { setThreadExecution: null },
 };
@@ -206,7 +217,10 @@ let imports = 0;
 export interface SettingsWindow {
   readonly window: Window;
   readonly document: Document;
-  /** Bridge calls of one `<contract>.<method>`, in order. */
+  /**
+   * Host calls of one `<contract>.<method>`, in order: the bridge's, and the
+   * Connect calls as the envelope named them (`host-connect.ts`).
+   */
   received(method: string): readonly BridgeCallEnvelope[];
   /** Main asks the window to close (one phase). */
   requestClose(request: CloseRequest): Promise<CloseAnswer | undefined>;
@@ -382,6 +396,14 @@ export const openSettingsWindow = async (input: {
       ...(await coreRemote(coreManifest, coreDescriptor)),
       ...hostRemote(absent),
     ],
+    hostProviders: Object.fromEntries(
+      Object.entries(connectContracts)
+        .filter(([id]) => !absent.has(id))
+        .map(([id, bundleId]) => [
+          id,
+          { bundleId, version: hostContractVersion(id) },
+        ]),
+    ),
     hostId: 'host-1',
     storageGeneration: 1,
   };
@@ -469,6 +491,16 @@ export const openSettingsWindow = async (input: {
         }),
   };
 
+  // The host behind `doric:connect`, which `bootstrapWindow` reads from
+  // `window.doric.connect` as the preload exposes it.
+  const connect = serveHostConnect({ host: input.host, calls, absent });
+  const previousDoric = Object.getOwnPropertyDescriptor(globalThis, 'doric');
+  Object.defineProperty(globalThis, 'doric', {
+    configurable: true,
+    writable: true,
+    value: { connect },
+  });
+
   await bootstrapWindow({
     desktop,
     document: window.document as unknown as Document,
@@ -514,6 +546,11 @@ export const openSettingsWindow = async (input: {
         } else {
           Object.defineProperty(globalThis, name, descriptor);
         }
+      }
+      if (previousDoric === undefined) {
+        delete globals.doric;
+      } else {
+        Object.defineProperty(globalThis, 'doric', previousDoric);
       }
     },
   };

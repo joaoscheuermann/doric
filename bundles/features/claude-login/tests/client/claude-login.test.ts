@@ -2,8 +2,8 @@
 // out of `settings` (bundle isolation 6(a)): `claude-login-field` is the item
 // of `settings.provider.field` for the `claude` kind's `token` field. It is
 // mounted alone here with the `view` settings sets on it and fake services
-// (`claude.login/v1`, `doric.browser/v1`): no settings window and no settings
-// part. A finished sign-in answers the page through the bubbling, composed
+// (`claude.login/v1` over Connect as `LoginService`, slice S65c, and
+// `doric.browser/v1`): no settings window and no settings part. A finished sign-in answers the page through the bubbling, composed
 // DOM event `settings-provider-field`; the page writes the value into its
 // draft. The messages the page's Alert carried move into the row (O2), keyed
 // by `view.problem`, and the signed-in description names `view.label` (O1).
@@ -18,6 +18,8 @@ import {
 } from 'bundle/contracts';
 
 import type { ClaudeLoginFieldProps } from '../../src/client/claude-login-field.js';
+import { LoginService } from '../../src/contracts/gen/doric/claude/login/v1/login_pb.js';
+import { connectFailure, fakeHostClients } from './support/connect.js';
 import {
   installWindow,
   type MountedElement,
@@ -51,8 +53,9 @@ const authorizeUrl = 'https://claude.com/cai/oauth/authorize?state=s';
 const emptyView: ProviderFieldView = { kind: 'claude', field: 'token' };
 
 /**
- * The host behind `claude.login/v1` and the window's `doric.browser/v1`:
- * `finish` answers with `finish`, and records the calls it was given.
+ * The host behind `claude.login/v1` (its `LoginService` over Connect) and
+ * the window's `doric.browser/v1`: `finish` answers with `finish`, given the
+ * call's signal, and records the calls it was given.
  */
 const signInServices = (
   finish: (call: CallArg | undefined) => Promise<CredentialDescription>,
@@ -60,23 +63,33 @@ const signInServices = (
 ) => {
   const opened: string[] = [];
   const finishes: (CallArg | undefined)[] = [];
-  const { services } = fakeServices({
-    'claude.login/v1': {
+  const { hostClients } = fakeHostClients((router) => {
+    router.service(LoginService, {
       start: async () => ({ url: authorizeUrl }),
-      finish: (call?: CallArg) => {
+      finish: async (_request, context) => {
+        const call: CallArg = { signal: context.signal };
         finishes.push(call);
-        return finish(call);
-      },
-    },
-    'doric.browser/v1': {
-      open: async (url: string) => {
-        opened.push(url);
-        if (options.browserFails === true) {
-          throw new ContractError('unavailable', 'No browser came up.');
+        try {
+          return { credentialDescription: await finish(call) };
+        } catch (error) {
+          throw connectFailure(error);
         }
       },
-    },
+    });
   });
+  const { services } = fakeServices(
+    {
+      'doric.browser/v1': {
+        open: async (url: string) => {
+          opened.push(url);
+          if (options.browserFails === true) {
+            throw new ContractError('unavailable', 'No browser came up.');
+          }
+        },
+      },
+    },
+    { hostClients },
+  );
   return { services, opened, finishes };
 };
 

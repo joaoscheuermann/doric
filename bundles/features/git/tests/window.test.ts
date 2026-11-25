@@ -3,23 +3,28 @@
 // and refusals are data, `pending` carries `Retry-After: 1`, a Thread without
 // a runtime or a lease is the 200 body, a failed call is the route's
 // sentence), and the changes read the Changes view and the files tree share.
+// From slice S65c the window reaches `git.commands/v1` as the generated
+// `CommandsService` over Connect (`support/commands-connect.ts`): the calls
+// below go through the client part's `gitApiOf(services)`, and the host
+// behind it is today's `git.commands/v1` written with the host's codec.
 
 import assert from 'node:assert/strict';
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { describe, test } from 'node:test';
 
-import { ContractError, defineMethod, defineService } from 'bundle/contracts';
-import { createTestServices } from 'bundle/testing';
+import { ContractError } from 'bundle/contracts';
 
-import { createGitApi, gitMessages } from '../src/client/api/git-api.js';
+import { gitApiOf, gitMessages } from '../src/client/api/git-api.js';
 import { createGitStore } from '../src/client/changes/store.js';
-import {
-  type ChangesObservation,
-  GitCommandsV1,
-  gitMethods,
-} from '../src/contracts/index.js';
+import type { ChangesObservation, Git } from '../src/contracts/index.js';
+import { commandsOver, gitWindow } from './support/commands-connect.js';
+import { connectFailure } from './support/connect.js';
 import { fakeRuntime, gitOver, repository } from './support/runtime.js';
+
+/** The client part's calls over Connect to today's `git` behind the host. */
+const apiOver = (git: (scope: { readonly projectId?: string }) => Git) =>
+  gitApiOf(gitWindow(commandsOver(git)).services);
 
 const dirty = async (t: Parameters<typeof repository>[0]) => {
   const repo = await repository(t);
@@ -36,7 +41,7 @@ describe('the window over git.commands/v1', () => {
     const runtime = fakeRuntime({ cwd: repo.root });
     const { git, dispose } = gitOver(repo.sandbox, runtime);
     t.after(dispose);
-    const api = createGitApi(git);
+    const api = apiOver(git);
 
     const changes = await api.changes('project-1');
     assert.equal(changes.status, 'ready');
@@ -75,7 +80,7 @@ describe('the window over git.commands/v1', () => {
     const runtime = fakeRuntime({ cwd: repo.root });
     const { git, dispose } = gitOver(repo.sandbox, runtime);
     t.after(dispose);
-    const api = createGitApi(git);
+    const api = apiOver(git);
 
     const summary = await api.git('thread-1');
     assert.equal(summary.repo && summary.head, 'main');
@@ -125,7 +130,7 @@ describe('the window over git.commands/v1', () => {
     );
     t.after(dispose);
     await assert.rejects(
-      createGitApi(git).switchBranch('thread-1', 'gone', repo.root),
+      apiOver(git).switchBranch('thread-1', 'gone', repo.root),
       { message: 'This local branch no longer exists.' },
     );
   });
@@ -135,7 +140,7 @@ describe('the window over git.commands/v1', () => {
     const runtime = fakeRuntime({ cwd: repo.root });
     const { git, dispose } = gitOver(repo.sandbox, runtime);
     t.after(dispose);
-    const api = createGitApi(git);
+    const api = apiOver(git);
     const discard = (cwd = repo.root) =>
       api.discard({
         threadId: 'thread-1',
@@ -160,9 +165,12 @@ describe('the window over git.commands/v1', () => {
   });
 
   test('refuses what the main process refused, before calling the host', async () => {
-    const api = createGitApi(() => {
-      throw new Error('the host must not be called');
-    });
+    const window = gitWindow(
+      commandsOver(() => {
+        throw new Error('the host must not be called');
+      }),
+    );
+    const api = gitApiOf(window.services);
     await assert.rejects(api.switchBranch('thread-1', '-f', '/workspace'), {
       message: gitMessages.invalidBranch,
     });
@@ -175,27 +183,17 @@ describe('the window over git.commands/v1', () => {
     await assert.rejects(api.changes('project-1', '../up'), {
       message: gitMessages.invalidPath,
     });
+    assert.deepEqual(window.calls, [], 'The window called the host.');
   });
 
-  test('shows a lost backend and any other host failure as the REST client did', async (t) => {
+  test('shows a lost backend and any other host failure as the REST client did', async () => {
     let failure = new ContractError('unavailable', 'bridge closed');
-    const harness = createTestServices({
-      bundle: { id: 'git-window' },
-      provide: [
-        defineService(GitCommandsV1.id, {
-          changes: defineMethod({
-            ...gitMethods.changes,
-            execute: async () => {
-              throw failure;
-            },
-          }),
-        }),
-      ],
+    const window = gitWindow({
+      changes: async () => {
+        throw connectFailure(failure);
+      },
     });
-    t.after(harness.dispose);
-    const api = createGitApi((scope) =>
-      harness.services.use(GitCommandsV1, scope),
-    );
+    const api = gitApiOf(window.services);
 
     await assert.rejects(api.changes('project-1'), {
       message: 'Doric backend is unavailable.',
@@ -209,12 +207,15 @@ describe('the window over git.commands/v1', () => {
     });
   });
 
-  test('the changes read loads, answers, and stops rereading once unobserved', async (t) => {
+  // A read that never turns ready fails here rather than holding the run.
+  test('the changes read loads, answers, and stops rereading once unobserved', {
+    timeout: 20_000,
+  }, async (t) => {
     const repo = await dirty(t);
     const runtime = fakeRuntime({ cwd: repo.root });
     const { git, dispose } = gitOver(repo.sandbox, runtime);
     t.after(dispose);
-    const store = createGitStore(() => createGitApi(git));
+    const store = createGitStore(() => apiOver(git));
     t.after(() => store.dispose());
 
     const states: ChangesObservation[] = [];

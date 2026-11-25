@@ -1,6 +1,6 @@
 // The host side of the settings bundle and of chat's model mark: the core's
 // `models/v1`, `secrets/v1` and `tools/v1` and the host-config bundle's
-// `host-config/v1`, answered over the fake host as the prototype draws them
+// `host-config/v1`, answered over Connect as the prototype draws them
 // (Figma `99:8035`'s footer "anthropic/claude-sonnet-4.5 · Medium" and its
 // ✳︎ agent mark; the settings window's providers OpenRouter, OpenAI and a
 // local endpoint, `35:8964`). Shapes follow the contracts' schemas and the
@@ -9,10 +9,26 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
+import { toJson } from '@bufbuild/protobuf';
+import { ValueSchema } from '@bufbuild/protobuf/wkt';
 import type { ConnectRouter } from '@connectrpc/connect';
-import { ModelsService } from 'bundle/contracts/gen/doric/models/v1/models_pb.js';
-
-import type { FakeHost } from './harness';
+import {
+  CatalogResponseSchema,
+  KindResponseSchema,
+  KindsResponseSchema,
+  ModelsService,
+} from 'bundle/contracts/gen/doric/models/v1/models_pb.js';
+import {
+  ListResponseSchema,
+  SecretsService,
+} from 'bundle/contracts/gen/doric/secrets/v1/secrets_pb.js';
+import { ToolsService } from 'bundle/contracts/gen/doric/tools/v1/tools_pb.js';
+import {
+  CurrentResponseSchema,
+  HostConfigService,
+  ReplaceResponseSchema,
+} from 'host-config/contracts/gen/doric/host_config/v1/host_config_pb.js';
+import { encode } from 'runtime/contracts';
 
 /** The provider and model the prototype's execution picker names. */
 export const EXECUTION = {
@@ -209,10 +225,6 @@ interface IconRequest {
   readonly models: readonly string[];
 }
 
-/** A tuple's first item, or the value: the argument a wire message carries. */
-const first = (input: unknown): unknown =>
-  Array.isArray(input) ? input[0] : input;
-
 /**
  * `models/v1.icons`' answer to `requests` over `icons`: each model's own icon,
  * the provider kind's own, or `null` for none, and the SVG of each name used.
@@ -256,16 +268,47 @@ const iconAnswers = (
 };
 
 /**
- * `ModelsService.Icons` over Connect (slice S65a: chat's agent mark reads
- * `models/v1` through the generated client): `iconAnswers`, a model without
- * an icon as `""`. The settings window's other `models/v1` calls stay on
- * the Socket.IO fake until its slice.
+ * The settings window's host contracts over Connect, as the core and
+ * host-config serve them (`HostConfigService`, `ModelsService`,
+ * `ToolsService.Catalog`, `SecretsService.List`; slice S65c), with chat's
+ * agent mark (`ModelsService.Icons`, slice S65a): the fixtures above,
+ * written as the wire's messages with the host's codec
+ * (`encode`), a model without an icon as `""`. A replaced configuration is
+ * kept, so later reads answer it. `record` hears each method called,
+ * `<Service>/<Method>`.
  */
-export const serveSettingsConnect = (router: ConnectRouter): void => {
+export const serveSettingsConnect = (
+  router: ConnectRouter,
+  record: (method: string) => void = () => undefined,
+): void => {
   const icons = lobehubIcons();
+  let stored: unknown = STORED;
 
   router.service(ModelsService, {
+    kinds: () => {
+      record('ModelsService/Kinds');
+      return encode(KindsResponseSchema, { kinds: KINDS });
+    },
+    kind: ({ id }) => {
+      record('ModelsService/Kind');
+      const kind = KINDS.find((item) => item.id === id);
+
+      return encode(
+        KindResponseSchema,
+        kind === undefined ? {} : { modelKindDescriptor: kind },
+      );
+    },
+    catalog: ({ kind }) => {
+      record('ModelsService/Catalog');
+      return encode(CatalogResponseSchema, {
+        catalogResult:
+          kind === 'openrouter'
+            ? { status: 'read', models: OPENROUTER_CATALOG }
+            : { status: 'absent' },
+      });
+    },
     icons: ({ requests }) => {
+      record('ModelsService/Icons');
       const { svgs, answers } = iconAnswers(
         icons,
         requests.map(({ providerId, kind, models }) => ({
@@ -284,44 +327,36 @@ export const serveSettingsConnect = (router: ConnectRouter): void => {
       };
     },
   });
-};
+  router.service(HostConfigService, {
+    current: () => {
+      record('HostConfigService/Current');
+      return encode(CurrentResponseSchema, { doricConfiguration: stored });
+    },
+    replace: ({ input }) => {
+      record('HostConfigService/Replace');
+      stored = {
+        configuration:
+          input === undefined ? undefined : toJson(ValueSchema, input),
+        revision: (stored as typeof STORED).revision + 1,
+        updatedAt: STORED.updatedAt,
+      };
 
-/**
- * Serves `models/v1` (kinds, catalog, icons), `host-config/v1`, `secrets/v1`
- * and `tools/v1`: what the settings window, its execution picker and chat's
- * agent mark read. A replaced configuration is kept, so later reads answer it.
- */
-export const serveSettings = (host: FakeHost): void => {
-  const icons = lobehubIcons();
-  let stored: unknown = STORED;
-
-  host.serve('models/v1', 'kinds', () => KINDS);
-  host.serve('models/v1', 'kind', (input) =>
-    KINDS.find((kind) => kind.id === first(input)),
-  );
-  host.serve('models/v1', 'catalog', (input) => {
-    const { kind } = first(input) as { kind?: string };
-
-    return kind === 'openrouter'
-      ? { status: 'read', models: OPENROUTER_CATALOG }
-      : { status: 'absent' };
+      return encode(ReplaceResponseSchema, {
+        status: 'replaced',
+        config: stored,
+      });
+    },
   });
-  host.serve('models/v1', 'icons', (input) =>
-    iconAnswers(
-      icons,
-      (first(input) as { requests: readonly IconRequest[] }).requests,
-    ),
-  );
-  host.serve('host-config/v1', 'current', () => stored);
-  host.serve('host-config/v1', 'replace', (input) => {
-    stored = {
-      configuration: first(input),
-      revision: (stored as typeof STORED).revision + 1,
-      updatedAt: STORED.updatedAt,
-    };
-
-    return { status: 'replaced', config: stored };
+  router.service(SecretsService, {
+    list: () => {
+      record('SecretsService/List');
+      return encode(ListResponseSchema, { credentials: SECRETS });
+    },
   });
-  host.serve('secrets/v1', 'list', () => SECRETS);
-  host.serve('tools/v1', 'catalog', () => []);
+  router.service(ToolsService, {
+    catalog: () => {
+      record('ToolsService/Catalog');
+      return { entries: [] };
+    },
+  });
 };

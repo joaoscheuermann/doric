@@ -6,9 +6,12 @@
 // The part is driven only through `activate`: the pane it registers names the
 // elements `ui/v1` defines, and this file mounts those elements the way the
 // layout does (the header element and the rows element of the open pane), with
-// every host contract answered by a double keyed by contract ID. What is
-// asserted is what the reader sees — roles, accessible names, text — and the
-// contract calls the window makes, with the scope it makes them in.
+// every window contract answered by a double keyed by contract ID and the
+// host contracts `mcp/v1` and `secrets/v1` answered over Connect (their
+// `McpService` and `SecretsService`, slice S65c) by a fake `HostClients`,
+// the answers written in today's shapes and converted by the host's codec.
+// What is asserted is what the reader sees — roles, accessible names, text —
+// and the contract calls the window makes, with the scope it makes them in.
 
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -21,13 +24,27 @@ import {
   type CredentialDescription,
   type Services,
 } from 'bundle/contracts';
+import {
+  type CreateRequest as CreateSecretRequest,
+  SecretsService,
+} from 'bundle/contracts/gen/doric/secrets/v1/secrets_pb.js';
 import type { ReactElementInstance } from 'desktop/ui';
 import { Window } from 'happy-dom';
 
+import { McpService } from '../../src/contracts/gen/doric/mcp/v1/mcp_pb.js';
 import type {
   McpServerInput,
   McpServerView,
 } from '../../src/contracts/index.js';
+import { serverInputOf, serverViewMessageOf } from '../../src/host/codec.js';
+import {
+  connectFailure,
+  fakeHostClients,
+  isDescService,
+  type Opening,
+  scopeOf,
+  streamOf,
+} from './support/connect.js';
 
 const window = new Window({ url: 'http://localhost/' });
 const globals = globalThis as unknown as Record<string, unknown>;
@@ -195,10 +212,15 @@ interface Recorded {
   readonly input?: unknown;
 }
 
+/**
+ * One opening of `McpService.Watch`: its scope, an observer that sends the
+ * servers (today's views, written by the host's codec) or ends the stream
+ * with an error, and whether the window cancelled it.
+ */
 interface WatchRecord {
   readonly scope: CallScope | undefined;
   readonly listener: unknown;
-  disposed: boolean;
+  readonly disposed: boolean;
 }
 
 type Answer = (input: unknown) => Promise<unknown>;
@@ -220,7 +242,6 @@ const createHost = (options: HostOptions = {}) => {
   const panes: unknown[] = [];
   const defined = new Map<string, new () => ReactElementInstance>();
   const calls: Recorded[] = [];
-  const watches: WatchRecord[] = [];
   const secretsCreated: unknown[] = [];
   /** The sign-in's steps across contracts, in the order the window took them. */
   const steps: string[] = [];
@@ -304,21 +325,15 @@ const createHost = (options: HostOptions = {}) => {
       remove: record('remove'),
       signIn: record('signIn'),
       finishSignIn: record('finishSignIn'),
-      watch: (listener: unknown) => {
-        const watch: WatchRecord = { scope, listener, disposed: false };
-        watches.push(watch);
-        return {
-          dispose: () => {
-            watch.disposed = true;
-          },
-        };
-      },
     };
   };
 
   const secrets = {
     list: async () => credentials,
-    create: async (input: { readonly name: string; readonly kind: string }) => {
+    create: async (input: {
+      readonly name: string;
+      readonly kind: string;
+    }): Promise<unknown> => {
       secretsCreated.push(input);
       if (options.createSecret !== undefined) {
         return options.createSecret(input);
@@ -346,7 +361,7 @@ const createHost = (options: HostOptions = {}) => {
     subscribe: () => ({ dispose: () => undefined }),
   };
 
-  const apiOf = (id: string, scope: CallScope | undefined): unknown => {
+  const apiOf = (id: string): unknown => {
     switch (id) {
       case 'workspace.selection/v1':
         return selection;
@@ -354,10 +369,6 @@ const createHost = (options: HostOptions = {}) => {
         return stack;
       case 'ui/v1':
         return ui;
-      case 'mcp/v1':
-        return mcpFor(scope);
-      case 'secrets/v1':
-        return secrets;
       case 'doric.browser/v1':
         return browser;
       case 'doric.connection/v1':
@@ -370,10 +381,116 @@ const createHost = (options: HostOptions = {}) => {
   const idOf = (contract: unknown): string =>
     (contract as { readonly id?: string }).id ?? '';
 
+  /** Runs `answer`; a failure fails the call as the host sends it. */
+  const answered = async <T>(answer: () => Promise<T>): Promise<T> => {
+    try {
+      return await answer();
+    } catch (error) {
+      throw connectFailure(error);
+    }
+  };
+
+  const watchStream = streamOf<unknown, unknown>();
+  const watchRecords = new WeakMap<Opening<unknown, unknown>, WatchRecord>();
+  const watchOf = (opening: Opening<unknown, unknown>): WatchRecord => {
+    let watch = watchRecords.get(opening);
+    if (watch === undefined) {
+      watch = {
+        scope: opening.scope,
+        listener: {
+          next: (servers: readonly McpServerView[]) =>
+            opening.push({ servers: servers.map(serverViewMessageOf) }),
+          end: (error?: unknown) =>
+            opening.end(
+              error === undefined ? undefined : connectFailure(error),
+            ),
+        },
+        get disposed() {
+          return opening.closed;
+        },
+      };
+      watchRecords.set(opening, watch);
+    }
+    return watch;
+  };
+
+  // `mcp/v1` and `secrets/v1` over Connect: each request read back as
+  // today's input (`serverInputOf`), each answer written as the wire's
+  // (`serverViewMessageOf`).
+  const { hostClients } = fakeHostClients((router) => {
+    router.service(McpService, {
+      list: (_request, context) =>
+        answered(async () => {
+          await mcpFor(scopeOf(context)).list();
+          return { servers: [] };
+        }),
+      create: ({ mcpServerInput }, context) =>
+        answered(async () => ({
+          mcpServerView: serverViewMessageOf(
+            (await mcpFor(scopeOf(context)).create(
+              serverInputOf(mcpServerInput, 'Create'),
+            )) as McpServerView,
+          ),
+        })),
+      update: ({ id, mcpServerInput }, context) =>
+        answered(async () => ({
+          mcpServerView: serverViewMessageOf(
+            (await mcpFor(scopeOf(context)).update({
+              id,
+              ...serverInputOf(mcpServerInput, 'Update'),
+            })) as McpServerView,
+          ),
+        })),
+      remove: ({ id }, context) =>
+        answered(async () => {
+          await mcpFor(scopeOf(context)).remove({ id });
+          return {};
+        }),
+      signIn: ({ id }, context) =>
+        answered(
+          async () =>
+            (await mcpFor(scopeOf(context)).signIn({ id })) as {
+              readonly url: string;
+            },
+        ),
+      finishSignIn: ({ id }, context) =>
+        answered(async () => ({
+          mcpServerView: serverViewMessageOf(
+            (await mcpFor(scopeOf(context)).finishSignIn({
+              id,
+            })) as McpServerView,
+          ),
+        })),
+      watch: (request, context) =>
+        watchStream.serve(request, context) as AsyncIterable<never>,
+    });
+    router.service(SecretsService, {
+      list: () =>
+        answered(async () => ({ credentials: [...(await secrets.list())] })),
+      create: (request: CreateSecretRequest) =>
+        answered(async () => ({
+          credentialDescription: (await secrets.create({
+            kind: request.kind,
+            name: request.name,
+            ...(request.username === undefined
+              ? {}
+              : { username: request.username }),
+            ...(request.email === undefined ? {} : { email: request.email }),
+            ...(request.secret === undefined ? {} : { secret: request.secret }),
+          })) as CredentialDescription,
+        })),
+    });
+  });
+
   const services = {
     provide: () => ({ dispose: () => undefined }),
     use: (contract: unknown, scope?: CallScope) => {
-      const api = apiOf(idOf(contract), scope);
+      if (isDescService(contract)) {
+        return hostClients
+          .part('mcp')
+          .use(contract, scope === undefined ? undefined : { scope });
+      }
+      const api = apiOf(idOf(contract));
       if (api === undefined) {
         throw new ContractError(
           'unavailable',
@@ -386,7 +503,7 @@ const createHost = (options: HostOptions = {}) => {
       contract: unknown,
       callback: (api: unknown, provider: unknown) => unknown,
     ) => {
-      const api = apiOf(idOf(contract), undefined);
+      const api = apiOf(idOf(contract));
       if (api === undefined) return { dispose: () => undefined };
       const cleanup = callback(api, { bundleId: 'probe', version: '1.0.0' });
       return {
@@ -413,7 +530,10 @@ const createHost = (options: HostOptions = {}) => {
     select,
     services,
     steps,
-    watches,
+    /** Every `McpService.Watch` opening, in order. */
+    get watches(): readonly WatchRecord[] {
+      return watchStream.openings.map(watchOf);
+    },
   };
 };
 

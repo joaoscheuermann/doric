@@ -4,7 +4,7 @@
 // with the bubbling, composed DOM event `settings-provider-field`, carrying the
 // stored credential's id, which the page writes into the field.
 
-import type { Services } from 'bundle/contracts';
+import type { ClientServices, Services } from 'bundle/contracts';
 import { Button } from 'desktop/ui/button';
 import {
   Field,
@@ -42,7 +42,10 @@ function ClaudeLoginField({
   services,
 }: ClaudeLoginFieldProps & { readonly services: Services }) {
   const root = useRef<HTMLDivElement>(null);
-  const api = useMemo(() => createClaudeLoginApi(services), [services]);
+  const api = useMemo(
+    () => createClaudeLoginApi(services as ClientServices),
+    [services],
+  );
   const login = useClaudeLogin(api, (credential) => {
     root.current?.dispatchEvent(
       new CustomEvent('settings-provider-field', {

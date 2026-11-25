@@ -4,18 +4,19 @@
 // call (`runtime/v2`, `runtime.threads/v1`, `resources/v1`, and through
 // `workspace-content` `files/v1` and `git.commands/v1`).
 
+import { DiscardResponseSchema } from 'git/contracts/gen/doric/git/commands/v1/commands_pb.js';
+
 import type { FakeHost } from './harness';
-import {
-  EXECUTION,
-  serveSettings,
-  serveSettingsConnect,
-} from './settings-host';
+import { EXECUTION, serveSettingsConnect } from './settings-host';
 import { serveWorkspaceConnect } from './workspace-connect';
 import {
   CHANGED_FILE,
   CWD,
   conversation,
   type GitCalls,
+  gitProto,
+  gitRoutes,
+  serveGit,
   serveSandbox,
   type ThreadEventRow,
 } from './workspace-content';
@@ -444,15 +445,22 @@ export const serveWorkspace = (host: FakeHost): GitCalls => {
   }));
 
   serveWorkspaceWrites(host);
-  serveSettings(host);
-  // The window's Connect calls (S65a: the runtime's records and the chat):
-  // the same Projects, Threads and logs, and chat's agent mark. The handlers
-  // above stay for the client parts not yet on Connect (S65b–S65d).
+  const git = serveSandbox(host);
+  // The window's Connect calls (S65a: the runtime's records and the chat;
+  // S65c: the settings' host contracts and `git.commands/v1`): the same
+  // Projects, Threads and logs, chat's agent mark, the settings and the Git
+  // state. The handlers above stay for the client parts not yet on Connect
+  // (S65d).
   host.forwardConnect(
-    serveWorkspaceConnect({ routes: serveSettingsConnect }).forward,
+    serveWorkspaceConnect({
+      routes: (router) => {
+        serveSettingsConnect(router);
+        gitRoutes(host)(router);
+      },
+    }).forward,
   );
 
-  return serveSandbox(host);
+  return git;
 };
 
 /** The name New file and New folder answer `exists` for (A9, A10). */
@@ -489,14 +497,19 @@ const serveWorkspaceWrites = (host: FakeHost): void => {
 
   host.serve('files/v1', 'createFile', create);
   host.serve('files/v1', 'createDirectory', create);
-  host.serve('git.commands/v1', 'discard', (input) => {
-    const { paths } = first(input) as { paths?: readonly string[] };
-
-    return paths?.includes(REFUSED_DISCARD)
-      ? {
-          status: 'refused',
-          message: `${REFUSED_DISCARD} has a merge conflict. Resolve it before discarding.`,
-        }
-      : { status: 'ready', value: { discarded: paths ?? [CHANGED_FILE] } };
+  serveGit(host, {
+    discard: ({ paths, all }) =>
+      gitProto(
+        DiscardResponseSchema,
+        !all && paths.includes(REFUSED_DISCARD)
+          ? {
+              status: 'refused',
+              message: `${REFUSED_DISCARD} has a merge conflict. Resolve it before discarding.`,
+            }
+          : {
+              status: 'ready',
+              value: { discarded: all ? [CHANGED_FILE] : paths },
+            },
+      ),
   });
 };

@@ -3,7 +3,21 @@
 // Git state, answered over the fake host for what the real chat, files and
 // git bundles call (`runtime.threads/v1.watchThread`, `files/v1`,
 // `git.commands/v1`). Shapes follow the dev fake host (`scripts/fake-host/`)
-// and the bundles' contracts.
+// and the bundles' contracts. `git.commands/v1` is the window's
+// `CommandsService` over Connect (slice S65c): `gitRoutes(host)` registers
+// it on the router main's `doric:connect` relay forwards to.
+
+import type { ConnectRouter, ServiceImpl } from '@connectrpc/connect';
+import {
+  BranchesResponseSchema,
+  ChangesResponseSchema,
+  CommandsService,
+  DiffResponseSchema,
+  FileDiffResponseSchema,
+  StatusResponseSchema,
+  SwitchBranchResponseSchema,
+} from 'git/contracts/gen/doric/git/commands/v1/commands_pb.js';
+import { encode } from 'runtime/contracts';
 
 import type { FakeHost } from './harness';
 import { EXECUTION } from './settings-host';
@@ -212,14 +226,47 @@ export const conversation = (input: {
   }));
 };
 
+/**
+ * Today's JSON as the proto message `schema` (the host's codec: `null`
+ * leaves a field unset). The answer is untyped: this CommonJS project sees
+ * `@bufbuild/protobuf`'s CJS types, `runtime/contracts` its ESM ones.
+ */
+export const gitProto = (schema: object, value: unknown): never =>
+  encode(schema as unknown as Parameters<typeof encode>[0], value) as never;
+
+/** The `CommandsService` handlers of each host, as its fakes added them. */
+const gitHandlers = new WeakMap<
+  FakeHost,
+  Partial<ServiceImpl<typeof CommandsService>>
+>();
+
+/** Adds `handlers` to the `CommandsService` of `host`. */
+export const serveGit = (
+  host: FakeHost,
+  handlers: Partial<ServiceImpl<typeof CommandsService>>,
+): void => {
+  gitHandlers.set(host, { ...gitHandlers.get(host), ...handlers });
+};
+
+/**
+ * Registers the `CommandsService` handlers `serveGit` added for `host` on
+ * `router` (none: nothing is registered).
+ */
+export const gitRoutes =
+  (host: FakeHost) =>
+  (router: ConnectRouter): void => {
+    const handlers = gitHandlers.get(host);
+    if (handlers !== undefined) router.service(CommandsService, handlers);
+  };
+
 /** The `git.commands/v1` calls the window made, by method. */
 export interface GitCalls {
   readonly switches: { branch: string; cwd: string; threadId: string }[];
 }
 
 /**
- * Serves the sandbox reads (`files/v1`) and the Git state (`git.commands/v1`)
- * of the workspace: one repository at the root, `payment-form.tsx` modified,
+ * Serves the sandbox reads (`files/v1`) and the Git state (`git.commands/v1`,
+ * over Connect through `gitRoutes(host)`) of the workspace: one repository at the root, `payment-form.tsx` modified,
  * `BRANCH` checked out. `switchBranch` checks out the branch it names, so
  * every later read answers it.
  */
@@ -286,68 +333,74 @@ export const serveSandbox = (host: FakeHost): GitCalls => {
     }),
   );
 
-  host.serve('git.commands/v1', 'status', () =>
-    ready({
-      repo: true,
-      root: CWD,
-      head,
-      detached: false,
-      unborn: false,
-      upstream: `origin/${head}`,
-      ahead: 0,
-      behind: 0,
-      dirty: { staged: 0, modified: 1, untracked: 0 },
-      conflicted: 0,
-      operation: null,
-      worktree: false,
-      shallow: false,
-      stash: 0,
-      submodules: 0,
-    }),
-  );
-  host.serve('git.commands/v1', 'branches', () => ready(branches()));
-  host.serve('git.commands/v1', 'switchBranch', (input) => {
-    const { threadId, branch, cwd } = record(input) as {
-      threadId: string;
-      branch: string;
-      cwd: string;
-    };
+  serveGit(host, {
+    status: () =>
+      gitProto(
+        StatusResponseSchema,
+        ready({
+          repo: true,
+          root: CWD,
+          head,
+          detached: false,
+          unborn: false,
+          upstream: `origin/${head}`,
+          ahead: 0,
+          behind: 0,
+          dirty: { staged: 0, modified: 1, untracked: 0 },
+          conflicted: 0,
+          operation: null,
+          worktree: false,
+          shallow: false,
+          stash: 0,
+          submodules: 0,
+        }),
+      ),
+    branches: () => gitProto(BranchesResponseSchema, ready(branches())),
+    switchBranch: ({ threadId, branch, cwd }) => {
+      calls.switches.push({ threadId, branch, cwd });
+      head = branch;
 
-    calls.switches.push({ threadId, branch, cwd });
-    head = branch;
-
-    return ready(branches());
+      return gitProto(SwitchBranchResponseSchema, ready(branches()));
+    },
+    changes: ({ path }) =>
+      gitProto(
+        ChangesResponseSchema,
+        ready({
+          status: 'read',
+          ...(path === undefined ? {} : { path }),
+          repositories: [
+            { path: '', changes: [change], added: 142, removed: 37 },
+          ],
+        }),
+      ),
+    diff: ({ path }) =>
+      gitProto(
+        DiffResponseSchema,
+        ready({
+          status: 'read',
+          ...(path === undefined ? {} : { path }),
+          repositories: [],
+        }),
+      ),
+    fileDiff: ({ repository }) =>
+      gitProto(
+        FileDiffResponseSchema,
+        ready({
+          status: 'read',
+          diff: {
+            ...change,
+            repository,
+            original: PAYMENT_FORM_SOURCE.replace(
+              'bg-primary text-primary-foreground',
+              'bg-white',
+            ),
+            modified: PAYMENT_FORM_SOURCE,
+            binary: false,
+            truncated: false,
+          },
+        }),
+      ),
   });
-  host.serve('git.commands/v1', 'changes', (input) =>
-    ready({
-      status: 'read',
-      ...(record(input).path === undefined ? {} : { path: record(input).path }),
-      repositories: [{ path: '', changes: [change], added: 142, removed: 37 }],
-    }),
-  );
-  host.serve('git.commands/v1', 'diff', (input) =>
-    ready({
-      status: 'read',
-      ...(record(input).path === undefined ? {} : { path: record(input).path }),
-      repositories: [],
-    }),
-  );
-  host.serve('git.commands/v1', 'fileDiff', (input) =>
-    ready({
-      status: 'read',
-      diff: {
-        ...change,
-        repository: (record(input).repository as string | undefined) ?? '',
-        original: PAYMENT_FORM_SOURCE.replace(
-          'bg-primary text-primary-foreground',
-          'bg-white',
-        ),
-        modified: PAYMENT_FORM_SOURCE,
-        binary: false,
-        truncated: false,
-      },
-    }),
-  );
 
   return calls;
 };

@@ -36,6 +36,12 @@
     },
     {
       "path": "../../../bundles/runtime/runtime/tsconfig.json"
+    },
+    {
+      "path": "../../../bundles/foundation/host-config/tsconfig.json"
+    },
+    {
+      "path": "../../../bundles/features/git/tsconfig.json"
     }
   ]
 }

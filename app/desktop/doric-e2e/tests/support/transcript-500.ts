@@ -20,7 +20,7 @@
 import type { FakeHost } from './harness';
 import { serveSettingsConnect } from './settings-host';
 import { serveWorkspaceConnect } from './workspace-connect';
-import type { ThreadEventRow } from './workspace-content';
+import { gitRoutes, type ThreadEventRow } from './workspace-content';
 import { THREADS, type WorkspaceThread } from './workspace-host';
 
 /** The Thread whose transcript is measured: "Accessibility audit" of Checkout redesign. */
@@ -399,7 +399,10 @@ export const serveTranscript = (host: FakeHost): void => {
     serveWorkspaceConnect({
       threads: [record],
       logs: new Map([[record.id, log]]),
-      routes: serveSettingsConnect,
+      routes: (router) => {
+        serveSettingsConnect(router);
+        gitRoutes(host)(router);
+      },
     }).forward,
   );
   host.serve('terminal/v1', 'list', () => []);

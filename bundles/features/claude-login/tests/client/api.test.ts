@@ -12,23 +12,25 @@ import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 
 import {
-  type AnyServiceRef,
   type ApiOf,
+  type ClientServices,
   ContractError,
   type CredentialDescription,
   DoricBrowserV1,
-  defineMethod,
-  defineService,
-  type Services,
 } from 'bundle/contracts';
-import { createTestServices } from 'bundle/testing';
 import { ClientError } from 'desktop/reads';
 
 import {
   type ClaudeLoginApi,
   createClaudeLoginApi,
 } from '../../src/client/api.js';
-import { claudeLoginMethods } from '../../src/contracts/index.js';
+import { LoginService } from '../../src/contracts/gen/doric/claude/login/v1/login_pb.js';
+import {
+  connectFailure,
+  fakeClientServices,
+  fakeHostClients,
+  type HostCall,
+} from './support/connect.js';
 
 const claude: CredentialDescription = {
   id: '00000000-0000-4000-8000-0000000000cc',
@@ -51,46 +53,52 @@ const unanswered = (): never => {
 };
 
 /**
- * The api over a `claude.login/v1` fake served with its own schemas, and a
- * hand-made `doric.browser/v1`: that contract ID is reserved for the platform,
- * so a bundle's test cannot define a service for it.
+ * Runs `answer`: a `ContractError` it throws fails the call as the host
+ * sends it (`toConnectError`, with the Doric error detail); anything else
+ * is thrown as it is, a failure that is not the contract's.
+ */
+const answered = async <T>(answer: () => T): Promise<T> => {
+  try {
+    return answer();
+  } catch (error) {
+    throw error instanceof ContractError ? connectFailure(error) : error;
+  }
+};
+
+/**
+ * The api over `claude.login/v1`'s `LoginService`, served over Connect
+ * (slice S65c) by a fake `HostClients`, and a hand-made `doric.browser/v1`:
+ * that contract ID is reserved for the platform, and stays on the envelope.
+ * `calls` are the window's host calls, in order.
  */
 const apiOver = async (
   host: FakeHost,
-  run: (api: ClaudeLoginApi) => Promise<void>,
+  run: (api: ClaudeLoginApi, calls: readonly HostCall[]) => Promise<void>,
 ): Promise<void> => {
-  const login = createTestServices({
-    bundle: { id: 'claude-login' },
-    provide: [
-      defineService('claude.login/v1', {
-        start: defineMethod({
-          input: claudeLoginMethods.start.input,
-          output: claudeLoginMethods.start.output,
-          execute: async () => (host.start ?? unanswered)(),
-        }),
-        finish: defineMethod({
-          input: claudeLoginMethods.finish.input,
-          output: claudeLoginMethods.finish.output,
-          execute: async () => (host.finish ?? unanswered)(),
-        }),
-      }),
-    ],
+  const { hostClients, calls } = fakeHostClients((router) => {
+    router.service(LoginService, {
+      start: () => answered(() => (host.start ?? unanswered)()),
+      finish: () =>
+        answered(() => ({
+          credentialDescription: (host.finish ?? unanswered)(),
+        })),
+    });
+  });
+  const window = fakeClientServices({
+    bundleId: 'claude-login',
+    hostClients,
   });
   const browser: ApiOf<typeof DoricBrowserV1> = {
     open: async (url: string) => (host.open ?? unanswered)(url),
   } as ApiOf<typeof DoricBrowserV1>;
-  const services: Services = {
-    ...login.services,
-    use: <R extends AnyServiceRef>(contract: R) =>
-      contract.id === DoricBrowserV1.id
-        ? (browser as ApiOf<R>)
-        : login.services.use(contract),
-  };
-  try {
-    await run(createClaudeLoginApi(services));
-  } finally {
-    await login.dispose();
-  }
+  const services = {
+    ...window.services,
+    use: (contract: unknown, scope?: never) =>
+      contract === DoricBrowserV1
+        ? browser
+        : window.services.use(contract as typeof DoricBrowserV1, scope),
+  } as unknown as ClientServices;
+  await run(createClaudeLoginApi(services), calls);
 };
 
 /** A `ClientError` with exactly this code, message and cause. */
@@ -98,25 +106,41 @@ const clientError =
   (expected: {
     readonly code: string;
     readonly message: string;
-    readonly cause: unknown;
+    readonly cause:
+      | { readonly code: string; readonly message: string }
+      | undefined;
   }) =>
   (error: unknown): boolean => {
     assert.ok(error instanceof ClientError, `not a ClientError: ${error}`);
     assert.equal(error.code, expected.code);
     assert.equal(error.message, expected.message);
-    assert.equal(
-      error.cause,
-      expected.cause,
-      expected.cause === undefined ? 'a cause is kept' : 'the cause differs',
-    );
+    if (expected.cause === undefined) {
+      assert.equal(error.cause, undefined, 'a cause is kept');
+    } else {
+      // Over Connect the cause is the contract error the client read
+      // (`fromConnectError`): the host's code and message, not its instance.
+      assert.ok(error.cause instanceof ContractError, 'the cause differs');
+      assert.equal(error.cause.code, expected.cause.code);
+      assert.equal(error.cause.message, expected.cause.message);
+    }
     return true;
   };
 
 describe('the sign-in api', () => {
   test('start answers the authorization page the browser opens', async () => {
-    await apiOver({ start: () => ({ url: authorizeUrl }) }, async (api) => {
-      assert.equal(await api.start(), authorizeUrl);
-    });
+    await apiOver(
+      { start: () => ({ url: authorizeUrl }) },
+      async (api, calls) => {
+        assert.equal(await api.start(), authorizeUrl);
+        // Over Connect, as the claude-login part (slice S65c).
+        assert.deepEqual(calls, [
+          {
+            method: 'doric.claude.login.v1.LoginService/Start',
+            part: 'claude-login',
+          },
+        ]);
+      },
+    );
   });
 
   test('finish answers the public view of the credential it stored, unchanged', async () => {
