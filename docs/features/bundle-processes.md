@@ -750,8 +750,15 @@ Since S65a, `runtime`'s and `chat`'s client parts call the host this way.
 (watch, threads API, `setThreadExecution`, fence watches), `AttachmentsService`
 (default binding) and `whenAvailable(ModelsService)` for icons, where an
 `UNIMPLEMENTED` `Icons` reads as no icons, and reads errors through
-`fromConnectError`; `composer.ts` stays on the envelope until phase 5. The other
-client modules (S65b–S65d) still use the envelope. A catalog manifest accepts
+`fromConnectError`; `composer.ts` stays on the envelope until phase 5. Since
+S65b, `papercraft` watches Threads over `ThreadsService` (dropping events at or
+below its cursor after a `generation_lost` reopen), reads programs over
+`PapercraftProgramsService` (Read as a stream of chunks of at most 1 MiB,
+re-encoded as base64 for `papercraft.cache/v1.ensure`, which stays on the
+envelope), lists and resolves comments over `CommentsService` and reports errors
+through `openui`'s `ProgramsService.ReportErrors`; `openui` calls
+`QuestionsService` for Status and Answer and `ProgramsService.ReportErrors`. The
+other client modules (S65c–S65d) still use the envelope. A catalog manifest accepts
 `host.assets`, and the build's dry activation answers `use(<DescService>)` of a
 host contract with an inert stub after checking the descriptor against the
 part's lists (a descriptor without the contract option is refused).
@@ -1662,3 +1669,12 @@ sandbox pool` then `Sandbox pool configured` with the `logSandboxPool`
   contract-option read is copied in three files; `api/host.ts` stays an adapter
   until `records`, `project-watch` and `workspace-api` are ported; the e2e cases
   are unverified.
+- 2026-11-25: phase 3, slice S65b, of
+  [the spec](../designs/grpc-processes.md) (version 6.38): `papercraft`'s and
+  `openui`'s client modules call `ThreadsService`, `PapercraftProgramsService`,
+  `CommentsService`, `QuestionsService` and `ProgramsService.ReportErrors` over
+  Connect; `papercraft.cache/v1.ensure`, the comment composer and send stay on
+  the envelope. Each bundle's tests use a fake `HostClients` over
+  `createRouterTransport`; papercraft's `fakeFrames` keeps a strong reference
+  to its `MutationObserver` callback. Open: the `ClientServices` casts stay until
+  the props are narrowed.

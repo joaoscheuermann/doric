@@ -2,10 +2,23 @@
 // (conversation-openui.md D29) in the happy-dom window, over a services stub
 // that records what the fence asks of `chat.send/v1`, `openui.programs/v1`
 // and `openui.questions/v1`. Import `./dom.js` first.
+//
+// Slice S65b: `openui.programs/v1` and `openui.questions/v1` are host
+// contracts, reached over Connect (spec `docs/designs/grpc-processes.md`,
+// section 13, "The window from phase 3 to phase 5"): `use` of their generated
+// descriptor is a client of a fake `HostClients` over `createRouterTransport`
+// (`./connect.js`), each call with the scope of its `use` as
+// `doric-scope-bin`. Its router serves them the way openui's host does: each
+// request read as today's JSON (`decode`, the host codec), recorded with the
+// scope it carried, handed to the test's answer in today's shapes, and the
+// answer written as the proto response (`encode`). Their envelope
+// `ref<T>()`s answer nothing but a refusal; `chat.send/v1` stays a client
+// contract on the envelope.
 
 import type { Services } from 'bundle/contracts';
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
+import { decode, encode } from 'runtime/contracts';
 
 import type {
   ChatFence,
@@ -16,7 +29,26 @@ import type {
   LayoutGraph,
   LayoutResult,
 } from '../../../src/client/diagram/layout-types.js';
+import {
+  ProgramsService,
+  ReportErrorsRequestSchema,
+} from '../../../src/contracts/gen/doric/openui/programs/v1/programs_pb.js';
+import {
+  AnswerRequestSchema,
+  AnswerResponseSchema,
+  QuestionsService,
+  StatusRequestSchema,
+  StatusResponseSchema,
+} from '../../../src/contracts/gen/doric/openui/questions/v1/questions_pb.js';
 import type { ProgramRevision } from '../../../src/contracts/index.js';
+import {
+  connectFailure,
+  fakeHostClients,
+  type HostCall,
+  isDescService,
+  onEnvelope,
+  scopeOf,
+} from './connect.js';
 
 export const projectId = 'project-1';
 export const threadId = 'thread-1';
@@ -40,12 +72,80 @@ export interface FenceAnswers {
   answer?: (input: unknown) => Promise<unknown>;
 }
 
-/** A services stub answering by contract id, with the scope of each `use`. */
+/** A test's answer, a failure of it sent as the host's Connect error. */
+const answered = async <T>(answer: () => Promise<T> | T): Promise<T> => {
+  try {
+    return await answer();
+  } catch (error) {
+    throw connectFailure(error);
+  }
+};
+
+/**
+ * A services stub answering by contract id, with the scope of each `use`:
+ * `openui.programs/v1` and `openui.questions/v1` over Connect, `chat.send/v1`
+ * on the envelope.
+ */
 export const fenceServices = (
   answers: FenceAnswers = {},
-): { readonly services: Services; readonly calls: FenceCalls } => {
+): {
+  readonly services: Services;
+  readonly calls: FenceCalls;
+  /** Every Connect call the client part made to the host, in call order. */
+  readonly hostCalls: readonly HostCall[];
+} => {
   const calls: FenceCalls = { actions: [], reports: [], questions: [] };
-  const apis = (scope: unknown): Record<string, unknown> => ({
+  const host = fakeHostClients(
+    (router) => {
+      router.service(ProgramsService, {
+        reportErrors: async (request, context) => {
+          calls.reports.push({
+            input: decode(ReportErrorsRequestSchema, request),
+            scope: scopeOf(context),
+          });
+          return {};
+        },
+      });
+      router.service(QuestionsService, {
+        status: async (request, context) => {
+          const input = decode(StatusRequestSchema, request);
+          calls.questions.push({
+            method: 'status',
+            input,
+            scope: scopeOf(context),
+          });
+          const state = await answered(() =>
+            answers.status === undefined
+              ? { state: 'pending' }
+              : answers.status(input),
+          );
+          return encode(StatusResponseSchema, { questionState: state });
+        },
+        answer: async (request, context) => {
+          const input = decode(AnswerRequestSchema, request);
+          calls.questions.push({
+            method: 'answer',
+            input,
+            scope: scopeOf(context),
+          });
+          const state = await answered(() =>
+            answers.answer === undefined
+              ? {
+                  state: 'answered',
+                  answers: (input as { answers: unknown }).answers,
+                }
+              : answers.answer(input),
+          );
+          return encode(AnswerResponseSchema, { questionState: state });
+        },
+      });
+    },
+    {
+      'openui.programs/v1': { bundleId: 'openui', version: '1.1.0' },
+      'openui.questions/v1': { bundleId: 'openui', version: '1.1.0' },
+    },
+  );
+  const apis: Record<string, unknown> = {
     'chat.send/v1': {
       sendAction: async (input: unknown) => {
         calls.actions.push(input);
@@ -54,36 +154,28 @@ export const fenceServices = (
           : await answers.sendAction(input);
       },
     },
-    'openui.programs/v1': {
-      reportErrors: async (input: unknown) => {
-        calls.reports.push({ input, scope });
-      },
-    },
-    'openui.questions/v1': {
-      status: async (input: unknown) => {
-        calls.questions.push({ method: 'status', input, scope });
-        return answers.status === undefined
-          ? { state: 'pending' }
-          : await answers.status(input);
-      },
-      answer: async (input: unknown) => {
-        calls.questions.push({ method: 'answer', input, scope });
-        return answers.answer === undefined
-          ? {
-              state: 'answered',
-              answers: (input as { answers: unknown }).answers,
-            }
-          : await answers.answer(input);
-      },
-    },
-  });
+  };
   const services = {
     provide: () => ({ dispose: () => undefined }),
-    use: (contract: { readonly id?: string }, scope?: unknown) =>
-      apis(scope)[contract.id ?? ''],
+    use: (contract: { readonly id?: string }, scope?: unknown) => {
+      if (isDescService(contract))
+        return host.hostClients
+          .part('openui')
+          .use(
+            contract,
+            scope === undefined
+              ? undefined
+              : { scope: scope as Readonly<Record<string, string>> },
+          );
+      const id = contract.id ?? '';
+      // The host contracts are served over Connect (above).
+      if (id === 'openui.programs/v1' || id === 'openui.questions/v1')
+        return onEnvelope(id);
+      return apis[id];
+    },
     whenAvailable: () => ({ dispose: () => undefined }),
   } as unknown as Services;
-  return { services, calls };
+  return { services, calls, hostCalls: host.calls };
 };
 
 /** A fence of the chat, `openui-lang`, of prompt `promptId`. */

@@ -15,17 +15,34 @@
 //     keys, built once per canvas and cached the same way;
 //   - the durable comments of the identity and its drafts in the Thread's
 //     composer stack, as the artifact's are read.
+//
+// The host contracts, `papercraft.programs/v1`, `openui.programs/v1` and
+// `comments/v1`, are called over their generated Connect clients (slice
+// S65b): each request written as its proto message, each answer read back as
+// today's shape (`decode`), a failure as its Doric error (`fromConnectError`).
+// `papercraft.cache/v1` is the desktop's, on the envelope.
 
-import { ContractError, type Services } from 'bundle/contracts';
+import type { DescMessage, MessageShape } from '@bufbuild/protobuf';
+import { ConnectError } from '@connectrpc/connect';
+import {
+  type ClientServices,
+  ContractError,
+  fromConnectError,
+  type Services,
+} from 'bundle/contracts';
+import {
+  CommentsService,
+  ListResponseSchema,
+} from 'comments/contracts/gen/doric/comments/v1/comments_pb.js';
 import {
   createErrorReporter,
   type ErrorReporter,
-  OpenuiProgramsV1,
   type ProgramRevision,
   type ReportedError,
   type ShownError,
   shownErrors,
 } from 'openui/contracts';
+import { ProgramsService as OpenuiProgramsService } from 'openui/contracts/gen/doric/openui/programs/v1/programs_pb.js';
 import {
   useCallback,
   useEffect,
@@ -34,6 +51,8 @@ import {
   useState,
   useSyncExternalStore,
 } from 'react';
+import { decode } from 'runtime/contracts';
+import { z } from 'zod';
 
 import {
   type ChatFence,
@@ -41,16 +60,21 @@ import {
   type ComposerItem,
 } from '../../contracts/chat.js';
 import {
+  ExportResponseSchema,
+  LibraryResponseSchema,
+  ProgramsService as PapercraftProgramsService,
+} from '../../contracts/gen/doric/papercraft/programs/v1/programs_pb.js';
+import {
   type Comment,
-  CommentsV1,
   callScopeOf,
+  commentSchema,
   MODULES_URL,
   type ModuleRef,
   PapercraftCacheV1,
-  PapercraftProgramsV1,
   PROGRAM_COMMENT_KIND,
   PROGRAM_TARGET_KIND,
   type PreviewScope,
+  papercraftProgramsMethods,
   type ThreadLogEvent,
 } from '../../contracts/index.js';
 import {
@@ -136,10 +160,100 @@ const MAX_MESSAGE = 300;
 const messageOf = (error: unknown): string =>
   error instanceof Error ? error.message : String(error);
 
-const isNotFound = (error: unknown): boolean =>
-  error instanceof ContractError
-    ? error.code === 'not_found'
-    : (error as { readonly code?: unknown } | undefined)?.code === 'not_found';
+/** A host call's failure as its Doric error; any other error unchanged. */
+const failureOf = (error: unknown): unknown =>
+  error instanceof ConnectError ? fromConnectError(error) : error;
+
+const isNotFound = (error: unknown): boolean => {
+  const failure = failureOf(error);
+
+  return failure instanceof ContractError
+    ? failure.code === 'not_found'
+    : (failure as { readonly code?: unknown } | undefined)?.code ===
+        'not_found';
+};
+
+/**
+ * A host answer as today's shape: `response` read back (`decode`) and parsed
+ * with today's `schema`; a failed call rejects with its Doric error, an answer
+ * outside the schema with `invalid_output`.
+ */
+const answerOf = async <D extends DescMessage, T>(
+  method: string,
+  responseSchema: D,
+  answer: z.ZodType<T>,
+  call: () => Promise<MessageShape<D>>,
+): Promise<T> => {
+  let response: MessageShape<D>;
+
+  try {
+    response = await call();
+  } catch (error) {
+    throw failureOf(error);
+  }
+
+  const parsed = answer.safeParse(decode(responseSchema, response));
+
+  if (!parsed.success)
+    throw new ContractError(
+      'invalid_output',
+      `papercraft.programs/v1 ${method} answered outside its schema: ${parsed.error.message}`,
+    );
+
+  return parsed.data;
+};
+
+/** The bytes, base64, the way `papercraft.cache/v1` carries them. */
+const base64Of = (bytes: Uint8Array): string => {
+  let binary = '';
+  // In slices: one `fromCharCode` over megabytes overflows the call stack.
+  for (let start = 0; start < bytes.length; start += 0x8000)
+    binary += String.fromCharCode(...bytes.subarray(start, start + 0x8000));
+  return btoa(binary);
+};
+
+/**
+ * A module's files from `Read`'s chunks `{path, sha256, offset, bytes}`, each
+ * file's chunks joined at their offsets, in the order the files came.
+ */
+const readModule = async (
+  services: ClientServices,
+  scope: PreviewScope,
+  dir: string,
+): Promise<
+  { readonly path: string; readonly sha256: string; readonly base64: string }[]
+> => {
+  const files = new Map<
+    string,
+    { sha256: string; chunks: { offset: number; bytes: Uint8Array }[] }
+  >();
+
+  try {
+    for await (const chunk of services
+      .use(PapercraftProgramsService, callScopeOf(scope))
+      .read({ dir })) {
+      const file = files.get(chunk.path) ?? {
+        sha256: chunk.sha256,
+        chunks: [],
+      };
+      file.chunks.push({ offset: chunk.offset, bytes: chunk.bytes });
+      files.set(chunk.path, file);
+    }
+  } catch (error) {
+    throw failureOf(error);
+  }
+
+  return [...files].map(([path, { sha256, chunks }]) => {
+    const size = chunks.reduce(
+      (end, chunk) => Math.max(end, chunk.offset + chunk.bytes.length),
+      0,
+    );
+    const joined = new Uint8Array(size);
+    for (const chunk of chunks) joined.set(chunk.bytes, chunk.offset);
+
+    return { path, sha256, base64: base64Of(joined) };
+  });
+};
 
 /** D14's URLs of a module, served under `/papercraft-modules/`. */
 export const moduleUrlsOf = (ref: ModuleRef): ProgramModule => ({
@@ -150,7 +264,7 @@ export const moduleUrlsOf = (ref: ModuleRef): ProgramModule => ({
 });
 
 /** Each window's ensured modules, by `dir`: a window is its services. */
-const ensuredOf = new WeakMap<Services, Map<string, Promise<void>>>();
+const ensuredOf = new WeakMap<ClientServices, Map<string, Promise<void>>>();
 
 /**
  * Reads a module's bytes from the host and stores them in the desktop's
@@ -158,7 +272,7 @@ const ensuredOf = new WeakMap<Services, Map<string, Promise<void>>>();
  * next call tries again. Rejects with the host's `not_found` as it came.
  */
 const ensureModule = (
-  services: Services,
+  services: ClientServices,
   scope: PreviewScope,
   ref: ModuleRef,
 ): Promise<void> => {
@@ -170,9 +284,7 @@ const ensureModule = (
 
   const call = callScopeOf(scope);
   const ensuring = (async () => {
-    const { entries } = await services
-      .use(PapercraftProgramsV1, call)
-      .read({ dir: ref.dir });
+    const entries = await readModule(services, scope, ref.dir);
     const result = await services
       .use(PapercraftCacheV1, call)
       .ensure({ entries });
@@ -192,7 +304,7 @@ const ensureModule = (
 
 /** D14: the library bound at `turnSequence`, ensured into the cache. */
 const useLibrary = (
-  services: Services,
+  services: ClientServices,
   scope: PreviewScope | undefined,
   turnSequence: number | undefined,
 ): LibraryView => {
@@ -208,10 +320,18 @@ const useLibrary = (
       projectId,
       ...(threadId === undefined ? {} : { threadId }),
     };
-    const programs = services.use(PapercraftProgramsV1, callScopeOf(scoped));
+    const programs = services.use(
+      PapercraftProgramsService,
+      callScopeOf(scoped),
+    );
 
     const load = async (retried = false): Promise<LibraryView> => {
-      const answer = await programs.library({ turnSequence });
+      const answer = await answerOf(
+        'Library',
+        LibraryResponseSchema,
+        papercraftProgramsMethods.library.output,
+        () => programs.library({ turnSequence }),
+      );
 
       if (answer.status === 'none') return { status: 'none' };
       if (answer.status === 'failed')
@@ -251,7 +371,7 @@ const useLibrary = (
 
 /** D16: each literal `Export` of `program`, the first `MAX_EXPORTS` keys, built once per canvas. */
 const useExports = (
-  services: Services,
+  services: ClientServices,
   scope: PreviewScope | undefined,
   program: string | undefined,
 ): {
@@ -293,12 +413,18 @@ const useExports = (
       if (call === undefined) continue;
 
       const build = async (): Promise<ProgramModule> => {
-        const answer = await services
-          .use(PapercraftProgramsV1, callScopeOf(scoped))
-          .export({
-            path: call.path,
-            ...(call.name === undefined ? {} : { name: call.name }),
-          });
+        const answer = await answerOf(
+          'Export',
+          ExportResponseSchema,
+          papercraftProgramsMethods.export.output,
+          () =>
+            services
+              .use(PapercraftProgramsService, callScopeOf(scoped))
+              .export({
+                path: call.path,
+                ...(call.name === undefined ? {} : { name: call.name }),
+              }),
+        );
 
         if (answer.status === 'failed') throw new Error(answer.error);
         await ensureModule(services, scoped, answer.module);
@@ -332,6 +458,9 @@ const statementsOf = (program: string): ReadonlySet<string> => {
   }
 };
 
+/** `comments/v1.list`'s answer, read back as today's comments. */
+const listAnswerSchema = z.object({ comments: z.array(commentSchema) });
+
 /** A comment `comments/v1.list` answered, in the reducer's shape. */
 const commentOfList = (comment: Comment): PreviewComment => {
   const promptId = (comment as { readonly promptId?: unknown }).promptId;
@@ -355,7 +484,7 @@ const commentOfList = (comment: Comment): PreviewComment => {
 
 /** The window's own list of the Thread's papercraft fences (D26). */
 const useWatchedFences = (
-  services: Services,
+  services: ClientServices,
   scope: PreviewScope | undefined,
   enabled: boolean,
 ): readonly ChatFence[] | undefined => {
@@ -385,7 +514,9 @@ const useWatchedFences = (
 
 /** Reads what one canvas shows of a papercraft program; see the module comment. */
 export function useProgramData(input: ProgramDataInput): ProgramData {
-  const { services, chrome, scope, threadId, identity, fenceKey } = input;
+  const { chrome, scope, threadId, identity, fenceKey } = input;
+  // The window's services: host contracts over Connect.
+  const services = input.services as ClientServices;
   const watched = useWatchedFences(services, scope, input.fences === undefined);
   const fences = input.fences ?? watched;
   const [chosen, setChosen] = useState<number | undefined>(undefined);
@@ -557,8 +688,11 @@ export function useProgramData(input: ProgramDataInput): ProgramData {
             : { statementId: error.statementId }),
         };
       },
-      send: (report) =>
-        services.use(OpenuiProgramsV1, call).reportErrors(report),
+      send: async (report) => {
+        await services
+          .use(OpenuiProgramsService, call)
+          .reportErrors({ ...report, errors: [...report.errors] });
+      },
     });
   }, [
     chrome,
@@ -627,15 +761,18 @@ export function useProgramData(input: ProgramDataInput): ProgramData {
 
     services
       .use(
-        CommentsV1,
+        CommentsService,
         callScopeOf({
           projectId,
           ...(scopeThread === undefined ? {} : { threadId: scopeThread }),
         }),
       )
       .list({ kind: PROGRAM_TARGET_KIND })
-      .then((list) => {
+      .then((response) => {
         if (cancelled) return;
+        const { comments: list } = listAnswerSchema.parse(
+          decode(ListResponseSchema, response),
+        );
         setComments(
           list
             .filter(

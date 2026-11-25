@@ -4,7 +4,7 @@
 // conversation library (D7, D21, D31).
 
 import { type OpenUIError, Renderer } from '@openuidev/react-lang';
-import type { Services } from 'bundle/contracts';
+import type { ClientServices, Services } from 'bundle/contracts';
 import {
   Component,
   createElement,
@@ -16,9 +16,9 @@ import {
   useState,
 } from 'react';
 
+import { ProgramsService } from '../../contracts/gen/doric/openui/programs/v1/programs_pb.js';
 import {
   createErrorReporter,
-  OpenuiProgramsV1,
   type ProgramRevision,
   shownErrors,
 } from '../../contracts/index.js';
@@ -104,13 +104,15 @@ export function ConversationFence(props: ConversationFenceProps): ReactNode {
         mergeFailed: revision.mergeFailed === true,
         check: () => check(current.current.view, current.current.revision),
         map,
-        send: (input) =>
-          services
-            .use(OpenuiProgramsV1, {
+        // `openui.programs/v1` over its generated Connect client (slice S65b).
+        send: async (input) => {
+          await (services as ClientServices)
+            .use(ProgramsService, {
               projectId: fence.projectId,
               threadId: fence.threadId,
             })
-            .reportErrors(input),
+            .reportErrors({ ...input, errors: [...input.errors] });
+        },
       }),
     [
       fence.key,

@@ -1,21 +1,53 @@
 // The papercraft client part as a window runs it: `activate` over a services
 // double that answers by contract id and records each call with the scope of
 // its `use`. The chat is a double of `chat.views/v1` (the fence renderers and
-// projectors registered, `watchFences`), the host's `papercraft.programs/v1`,
-// the desktop's `papercraft.cache/v1` and `openui.programs/v1` are doubles at
-// their bridge boundary, and every frame is a fake (`fake-frame.ts`) that
-// speaks the protocol its iframe's entry speaks. The window is whatever DOM
-// the test file installed as globals first (`./dom.js`, or its own).
+// projectors registered, `watchFences`), the desktop's `papercraft.cache/v1`
+// is a double at its bridge boundary, and every frame is a fake
+// (`fake-frame.ts`) that speaks the protocol its iframe's entry speaks. The
+// window is whatever DOM the test file installed as globals first
+// (`./dom.js`, or its own).
+//
+// Slice S65b: the host contracts the client part calls, `papercraft.programs/v1`,
+// `openui.programs/v1`, `comments/v1` and `runtime.threads/v1`, are reached
+// over Connect (spec `docs/designs/grpc-processes.md`, section 13, "The window
+// from phase 3 to phase 5"): `use` of a generated descriptor is a client of a
+// fake `HostClients` over `createRouterTransport` (`./connect.js`), each call
+// with the scope of its `use` as `doric-scope-bin`. Its router serves them the
+// way the hosts do: each request read as today's JSON (`decode`, the host
+// codec), recorded with the scope it carried, handed to the test's answer in
+// today's shapes, and the answer written as the proto response (`encode`).
+// Their envelope `ref<T>()`s answer nothing but a refusal.
 
 import assert from 'node:assert/strict';
 
+import {
+  create,
+  type DescMessage,
+  type MessageShape,
+} from '@bufbuild/protobuf';
+import type { ConnectRouter } from '@connectrpc/connect';
 import {
   type ClientContext,
   type Services,
   type StreamListener,
   toStreamObserver,
 } from 'bundle/contracts';
+import {
+  CommentsService,
+  ListRequestSchema,
+  ListResponseSchema,
+  ResolveRequestSchema,
+} from 'comments/contracts/gen/doric/comments/v1/comments_pb.js';
+import {
+  ProgramsService as OpenuiProgramsService,
+  ReportErrorsRequestSchema,
+} from 'openui/contracts/gen/doric/openui/programs/v1/programs_pb.js';
 import { act } from 'react';
+import { decode, encode, runtimeOneofs } from 'runtime/contracts';
+import {
+  ThreadsService,
+  WatchThreadResponseSchema,
+} from 'runtime/contracts/gen/doric/runtime/threads/v1/threads_pb.js';
 
 import { activate } from '../../../src/client/index.js';
 import type {
@@ -24,12 +56,29 @@ import type {
   FenceRendererSpec,
   ProjectorSpec,
 } from '../../../src/contracts/chat.js';
+import {
+  ExportRequestSchema,
+  ExportResponseSchema,
+  LibraryRequestSchema,
+  LibraryResponseSchema,
+  ProgramsService as PapercraftProgramsService,
+  ReadRequestSchema,
+  ReadResponseSchema,
+} from '../../../src/contracts/gen/doric/papercraft/programs/v1/programs_pb.js';
 import type {
   ExportAnswer,
   LibraryAnswer,
   ModuleEntries,
   ModuleRef,
 } from '../../../src/contracts/programs.js';
+import {
+  connectFailure,
+  fakeHostClients,
+  type HostCall,
+  isDescService,
+  onEnvelope,
+  scopeOf,
+} from './connect.js';
 import {
   delivered,
   type FakeFrame,
@@ -167,6 +216,8 @@ export interface HostOptions {
 export interface Host {
   readonly services: Services;
   readonly calls: HostCalls;
+  /** Every Connect call the client part made to the host, in call order. */
+  readonly hostCalls: readonly HostCall[];
   readonly frames: FakeFrames;
   /** The fence renderers registered now. */
   readonly fenceRenderers: () => readonly FenceRendererSpec[];
@@ -477,45 +528,6 @@ export const startHost = async (options: HostOptions = {}): Promise<Host> => {
             return { status: 'accepted' };
           },
         };
-      case 'papercraft.programs/v1':
-        return {
-          library: async (input: unknown) => {
-            record(calls.library, input);
-
-            return remember(
-              await (options.library?.(input) ??
-                Promise.resolve(readyLibrary())),
-            );
-          },
-          export: async (input: { path: string; name?: string }) => {
-            record(calls.exports, input);
-
-            return remember(
-              await (options.export?.(input) ??
-                Promise.resolve<ExportAnswer>({
-                  status: 'ready',
-                  module: moduleRef(
-                    `x-${input.path.replace(/\W/g, '-')}-${input.name ?? ''}`,
-                    false,
-                  ),
-                })),
-            );
-          },
-          read: async (input: { dir: string }) => {
-            record(calls.reads, input);
-            if (options.read !== undefined) return options.read(input);
-
-            const module = modules.get(input.dir) ?? moduleRef(input.dir);
-
-            return {
-              entries: module.files.map((file) => ({
-                path: `${module.dir}/${file.path}`,
-                sha256: file.sha256,
-                base64: '',
-              })),
-            };
-          },
-        };
       case 'papercraft.cache/v1':
         return {
           ensure: async (input: {
@@ -530,51 +542,171 @@ export const startHost = async (options: HostOptions = {}): Promise<Host> => {
             };
           },
         };
-      case 'openui.programs/v1':
-        return {
-          reportErrors: async (input: unknown) => {
-            record(calls.reports, input);
-          },
-        };
       case 'windows/v1':
         return {
           open: async (input: unknown) => {
             record(calls.windows, input);
           },
         };
+      // The host contracts are served over Connect (`hostRoutes`).
+      case 'papercraft.programs/v1':
+      case 'openui.programs/v1':
       case 'comments/v1':
-        return {
-          list: async (input: unknown) => {
-            record(calls.lists, input);
-
-            return options.comments ?? [];
-          },
-          add: async (input: unknown) => input,
-          resolve: async (input: unknown) => {
-            record(calls.resolves, input);
-          },
-        };
       case 'runtime.threads/v1':
-        return {
-          watchThread: (_input: unknown, listener: StreamListener<unknown>) => {
-            if (options.log !== undefined)
-              toStreamObserver(listener).next({
-                kind: 'snapshot',
-                events: [...options.log],
-              });
-
-            return { dispose: () => undefined };
-          },
-        };
+        return onEnvelope(id);
       default:
         return anyApi();
     }
   };
 
+  /** A test's answer, a failure of it sent as the host's Connect error. */
+  const answered = async <T>(answer: () => Promise<T> | T): Promise<T> => {
+    try {
+      return await answer();
+    } catch (error) {
+      throw connectFailure(error);
+    }
+  };
+  /** A request as today's JSON input, the way the host's codec reads it. */
+  const inputOf = <D extends DescMessage>(
+    schema: D,
+    request: MessageShape<D>,
+  ): unknown => decode(schema, request);
+
+  const hostRoutes = (router: ConnectRouter): void => {
+    router.service(PapercraftProgramsService, {
+      library: async (request, context) => {
+        const input = inputOf(LibraryRequestSchema, request);
+        calls.library.push({ input, scope: scopeOf(context) });
+        const answer = remember(
+          await answered(
+            () => options.library?.(input) ?? Promise.resolve(readyLibrary()),
+          ),
+        );
+
+        return encode(LibraryResponseSchema, answer);
+      },
+      export: async (request, context) => {
+        const input = inputOf(ExportRequestSchema, request) as {
+          readonly path: string;
+          readonly name?: string;
+        };
+        calls.exports.push({ input, scope: scopeOf(context) });
+        const answer = remember(
+          await answered(
+            () =>
+              options.export?.(input) ??
+              Promise.resolve<ExportAnswer>({
+                status: 'ready',
+                module: moduleRef(
+                  `x-${input.path.replace(/\W/g, '-')}-${input.name ?? ''}`,
+                  false,
+                ),
+              }),
+          ),
+        );
+
+        return encode(ExportResponseSchema, answer);
+      },
+      // Today's entries, each file one item at offset 0 with its bytes.
+      read: async function* (request, context) {
+        const input = inputOf(ReadRequestSchema, request) as {
+          readonly dir: string;
+        };
+        calls.reads.push({ input, scope: scopeOf(context) });
+        const { entries } = await answered(() => {
+          if (options.read !== undefined) return options.read(input);
+
+          const module = modules.get(input.dir) ?? moduleRef(input.dir);
+
+          return {
+            entries: module.files.map((file) => ({
+              path: `${module.dir}/${file.path}`,
+              sha256: file.sha256,
+              base64: '',
+            })),
+          };
+        });
+
+        for (const entry of entries)
+          yield create(ReadResponseSchema, {
+            path: entry.path,
+            sha256: entry.sha256,
+            offset: 0,
+            bytes: Uint8Array.from(Buffer.from(entry.base64, 'base64')),
+          });
+      },
+    });
+    router.service(OpenuiProgramsService, {
+      reportErrors: async (request, context) => {
+        calls.reports.push({
+          input: inputOf(ReportErrorsRequestSchema, request),
+          scope: scopeOf(context),
+        });
+
+        return {};
+      },
+    });
+    router.service(CommentsService, {
+      list: async (request, context) => {
+        calls.lists.push({
+          input: inputOf(ListRequestSchema, request),
+          scope: scopeOf(context),
+        });
+
+        return encode(ListResponseSchema, {
+          comments: options.comments ?? [],
+        });
+      },
+      resolve: async (request, context) => {
+        calls.resolves.push({
+          input: inputOf(ResolveRequestSchema, request),
+          scope: scopeOf(context),
+        });
+
+        return {};
+      },
+    });
+    // The Thread's log as one snapshot, then open until the window lets go;
+    // without `log`, open and silent.
+    router.service(ThreadsService, {
+      watchThread: async function* (_request, context) {
+        if (options.log !== undefined)
+          yield encode(
+            WatchThreadResponseSchema,
+            { kind: 'snapshot', events: [...options.log] },
+            runtimeOneofs,
+          );
+
+        await new Promise<void>((resolve) => {
+          if (context.signal.aborted) resolve();
+          context.signal.addEventListener('abort', () => resolve(), {
+            once: true,
+          });
+        });
+      },
+    });
+  };
+  const host = fakeHostClients(hostRoutes, {
+    'papercraft.programs/v1': { bundleId: 'papercraft', version: '1.1.0' },
+    'openui.programs/v1': { bundleId: 'openui', version: '1.1.0' },
+    'comments/v1': { bundleId: 'comments', version: '1.1.0' },
+    'runtime.threads/v1': { bundleId: 'runtime', version: '1.0.0' },
+  });
+
   const services = {
     provide: () => ({ dispose: () => undefined }),
     use: (contract: { readonly id?: string }, scope?: unknown) =>
-      apis(contract.id ?? '', scope),
+      isDescService(contract)
+        ? host.hostClients
+            .part('papercraft')
+            .use(
+              contract,
+              scope === undefined
+                ? undefined
+                : { scope: scope as Readonly<Record<string, string>> },
+            )
+        : apis(contract.id ?? '', scope),
     whenAvailable: (
       contract: { readonly id?: string },
       callback: (api: unknown, provider: unknown) => unknown,
@@ -628,6 +760,7 @@ export const startHost = async (options: HostOptions = {}): Promise<Host> => {
   return {
     services,
     calls,
+    hostCalls: host.calls,
     frames,
     fenceRenderers: () => [...renderers],
     projectors: () => [...projectors],

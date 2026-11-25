@@ -477,11 +477,11 @@ export const fakeFrames = (
   };
 
   // happy-dom holds a MutationObserver's callback only through a WeakRef, so
-  // a garbage collection can silently end the observer: every lookup scans
-  // the document as well.
-  const observer = new window.MutationObserver(() =>
-    scan(window.document.body),
-  );
+  // a garbage collection could silently end the observer: the frames hold the
+  // callback themselves (`dispose` reads it), and every reader — `all`
+  // included — scans the document as well, so none depends on the observer.
+  const onMutation = (): void => scan(window.document.body);
+  const observer = new window.MutationObserver(onMutation);
   observer.observe(window.document.body, { childList: true, subtree: true });
 
   const latest = (root: Node = window.document.body) => {
@@ -493,7 +493,11 @@ export const fakeFrames = (
   };
 
   return {
-    all,
+    get all() {
+      scan(window.document.body);
+
+      return all;
+    },
     latest,
     next: async (root, holds = (frame) => frame.rendered) => {
       for (let attempt = 0; attempt < 200; attempt += 1) {
@@ -510,6 +514,8 @@ export const fakeFrames = (
     },
     dispose: () => {
       observer.disconnect();
+      // Last use of the callback: it stays reachable as long as the frames are.
+      void onMutation;
       for (const frame of all) frame.close();
     },
   };

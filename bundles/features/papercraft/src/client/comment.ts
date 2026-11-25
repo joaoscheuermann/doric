@@ -25,9 +25,12 @@
 // that rendered before chat activated learns of it through `subscribeComposer`.
 // Every composer call carries the preview's `(projectId, threadId)` scope — the
 // pair the composer keys a Thread's draft by — so a card lands in the stack the
-// conversation's own composer shows.
+// conversation's own composer shows. A resolve goes to `comments/v1` over its
+// generated Connect client (slice S65b); the composer and the send stay on
+// the envelope.
 
-import type { Services } from 'bundle/contracts';
+import type { ClientServices, Services } from 'bundle/contracts';
+import { CommentsService } from 'comments/contracts/gen/doric/comments/v1/comments_pb.js';
 
 import {
   CHAT_COMMENT_LINE_TAG,
@@ -38,7 +41,6 @@ import {
 } from '../contracts/chat.js';
 import {
   type CommentAnchor,
-  CommentsV1,
   type CommentTarget,
   callScopeOf,
   PROGRAM_COMMENT_KIND,
@@ -308,7 +310,7 @@ export const sendComments = async (
  * written and the answer says so.
  */
 export const resolveComment = async (
-  services: Services,
+  services: ClientServices,
   scope: PreviewScope | undefined,
   input: {
     readonly commentId: string;
@@ -321,7 +323,7 @@ export const resolveComment = async (
 
   try {
     await services
-      .use(CommentsV1, {
+      .use(CommentsService, {
         projectId: scope.projectId,
         threadId: scope.threadId,
         promptId: input.promptId,

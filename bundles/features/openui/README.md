@@ -964,7 +964,9 @@ Tests under `tests/` are DOM-free host and contract tests over a fake
 under `tests/client/` boot `happy-dom`
 ([`tests/client/support/dom.ts`](tests/client/support/dom.ts)) and draw
 through `ConversationFence` compiled from source
-([`tests/client/support/fence.ts`](tests/client/support/fence.ts)); only
+([`tests/client/support/fence.ts`](tests/client/support/fence.ts)), which
+answers host calls over Connect through a fake `HostClients`
+([`tests/client/support/connect.ts`](tests/client/support/connect.ts)); only
 [`tests/client-chunk.test.ts`](tests/client-chunk.test.ts) reads the built
 chunks under `dist/`. Stories under
 `stories/` are wrapped by [`.storybook/preview.tsx`](.storybook/preview.tsx).

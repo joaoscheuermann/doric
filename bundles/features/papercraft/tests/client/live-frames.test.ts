@@ -22,10 +22,26 @@
 import assert from 'node:assert/strict';
 import { after, afterEach, before, test } from 'node:test';
 
+import { create } from '@bufbuild/protobuf';
 import type { Services } from 'bundle/contracts';
+import {
+  CommentsService,
+  ListRequestSchema,
+  ListResponseSchema,
+} from 'comments/contracts/gen/doric/comments/v1/comments_pb.js';
 import { Window } from 'happy-dom';
+import { ProgramsService as OpenuiProgramsService } from 'openui/contracts/gen/doric/openui/programs/v1/programs_pb.js';
 import { createElement } from 'react';
+import { decode, encode } from 'runtime/contracts';
 
+import {
+  ExportResponseSchema,
+  LibraryResponseSchema,
+  ProgramsService as PapercraftProgramsService,
+  ReadRequestSchema,
+  ReadResponseSchema,
+} from '../../src/contracts/gen/doric/papercraft/programs/v1/programs_pb.js';
+import { fakeHostClients, isDescService } from './support/connect.js';
 import {
   delivered,
   type FakeOptions,
@@ -165,23 +181,70 @@ const windowOf = () => {
   const captures: { rect: unknown }[] = [];
   const capture = { fails: false };
 
+  // The host contracts are served over Connect, each request read and each
+  // answer written in today's JSON shapes through the host codec.
+  const host = fakeHostClients((router) => {
+    router.service(PapercraftProgramsService, {
+      library: async () => encode(LibraryResponseSchema, readyLibrary()),
+      export: async () => encode(ExportResponseSchema, { status: 'none' }),
+      // Each file one item at offset 0, with no bytes.
+      read: async function* (request) {
+        const { dir } = decode(ReadRequestSchema, request) as {
+          readonly dir: string;
+        };
+
+        for (const file of moduleRef(dir).files)
+          yield create(ReadResponseSchema, {
+            path: `${dir}/${file.path}`,
+            sha256: file.sha256,
+            offset: 0,
+            bytes: new Uint8Array(),
+          });
+      },
+    });
+    router.service(OpenuiProgramsService, { reportErrors: async () => ({}) });
+    router.service(CommentsService, {
+      list: async (request) => {
+        const input = decode(ListRequestSchema, request) as {
+          readonly target?: { readonly id?: string };
+        };
+
+        return encode(ListResponseSchema, {
+          comments: ['a', 'b', 'c', 'd', 'open']
+            .map((name) => `${prefix}-${name}`)
+            .map((id) => ({
+              commentId: `c-${id}`,
+              target: {
+                kind: 'papercraft-program',
+                id,
+                revision: 1,
+                anchor: { form: 'selector', selector: 'button#pay' },
+              },
+              text: 'mais respiro',
+              resolved: false,
+              createdAt: '2024-01-01T00:00:00Z',
+            }))
+            .filter(
+              (comment) =>
+                input.target?.id === undefined ||
+                comment.target.id === input.target.id,
+            ),
+        });
+      },
+      resolve: async () => ({}),
+    });
+  });
+
   const services = {
     provide: () => ({ dispose: () => undefined }),
     whenAvailable: () => ({ dispose: () => undefined }),
-    use: (contract: { id?: string }) => {
+    use: (contract: { id?: string }, scope?: Record<string, string>) => {
+      if (isDescService(contract))
+        return host.hostClients
+          .part('papercraft')
+          .use(contract, scope === undefined ? undefined : { scope });
+
       switch (contract.id) {
-        case 'papercraft.programs/v1':
-          return {
-            library: async () => readyLibrary(),
-            export: async () => ({ status: 'none' }),
-            read: async (input: { dir: string }) => ({
-              entries: moduleRef(input.dir).files.map((file) => ({
-                path: `${input.dir}/${file.path}`,
-                sha256: file.sha256,
-                base64: '',
-              })),
-            }),
-          };
         case 'papercraft.cache/v1':
           return {
             ensure: async (input: {
@@ -191,31 +254,6 @@ const windowOf = () => {
               kept: [],
               failed: [],
             }),
-          };
-        case 'openui.programs/v1':
-          return { reportErrors: async () => undefined };
-        case 'comments/v1':
-          return {
-            list: async (input: { target?: { id?: string } }) =>
-              ['a', 'b', 'c', 'd', 'open']
-                .map((name) => `${prefix}-${name}`)
-                .map((id) => ({
-                  commentId: `c-${id}`,
-                  target: {
-                    kind: 'papercraft-program',
-                    id,
-                    revision: 1,
-                    anchor: { form: 'selector', selector: 'button#pay' },
-                  },
-                  text: 'mais respiro',
-                  resolved: false,
-                  createdAt: '2024-01-01T00:00:00Z',
-                }))
-                .filter(
-                  (comment) =>
-                    input.target?.id === undefined ||
-                    comment.target.id === input.target.id,
-                ),
           };
         case 'papercraft.snapshot/v1':
           return {

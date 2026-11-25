@@ -11,7 +11,7 @@
 // latest render (`self`) when it runs, so the header, the footer and the
 // bar can be memoised on them, and a pan never re-renders those.
 
-import type { Services } from 'bundle/contracts';
+import type { ClientServices, Services } from 'bundle/contracts';
 import { type RefObject, useEffect, useMemo, useRef, useState } from 'react';
 
 import {
@@ -300,7 +300,8 @@ export const useCommentFlow = (input: CommentFlowInput): CommentFlow => {
 
       if (root === undefined) return;
 
-      void resolveComment(services, scope, {
+      // The window's services: host contracts over Connect.
+      void resolveComment(services as ClientServices, scope, {
         commentId: root.commentId,
         promptId: root.promptId,
         resolved: !root.resolved,
