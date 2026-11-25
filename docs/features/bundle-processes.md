@@ -417,6 +417,26 @@ read it again. The `DiagnosticsStore` is still not reloaded on publish, so a
 bundle a publish adds shows inactive in `catalog.Get` (revisited at S62); the
 gateway does not yet expose these methods to the desktop (S63–S66).
 
+S63a has `startPlatform` serve every member of `doric.catalog/v1`:
+`Distribution` and `ReadArtifact` (`src/platform/distribution.ts`; chunks of
+at most 1 MiB, the file hashed again on disk before answering, else
+`not_found` with `{ sha256 }`), `Watch`, and `Disable` and `ResetComposition`
+(`src/platform/composition-actions.ts`, given by the optional
+`PlatformOptions.composition`, logging to the console). Each member answers
+`UNIMPLEMENTED` when its option is absent. The distribution's `hostBoot` is
+random per platform start. A publish adopts in this order: the supervisor,
+the current resolution and the gateway, then the diagnostics
+(`DiagnosticsStore.adopt`, one record per id unlike `load`, `requires` indexed
+only for new ids), then the distribution, then the open `Watch` calls. A
+`Watch` without `onAdopt` sends its first item and stays open. The gateway
+serves the platform's `DESKTOP` methods; its other platform methods answer
+`UNIMPLEMENTED` instead of 404, and an unserved path still answers a plain
+404 without `unknown_contract`. Known risk accepted by the owner: `Disable`
+and `ResetComposition` are unauthenticated on the public listener (see the
+2026-11-25 group E entry). Open: `platform/distribution.ts` repeats the
+per-bundle body of `loader/distribution.ts`'s `distributionFor`; two `Watch`
+tests depend on timing.
+
 S32 adds `host.assets` to manifests v1 and v2: globs relative to the bundle
 directory (refused: empty, absolute, a `.`, `..` or empty segment, a `\`),
 answered by `hostAssetsOf`. The host SDK's `context.assets` reads them:
@@ -1593,3 +1613,9 @@ sandbox pool` then `Sandbox pool configured` with the `logSandboxPool`
   unary forward is not aborted when its window is destroyed; no test streams
   end to end through Electron; the desktop e2e needs `--no-sandbox` as root,
   which the nx `e2e` target does not pass.
+- 2026-11-25: phase 3, slice S63a, of
+  [`docs/designs/grpc-processes.md`](../designs/grpc-processes.md) (version
+  6.38): the platform serves `doric.catalog/v1` in full (`Distribution`,
+  `ReadArtifact`, `Watch`, `Disable`, `ResetComposition`) and the gateway
+  serves the platform's `DESKTOP` methods; `PlatformOptions.composition`,
+  a random `hostBoot`, a fixed publish order and `DiagnosticsStore.adopt`.

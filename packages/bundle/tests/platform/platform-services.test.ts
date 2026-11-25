@@ -51,6 +51,7 @@ import {
 import {
   CatalogService,
   type CatalogSnapshot,
+  CatalogSnapshotSchema,
 } from '../../src/contracts/gen/doric/platform/catalog/v1/catalog_pb.js';
 import {
   DiagnosticsService,
@@ -100,6 +101,7 @@ import {
   isAlive,
   resolveHost,
   setupPlatform,
+  sleep,
   until,
   within,
 } from '../support/scripted-host.js';
@@ -269,6 +271,58 @@ const catalogGet = async (
       assert.ok(catalogSnapshot !== undefined, 'Get answered no snapshot');
 
       return catalogSnapshot;
+    },
+  };
+};
+
+/** An open `Watch`: its items so far, and the error that ended it, if any. */
+const watchOf = (
+  t: TestContext,
+  client: Client<typeof CatalogService>,
+): {
+  readonly items: CatalogSnapshot[];
+  error(): unknown;
+  /** Waits for `count` items; fails with the stream's error if it ended. */
+  until(count: number): Promise<void>;
+} => {
+  const controller = new AbortController();
+  const items: CatalogSnapshot[] = [];
+  let failure: unknown;
+  const reading = (async () => {
+    try {
+      for await (const { catalogSnapshot } of client.watch(
+        {},
+        { signal: controller.signal },
+      )) {
+        assert.ok(
+          catalogSnapshot !== undefined,
+          'a Watch item without snapshot',
+        );
+        items.push(catalogSnapshot);
+      }
+    } catch (error) {
+      failure ??= error;
+    }
+  })();
+
+  t.after(async () => {
+    controller.abort();
+    await reading;
+  });
+
+  return {
+    items,
+    error: () => failure,
+    until: async (count) => {
+      await until(
+        () => items.length >= count || failure !== undefined,
+        `${count} Watch items`,
+        5_000,
+      );
+
+      if (items.length < count) {
+        assert.fail(`Watch ended after ${items.length} items: ${failure}`);
+      }
     },
   };
 };
@@ -459,8 +513,8 @@ describe('doric.catalog/v1 Get', () => {
   });
 });
 
-describe('doric.catalog/v1 methods not served yet', () => {
-  test('Watch and Disable end with UNIMPLEMENTED, reason unknown_contract', async (t) => {
+describe('doric.catalog/v1 members whose option is absent', () => {
+  test('Distribution, ReadArtifact, Disable and ResetComposition end with UNIMPLEMENTED, reason unknown_contract', async (t) => {
     const resolved = resolveCallHost();
     const env = await setupRouter(t, [
       createCatalogService({
@@ -473,23 +527,159 @@ describe('doric.catalog/v1 methods not served yet', () => {
     const token = await env.start('stranger');
     const client = env.raw(CatalogService, token);
 
-    const watch = await failureOf(
+    const distribution = await failureOf(
+      client.distribution({}),
+      'Distribution',
+    );
+    const artifact = await failureOf(
       (async () => {
-        for await (const _ of client.watch({})) {
+        for await (const _ of client.readArtifact({ sha256: 'a'.repeat(64) })) {
           // Not served: no message is expected.
         }
       })(),
-      'Watch',
+      'ReadArtifact',
     );
     const disable = await failureOf(
       client.disable({ bundleId: 'alpha' }),
       'Disable',
     );
+    const reset = await failureOf(client.resetComposition({}), 'Reset');
 
-    for (const error of [watch, disable]) {
+    for (const error of [distribution, artifact, disable, reset]) {
       assert.equal(error.code, Code.Unimplemented, error.message);
       assert.equal(fromConnectError(error).code, 'unknown_contract');
     }
+  });
+
+  test('Watch without onAdopt sends the item Get answers, then nothing', async (t) => {
+    const resolved = resolveCallHost();
+    const diagnostics = loaded(resolved);
+
+    diagnostics.setState('settings', 'active');
+
+    const env = await setupRouter(t, [
+      createCatalogService({
+        resolved: () => resolved,
+        diagnostics,
+        storage: () => undefined,
+        index: () => routerIndex,
+      }),
+    ]);
+    const token = await env.start('stranger');
+    const client = env.raw(CatalogService, token);
+    const watching = watchOf(t, client);
+
+    await watching.until(1);
+
+    const { catalogSnapshot } = await within(client.get({}), 'Get');
+
+    assert.deepEqual(
+      toJson(CatalogSnapshotSchema, watching.items[0] as CatalogSnapshot),
+      toJson(CatalogSnapshotSchema, catalogSnapshot as CatalogSnapshot),
+    );
+    await sleep(200);
+    assert.equal(watching.items.length, 1);
+    assert.equal(watching.error(), undefined);
+  });
+});
+
+describe('doric.catalog/v1 Watch', () => {
+  test('sends the item Get answers, then one item per resolution onAdopt reports, with the states at that moment', async (t) => {
+    const first = resolveCallHost();
+    const next: ResolvedEnvironment = { ...resolveReplayHost(), generation: 2 };
+    const diagnostics = loaded(first);
+    const listeners: ((resolved: ResolvedEnvironment) => void)[] = [];
+    let current = first;
+    const env = await setupRouter(t, [
+      createCatalogService({
+        resolved: () => current,
+        diagnostics,
+        storage: () => undefined,
+        index: () => routerIndex,
+        onAdopt: (listener) => {
+          listeners.push(listener);
+
+          return () => {
+            listeners.splice(listeners.indexOf(listener), 1);
+          };
+        },
+      }),
+    ]);
+    const token = await env.start('stranger');
+    const watching = watchOf(t, env.raw(CatalogService, token));
+
+    await watching.until(1);
+    assert.equal(watching.items[0]?.generation, first.generation);
+    assert.equal(listeners.length, 1, 'Watch subscribed to onAdopt once');
+
+    current = next;
+    diagnostics.setState('core', 'active');
+
+    for (const listener of [...listeners]) {
+      listener(next);
+    }
+
+    await watching.until(2);
+
+    const item = watching.items[1];
+
+    assert.equal(item?.generation, 2);
+    assert.deepEqual(
+      item?.bundles.map(({ id }) => id),
+      next.entries.map(({ id }) => id),
+    );
+    assert.equal(
+      item?.bundles.find(({ id }) => id === 'core')?.state,
+      'active',
+    );
+  });
+});
+
+describe('doric.catalog/v1 Disable and ResetComposition', () => {
+  test("call the composition's members, map their errors by toConnectError, and refuse an empty bundleId with INVALID_ARGUMENT before any call", async (t) => {
+    const resolved = resolveCallHost();
+    const calls: string[] = [];
+    const env = await setupRouter(t, [
+      createCatalogService({
+        resolved: () => resolved,
+        diagnostics: loaded(resolved),
+        storage: () => undefined,
+        index: () => routerIndex,
+        composition: {
+          disable: async ({ bundleId }) => {
+            calls.push(`disable ${bundleId}`);
+
+            if (bundleId === 'ghost') {
+              throw new ContractError('not_found', 'no ghost');
+            }
+          },
+          resetComposition: async () => {
+            calls.push('reset');
+            throw new ContractError('unavailable', 'restart the host', {
+              status: 'kernel_restart_required',
+            });
+          },
+        },
+      }),
+    ]);
+    const token = await env.start('stranger');
+    const client = env.raw(CatalogService, token);
+
+    await within(client.disable({ bundleId: 'alpha' }), 'Disable');
+
+    const ghost = await failureOf(client.disable({ bundleId: 'ghost' }));
+    const empty = await failureOf(client.disable({ bundleId: '' }));
+    const reset = await failureOf(client.resetComposition({}));
+
+    assert.equal(ghost.code, Code.NotFound, ghost.message);
+    assert.equal(fromConnectError(ghost).code, 'not_found');
+    assert.equal(empty.code, Code.InvalidArgument, empty.message);
+    assert.equal(fromConnectError(empty).code, 'invalid_input');
+    assert.equal(reset.code, Code.Unavailable, reset.message);
+    assert.deepEqual(fromConnectError(reset).details, {
+      status: 'kernel_restart_required',
+    });
+    assert.deepEqual(calls, ['disable alpha', 'disable ghost', 'reset']);
   });
 });
 

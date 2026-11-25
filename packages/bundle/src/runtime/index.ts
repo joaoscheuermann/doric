@@ -38,6 +38,12 @@ export {
   resolveEnvironment,
 } from './catalog.js';
 export {
+  catalogSnapshotMessage,
+  catalogSnapshotOf,
+  distributionCatalogOf,
+  distributionMessage,
+} from './catalog-messages.js';
+export {
   type Alternative,
   type AlternativeChoices,
   alternativeSchema,

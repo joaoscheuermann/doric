@@ -75,12 +75,20 @@ export type GatewayRelay = (
  * `doric.*`, and that `resolved.contracts` lists with at least one provider;
  * a method in both appears once, at its (a) place. So a bundle a publish
  * adds has these methods served, and one it removes (or quarantines, or
- * disables) no longer has them, unless another provider remains. Every
- * other method is never served. Pure; never throws.
+ * disables) no longer has them, unless another provider remains; then (c)
+ * every method of `platform` whose `expose` is `DESKTOP` (the platform
+ * contracts the host serves in process: `doric.catalog/v1`'s `Get`,
+ * `Distribution`, `ReadArtifact`, `Watch`, `Disable`, `ResetComposition`
+ * and `doric.diagnostics/v1`'s `Report`), whatever `resolved` provides.
+ * A method of `platform` that is not `DESKTOP` (`Descriptors`,
+ * `doric.diagnostics/v1.Get`, `doric.generation/v1.*`) is never served.
+ * Each path appears once, at its first place. Every other method is never
+ * served. Pure; never throws.
  */
 export const servedMethods = (
   index: CatalogIndex,
   resolved: ResolvedEnvironment,
+  platform?: readonly MethodInfo[],
 ): readonly MethodInfo[] => {
   const provided = new Set(
     resolved.contracts
@@ -103,7 +111,20 @@ export const servedMethods = (
         !served.has(path),
     );
 
-  return [...publicApi, ...desktop];
+  for (const { path } of desktop) {
+    served.add(path);
+  }
+
+  const inProcess: MethodInfo[] = [];
+
+  for (const info of platform ?? []) {
+    if (info.expose === 'DESKTOP' && !served.has(info.path)) {
+      served.add(info.path);
+      inProcess.push(info);
+    }
+  }
+
+  return [...publicApi, ...desktop, ...inProcess];
 };
 
 export interface GatewayHandlerOptions {

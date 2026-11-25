@@ -10,9 +10,6 @@ import {
   type DescMessage,
   type DescService,
   fromJson,
-  type JsonObject,
-  type JsonValue,
-  type MessageInitShape,
   type MessageShape,
   toJson,
 } from '@bufbuild/protobuf';
@@ -41,7 +38,8 @@ import { ContractError, toContractError } from '../../contracts/error.js';
 import { BundleService } from '../../contracts/gen/doric/platform/bundle/v1/bundle_pb.js';
 import {
   CatalogService,
-  type CatalogSnapshotSchema,
+  DisableRequestSchema,
+  ReadArtifactRequestSchema,
 } from '../../contracts/gen/doric/platform/catalog/v1/catalog_pb.js';
 import {
   DiagnosticsService,
@@ -64,20 +62,24 @@ import {
   StartupService,
 } from '../../contracts/gen/doric/platform/startup/v1/startup_pb.js';
 import { callContextKey, callOf } from '../../contracts/metadata.js';
-import type {
-  CatalogSnapshot,
-  DiagnosticBundle,
-} from '../../contracts/platform.js';
+import type { DiagnosticBundle } from '../../contracts/platform.js';
 import { toConnectError } from '../../contracts/status.js';
 import type { ResolvedEnvironment } from '../../runtime/catalog.js';
+import {
+  catalogSnapshotMessage,
+  distributionMessage,
+  jsonOf,
+} from '../../runtime/catalog-messages.js';
 import type { DiagnosticsStore } from '../../runtime/diagnostics.js';
 import { restoreCall } from '../../runtime/envelope/call-meta.js';
 import {
   type BundleStates,
+  type CatalogCompositionProvider,
   catalogSnapshot,
 } from '../../runtime/platform-providers.js';
 import type { CatalogIndex, MethodInfo } from '../catalog-index.js';
 import { descriptorSetBytes } from '../descriptor-set.js';
+import type { PlatformDistribution } from '../distribution.js';
 import { maxMessageBytes } from './control.js';
 import {
   type InstanceKey,
@@ -396,6 +398,18 @@ export interface CatalogServiceOptions {
    * (`doric.app.hooks/v1` among them). Read at every call. Must not throw.
    */
   readonly index: () => CatalogIndex;
+  /** `Distribution` and `ReadArtifact`; absent: both `UNIMPLEMENTED`. */
+  readonly distribution?: PlatformDistribution;
+  /** `Disable` and `ResetComposition`; absent: both `UNIMPLEMENTED`. */
+  readonly composition?: CatalogCompositionProvider;
+  /**
+   * Calls `listener` with each resolution the platform adopts after this
+   * call, after the diagnostics adopted it; answers the unsubscribe. Absent:
+   * `Watch` sends its first item only. Must not throw.
+   */
+  readonly onAdopt?: (
+    listener: (next: ResolvedEnvironment) => void,
+  ) => () => void;
 }
 
 /**
@@ -411,109 +425,147 @@ export interface CatalogServiceOptions {
  * `Descriptors` streams `toBinary(FileDescriptorSetSchema, { file: <every
  * file of index().registry, imports first> })` in chunks of at most 1 MiB,
  * in order. An empty set answers a stream without items.
- * `Distribution`, `ReadArtifact`, `Watch`, `Disable` and `ResetComposition`
- * end with `UNIMPLEMENTED`, reason `unknown_contract`, until the slices that
- * serve them.
+ *
+ * - `Distribution`: `distributionMessage(await distribution.of(resolved()))`.
+ * - `ReadArtifact({ sha256 })`: the bytes of `distribution.read(sha256)` in
+ *   items of at most 1 MiB, in order; an empty file is a stream without
+ *   items; `not_found` → `NOT_FOUND`. A `sha256` that breaks the proto's
+ *   pattern answers `INVALID_ARGUMENT` `invalid_input` before any read.
+ * - `Watch`: first the item `Get` would answer now, then one item per
+ *   resolution `onAdopt` reports, the snapshot of that resolution with the
+ *   states at that moment. A restart of a bundle sends nothing. The stream
+ *   ends only when the call ends (the caller cancels, or the gateway closes
+ *   at shutdown); it is not lost with any bundle.
+ * - `Disable({ bundleId })`, `ResetComposition()`: `composition`'s members;
+ *   `bundleId` empty → `INVALID_ARGUMENT` `invalid_input`; their errors map
+ *   by `toConnectError` (`not_found` → `NOT_FOUND`, `invalid_input` →
+ *   `INVALID_ARGUMENT`, `unavailable` → `UNAVAILABLE`).
+ *
+ * A member whose option is absent ends with `UNIMPLEMENTED`
+ * `unknown_contract`, as before.
  */
 export const createCatalogService = (
   options: CatalogServiceOptions,
-): PlatformServiceImpl<typeof CatalogService> => ({
-  service: CatalogService,
-  implementation: {
-    get: () => {
-      const resolved = options.resolved();
-      const snapshot = catalogSnapshot(
+): PlatformServiceImpl<typeof CatalogService> => {
+  /** The snapshot `Get` answers for `resolved`, with the present states. */
+  const snapshotOf = (resolved: ResolvedEnvironment) =>
+    catalogSnapshotMessage(
+      catalogSnapshot(
         resolved,
         statesById(resolved, options.diagnostics),
         options.storage(),
-      );
+      ),
+    );
+  const { distribution, composition, onAdopt } = options;
 
-      return { catalogSnapshot: snapshotMessage(snapshot) };
+  return {
+    service: CatalogService,
+    implementation: {
+      get: () => ({ catalogSnapshot: snapshotOf(options.resolved()) }),
+      distribution:
+        distribution === undefined
+          ? () => notServed('Distribution')
+          : async () =>
+              distributionMessage(await distribution.of(options.resolved())),
+      readArtifact:
+        distribution === undefined
+          ? () => notServed('ReadArtifact')
+          : async function* (request) {
+              let bytes: Uint8Array;
+
+              try {
+                const { sha256 } = validated(
+                  ReadArtifactRequestSchema,
+                  request,
+                );
+
+                bytes = await distribution.read(sha256);
+              } catch (error) {
+                throw toConnectError(toContractError(error));
+              }
+
+              for (let at = 0; at < bytes.length; at += descriptorChunkBytes) {
+                yield { chunk: bytes.subarray(at, at + descriptorChunkBytes) };
+              }
+            },
+      watch: async function* (_request, context) {
+        const pending: ReturnType<typeof snapshotOf>[] = [];
+        let wake: (() => void) | undefined;
+        const unsubscribe = onAdopt?.((next) => {
+          pending.push(snapshotOf(next));
+          wake?.();
+        });
+
+        try {
+          yield { catalogSnapshot: snapshotOf(options.resolved()) };
+
+          while (!context.signal.aborted) {
+            const item = pending.shift();
+
+            if (item !== undefined) {
+              yield { catalogSnapshot: item };
+              continue;
+            }
+
+            await new Promise<void>((resolve) => {
+              const done = () => {
+                wake = undefined;
+                context.signal.removeEventListener('abort', done);
+                resolve();
+              };
+
+              wake = done;
+              context.signal.addEventListener('abort', done);
+            });
+          }
+        } finally {
+          unsubscribe?.();
+        }
+      },
+      disable:
+        composition === undefined
+          ? () => notServed('Disable')
+          : async (request, context) => {
+              const { bundleId } = validated(DisableRequestSchema, request);
+
+              await composition.disable({ bundleId }, callOf(context));
+
+              return {};
+            },
+      resetComposition:
+        composition === undefined
+          ? () => notServed('ResetComposition')
+          : async (_request, context) => {
+              await composition.resetComposition(callOf(context));
+
+              return {};
+            },
+      descriptors: () => {
+        const bytes = descriptorSetBytes(options.index().registry.files);
+        const items: { chunk: Uint8Array }[] = [];
+
+        for (let at = 0; at < bytes.length; at += descriptorChunkBytes) {
+          items.push({ chunk: bytes.subarray(at, at + descriptorChunkBytes) });
+        }
+
+        return createAsyncIterable(items);
+      },
     },
-    distribution: () => notServed('Distribution'),
-    readArtifact: () => notServed('ReadArtifact'),
-    watch: () => notServed('Watch'),
-    disable: () => notServed('Disable'),
-    resetComposition: () => notServed('ResetComposition'),
-    descriptors: () => {
-      const bytes = descriptorSetBytes(options.index().registry.files);
-      const items: { chunk: Uint8Array }[] = [];
-
-      for (let at = 0; at < bytes.length; at += descriptorChunkBytes) {
-        items.push({ chunk: bytes.subarray(at, at + descriptorChunkBytes) });
-      }
-
-      return createAsyncIterable(items);
-    },
-  },
-});
-
-/** The bound on `doric.catalog/v1.DescriptorsResponse.chunk`: 1 MiB. */
-const descriptorChunkBytes = 1_048_576;
-
-/** `snapshot` as the `doric.catalog/v1.CatalogSnapshot` message. */
-const snapshotMessage = (
-  snapshot: CatalogSnapshot,
-): MessageInitShape<typeof CatalogSnapshotSchema> => ({
-  generation: snapshot.generation,
-  composition: {
-    core: snapshot.composition.core,
-    enabled: [...snapshot.composition.enabled],
-    providers: { ...snapshot.composition.providers },
-  },
-  bundles: snapshot.bundles.map(({ manifest, reasons, ...bundle }) => ({
-    ...bundle,
-    ...(manifest === undefined ? {} : { manifest: jsonObjectOf(manifest) }),
-    reasons: reasons.map((reason) => ({ ...reason })),
-  })),
-  order: [...snapshot.order],
-  contracts: snapshot.contracts.map(({ providers, ...contract }) => ({
-    ...contract,
-    providers: providers.map((provider) => ({ ...provider })),
-  })),
-  ...(snapshot.storage === undefined ? {} : { storage: snapshot.storage }),
-});
+  };
+};
 
 /**
- * `value` as JSON, as `JSON.stringify` would write it: object members whose
- * value JSON cannot hold are left out, and so become array items `null`.
+ * The bound on `doric.catalog/v1.DescriptorsResponse.chunk` and
+ * `ReadArtifactResponse.chunk`: 1 MiB.
  */
-const jsonOf = (value: unknown): JsonValue => {
-  if (
-    value === null ||
-    typeof value === 'string' ||
-    typeof value === 'boolean' ||
-    (typeof value === 'number' && Number.isFinite(value))
-  ) {
-    return value;
-  }
-
-  if (Array.isArray(value)) {
-    return value.map((item) => jsonOf(item));
-  }
-
-  return typeof value === 'object' ? jsonObjectOf(value) : null;
-};
-
-/** The members of `value` JSON can hold, as a JSON object. */
-const jsonObjectOf = (value: object): JsonObject => {
-  const json: JsonObject = {};
-
-  for (const [key, member] of Object.entries(value)) {
-    if (member !== undefined && typeof member !== 'function') {
-      json[key] = jsonOf(member);
-    }
-  }
-
-  return json;
-};
+const descriptorChunkBytes = 1_048_576;
 
 /**
  * The diagnostics' states lined up with `resolved.entries` by bundle id, for
  * `catalogSnapshot`, which reads them by position: a bundle the diagnostics
  * do not hold is `inactive` with the resolution's reasons.
  */
-const statesById = (
+export const statesById = (
   resolved: ResolvedEnvironment,
   diagnostics: Pick<DiagnosticsStore, 'snapshot' | 'state'>,
 ): BundleStates => {

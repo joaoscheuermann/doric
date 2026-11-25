@@ -3304,6 +3304,7 @@ function startPlatform(options: PlatformOptions): Promise<Platform>;
 interface PlatformOptions {
   // ... routerAddress, publicAddress, index, resolved, commandOf, ...
   readonly startup?: StartupSink; // sink of doric.startup/v1; also hears stage('database_client')
+  readonly composition?: PlatformCompositionOptions; // { overridesPath, read, resolve }; undefined: Disable and ResetComposition answer UNIMPLEMENTED
   readonly hostPart?: (bundleId: string) => boolean; // undefined: every bundle has one
   readonly beforeListen?: (doric: DoricCaller) => Promise<void>;
   readonly beforeStop?: (
@@ -3357,7 +3358,19 @@ function stagedHostPart(bundlesDir: string): (bundleId: string) => boolean;
   contract whose id starts with `api.`, whatever its `expose`, in file then
   declaration order, the same array on every call. So `doric.api.*` reaches its
   provider over Connect and gRPC as caller `doric`; once a publish removes the
-  provider it answers `UNIMPLEMENTED`, `unknown_contract`.
+  provider it answers `UNIMPLEMENTED`, `unknown_contract`. After those it
+  serves the platform's own `DESKTOP` methods (`doric.catalog/v1`'s members,
+  `doric.diagnostics/v1.Report`); the platform's other methods answer
+  `UNIMPLEMENTED`, and a path it does not serve a plain 404.
+- `doric.catalog/v1` is served in full: `Distribution` (with a `hostBoot`
+  drawn at random per start), `ReadArtifact` (chunks of at most 1 MiB, the file
+  hashed again before answering, else `not_found` with `{ sha256 }`), `Watch`
+  (a first item, then one per adopted publish), and `Disable` and
+  `ResetComposition` through `composition`, which log to the console. Both
+  are unauthenticated on the public listener.
+- A publish runs one at a time and adopts in order: the supervisor, the
+  current resolution and the gateway, the diagnostics
+  (`DiagnosticsStore.adopt`), the distribution, the open `Watch` calls.
 - `withBasicContracts(index)` answers `index` with the 12 basic `HOST`
   contracts of `basicHostContractFiles` as a fallback (`index`'s files win
   where both hold one), since a staged `descriptors.binpb` holds only its

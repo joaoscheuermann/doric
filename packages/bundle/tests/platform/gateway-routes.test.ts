@@ -32,7 +32,18 @@ import {
   file_doric_models_v1_models,
   ModelsService,
 } from '../../src/contracts/gen/doric/models/v1/models_pb.js';
-import { file_doric_platform_catalog_v1_catalog } from '../../src/contracts/gen/doric/platform/catalog/v1/catalog_pb.js';
+import {
+  CatalogService,
+  file_doric_platform_catalog_v1_catalog,
+} from '../../src/contracts/gen/doric/platform/catalog/v1/catalog_pb.js';
+import {
+  DiagnosticsService,
+  file_doric_platform_diagnostics_v1_diagnostics,
+} from '../../src/contracts/gen/doric/platform/diagnostics/v1/diagnostics_pb.js';
+import {
+  file_doric_platform_generation_v1_generation,
+  GenerationService,
+} from '../../src/contracts/gen/doric/platform/generation/v1/generation_pb.js';
 import { Environment } from '../../src/contracts/gen/doric/platform/v1/options_pb.js';
 import { file_doric_settings_v1_settings } from '../../src/contracts/gen/doric/settings/v1/settings_pb.js';
 import {
@@ -184,6 +195,60 @@ describe('servedMethods', () => {
     assert.ok(!paths.some((entry) => entry.startsWith('/panel.v1.')));
     assert.ok(!paths.some((entry) => entry.startsWith('/doric.platform.')));
     assert.ok(!paths.includes(path('doric.tools.v1.ToolsService', 'List')));
+  });
+
+  test("then (c) the DESKTOP methods of the platform's in-process contracts, whatever the resolution provides, after (a) and (b), each path once", () => {
+    // `doric.diagnostics/v1` brings `doric.catalog/v1`, which it imports
+    // (through `bundle/contracts`, so naming this copy too would add a second
+    // file of the same name); methods are looked up by path.
+    const platformIndex = createCatalogIndex([
+      file_doric_platform_diagnostics_v1_diagnostics,
+      file_doric_platform_generation_v1_generation,
+    ]);
+    const methodsOf = (service: DescService) =>
+      service.methods.map((method) => {
+        const info = platformIndex.method(path(service.typeName, method.name));
+
+        assert.ok(info !== undefined, `${service.typeName}/${method.name}`);
+
+        return info;
+      });
+    const platform = [
+      ...methodsOf(CatalogService),
+      ...methodsOf(DiagnosticsService),
+      ...methodsOf(GenerationService),
+      // A path given twice is served once.
+      ...methodsOf(CatalogService),
+    ];
+    const catalog = (method: string) =>
+      path('doric.platform.catalog.v1.CatalogService', method);
+    const resolved = resolveHost({
+      models: { mode: 'alive', provides: ['models/v1@1.0.0'] },
+      demo: { mode: 'alive', provides: ['demo/v1@1.0.0'] },
+    });
+
+    assert.deepEqual(
+      servedMethods(index, resolved, platform).map((info) => info.path),
+      [
+        toolsCatalog,
+        ...modelsDesktop,
+        '/demo.v1.DemoService/Echo',
+        '/demo.v1.DemoService/Watch',
+        catalog('Get'),
+        catalog('Distribution'),
+        catalog('ReadArtifact'),
+        catalog('Watch'),
+        catalog('Disable'),
+        catalog('ResetComposition'),
+        path('doric.platform.diagnostics.v1.DiagnosticsService', 'Report'),
+      ],
+    );
+    // A resolution that provides nothing still has (c).
+    assert.ok(
+      servedMethods(index, resolveHost({}), platform)
+        .map((info) => info.path)
+        .includes(catalog('Distribution')),
+    );
   });
 });
 

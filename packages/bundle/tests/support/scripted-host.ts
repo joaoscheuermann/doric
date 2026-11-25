@@ -169,19 +169,28 @@ export interface FixtureBundle extends Script {
 
 const basics = ['hooks/v1@1.0.0', 'tools/v1@1.0.0', 'skills/v1@1.0.0'];
 
-const coreCandidate = (): CatalogCandidate => {
+/** A bundle's directory when no `dirOf` is given: one that does not exist. */
+const defaultDirOf = (id: string): string => `/bundles/${id}`;
+
+const coreCandidate = (
+  dirOf: (id: string) => string = defaultDirOf,
+): CatalogCandidate => {
   const source = manifest('core', { provides: basics });
 
   return {
     id: 'core',
-    source: { kind: 'installed', dir: '/bundles/core' },
+    source: { kind: 'installed', dir: dirOf('core') },
     manifest: manifestV1Schema.parse(source),
     descriptor: descriptorFor(source),
     errors: [],
   };
 };
 
-const candidateV2 = (id: string, bundle: FixtureBundle): CatalogCandidate => {
+const candidateV2 = (
+  id: string,
+  bundle: FixtureBundle,
+  dirOf: (id: string) => string = defaultDirOf,
+): CatalogCandidate => {
   const provides = [...(bundle.provides ?? [])];
   const source: ManifestV2Input = {
     manifestVersion: 2,
@@ -201,7 +210,7 @@ const candidateV2 = (id: string, bundle: FixtureBundle): CatalogCandidate => {
 
   return {
     id,
-    source: { kind: 'installed', dir: `/bundles/${id}` },
+    source: { kind: 'installed', dir: dirOf(id) },
     manifest: manifestV2Schema.parse(source),
     descriptor: descriptorFor(manifest(id, { provides })),
     errors: [],
@@ -210,15 +219,22 @@ const candidateV2 = (id: string, bundle: FixtureBundle): CatalogCandidate => {
 
 /**
  * The host resolution of `core` (an `alive` fixture) and `bundles`, every
- * one enabled but those in `options.disabled`.
+ * one enabled but those in `options.disabled`; each bundle installed in
+ * `options.dirOf(id)` (`/bundles/<id>`, which does not exist, when
+ * undefined).
  */
 export const resolveHost = (
   bundles: Readonly<Record<string, FixtureBundle>>,
-  options: { readonly disabled?: readonly string[] } = {},
+  options: {
+    readonly disabled?: readonly string[];
+    readonly dirOf?: (id: string) => string;
+  } = {},
 ): ResolvedEnvironment => {
   const candidates = [
-    coreCandidate(),
-    ...Object.entries(bundles).map(([id, bundle]) => candidateV2(id, bundle)),
+    coreCandidate(options.dirOf),
+    ...Object.entries(bundles).map(([id, bundle]) =>
+      candidateV2(id, bundle, options.dirOf),
+    ),
   ];
 
   return resolveEnvironment(
@@ -423,6 +439,10 @@ export interface PlatformSetupOptions {
   readonly publicAddress?: string;
   /** `PlatformOptions.index`; {@link fixtureIndex} when undefined. */
   readonly index?: CatalogIndex;
+  /** `resolveHost`'s `dirOf` for the boot's resolution. */
+  readonly dirOf?: (id: string) => string;
+  /** `PlatformOptions.composition`. */
+  readonly composition?: PlatformOptions['composition'];
 }
 
 /** A platform whose `startPlatform` has been called, settled or not. */
@@ -441,7 +461,10 @@ export const bootPlatform = (
   options: PlatformSetupOptions = {},
 ): BootingPlatform => {
   const log = fixtureLog(t);
-  const resolved = resolveHost(bundles);
+  const resolved = resolveHost(
+    bundles,
+    options.dirOf === undefined ? {} : { dirOf: options.dirOf },
+  );
   const diagnostics = new DiagnosticsStore({ generation: 1 });
 
   diagnostics.load(resolved);
@@ -480,6 +503,9 @@ export const bootPlatform = (
     ...(options.beforeStop === undefined
       ? {}
       : { beforeStop: options.beforeStop }),
+    ...(options.composition === undefined
+      ? {}
+      : { composition: options.composition }),
     exit: (code) => {
       exits.push(code);
     },

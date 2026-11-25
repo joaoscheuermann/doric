@@ -29,6 +29,9 @@ import {
   file_doric_models_v1_models,
   ModelsService,
 } from '../../src/contracts/gen/doric/models/v1/models_pb.js';
+import { CatalogService } from '../../src/contracts/gen/doric/platform/catalog/v1/catalog_pb.js';
+import { DiagnosticsService } from '../../src/contracts/gen/doric/platform/diagnostics/v1/diagnostics_pb.js';
+import { GenerationService } from '../../src/contracts/gen/doric/platform/generation/v1/generation_pb.js';
 import { file_doric_settings_v1_settings } from '../../src/contracts/gen/doric/settings/v1/settings_pb.js';
 import { file_doric_tools_v1_tools } from '../../src/contracts/gen/doric/tools/v1/tools_pb.js';
 import { fromConnectError } from '../../src/contracts/status.js';
@@ -57,6 +60,12 @@ import {
   until,
   within,
 } from '../support/scripted-host.js';
+import {
+  compositionOptions,
+  sha256Of,
+  stagedDirs,
+  stagedFiles,
+} from '../support/staged-dirs.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -546,5 +555,151 @@ describe('the public API on the gateway', () => {
       'unknown_contract',
     );
     assert.equal(env.log.countOf('api', 'hidden:doric'), 2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The platform's own DESKTOP methods (S63a; section 11, "The routes" (b):
+// "every method of any contract whose `expose` is `DESKTOP`")
+
+/** A Connect binary client of `service` over HTTP/1.1 on the public port. */
+const binaryOf = <S extends DescService>(
+  platform: Platform,
+  service: S,
+): Client<S> =>
+  createClient(
+    service,
+    createConnectTransport({
+      baseUrl: `http://127.0.0.1:${publicPortOf(platform)}`,
+      httpVersion: '1.1',
+      useBinaryFormat: true,
+    }),
+  );
+
+describe("the platform's DESKTOP methods on the gateway", () => {
+  test('Get, Distribution, ReadArtifact, Watch, Disable, ResetComposition and doric.diagnostics/v1 Report answer over Connect binary, Connect JSON and gRPC', async (t) => {
+    const dirs = stagedDirs(t);
+    const bundles = { models };
+
+    dirs.stage('core', 'models');
+
+    const env = await setupPlatform(t, bundles, {
+      publicAddress: '127.0.0.1:0',
+      index,
+      dirOf: dirs.dirOf,
+      composition: compositionOptions(dirs.root, bundles, dirs.dirOf),
+    });
+    const manifest = stagedFiles('models')['manifest.json'] as Buffer;
+    const protocols = {
+      'Connect binary': <S extends DescService>(service: S) =>
+        binaryOf(env.platform, service),
+      'Connect JSON': <S extends DescService>(service: S) =>
+        jsonOf(env.platform, service),
+      gRPC: <S extends DescService>(service: S) =>
+        grpcOf(t, env.platform, service),
+    };
+
+    for (const [protocol, clientOf] of Object.entries(protocols)) {
+      const catalog = clientOf(CatalogService);
+      const diagnostics = clientOf(DiagnosticsService);
+      const what = (method: string) => `${method} over ${protocol}`;
+
+      const got = await within(catalog.get({}), what('Get'), 4_000);
+
+      assert.ok(got.catalogSnapshot !== undefined, what('Get'));
+
+      const distribution = await within(
+        catalog.distribution({}),
+        what('Distribution'),
+        4_000,
+      );
+
+      assert.notEqual(distribution.hostBoot, '', what('Distribution'));
+
+      const chunks: Uint8Array[] = [];
+
+      await within(
+        (async () => {
+          for await (const { chunk } of catalog.readArtifact({
+            sha256: sha256Of(manifest),
+          })) {
+            chunks.push(chunk);
+          }
+        })(),
+        what('ReadArtifact'),
+        4_000,
+      );
+      assert.deepEqual(Buffer.concat(chunks), manifest, what('ReadArtifact'));
+
+      const controller = new AbortController();
+      const first = await within(
+        (async () => {
+          for await (const item of catalog.watch(
+            {},
+            { signal: controller.signal },
+          )) {
+            return item;
+          }
+
+          return undefined;
+        })(),
+        what('Watch'),
+        4_000,
+      ).finally(() => controller.abort());
+
+      assert.ok(first?.catalogSnapshot !== undefined, what('Watch'));
+
+      // Reaches the recovery actions: an unknown bundle is not found there.
+      assertFailure(
+        await failureOf(catalog.disable({ bundleId: 'ghost' })),
+        Code.NotFound,
+        'not_found',
+      );
+      await within(
+        catalog.resetComposition({}),
+        what('ResetComposition'),
+        8_000,
+      );
+      await within(
+        diagnostics.report({
+          bundleId: 'models',
+          kind: 'desktop_quarantine',
+          message: `reported over ${protocol}`,
+        }),
+        what('Report'),
+        4_000,
+      );
+    }
+
+    assert.deepEqual(
+      env.diagnostics
+        .snapshot()
+        .errors.filter(({ kind }) => kind === 'desktop_quarantine')
+        .map(({ message }) => message),
+      Object.keys(protocols).map((protocol) => `reported over ${protocol}`),
+    );
+  });
+
+  test('Descriptors, doric.diagnostics/v1 Get and doric.generation/v1 Describe answer UNIMPLEMENTED', async (t) => {
+    const env = await boot(t, { models });
+    const failures = [
+      await failureOf(
+        (async () => {
+          for await (const _ of grpcOf(
+            t,
+            env.platform,
+            CatalogService,
+          ).descriptors({})) {
+            // Not served: no item is expected.
+          }
+        })(),
+      ),
+      await failureOf(grpcOf(t, env.platform, DiagnosticsService).get({})),
+      await failureOf(grpcOf(t, env.platform, GenerationService).describe({})),
+    ];
+
+    for (const failure of failures) {
+      assert.equal(failure.code, Code.Unimplemented, failure.message);
+    }
   });
 });

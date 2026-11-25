@@ -84,12 +84,35 @@ export type PlatformReport =
 
 interface BundleRecord {
   readonly id: string;
-  readonly version: string;
+  version: string;
   state: BundleState;
   phase?: Phase;
   readonly reasons: QuarantineReason[];
   activationMs?: number;
+  /** Quarantined by its resolution's reasons, not by the supervisor. */
+  resolutionQuarantine?: boolean;
 }
+
+/** The record `load` makes of a resolution entry. */
+const recordOf = (
+  entry: ResolvedEnvironment['entries'][number],
+): BundleRecord => {
+  const state: BundleState =
+    entry.state === 'scheduled'
+      ? 'inactive'
+      : entry.state === 'disabled'
+        ? 'disabled'
+        : 'quarantined';
+
+  return {
+    id: entry.id,
+    version: entry.version,
+    state,
+    ...(entry.phase === undefined ? {} : { phase: entry.phase }),
+    reasons: [...entry.reasons],
+    ...(state === 'quarantined' ? { resolutionQuarantine: true } : {}),
+  };
+};
 
 /** Diagnostics of one environment of one generation; works without core. */
 export class DiagnosticsStore {
@@ -116,18 +139,7 @@ export class DiagnosticsStore {
     this.#issues.push(...resolved.issues);
 
     for (const entry of resolved.entries) {
-      const record: BundleRecord = {
-        id: entry.id,
-        version: entry.version,
-        state:
-          entry.state === 'scheduled'
-            ? 'inactive'
-            : entry.state === 'disabled'
-              ? 'disabled'
-              : 'quarantined',
-        ...(entry.phase === undefined ? {} : { phase: entry.phase }),
-        reasons: [...entry.reasons],
-      };
+      const record = recordOf(entry);
 
       this.#records.push(record);
 
@@ -138,22 +150,102 @@ export class DiagnosticsStore {
       }
 
       this.#bundles.set(entry.id, record);
-
-      if (entry.state !== 'disabled') {
-        const part = resolved.environment === 'host' ? 'host' : 'client';
-
-        for (const required of partLists(entry.manifest, part).requires) {
-          const consumers = this.#consumers.get(required.id) ?? new Set();
-
-          consumers.add(entry.id);
-          this.#consumers.set(required.id, consumers);
-        }
-      }
+      this.#indexRequires(resolved, entry);
     }
 
     if (resolved.recovery !== undefined) {
       this.enterRecovery(resolved.recovery.reason);
     }
+  }
+
+  /** Indexes the `requires` of a bundle `entry` that is not disabled. */
+  #indexRequires(
+    resolved: ResolvedEnvironment,
+    entry: ResolvedEnvironment['entries'][number],
+  ): void {
+    if (entry.manifest === undefined || entry.state === 'disabled') {
+      return;
+    }
+
+    const part = resolved.environment === 'host' ? 'host' : 'client';
+
+    for (const required of partLists(entry.manifest, part).requires) {
+      const consumers = this.#consumers.get(required.id) ?? new Set();
+
+      consumers.add(entry.id);
+      this.#consumers.set(required.id, consumers);
+    }
+  }
+
+  /**
+   * Follows a publish (`Platform.publish`, at `PublishTarget.adopt`): from
+   * now on `snapshot()` and `state(id)` answer for the bundles of `next`,
+   * one record per id, so a bundle the publish adds is listed and one it
+   * removes is not. For each entry of `next` with a readable manifest, in
+   * `next`'s order:
+   *
+   * - an id the store does not hold: recorded as `load` records it
+   *   (scheduled → `inactive`, disabled → `disabled`, otherwise
+   *   `quarantined` with the entry's reasons), and its `requires` indexed as
+   *   `load` indexes them;
+   * - an id it holds that `next` disables: `disabled`, with `next`'s reasons;
+   * - an id it holds that `next` quarantines (a resolution reason):
+   *   `quarantined`, with `next`'s reasons;
+   * - an id it holds that `next` schedules: `inactive` when the store had it
+   *   `disabled`, or quarantined by a resolution reason; otherwise its state
+   *   and reasons are kept (the supervisor's: `active`, or a `process_failed`
+   *   quarantine of a bundle the publish did not change).
+   *
+   * An id `next` does not hold leaves `snapshot().bundles`. The issues become
+   * `next.issues`; errors, reports and the recovery mode are kept. Entries
+   * without a manifest are listed as `load` lists them. Never throws; calling
+   * it twice with the same `next` changes nothing the second time.
+   */
+  adopt(next: ResolvedEnvironment): void {
+    const held = new Map(this.#bundles);
+    const records: BundleRecord[] = [];
+
+    this.#bundles.clear();
+
+    for (const entry of next.entries) {
+      if (entry.manifest === undefined) {
+        records.push(recordOf(entry));
+        continue;
+      }
+
+      if (this.#bundles.has(entry.id)) {
+        continue;
+      }
+
+      const previous = held.get(entry.id);
+      let record: BundleRecord;
+
+      if (previous === undefined) {
+        record = recordOf(entry);
+        this.#indexRequires(next, entry);
+      } else if (entry.state !== 'scheduled') {
+        record = recordOf(entry);
+      } else if (
+        previous.state === 'disabled' ||
+        (previous.state === 'quarantined' &&
+          previous.resolutionQuarantine === true)
+      ) {
+        record = recordOf(entry);
+      } else {
+        record = previous;
+        record.version = entry.version;
+
+        if (entry.phase !== undefined) {
+          record.phase = entry.phase;
+        }
+      }
+
+      records.push(record);
+      this.#bundles.set(entry.id, record);
+    }
+
+    this.#records.splice(0, this.#records.length, ...records);
+    this.#issues.splice(0, this.#issues.length, ...next.issues);
   }
 
   get mode(): 'normal' | 'recovery' {
@@ -185,6 +277,7 @@ export class DiagnosticsStore {
 
     if (record !== undefined) {
       record.state = 'quarantined';
+      record.resolutionQuarantine = false;
       record.reasons.push(reason);
     }
   }

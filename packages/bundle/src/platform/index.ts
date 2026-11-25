@@ -3,6 +3,8 @@
 // and the gateway. Exported from the package as `bundle/platform` (phase 3);
 // Node only, not reachable from a window.
 
+import { randomUUID } from 'node:crypto';
+
 import {
   create,
   createFileRegistry,
@@ -33,6 +35,7 @@ import { file_doric_platform_startup_v1_startup } from '../contracts/gen/doric/p
 import { BackendService } from '../contracts/gen/doric/storage/backend/v1/backend_pb.js';
 import type { QuarantineReason } from '../contracts/platform.js';
 import { fromConnectError } from '../contracts/status.js';
+import type { PlatformLog } from '../runtime/activation.js';
 import type { ResolvedEnvironment } from '../runtime/catalog.js';
 import type {
   DiagnosticsStore,
@@ -40,6 +43,11 @@ import type {
   RegistrationReplayReport,
 } from '../runtime/diagnostics.js';
 import { type CatalogIndex, createCatalogIndex } from './catalog-index.js';
+import {
+  createPlatformCompositionActions,
+  type PlatformCompositionOptions,
+} from './composition-actions.js';
+import { createPlatformDistribution } from './distribution.js';
 import { type Gateway, startGateway } from './gateway/index.js';
 import { maxMessageBytes } from './router/control.js';
 import { InstanceTable } from './router/instances.js';
@@ -77,6 +85,7 @@ export {
   catalogIndexFromDescriptors,
   createCatalogIndex,
 } from './catalog-index.js';
+export type { PlatformCompositionOptions } from './composition-actions.js';
 export {
   defaultPublicAddress,
   PublicListenerBindingError,
@@ -215,6 +224,13 @@ export interface PlatformOptions {
     doric: DoricCaller,
     signal: AbortSignal,
   ) => Promise<void>;
+  /**
+   * The recovery actions of `doric.catalog/v1` (`Disable`,
+   * `ResetComposition`), `createPlatformCompositionActions` over these
+   * options and the platform's own `publish`. Undefined: both answer
+   * `UNIMPLEMENTED` `unknown_contract`.
+   */
+  readonly composition?: PlatformCompositionOptions;
 }
 
 /** A booted platform. Its `client` is the `doric` caller of {@link DoricCaller}. */
@@ -258,6 +274,10 @@ export interface Platform extends DoricCaller {
    * `UNIMPLEMENTED`; a call or proxied connection already in flight to a
    * draining instance finishes there (T2.16). `kernel_restart_required`
    * leaves the gateway as it was.
+   *
+   * Once the publish adopts `next`, `options.diagnostics` has adopted it
+   * (`DiagnosticsStore.adopt`), the distribution serves its files, and every
+   * open `doric.catalog/v1.Watch` sends its snapshot, in that order.
    */
   publish(next: ResolvedEnvironment): Promise<PublishResult>;
   /**
@@ -326,25 +346,59 @@ export const startPlatform = async (
       router.sendPeerSignal(from, topic, payload),
   });
   const routerIndex = withPlatformContracts(options.index);
+  const distribution = createPlatformDistribution({
+    hostBoot: randomUUID(),
+    states: diagnostics,
+    storage: () => storage,
+  });
+  // The open `doric.catalog/v1.Watch` calls, told of each adopted resolution.
+  const watchers = new Set<(next: ResolvedEnvironment) => void>();
+
+  distribution.adopt(resolved);
+
+  const platformServices = [
+    generation,
+    createLogService({ write: options.writeLog ?? writeLogLine }),
+    createCatalogService({
+      resolved: () => current,
+      diagnostics,
+      storage: () => storage,
+      index: () => routerIndex,
+      distribution,
+      ...(options.composition === undefined
+        ? {}
+        : {
+            composition: createPlatformCompositionActions(options.composition, {
+              current: () => current,
+              publish: (next) => publishNext(next),
+              log: consoleLog,
+            }),
+          }),
+      onAdopt: (listener) => {
+        watchers.add(listener);
+
+        return () => {
+          watchers.delete(listener);
+        };
+      },
+    }),
+    createDiagnosticsService({ diagnostics }),
+    createBundleService(),
+    createStartupService(startup),
+  ];
+  const platformMethods = platformServices.flatMap(({ service }) =>
+    service.methods.flatMap(
+      (method) =>
+        routerIndex.method(`/${service.typeName}/${method.name}`) ?? [],
+    ),
+  );
   const router = await startRouter({
     ...(options.routerAddress === undefined
       ? {}
       : { address: options.routerAddress }),
     index: routerIndex,
     routes: callRoutesOf(resolved),
-    platformServices: [
-      generation,
-      createLogService({ write: options.writeLog ?? writeLogLine }),
-      createCatalogService({
-        resolved: () => current,
-        diagnostics,
-        storage: () => storage,
-        index: () => routerIndex,
-      }),
-      createDiagnosticsService({ diagnostics }),
-      createBundleService(),
-      createStartupService(startup),
-    ],
+    platformServices,
     instances,
     ...(options.timings === undefined ? {} : { timings: options.timings }),
     diagnostics: {
@@ -484,6 +538,7 @@ export const startPlatform = async (
         index: options.index,
         resolved,
         router,
+        platformMethods,
       });
     } catch (error) {
       await supervisor.shutdown();
@@ -499,10 +554,33 @@ export const startPlatform = async (
       supervisor.adopt(next);
       current = next;
       gateway?.setResolution(next);
+      diagnostics.adopt(next);
+      distribution.adopt(next);
+
+      for (const watcher of watchers) {
+        watcher(next);
+      }
     },
   };
   let shuttingDown: Promise<void> | undefined;
   let publishing: Promise<unknown> = Promise.resolve();
+
+  /** `Platform.publish`: one publish at a time, in call order. */
+  function publishNext(next: ResolvedEnvironment): Promise<PublishResult> {
+    const result = publishing.then(() =>
+      publish(target, next, digestOf).catch(
+        (error: unknown): PublishResult => ({
+          status: 'failed',
+          reason: error instanceof Error ? error.message : String(error),
+          bundles: [],
+        }),
+      ),
+    );
+
+    publishing = result;
+
+    return result;
+  }
 
   /** `beforeStop`, bounded by the shutdown deadline; never rejects. */
   const runBeforeStop = async (deadlineAt: number): Promise<void> => {
@@ -538,21 +616,7 @@ export const startPlatform = async (
     ...(structuralFault === undefined ? {} : { structuralFault }),
     routerPort: router.port,
     ...(gateway === undefined ? {} : { publicPort: gateway.port }),
-    publish: (next) => {
-      const result = publishing.then(() =>
-        publish(target, next, digestOf).catch(
-          (error: unknown): PublishResult => ({
-            status: 'failed',
-            reason: error instanceof Error ? error.message : String(error),
-            bundles: [],
-          }),
-        ),
-      );
-
-      publishing = result;
-
-      return result;
-    },
+    publish: publishNext,
     shutdown: () => {
       shuttingDown ??= (async () => {
         const deadlineAt = Date.now() + shutdownDeadlineMs;
@@ -623,6 +687,13 @@ const hookInputs = {
   onHostReadyHook: OnHostReadyHookInputSchema,
   onHostStopHook: OnHostStopHookInputSchema,
 } as const;
+
+/** Where the recovery actions log: the host process's console. */
+const consoleLog: PlatformLog = {
+  info: (fields, message) => console.info(message, fields),
+  warn: (fields, message) => console.warn(message, fields),
+  error: (fields, message) => console.error(message, fields),
+};
 
 /** The `startup` sink when the host gives none: discards everything. */
 const silentStartup: StartupSink = {

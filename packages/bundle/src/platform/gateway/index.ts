@@ -5,8 +5,16 @@
 
 import http from 'node:http';
 
+import {
+  create,
+  createFileRegistry,
+  type DescFile,
+  type FileRegistry,
+} from '@bufbuild/protobuf';
+import { FileDescriptorSetSchema } from '@bufbuild/protobuf/wkt';
+
 import type { ResolvedEnvironment } from '../../runtime/catalog.js';
-import type { CatalogIndex } from '../catalog-index.js';
+import type { CatalogIndex, MethodInfo } from '../catalog-index.js';
 import type { Router } from '../router/listener.js';
 import {
   createGatewayHandler,
@@ -55,6 +63,13 @@ export interface GatewayOptions {
   >;
   /** `PublicListenerOptions.prefaceTimeoutMs`; tests pass a shorter one. */
   readonly prefaceTimeoutMs?: number;
+  /**
+   * The methods of the platform services served in process (`startPlatform`'s
+   * platform index), passed to `servedMethods` as `platform` at start and at
+   * each `setResolution`; their files join the JSON codec's registry, so a
+   * Connect JSON request to them transcodes. Empty when undefined.
+   */
+  readonly platformMethods?: readonly MethodInfo[];
 }
 
 /** A running gateway behind its public listener. */
@@ -96,13 +111,15 @@ export interface Gateway {
 export const startGateway = async (
   options: GatewayOptions,
 ): Promise<Gateway> => {
-  const { index, router } = options;
+  const { router } = options;
+  const platform = options.platformMethods ?? [];
+  const index = withMethods(options.index, platform);
   const relay: GatewayRelay = (request, clientPart) =>
     router.serveGateway(request, clientPart);
   const handlerOf = (resolved: ResolvedEnvironment) =>
     createGatewayHandler({
       index,
-      methods: servedMethods(index, resolved),
+      methods: servedMethods(options.index, resolved, platform),
       relay,
     });
   let handler = handlerOf(options.resolved);
@@ -146,4 +163,65 @@ export const startGateway = async (
     },
     close: () => listener.close(),
   };
+};
+
+/**
+ * `index`, falling back to `methods` by path, with the files of `methods`'
+ * services (and the files they import) in its registry, so the gateway's
+ * JSON codec reads them and their methods that are not served answer
+ * `UNIMPLEMENTED`. A file of `index` wins over one of the same name.
+ */
+const withMethods = (
+  index: CatalogIndex,
+  methods: readonly MethodInfo[],
+): CatalogIndex => {
+  if (methods.length === 0) {
+    return index;
+  }
+
+  const byPath = new Map(methods.map((info) => [info.path, info]));
+
+  return {
+    method: (path) => index.method(path) ?? byPath.get(path),
+    service: (fullName) => index.service(fullName),
+    contract: (id) => index.contract(id),
+    desktopMethods: () => index.desktopMethods(),
+    publicMethods: () => index.publicMethods(),
+    registry: createFileRegistry(
+      registryOf(methods.map(({ service }) => service.file)),
+      index.registry,
+    ),
+  };
+};
+
+/**
+ * The registry of `files` and every file they import, each name once,
+ * imports first.
+ */
+const registryOf = (files: readonly DescFile[]): FileRegistry => {
+  const seen = new Set<string>();
+  const ordered: DescFile[] = [];
+  const visit = (file: DescFile): void => {
+    if (seen.has(file.proto.name)) {
+      return;
+    }
+
+    seen.add(file.proto.name);
+
+    for (const dependency of file.dependencies) {
+      visit(dependency);
+    }
+
+    ordered.push(file);
+  };
+
+  for (const file of files) {
+    visit(file);
+  }
+
+  return createFileRegistry(
+    create(FileDescriptorSetSchema, {
+      file: ordered.map(({ proto }) => proto),
+    }),
+  );
 };
