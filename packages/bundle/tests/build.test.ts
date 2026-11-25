@@ -26,7 +26,10 @@ import {
 import { z } from 'zod';
 
 import { readStaticServices } from '../src/build/cli.js';
+import { ModelsService } from '../src/contracts/gen/doric/models/v1/models_pb.js';
 import {
+  type ClientContext,
+  type ClientServices,
   defineHook,
   defineHooks,
   defineMethod,
@@ -422,6 +425,41 @@ void test('the recorder refuses hooks.use of a hooks contract outside requires',
   assert.deepEqual(
     await record(['hooks/v1@^1.0.0', 'other.hooks/v1@^1.0.0']),
     [],
+  );
+});
+
+void test('the recorder answers a client part that uses a host contract descriptor, checked against its lists', async () => {
+  const record = (requires: readonly string[]) =>
+    recordActivation({
+      manifest: manifestV1Schema.parse(manifest('rec', { requires })),
+      environment: 'client',
+      activate: ({ services }: ClientContext) => {
+        const models = (services as ClientServices).use(ModelsService);
+
+        assert.equal(typeof models, 'object');
+      },
+    });
+
+  // A use records nothing: the record holds provides and definitions only.
+  assert.deepEqual(await record(['models/v1@^1.0.0']), []);
+  // The descriptor maps to models/v1 through its file option, and the dry
+  // activation checks each use against the part's lists.
+  await assert.rejects(record([]), {
+    name: 'RecordingError',
+    message: /models\/v1/,
+  });
+});
+
+void test('the recorder refuses a use of neither a contract ref nor a service descriptor', async () => {
+  await assert.rejects(
+    recordActivation({
+      manifest: manifestV1Schema.parse(manifest('rec')),
+      environment: 'client',
+      activate: ({ services }: ClientContext) => {
+        (services.use as (value: unknown) => unknown)({ kind: 'message' });
+      },
+    }),
+    { name: 'RecordingError' },
   );
 });
 

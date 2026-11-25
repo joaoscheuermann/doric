@@ -1,3 +1,5 @@
+import { type DescService, getOption, hasOption } from '@bufbuild/protobuf';
+
 import { basicContractSpec } from '../contracts/basic/index.js';
 import type { Activate, Disposable, Services } from '../contracts/context.js';
 import {
@@ -11,6 +13,7 @@ import {
   type SettingsDefinition,
   type StorageTypeDefinition,
 } from '../contracts/define.js';
+import { contract as contractOption } from '../contracts/gen/doric/platform/v1/options_pb.js';
 import { type Environment, isPlatformContract } from '../contracts/ids.js';
 import { misdeclaredExposure } from '../runtime/exposure.js';
 import {
@@ -22,6 +25,23 @@ import type { HostProvide } from './host-provides.js';
 import type { RecordedContract } from './schemas.js';
 
 const inert: Disposable = Object.freeze({ dispose: () => undefined });
+
+const isDescService = (value: unknown): value is DescService =>
+  typeof value === 'object' &&
+  value !== null &&
+  (value as { readonly kind?: unknown }).kind === 'service' &&
+  typeof (value as { readonly typeName?: unknown }).typeName === 'string';
+
+/** The contract id of a host service descriptor, from its file option. */
+const hostContractIdOf = (service: DescService): string => {
+  if (!hasOption(service.file, contractOption)) {
+    throw new RecordingError(
+      `use of "${service.typeName}" lacks the (doric.platform.v1.contract) file option.`,
+    );
+  }
+
+  return getOption(service.file, contractOption).id;
+};
 
 /** A stub whose every method is a no-op returning an inert Disposable. */
 const inertStub = (): unknown =>
@@ -204,6 +224,14 @@ export const recordActivation = async (options: {
       return inert;
     },
     use: (contract: unknown) => {
+      if (isDescService(contract)) {
+        // A host contract's descriptor: checked against the lists, recorded
+        // nowhere, and its client makes no call during the dry activation.
+        assertUsable(hostContractIdOf(contract));
+
+        return inertStub();
+      }
+
       if (!isServiceRef(contract)) {
         throw new RecordingError('use expects a contract ref.');
       }
