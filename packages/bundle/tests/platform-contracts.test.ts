@@ -3,7 +3,10 @@
 // doric.catalog/v1 and the environments widened by [S8-7].
 
 import assert from 'node:assert/strict';
+import { readdirSync, readFileSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
 import test from 'node:test';
+import { fileURLToPath } from 'node:url';
 
 import { DoricNotificationsV1 } from '../src/contracts/index.js';
 import {
@@ -11,6 +14,7 @@ import {
   platformContracts,
 } from '../src/contracts/platform.js';
 import { platformSchemaDocuments } from '../src/index.js';
+import { parseManifest } from '../src/runtime/manifest.js';
 
 void test('doric.notifications/v1 is a desktopMain contract only (WP-10N), taking exactly a title and a body', () => {
   const spec = platformContracts['doric.notifications/v1'];
@@ -128,4 +132,101 @@ void test('catalogManifestSchema refuses a v2 manifest without its part lists or
       name,
     );
   }
+});
+
+// S62d3 gave manifests `host.assets` (section 14, "Assets"; D35), which
+// `runtime/manifest.ts` accepts in both versions; the catalog publishes the
+// validated manifest, so `catalogManifestSchema` accepts it too.
+
+void test('catalogManifestSchema accepts host.assets in a v1 and a v2 manifest (D35)', () => {
+  const v1 = {
+    ...publishedV1,
+    host: { httpPrefix: '/git/', assets: ['src/skills/*/SKILL.md'] },
+  };
+  const v2 = {
+    ...publishedV2,
+    host: {
+      ...publishedV2.host,
+      assets: ['src/host/skills/*.md', 'dist/sandbox/runner.mjs'],
+    },
+  };
+
+  assert.deepEqual(catalogManifestSchema.parse(v1), v1);
+  assert.deepEqual(catalogManifestSchema.parse(v2), v2);
+});
+
+void test('catalogManifestSchema still refuses an unknown host key or non-string assets', () => {
+  const cases: Record<string, unknown> = {
+    'v1 with an unknown host key': {
+      ...publishedV1,
+      host: { httpPrefix: '/git/', kind: 'sea' },
+    },
+    'v2 with an unknown host key': {
+      ...publishedV2,
+      host: { ...publishedV2.host, kind: 'sea' },
+    },
+    'v1 with non-string assets': {
+      ...publishedV1,
+      host: { assets: [1] },
+    },
+    'v2 with assets that are not an array': {
+      ...publishedV2,
+      host: { ...publishedV2.host, assets: 'src/skills/*/SKILL.md' },
+    },
+  };
+
+  for (const [name, document] of Object.entries(cases)) {
+    assert.equal(
+      catalogManifestSchema.safeParse(document).success,
+      false,
+      name,
+    );
+  }
+});
+
+const repositoryRoot = resolve(
+  dirname(fileURLToPath(import.meta.url)),
+  '..',
+  '..',
+  '..',
+  '..',
+);
+
+/** Every `bundles/<group>/<name>/manifest.json`, by `<group>/<name>`. */
+const sourceManifests = (): Map<string, unknown> => {
+  const bundles = join(repositoryRoot, 'bundles');
+  const found = new Map<string, unknown>();
+  for (const group of readdirSync(bundles, { withFileTypes: true })) {
+    if (!group.isDirectory()) continue;
+    for (const bundle of readdirSync(join(bundles, group.name), {
+      withFileTypes: true,
+    })) {
+      if (!bundle.isDirectory()) continue;
+      const path = join(bundles, group.name, bundle.name, 'manifest.json');
+      let text: string;
+      try {
+        text = readFileSync(path, 'utf8');
+      } catch {
+        continue;
+      }
+      found.set(`${group.name}/${bundle.name}`, JSON.parse(text));
+    }
+  }
+  return found;
+};
+
+void test('catalogManifestSchema accepts every bundle manifest of the repository as the runtime validates it', () => {
+  const manifests = sourceManifests();
+  const refused: string[] = [];
+
+  assert.ok(manifests.size > 0);
+  for (const [name, document] of manifests) {
+    const { manifest } = parseManifest(document);
+    const parsed = catalogManifestSchema.safeParse(manifest);
+    if (!parsed.success) {
+      refused.push(`${name}: ${parsed.error.message}`);
+    }
+  }
+
+  assert.deepEqual(refused, []);
 });

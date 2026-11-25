@@ -214,7 +214,10 @@ export interface CatalogManifestV1 {
   /** The scope keys a desktop window may send to each provided contract. */
   readonly desktopScope?: Readonly<Record<string, readonly string[]>>;
   readonly description?: string;
-  readonly host?: { readonly httpPrefix?: string };
+  readonly host?: {
+    readonly httpPrefix?: string;
+    readonly assets?: readonly string[];
+  };
 }
 
 /** One part's lists in a published v2 manifest; both always present. */
@@ -230,7 +233,10 @@ export interface CatalogManifestV2 {
   readonly version: string;
   readonly engines: { readonly doric: string };
   readonly provides: readonly string[];
-  readonly host: CatalogPartLists & { readonly httpPrefix?: string };
+  readonly host: CatalogPartLists & {
+    readonly httpPrefix?: string;
+    readonly assets?: readonly string[];
+  };
   readonly client: CatalogPartLists;
   /** The scope keys a desktop window may send to each provided contract. */
   readonly desktopScope?: Readonly<Record<string, readonly string[]>>;
@@ -265,7 +271,13 @@ export const catalogManifestSchema = z.discriminatedUnion('manifestVersion', [
       optional: z.array(z.string()).optional(),
       desktopScope: z.record(z.string(), z.array(z.string())).optional(),
       description: z.string().optional(),
-      host: z.object({ httpPrefix: z.string().optional() }).strict().optional(),
+      host: z
+        .object({
+          httpPrefix: z.string().optional(),
+          assets: z.array(z.string()).optional(),
+        })
+        .strict()
+        .optional(),
     })
     .strict(),
   z
@@ -276,7 +288,11 @@ export const catalogManifestSchema = z.discriminatedUnion('manifestVersion', [
       engines: z.object({ doric: z.string() }).strict(),
       provides: z.array(z.string()),
       host: z
-        .object({ ...catalogPartListsShape, httpPrefix: z.string().optional() })
+        .object({
+          ...catalogPartListsShape,
+          httpPrefix: z.string().optional(),
+          assets: z.array(z.string()).optional(),
+        })
         .strict(),
       client: z.object(catalogPartListsShape).strict(),
       desktopScope: z.record(z.string(), z.array(z.string())).optional(),
