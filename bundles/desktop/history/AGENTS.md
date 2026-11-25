@@ -66,12 +66,6 @@ conversation history.
   and to `historySnapshotsMethods` of `src/contracts/index.ts`, put its logic
   in `src/desktop/store.ts`, and implement it in `historySnapshots` of
   `src/desktop/index.ts` over that store function.
-- When a change adds or removes a method of `history.snapshots/v1` exposed to
-  the desktop, change the `'history.snapshots/v1'` entry of the test "desktop
-  providers expose exactly the operations used by clients" in
-  [`bridge-exposure.test.ts`](../../../app/backend/doric-host/tests/bridge-exposure.test.ts)
-  in the same change, and run `npx nx run doric-host:test`: that test lists by
-  name the exposed methods of every `desktopMain` contract.
 - Test a change of the store in `tests/store.test.ts` against
   `createHistoryStore` over a temporary directory, and a change of the contract
   or of `activate` in `tests/service.test.ts` through `bootDesktop` of

@@ -1,16 +1,31 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import { mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import test from 'node:test';
 import { setTimeout as delay } from 'node:timers/promises';
 
-import { callApi } from './helpers/api.js';
+import {
+  create,
+  type DescMessage,
+  type DescMethodServerStreaming,
+  type DescMethodUnary,
+  fromJson,
+  type JsonValue,
+  type MessageInitShape,
+  type MessageShape,
+  toJson,
+} from '@bufbuild/protobuf';
+import { CatalogService } from 'bundle/contracts/gen/doric/platform/catalog/v1/catalog_pb.js';
+
+import { ApiError, callApi, openStream } from './helpers/api.js';
 import {
   freshDatabase,
   type LogLine,
   startHostProcess,
 } from './helpers/host.js';
 import {
+  bundlePid,
   childProcesses,
   hostPartBundles,
   spawnedBundles,
@@ -406,6 +421,267 @@ void test('ps shows one process per scheduled host part and none for a client-on
       await host.close();
     }
   } finally {
+    await database.close();
+  }
+});
+
+// `doric.catalog/v1` as the desktop reaches it on the booted host's public
+// listener (groupE S63b): the distribution of the staged bundles, the bytes
+// of a listed file, and the recovery actions over the composition's
+// overrides. Calls go over the Connect protocol (JSON over HTTP/1.1, as
+// `callApi` sends them), with the generated `CatalogService` descriptors and
+// message schemas.
+
+/** The procedure path of a generated method: `<package>.<Service>/<Method>`. */
+const procedureOf = (method: {
+  readonly name: string;
+  readonly parent: { readonly typeName: string };
+}): string => `${method.parent.typeName}/${method.name}`;
+
+/** One unary call of a generated method on the public listener. */
+const callMethod = async <I extends DescMessage, O extends DescMessage>(
+  baseUrl: string,
+  method: DescMethodUnary<I, O>,
+  request: MessageInitShape<I>,
+): Promise<MessageShape<O>> =>
+  fromJson(
+    method.output,
+    await callApi<JsonValue>(
+      baseUrl,
+      procedureOf(method),
+      toJson(method.input, create(method.input, request)),
+    ),
+  );
+
+/** Every item of a server stream of a generated method, until its end. */
+const streamMethod = async <I extends DescMessage, O extends DescMessage>(
+  baseUrl: string,
+  method: DescMethodServerStreaming<I, O>,
+  request: MessageInitShape<I>,
+): Promise<readonly MessageShape<O>[]> => {
+  const procedure = procedureOf(method);
+  const stream = await openStream<JsonValue>(
+    baseUrl,
+    procedure,
+    toJson(method.input, create(method.input, request)),
+  );
+  const items: MessageShape<O>[] = [];
+
+  try {
+    for (;;) {
+      let item: JsonValue;
+
+      try {
+        item = await stream.next();
+      } catch (error) {
+        // A stream that ends without an error ends the read.
+        if (
+          !(error instanceof ApiError) &&
+          error instanceof Error &&
+          error.message === `${procedure} ended`
+        ) {
+          return items;
+        }
+        throw error;
+      }
+      items.push(fromJson(method.output, item));
+    }
+  } finally {
+    stream.close();
+  }
+};
+
+/** The staged bundles: each directory of `bundlesPath` holding a `manifest.json`. */
+const stagedBundles = async (): Promise<readonly string[]> => {
+  const staged: string[] = [];
+
+  for (const entry of await readdir(bundlesPath, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    try {
+      await readFile(join(bundlesPath, entry.name, 'manifest.json'));
+      staged.push(entry.name);
+    } catch {
+      // Not a staged bundle.
+    }
+  }
+
+  return staged.sort();
+};
+
+/** `Get`'s state of bundle `id`. */
+const catalogState = async (
+  baseUrl: string,
+  id: string,
+): Promise<string | undefined> =>
+  (
+    await callMethod(baseUrl, CatalogService.method.get, {})
+  ).catalogSnapshot?.bundles.find((bundle) => bundle.id === id)?.state;
+
+/**
+ * The pid of the process running `bundleId` under `parent`, once `running`
+ * holds for it (a pid when `true`, none when `false`), or what it is after
+ * a bounded wait: a bundle process starts or stops shortly after the call
+ * that changed the generation answered.
+ */
+const settledPid = async (
+  parent: number,
+  bundleId: string,
+  running: boolean,
+): Promise<number | undefined> => {
+  let pid = await bundlePid(bundlesPath, parent, bundleId);
+
+  for (
+    const deadline = Date.now() + 15_000;
+    (pid !== undefined) !== running && Date.now() < deadline;
+  ) {
+    await delay(200);
+    pid = await bundlePid(bundlesPath, parent, bundleId);
+  }
+
+  return pid;
+};
+
+void test("Distribution on the public listener lists every staged bundle, and ReadArtifact answers the staged bytes of chat's client/index.js", {
+  skip: databaseCase,
+  timeout: 120_000,
+}, async () => {
+  assert.ok(connectionString);
+  const database = await freshDatabase(connectionString);
+  try {
+    const host = await startHostProcess({ DORIC_DATABASE_URL: database.url });
+    try {
+      const distribution = await callMethod(
+        host.url,
+        CatalogService.method.distribution,
+        {},
+      );
+
+      assert.deepEqual(
+        distribution.bundles.map(({ id }) => id).sort(),
+        await stagedBundles(),
+      );
+
+      const chat = distribution.bundles.find(({ id }) => id === 'chat');
+      assert.ok(chat, 'chat is distributed');
+      assert.equal(chat.parts?.client, 'client/index.js');
+      const file = chat.files.find(({ path }) => path === 'client/index.js');
+      assert.ok(file, 'chat lists client/index.js');
+
+      const staged = await readFile(
+        join(bundlesPath, 'chat', 'client', 'index.js'),
+      );
+      assert.equal(
+        file.sha256,
+        createHash('sha256').update(staged).digest('hex'),
+      );
+      assert.equal(file.size, staged.byteLength);
+
+      const chunks = await streamMethod(
+        host.url,
+        CatalogService.method.readArtifact,
+        { sha256: file.sha256 },
+      );
+      assert.deepEqual(Buffer.concat(chunks.map(({ chunk }) => chunk)), staged);
+    } finally {
+      await host.close();
+    }
+  } finally {
+    await database.close();
+  }
+});
+
+void test('Disable of usage writes composition.overrides.json and stops it, ResetComposition brings it back, and a boot over the overrides starts it disabled', {
+  skip: databaseCase,
+  timeout: 240_000,
+}, async () => {
+  assert.ok(connectionString);
+  const database = await freshDatabase(connectionString);
+  // The shipped composition, copied so its overrides are written beside the
+  // copy and never beside `app/backend/doric-host/composition.json`.
+  const directory = await mkdtemp(
+    join('app/backend/doric-host/dist-tests', 'composition-'),
+  );
+  const compositionPath = resolve(directory, 'composition.json');
+  const overridesPath = join(directory, 'composition.overrides.json');
+  const environment = {
+    DORIC_DATABASE_URL: database.url,
+    DORIC_COMPOSITION: compositionPath,
+  };
+
+  try {
+    await writeFile(
+      compositionPath,
+      await readFile('app/backend/doric-host/composition.json'),
+    );
+
+    const first = await startHostProcess(environment);
+    try {
+      assert.ok(first.child.pid);
+      assert.equal(await catalogState(first.url, 'usage'), 'active');
+      assert.ok(
+        await settledPid(first.child.pid, 'usage', true),
+        'usage runs before Disable',
+      );
+
+      await callMethod(first.url, CatalogService.method.disable, {
+        bundleId: 'usage',
+      });
+
+      assert.deepEqual(
+        (
+          JSON.parse(await readFile(overridesPath, 'utf8')) as {
+            disabled?: unknown;
+          }
+        ).disabled,
+        ['usage'],
+      );
+      assert.equal(await catalogState(first.url, 'usage'), 'disabled');
+      assert.equal(
+        await settledPid(first.child.pid, 'usage', false),
+        undefined,
+        'no process runs usage after Disable',
+      );
+      assert.equal(await first.stop(), 0);
+    } finally {
+      await first.close();
+    }
+
+    // The overrides Disable wrote stay for the next boot.
+    const second = await startHostProcess(environment);
+    try {
+      assert.ok(second.child.pid);
+      assert.equal(await catalogState(second.url, 'usage'), 'disabled');
+      assert.equal(
+        await settledPid(second.child.pid, 'usage', false),
+        undefined,
+        'a boot over the overrides starts no usage process',
+      );
+
+      await callMethod(second.url, CatalogService.method.resetComposition, {});
+
+      // The overrides are cleared: the file is gone or disables nothing.
+      const cleared = await readFile(overridesPath, 'utf8').catch(
+        (error: unknown) => {
+          assert.equal((error as NodeJS.ErrnoException).code, 'ENOENT');
+          return undefined;
+        },
+      );
+      assert.deepEqual(
+        cleared === undefined
+          ? []
+          : ((JSON.parse(cleared) as { disabled?: unknown }).disabled ?? []),
+        [],
+      );
+      assert.equal(await catalogState(second.url, 'usage'), 'active');
+      assert.ok(
+        await settledPid(second.child.pid, 'usage', true),
+        'usage runs again after ResetComposition',
+      );
+    } finally {
+      await second.close();
+    }
+  } finally {
+    await rm(directory, { recursive: true, force: true });
     await database.close();
   }
 });

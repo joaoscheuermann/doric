@@ -153,6 +153,7 @@ desktop UI.
   On the branch `feat/grpc-processes`, from slice S62c3, it boots the gRPC
   platform instead: every host part runs as its own process, and the host
   serves no REST route, Socket.IO namespace or bridge of its own
+  (slice S63b deleted the host's bridge, `src/lib/bridge/`)
   ([`docs/designs/grpc-processes.md`](docs/designs/grpc-processes.md)).
   Before that it ran the foundation, the core, the embedded bundles and the
   resident bundles in its own process, and every other installed bundle in a
@@ -190,7 +191,7 @@ desktop UI.
   follows its connection status through a second connection to the same
   namespace ([`host-bridge.ts`](app/desktop/doric/src/platform/bridge/host-bridge.ts),
   [`status.ts`](app/desktop/doric/src/connection/status.ts),
-  [`socket.ts`](app/backend/doric-host/src/lib/bridge/socket.ts),
+  `socket.ts`,
   [the desktop bridge](app/backend/doric-host/README.md#the-desktop-bridge)).
   The sandbox's screen loads over HTTP and WebSocket from the host's relay
   under `/screen/<token>/`

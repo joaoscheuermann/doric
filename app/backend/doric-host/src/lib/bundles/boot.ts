@@ -177,17 +177,28 @@ const messageOf = (error: unknown): string =>
   error instanceof Error ? error.message : String(error);
 
 /**
- * The host resolution of generation 1: the staged bundles discovered, the
- * composition read (or the object `hostComposition` answered, validated)
- * with its overrides applied. Discovery and overrides problems become
- * catalog issues; a composition that cannot be read is answered as the
- * `reason` of a recovery.
+ * The composition the host boots as written, without overrides: the file
+ * read, or the object `hostComposition` answered, validated.
+ */
+const readBootComposition = async (
+  composition: StartHostPlatformOptions['composition'],
+): Promise<Composition> =>
+  'path' in composition
+    ? await readComposition(composition.path)
+    : compositionSchema.parse(composition);
+
+/**
+ * The host resolution of generation `generation`: the staged bundles
+ * discovered, the composition read (`readBootComposition`) with its
+ * overrides applied. Discovery and overrides problems become catalog
+ * issues; a composition that cannot be read is answered as the `reason` of
+ * a recovery.
  */
 const readHostResolution = async (
   options: Pick<
     StartHostPlatformOptions,
     'bundlesPath' | 'compositionPath' | 'composition'
-  >,
+  > & { readonly generation: number },
 ): Promise<ResolvedEnvironment | { readonly reason: string }> => {
   const issues: string[] = [];
   let installed: readonly InstalledBundle[] = [];
@@ -200,10 +211,7 @@ const readHostResolution = async (
   }
 
   try {
-    composition =
-      'path' in options.composition
-        ? await readComposition(options.composition.path)
-        : compositionSchema.parse(options.composition);
+    composition = await readBootComposition(options.composition);
   } catch (error) {
     return { reason: `invalid composition: ${messageOf(error)}` };
   }
@@ -224,7 +232,7 @@ const readHostResolution = async (
     embedded: [],
     composition,
     platformVersion: PLATFORM_VERSION,
-    generation: bootGeneration,
+    generation: options.generation,
     issues,
   });
 };
@@ -262,7 +270,10 @@ export const startHostPlatform = async (
 
     return new BundleRecoveryError(reason);
   };
-  const resolved = await readHostResolution(options);
+  const resolved = await readHostResolution({
+    ...options,
+    generation: bootGeneration,
+  });
 
   if ('reason' in resolved) throw recovery(resolved.reason);
   if (resolved.recovery !== undefined) throw recovery(resolved.recovery.reason);
@@ -287,6 +298,17 @@ export const startHostPlatform = async (
     hostPart: stagedHostPart(bundlesPath),
     diagnostics,
     required: options.required,
+    composition: {
+      overridesPath: compositionOverridesPath(options.compositionPath),
+      read: () => readBootComposition(options.composition),
+      resolve: async (generation) => {
+        const next = await readHostResolution({ ...options, generation });
+
+        if ('reason' in next) throw new Error(next.reason);
+
+        return next;
+      },
+    },
     startup,
     ...(options.env === undefined ? {} : { env: options.env }),
     ...(options.exit === undefined ? {} : { exit: options.exit }),

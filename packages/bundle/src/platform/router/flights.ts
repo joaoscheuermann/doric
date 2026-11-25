@@ -210,7 +210,7 @@ export const createFlights = (
     inFlight: (key) =>
       [...flights].filter(
         (flight) =>
-          flight.from === key ||
+          (flight.from === key && !flight.resumable) ||
           flight.pinned?.key === key ||
           flight.connection?.key === key,
       ).length,

@@ -35,14 +35,7 @@ slot.
   that a copy gains a field the contract gains, and `hostResourcesSchema` is
   strict, so a field it does not list fails `host()` with `invalid_output`.
 - Add a scope key to `desktopScope` in [`manifest.json`](manifest.json) only
-  when a method of `resources/v1` reads it; keep `projectId`, `threadId` and
-  `promptId` in it unless the snapshot below gains a `resources/v1` entry
-  under `scopeKeysByContract`, because the test expects the snapshot's
-  `scopeKeys` for a contract without one.
-- When a change adds or removes a method of `resources/v1` exposed to the
-  desktop, or a key of its `desktopScope`, update
-  [`bridge-exposure.snapshot.json`](../../../app/backend/doric-host/tests/bridge-exposure.snapshot.json)
-  in the same change, and run `npx nx run doric-host:test`.
+  when a method of `resources/v1` reads it.
 - Keep the client part in four layers, each importing only the ones before
   it: `src/client/domain/` for the reading types, formatting and thresholds as
   pure functions of their arguments, with no React, DOM or clock;

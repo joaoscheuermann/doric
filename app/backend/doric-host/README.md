@@ -13,7 +13,9 @@ the host, integrate with its API, or change the kernel.
 > server and no desktop bridge. The sections below that describe the REST API,
 > Socket.IO, the desktop bridge and kernel bundles describe the kernel path
 > this branch replaces; [Startup and failures](#startup-and-failures) and
-> [Shutdown](#shutdown) describe the platform boot. The public API is
+> [Shutdown](#shutdown) describe the platform boot. Slice S63b deleted the
+> bridge (`src/lib/bridge/`) and `src/lib/socket-buffer.ts`; the sections that
+> name them describe the removed kernel path. The public API is
 > `doric.api.*` on the gateway
 > ([grpc-processes.md](../../../docs/designs/grpc-processes.md)).
 
@@ -387,18 +389,19 @@ kernel loads through the `bundle` platform package
 src/
 ├── index.ts            composition root: logger, startup stages, platform boot, shutdown
 └── lib/
-    ├── bridge/
-    │   ├── catalog.ts     the distribution members of `doric.catalog/v1`
-    │   └── socket.ts      the desktop bridge namespace `/doric/bridge`
-    ├── bundles/
-    │   └── boot.ts        bundle paths, composition, the platform boot (`startHostPlatform`, `hostReady`)
-    └── socket-buffer.ts   the largest Socket.IO message the host accepts
+    └── bundles/
+        └── boot.ts        bundle paths, composition, the platform boot (`startHostPlatform`, `hostReady`)
 ```
 
 From slice S62c3 `src/index.ts` creates no Express app, HTTP server or
 Socket.IO server and installs no bridge: the platform binds the public
-listener, and `src/lib/bridge` and `src/lib/socket-buffer.ts` stay unused
-until group F deletes them. Before S62c3 the kernel owned one Express app,
+listener. Slice S63b deleted `src/lib/bridge/` and `src/lib/socket-buffer.ts`
+with their tests; the `socket.io` dependencies stay until group F. The
+platform serves `doric.catalog/v1` on the public listener, and
+`startHostPlatform` passes it `composition` (`overridesPath`, `read`,
+`resolve`), so `Disable` writes `composition.overrides.json`, a later boot
+starts that bundle disabled, and `ResetComposition` clears the overrides
+([`src/lib/bundles/boot.ts`](src/lib/bundles/boot.ts)). Before S62c3 the kernel owned one Express app,
 one Node HTTP server and one Socket.IO server on it, and handed all three to
 the bundles as their network
 ([`src/index.ts`](src/index.ts)); the `transport` bundle registers the REST
@@ -415,10 +418,10 @@ Two Socket.IO settings follow from that:
   bytes) of the largest image attachment the runtime keeps,
   `ATTACHMENT_MAX_BYTES` = 5 MiB, which is 6,990,508 bytes, plus 1 MiB for the
   envelope around it, because a desktop call carries an attachment whole
-  ([`src/lib/socket-buffer.ts`](src/lib/socket-buffer.ts),
+  (`src/lib/socket-buffer.ts`,
   [`runtime/src/contracts/attachments.ts`](../../../bundles/runtime/runtime/src/contracts/attachments.ts)).
   The kernel keeps the number as its own constant so it imports no bundle;
-  [`tests/socket-buffer.test.ts`](tests/socket-buffer.test.ts) checks it
+  `tests/socket-buffer.test.ts` checks it
   against the runtime's limit. A larger message drops the connection.
 
 The host logs through one pino logger: `info` and above to standard output,
@@ -812,7 +815,7 @@ The signal handlers:
 ### The desktop bridge
 
 The kernel's one Socket.IO namespace is `/doric/bridge`, on the same server
-([`src/lib/bridge/socket.ts`](src/lib/bridge/socket.ts)). The host creates one
+(`src/lib/bridge/socket.ts`). The host creates one
 Socket.IO server and hands it both to the bridge and, as `sockets` of
 `doric.network/v1`, to the bundles ([`src/index.ts`](src/index.ts)), so
 `/doric/bridge` shares it with the namespaces `transport` opens there:
@@ -841,7 +844,7 @@ only `deadline` and `scope` of them. It ignores `caller`, `trace` and
 request is made in the kernel's active view as principal `doric`, with only
 the call's abort signal and its deadline, so it starts a new trace in the
 kernel rather than carrying the desktop's
-([`src/lib/bridge/socket.ts`](src/lib/bridge/socket.ts)).
+(`src/lib/bridge/socket.ts`).
 
 - `call { id, contract, method, input, … }`: the host calls the method and
   answers `result { id, ok: true, output }` or
@@ -862,7 +865,7 @@ of an open stream replaces it: the earlier stream's items are dropped and it
 ends without an `end`. If the earlier stream had already
 opened, nothing disposes it afterwards, not even a disconnect; if it opens
 after the replacement, it is disposed at once
-([`src/lib/bridge/socket.ts`](src/lib/bridge/socket.ts)).
+(`src/lib/bridge/socket.ts`).
 
 The host checks each request in this order, and the first check that fails
 decides the answer:
@@ -881,7 +884,7 @@ The rules behind each check:
   string is answered with `invalid_input` (`Malformed call message.` in a
   `result`, or `Malformed subscribe message.` in an `end`); any other
   malformed message gets no answer
-  ([`src/lib/bridge/socket.ts`](src/lib/bridge/socket.ts)).
+  (`src/lib/bridge/socket.ts`).
 - The host checks the form of `scope` only, while it parses the message: it
   first drops each key that does not match `^[A-Za-z][A-Za-z0-9_.-]{0,63}$`
   and each value that is not a string, then refuses, as a malformed message,
@@ -911,13 +914,13 @@ The rules behind each check:
   ([`exposure.ts`](../../../packages/bundle/src/runtime/exposure.ts),
   [`services.ts`](../../../packages/bundle/src/runtime/services.ts),
   [`build/record.ts`](../../../packages/bundle/src/build/record.ts),
-  [`bridge/socket.ts`](src/lib/bridge/socket.ts)). Any other method answers
+  `bridge/socket.ts`). Any other method answers
   `unavailable` with the message
   `<contract> <method> is not available to the desktop.` See
   [Exposure to a desktop window](../../../docs/architecture/bundles/services-and-channels.md#exposure-to-a-desktop-window).
-  [`tests/bridge-exposure.snapshot.json`](tests/bridge-exposure.snapshot.json)
+  `tests/bridge-exposure.snapshot.json`
   is a frozen copy of the exposed methods and scope keys of the built
-  composition; [`tests/bridge-exposure.test.ts`](tests/bridge-exposure.test.ts)
+  composition; `tests/bridge-exposure.test.ts`
   fails when the declarations depart from it.
 - `call` on a stream method answers `invalid_input` with the message
   `<contract> <method> is a stream; subscribe to it.`, and `subscribe` on a
@@ -930,16 +933,16 @@ The rules behind each check:
   other input is passed as the one argument.
 
 A disconnect aborts every open call and disposes every open stream
-([`src/lib/bridge/socket.ts`](src/lib/bridge/socket.ts)).
+(`src/lib/bridge/socket.ts`).
 
 The kernel also provides the distribution members of `doric.catalog/v1`, which
 the desktop reads through the bridge to download, verify and resolve the
 client and desktop parts of a host generation
-([`src/lib/bridge/catalog.ts`](src/lib/bridge/catalog.ts)). Each member works
+(`src/lib/bridge/catalog.ts`). Each member works
 on the generation its call is pinned to, where `0` means the active one; a
 call through the bridge is always pinned to `0`, so the desktop reads the
 active generation
-([`src/lib/bridge/socket.ts`](src/lib/bridge/socket.ts)):
+(`src/lib/bridge/socket.ts`):
 
 - `distribution` answers that generation's `DistributionCatalog`: `generation`;
   `hostBoot`, a random UUID each host process draws when it starts its bundles
@@ -1965,7 +1968,7 @@ the kernel's own namespace, `/doric/bridge`, is the
 8,039,084 bytes, the base64 size of the largest image attachment the runtime
 keeps plus 1 MiB for the envelope around it, and closes a connection that
 sends a larger one
-([`src/lib/socket-buffer.ts`](src/lib/socket-buffer.ts)).
+(`src/lib/socket-buffer.ts`).
 
 On `/status`, `/threads` and `/projects` every event flows from the host to
 the client; the host handles no event a client emits there
@@ -2856,7 +2859,7 @@ plugin of [`nx.json`](../../../nx.json).
 compiled host and its startup stages over the platform boot, the bundle
 composition and its order over the staged bundle processes, what a desktop
 window may call (against
-[`bridge-exposure.snapshot.json`](tests/bridge-exposure.snapshot.json)), the
+`bridge-exposure.snapshot.json`), the
 sandbox provider choice, the Socket.IO buffer size, the
 credential adapter and its reference races, the migrations over seeded
 databases, persistence, and that no log line carries a resolved secret.

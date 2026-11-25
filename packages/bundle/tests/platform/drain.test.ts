@@ -14,6 +14,10 @@
 import assert from 'node:assert/strict';
 import test, { describe } from 'node:test';
 
+import { file_doric_settings_v1_settings } from '../../src/contracts/gen/doric/settings/v1/settings_pb.js';
+import { file_doric_tools_v1_tools } from '../../src/contracts/gen/doric/tools/v1/tools_pb.js';
+import { createCatalogIndex } from '../../src/platform/catalog-index.js';
+import { demoFile } from '../support/demo-contract.js';
 import {
   codesOf,
   type FixtureLog,
@@ -383,6 +387,118 @@ describe('the drain of generation 1', () => {
     assert.ok(
       eventsOfInstance(env.log, 'settings', '1.1').includes('cancelled'),
     );
+  });
+
+  // Section 6, "Drain": the calls that hold a drain are unary,
+  // client-streaming, bidirectional and non-resumable server-streaming ones,
+  // in either direction; a resumable server stream the draining instance
+  // opened itself does not hold it.
+  test('stops well before the drain deadline while a resumable stream it opened is still open', async (t) => {
+    const drainDeadlineMs = 5_000;
+    const watchBundles = {
+      demo: { mode: 'serve-demo', provides: ['demo/v1@1.0.0'] },
+      watcher: { mode: 'watch-demo', requires: ['demo/v1@^1.0.0'] },
+    } as const;
+    const env = await setupPlatform(t, watchBundles, {
+      timings: { drainDeadlineMs },
+      index: createCatalogIndex([
+        file_doric_tools_v1_tools,
+        file_doric_settings_v1_settings,
+        demoFile({ id: 'demo/v1', package: 'demo.v1', resumable: true }),
+      ]),
+    });
+
+    await until(
+      () =>
+        eventsOfInstance(env.log, 'watcher', '1.1').includes(
+          'item:g1:snapshot:h',
+        ),
+      'generation 1 of the watcher to hold its resumable stream open',
+    );
+
+    env.digests.set('watcher', 'v2');
+
+    const started = performance.now();
+    const result = await within(
+      env.platform.publish(resolveHost(watchBundles)),
+      'the publish',
+      4_000,
+    );
+
+    assert.deepEqual(result, { status: 'published', bundles: ['watcher'] });
+
+    await until(
+      () => eventsOfInstance(env.log, 'watcher', '1.1').includes('deactivated'),
+      'generation 1 of the watcher to stop',
+      drainDeadlineMs + 3_000,
+    );
+
+    const elapsed = performance.now() - started;
+
+    assert.ok(
+      elapsed < drainDeadlineMs / 2,
+      `generation 1 stopped only after ${Math.round(elapsed)} ms, at the drain deadline of ${drainDeadlineMs} ms: its own resumable stream held the drain`,
+    );
+    await until(
+      () => !isAlive(pidOf(env.log, 'watcher', '1.1') ?? 0),
+      'generation 1 of the watcher to exit',
+    );
+  });
+
+  test('lasts while a unary call it made is in flight, and stops after the call ends', async (t) => {
+    const callBundles = {
+      settings: { ...settingsProvider, ms: 1_500 },
+      app: {
+        mode: 'call-repeat',
+        ms: 100,
+        count: 1,
+        requires: ['settings/v1@^1.0.0'],
+      },
+    } as const;
+    const env = await setupPlatform(t, callBundles, {
+      timings: { drainDeadlineMs: 10_000 },
+    });
+
+    await until(
+      () => env.log.eventsOf('settings').includes('call'),
+      'the call of the app to reach the provider',
+    );
+
+    env.scripts.app = { mode: 'alive' };
+    env.digests.set('app', 'v2');
+
+    const result = await within(
+      env.platform.publish(resolveHost(callBundles)),
+      'the publish',
+      4_000,
+    );
+
+    assert.deepEqual(result, { status: 'published', bundles: ['app'] });
+
+    await sleep(300);
+
+    assert.ok(
+      !eventsOfInstance(env.log, 'app', '1.1').includes('deactivate'),
+      'generation 1 of the app stopped while its call was in flight',
+    );
+
+    await until(
+      () => eventsOfInstance(env.log, 'app', '1.1').includes('deactivated'),
+      'generation 1 of the app to stop',
+      4_000,
+    );
+
+    // The log is in the order things happened: the provider answered the
+    // call before generation 1 of the app began to deactivate.
+    const lines = env.log.lines();
+    const answered = lines.findIndex((line) =>
+      line.startsWith('settings answered '),
+    );
+    const deactivate = lines.indexOf(
+      `app deactivate ${pidOf(env.log, 'app', '1.1')}`,
+    );
+
+    assert.ok(answered !== -1 && answered < deactivate, lines.join('\n'));
   });
 });
 

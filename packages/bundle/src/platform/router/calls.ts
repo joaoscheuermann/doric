@@ -215,7 +215,8 @@ export interface CallRelay {
   /**
    * How many calls are in flight to or from `key`: pinned to it and not
    * ended, or made with its token and not ended, platform calls included,
-   * of every kind (section 6, "Drain"). A call waiting for an active
+   * of every kind but a resumable server stream it made (section 6,
+   * "Drain"). A call waiting for an active
    * instance or for a replay counts for its caller only. 0 for a key with
    * none.
    */

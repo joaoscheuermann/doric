@@ -29,9 +29,8 @@ settings, providers, tools, REST routes, Socket.IO namespaces other than
 - Put bundle paths, composition reading, the call to `startKernel` and the
   structural checks only in
   [`src/lib/bundles/boot.ts`](src/lib/bundles/boot.ts).
-- Put desktop bridge behavior only under `src/lib/bridge/`: the namespace and
-  its messages in [`socket.ts`](src/lib/bridge/socket.ts), the catalog the
-  desktop downloads in [`catalog.ts`](src/lib/bridge/catalog.ts).
+- Add no desktop bridge: slice S63b deleted `src/lib/bridge/`, and the
+  platform serves `doric.catalog/v1` to the desktop on the public listener.
 - Read an environment variable in the kernel only for the listener, the log
   file, the bundle path, the composition path or the `env` of an
   `alternatives` entry of [`composition.json`](composition.json); a variable a
@@ -50,9 +49,7 @@ settings, providers, tools, REST routes, Socket.IO namespaces other than
   [`package.json`](package.json), and every package only `tests/` imports in
   `devDependencies`. Then run `npx nx sync`.
 - When the kernel needs a value a bundle owns, keep it as a kernel constant
-  and check it against the bundle in a test, as
-  [`src/lib/socket-buffer.ts`](src/lib/socket-buffer.ts) and
-  [`tests/socket-buffer.test.ts`](tests/socket-buffer.test.ts) do.
+  and check it against the bundle in a test.
 - Register no HTTP route and no Socket.IO namespace other than
   `/doric/bridge` from the kernel: hand the listener to the bundles through
   the `network` option of `startBundles` in
@@ -60,9 +57,8 @@ settings, providers, tools, REST routes, Socket.IO namespaces other than
   registers its own routes and namespaces.
 - Create the Socket.IO server in [`src/index.ts`](src/index.ts) with
   `destroyUpgrade: false`, because the `screen-relay` bundle attaches its own
-  `upgrade` listener to the shared server, and with `maxHttpBufferSize` set to
-  `SOCKET_MAX_HTTP_BUFFER_BYTES` from
-  [`src/lib/socket-buffer.ts`](src/lib/socket-buffer.ts).
+  `upgrade` listener to the shared server (kernel path only; slice S63b
+  deleted `src/lib/socket-buffer.ts`).
 - Decide which contracts and bundles the host needs only in the `required`
   entry of [`composition.json`](composition.json); never hard-code a
   structural provider in `src/`.
@@ -73,13 +69,6 @@ settings, providers, tools, REST routes, Socket.IO namespaces other than
   [`tests/support/boundaries.mjs`](../../../tests/support/boundaries.mjs),
   described in [boundaries](../../../docs/architecture/bundles/boundaries.md),
   fails on either.
-- Let the bridge in [`src/lib/bridge/socket.ts`](src/lib/bridge/socket.ts)
-  call only the methods a provider's contract exposes to the desktop, and
-  never add an allowlist of its own.
-- When a change alters which contract methods or scope keys a desktop window
-  may use, update
-  [`tests/bridge-exposure.snapshot.json`](tests/bridge-exposure.snapshot.json)
-  by hand in the same change.
 - Set `startupStage` in [`src/index.ts`](src/index.ts) before each new startup
   step, so that a failure is logged at the stage it happened in.
 - Call `assertStructural` before `platform.start()`, and install the bridge
@@ -93,9 +82,8 @@ settings, providers, tools, REST routes, Socket.IO namespaces other than
   `bundles/`, following [`bundles/AGENTS.md`](../../../bundles/AGENTS.md),
   and not here.
 - To add a kernel feature, put its code in a module under `src/lib/`: a
-  folder per area, as `bridge/` and `bundles/`, or a single file directly
-  under `src/lib/` for a lone constant, as
-  [`socket-buffer.ts`](src/lib/socket-buffer.ts). Define code that boots,
+  folder per area, as `bundles/`, or a single file directly under `src/lib/`
+  for a lone constant. Define code that boots,
   starts or checks the platform as an exported function of
   [`src/lib/bundles/boot.ts`](src/lib/bundles/boot.ts), and call every new
   function from [`src/index.ts`](src/index.ts) at its place in the startup or
@@ -105,7 +93,8 @@ settings, providers, tools, REST routes, Socket.IO namespaces other than
   [`src/lib/bundles/boot.ts`](src/lib/bundles/boot.ts), as `startup` is;
   build the value in its own module under `src/lib/`, or, when it needs only
   what `startBundles` already holds, build it inside `startBundles`, as
-  `distribution` is built from [`catalog.ts`](src/lib/bridge/catalog.ts).
+  `composition` (`overridesPath`, `read`, `resolve`) is built for
+  `startPlatform`.
   State its shape in the architecture document of that contract, as
   [composition-and-distribution](../../../docs/architecture/bundles/composition-and-distribution.md)
   does for `doric.catalog/v1` and

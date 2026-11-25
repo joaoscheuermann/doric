@@ -1,8 +1,8 @@
 // What the desktop reads of the host's resolutions (HR-2..HR-4): the
 // distribution `doric.catalog/v1.Distribution` answers and the files
-// `ReadArtifact` serves. The platform's port of the kernel's
-// `doric-host/src/lib/bridge/catalog.ts`, over resolutions instead of kernel
-// generations.
+// `ReadArtifact` serves. The platform's port of the kernel's former
+// `doric-host/src/lib/bridge/catalog.ts` (deleted in S63b), over resolutions
+// instead of kernel generations.
 
 import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';

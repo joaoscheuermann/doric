@@ -317,7 +317,10 @@ The platform, the SDK and CI (slices S18–S28):
   (`PublishTarget.runningBundles`); a core change answers
   `kernel_restart_required`. A resumable stream cut at draining ends with
   `CallCancel` reason `drained`; `PeerSignalEvent.live` before any frame means
-  the peer is itself active.
+  the peer is itself active. A resumable server stream the instance opened as
+  caller (every bundle's `secrets/v1.WatchRedactions`) does not hold its
+  drain; a unary call it made still does (S63b,
+  `src/platform/router/flights.ts`).
 - **Replay** (`src/platform/router/replay.ts`, `src/sdk/host/replay.ts`):
   `ReplayDone` carries no status; a replay fails when its replay call ends
   non-OK. Every replay call carries `doric-target` naming the new provider
@@ -690,7 +693,13 @@ server or bridge; it calls `startHostPlatform` and `hostReady`
 `composition.overrides.json` applied, resolves generation 1, loads a
 `DiagnosticsStore` (from `bundle/runtime`), indexes the staged
 `descriptors.binpb` (`readStagedCatalogIndex`) and calls `startPlatform` with
-`stagedCommandOf` and `stagedHostPart`, so every host part runs as its own
+`stagedCommandOf`, `stagedHostPart` and, since S63b,
+`composition: { overridesPath, read, resolve }`, so `Disable` writes
+`composition.overrides.json` (a later boot starts that bundle disabled) and
+`ResetComposition` clears it; `readHostResolution` takes a generation, and a
+private `readBootComposition` serves both readers. S63b deleted the host's
+Socket.IO bridge (`src/lib/bridge/`) and `src/lib/socket-buffer.ts`; the
+`socket.io` dependencies stay until group F. With these, every host part runs as its own
 process in activation order and client-only bundles are never spawned. Each
 bundle's `descriptors.binpb` holds only its own protos, so `withBasicContracts`
 merges the generated files of the 12 basic host contracts from
@@ -1619,3 +1628,13 @@ sandbox pool` then `Sandbox pool configured` with the `logSandboxPool`
   `ReadArtifact`, `Watch`, `Disable`, `ResetComposition`) and the gateway
   serves the platform's `DESKTOP` methods; `PlatformOptions.composition`,
   a random `hostBoot`, a fixed publish order and `DiagnosticsStore.adopt`.
+- 2026-11-25: phase 3, slice S63b, of
+  [`docs/designs/grpc-processes.md`](../designs/grpc-processes.md) (version
+  6.38): the host passes `composition` to `startPlatform`, so `Disable` and
+  `ResetComposition` work on the booted host; the bridge and
+  `socket-buffer.ts` are deleted; the router's drain no longer waits on
+  resumable server streams the instance opened as caller. Open: the drain
+  guard test asserts on the provider's log order, because a caller can receive
+  `Stop` before a unary answer reaches its code; the host tests call over
+  fetch with the generated schemas, as `@connectrpc/connect-node` is not a
+  `doric-host` devDependency.
