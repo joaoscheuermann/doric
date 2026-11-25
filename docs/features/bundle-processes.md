@@ -774,7 +774,22 @@ an `AbortController` and resubscribing only after `disconnected` or
 `credentialDescriptionSchema` reading as `invalid_output` and a `ConnectError`
 without a Doric error detail as `internal`, "The request could not be
 completed." `doric.browser/v1` and `workspace.dashboard/v1` stay on the
-envelope. The other client modules (S65d) still use the envelope. A catalog
+envelope. Since S65d, `files` calls `FilesService` (`Tree`, `Directories`,
+`Content`, `CreateFile`, `CreateDirectory`) scoped to the Project and reads each
+answer back as today's lease outcome, a lease state staying data (`pending` with
+`Retry-After: 1`) and a refusal reading as not found for `not_found` and as
+`invalid_path` otherwise; `terminal` calls `TerminalService` (`List`, `Create`,
+`Snapshot`, `Input`, `Resize`, `Stop`, `Rename`), scoping only `list`, `create`
+and the `WatchProject` stream it opens, and reads that stream's items as today's
+`TerminalWatchItem`s, resubscribing only after `disconnected` or `unavailable`,
+since the SDK reopens it after `generation_lost`; `screen` calls
+`SessionsService.attach` scoped to the Project, its answer decoded with
+`AttachResponseSchema`; `usage` calls `UsageService` (`Thread`, `Compact`,
+`CompactionTarget`, `SetCompactionTarget`), turning the caller's deadline into a
+relative `timeoutMs`; and `resources` calls `ResourcesService` (`Host`,
+`Project`), `host()` unscoped. `files`, `terminal`, `usage` and `resources` read
+their failures through `fromConnectError`; `screen` answers no answer for any
+failure. The fault sentences the old path showed stay the same. A catalog
 manifest accepts `host.assets`, and the build's dry activation answers
 `use(<DescService>)` of a host contract with an inert stub after checking the
 descriptor against the part's lists (a descriptor without the contract option
@@ -1714,3 +1729,20 @@ sandbox pool` then `Sandbox pool configured` with the `logSandboxPool`
   `@connectrpc/connect`; no test covers `git`'s Versioning credential list;
   `chat-connect.test.ts` and `settings-connect.test.ts` build their own forward
   without the git routes, so a git call there answers `UNIMPLEMENTED`.
+- 2026-11-25: phase 3, slice S65d, of
+  [the spec](../designs/grpc-processes.md) (version 6.44): `files`', `terminal`'s,
+  `screen`'s, `usage`'s and `resources`' client modules call `FilesService`,
+  `TerminalService`, `SessionsService`, `UsageService` and `ResourcesService`
+  over Connect, each answer read back as today's shape. `terminal` gains
+  `stream-source.ts` for `WatchProject` and `contracts`' `terminalOneofs`, and
+  only `disconnected` and `unavailable` resubscribe, the SDK reopening the
+  stream after `generation_lost`. Each bundle's tests use a fake `HostClients`
+  over `createRouterTransport`; the `files` and `resources` story harnesses
+  answer a generated service descriptor by its contract id; the desktop e2e
+  harness fakes the four services behind `hostForward`
+  (`tests/support/{workspace-content,workspace-host,transcript-500}.ts`),
+  `transcript-500.ts` answering `terminal/v1` over Connect in place of the
+  Socket.IO fake, and `screen` is the one contract it answers on nothing.
+  Open: the `ClientServices` casts stay until the props are narrowed, and the
+  e2e `terminalRoutes` fake holds its `WatchProject` stream open with a snapshot
+  alone, so no `updated` or `output` item is exercised over Connect.

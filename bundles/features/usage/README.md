@@ -165,7 +165,7 @@ type CompactResult =
 | `ui/v1`                  | client | `define('usage-summary', …)`                                                |
 | `regions/v1`             | client | `add('shell.conversation.footer', item)`                                    |
 | `workspace.selection/v1` | client | `current().threadId` and `subscribe(listener)`: the selected Thread         |
-| `usage/v1`               | client | its own contract, reached in the window through the desktop bridge          |
+| `usage/v1`               | client | its own contract, over Connect as `UsageService`                            |
 
 The host part imports `RuntimeUsageV1` and `RuntimeThreadsV1` from
 `runtime/contracts`, `ConfigurationV1` and `defaultContextCompaction` from
@@ -310,17 +310,16 @@ cost.` as its title and screen-reader text.
 
 ### How the window reaches `usage/v1`
 
-The client part calls `usage/v1` as a contract call on the services its
-element receives. The window sends every contract call through
-`window.doric.desktop`, which the preload carries over the platform channel
-`doric:desktop` to the dispatcher, the one `ipcMain.handle` of the main
-process; the dispatcher checks the sender and
-the method's `expose: 'desktop'`, validates the input and output against the
-published schemas and forwards the call to the host over the host bridge
-([`app/desktop/doric/src/app/api/preload.ts`](../../../app/desktop/doric/src/app/api/preload.ts),
-[`app/desktop/doric/src/platform/bridge/dispatcher.ts`](../../../app/desktop/doric/src/platform/bridge/dispatcher.ts),
-[`app/desktop/doric/src/platform/bridge/host-bridge.ts`](../../../app/desktop/doric/src/platform/bridge/host-bridge.ts)).
-The bundle declares no IPC channel or desktop part of its own.
+The client part calls `usage/v1` over Connect, through the generated
+`UsageService` (slice S65d), as a contract call on the services its element
+receives. The window sends every Connect call over `window.doric.connect`, which
+the preload carries over the platform channel `doric:connect` to Electron
+main's `createConnectRelay`; the relay checks the sender, the
+`doric-client-part`, the method and its scope, then forwards the call to the
+host ([`packages/desktop/src/client/connect.ts`](../../../packages/desktop/src/client/connect.ts),
+[`app/desktop/doric/src/app/api/preload.ts`](../../../app/desktop/doric/src/app/api/preload.ts),
+[`app/desktop/doric/src/platform/bridge/connect-relay.ts`](../../../app/desktop/doric/src/platform/bridge/connect-relay.ts)).
+The bundle declares no desktop part of its own.
 
 The client wraps every call in [`src/client/domain/read.ts`](src/client/domain/read.ts):
 

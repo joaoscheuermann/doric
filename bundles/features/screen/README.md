@@ -53,7 +53,7 @@ through `deliver` ([`src/desktop/views.ts`](src/desktop/views.ts),
 
 Declared in [`src/contracts/index.ts`](src/contracts/index.ts) as
 `ScreenSessionsV2`; provided with `expose: 'desktop'`, so app windows call it
-over the host bridge ([`src/host/provider.ts`](src/host/provider.ts)).
+over Connect, through the generated `SessionsService` ([`src/host/provider.ts`](src/host/provider.ts)).
 
 ```ts
 type ScreenUnavailableReason = 'sandbox' | 'missing-xpra' | 'start-failed';

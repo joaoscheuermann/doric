@@ -233,7 +233,8 @@ The kernel entry stays until S62. Since S62c1 the manifest requires
   ([`runtime` README](../../runtime/runtime/README.md)).
 - While a contract has no provider, its value falls back: no Project, and not
   connected ([`src/client/hooks/use-service.ts`](src/client/hooks/use-service.ts)).
-- It calls `resources/v1` from the window: `host()` with no scope, and
+- It calls `resources/v1` from the window over Connect, through the generated
+  `ResourcesService` (slice S65d): `host()` with no scope, and
   `project()` with the scope `{ projectId }`.
 
 ### Reads

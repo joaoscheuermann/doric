@@ -491,7 +491,8 @@ Socket.IO namespace (see the [git](../git/README.md) and
 ### Terminal API
 
 [`src/client/api.ts`](src/client/api.ts) wraps every `terminal/v1` call a
-window makes (`list`, `create`, `snapshot`, `input`, `resize`, `stop`,
+window makes over Connect, through the generated `TerminalService` (slice
+S65d) (`list`, `create`, `snapshot`, `input`, `resize`, `stop`,
 `rename`). The calls carry no deadline.
 
 - It checks the arguments before calling: an id must be a non-empty string of
@@ -519,6 +520,11 @@ complete the terminal request.` `snapshot` always reads from offset 0, treats
 
 [`src/client/output-watch.ts`](src/client/output-watch.ts):
 
+The stream it follows is [`src/client/stream-source.ts`](src/client/stream-source.ts)
+(slice S65d): it opens `WatchProject` over the generated `TerminalService` and
+reads each item back as today's `TerminalWatchItem`, the wire's absent
+`timeoutMs` reading as `null`.
+
 - **Project watch.** `watchProject(projectId, listener)` keeps one listener per
   Project; a newer one replaces the older. It forwards `snapshot` (the checked
   sessions of that Project), `updated` and `removed` items of that Project and
@@ -536,12 +542,13 @@ longer available.`), then follows that Project's stream. On each stream
   watcher gets every update; a watcher that joins later makes the watch read
   the snapshot again for all, or gets the error that ended it. The watch
   closes when its last watcher stops.
-- **Reconnecting.** A stream that ends with `disconnected`, `unavailable` or
-  `generation_lost` reports nothing and subscribes again when
-  `doric.connection/v1` reports `connected`, or after 1,000 ms when it is
-  connected already. An end with any other error reports `The terminal
-connection failed.` and stays ended; an end without an error reports
-  nothing and stays ended.
+- **Reconnecting.** A stream that ends with `disconnected` or `unavailable`
+  reports nothing and subscribes again when `doric.connection/v1` reports
+  `connected`, or after 1,000 ms when it is connected already. The SDK reopens a
+  resumable stream the host lost with its generation (`generation_lost`), so an
+  end with that code is not resubscribed here: if it reaches the watch, it
+  reports `The terminal connection failed.` and stays ended, like any other
+  error. An end without an error reports nothing and stays ended.
 
 ### Store
 

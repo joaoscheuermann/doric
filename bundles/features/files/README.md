@@ -121,7 +121,9 @@ error.
 
 `Files`, referenced as `FilesV1`, provided by
 [`src/host/reads.ts`](src/host/reads.ts). The Project is `call.scope.projectId`
-(`services.use(FilesV1, { projectId })`). Every method is exposed to the
+(`services.use(FilesV1, { projectId })` on the host; the window binds the
+generated `FilesService` to it over Connect, `services.use(FilesService,
+{ projectId })`, slice S65d). Every method is exposed to the
 desktop (`expose: 'desktop'`), and runs on the Project's current lease through
 `runtime.lease/v1.withLease`, which never acquires a lease:
 
