@@ -14,7 +14,9 @@
 // marks of the Files tree, and takes the `files.*` contracts it uses from
 // `files/contracts`). grpc-processes S62c provides `git.commands/v1` at its
 // .proto header version, 1.2.0, and lists `log/v1` as optional, as every host
-// part does.
+// part does. grpc-processes S62d3 (SK-2) ships 1.4.0: its host part registers
+// its own `src/skills/*/SKILL.md` through `skills/v1@^1.3.0`, read as
+// `host.assets`.
 
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -26,7 +28,7 @@ describe('the git manifest', () => {
       readFileSync('bundles/features/git/manifest.json', 'utf8'),
     ) as { version: string; provides: string[]; requires: string[] };
 
-    assert.equal(manifest.version, '1.3.0');
+    assert.equal(manifest.version, '1.4.0');
     assert.deepEqual(
       manifest.provides.filter((ref) => ref.startsWith('git.commands/')),
       ['git.commands/v1@1.2.0'],
@@ -134,5 +136,23 @@ describe('the git manifest', () => {
       assert.ok(manifest.requires.includes(range), range);
     }
     assert.ok(manifest.optional.includes('log/v1'));
+  });
+
+  test('requires skills/v1@^1.3.0 and lists src/skills/*/SKILL.md in host.assets', () => {
+    const manifest = JSON.parse(
+      readFileSync('bundles/features/git/manifest.json', 'utf8'),
+    ) as {
+      requires: string[];
+      host?: { assets?: string[] };
+    };
+
+    assert.deepEqual(
+      manifest.requires.filter((ref) => ref.startsWith('skills/')),
+      ['skills/v1@^1.3.0'],
+    );
+    assert.ok(
+      (manifest.host?.assets ?? []).includes('src/skills/*/SKILL.md'),
+      JSON.stringify(manifest.host),
+    );
   });
 });

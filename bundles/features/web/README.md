@@ -14,12 +14,13 @@ bundle skill files are built and registered is described in
 | ----------------- | -------------------------------------------------------- |
 | `manifestVersion` | `1`                                                      |
 | `id`              | `web`                                                    |
-| `version`         | `1.0.0`                                                  |
+| `version`         | `1.1.0`                                                  |
 | `engines`         | `doric` `^1.0.0`                                         |
 | `description`     | `Web research capability for the Doric agent.`           |
 | `provides`        | none                                                     |
-| `requires`        | `tools/v1@^1.5.0`                                        |
+| `requires`        | `tools/v1@^1.5.0`, `skills/v1@^1.3.0`                    |
 | `optional`        | `log/v1`, `secrets/v1`                                   |
+| `host.assets`     | `src/skills/*/SKILL.md`                                  |
 | Parts             | host (`src/host/`), and the skill files of `src/skills/` |
 
 ([manifest.json](manifest.json), [project.json](project.json))
@@ -46,13 +47,13 @@ None. The contracts module exports nothing
   between the [`files` bundle](../files/README.md)'s `tree` (600) and `write`
   (800) ([bundles/features/files/src/host/index.ts](../files/src/host/index.ts),
   [docs/features/files.md](../../../docs/features/files.md)).
-- `skills/v1`: the bundle's own code never calls it. The bundle loader
-  registers the skill files on the bundle's behalf, once every host bundle of
-  the activation phase has activated, so that `allowed-tools` resolves against
-  the whole tool catalog; the loader fails the bundle's activation with
-  `missing_dependency` when no `skills/v1` provider is active
-  ([packages/bundle/src/loader/activate.ts](../../../packages/bundle/src/loader/activate.ts),
-  [packages/bundle/src/process/runner-main.ts](../../../packages/bundle/src/process/runner-main.ts)).
+- `skills/v1@^1.3.0`: the bundle's own code never calls it. The host SDK
+  registers the skill files from the bundle's process, as the instance, after
+  `activate` and before the activation answers, reading them through
+  `context.assets` (hence `host.assets`); a skill that cannot be read, parsed
+  or registered is skipped and logged at `warn` as `skill not registered`, and
+  never fails the activation
+  ([packages/bundle/src/sdk/host/skills.ts](../../../packages/bundle/src/sdk/host/skills.ts)).
 
 ## Parts
 
@@ -101,9 +102,9 @@ installed bundle that the host's composition enables and does not list as
   keep the source's title, URL and supporting passage, apart from inference;
   narrow the query or the page range when output is truncated.
 
-`skills/v1` rejects a skill whose `allowed-tools` names a tool missing from the
-catalog with `unavailable_tool`
-([bundles/foundation/core/src/host/skills.ts](../../foundation/core/src/host/skills.ts)).
+`allowed-tools` is a run-time reference for the model: `skills/v1` 1.3.0
+stores it as given and does not check that `web` is registered
+([bundles/foundation/core/src/host/skills/service.ts](../../foundation/core/src/host/skills/service.ts)).
 
 ## The `web` tool
 
@@ -264,19 +265,14 @@ to the extracted text ([src/host/tools/web.ts](src/host/tools/web.ts)).
 
 ### At activation
 
-Each of these fails the bundle's activation. `duplicate_tool` is the code of
-the `ContractError` that `activate` throws; the other three are the codes of
-the loader's `ActivationFailure`
-([packages/bundle/src/loader/activate.ts](../../../packages/bundle/src/loader/activate.ts),
-[bundles/foundation/core/src/host/tools.ts](../../foundation/core/src/host/tools.ts)).
-The activation loop quarantines the bundle with `registration_failed` for `duplicate_tool`, and with the listed code for the other three; a skill failure comes after the phase and also withdraws the `web` tool ([packages/bundle/src/runtime/activation.ts](../../../packages/bundle/src/runtime/activation.ts)).
-
-| Code                  | When                                                                                                                |
-| --------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| `duplicate_tool`      | `tools/v1.register` throws it when another bundle in the same generation view already registered a tool named `web` |
-| `missing_dependency`  | the bundle has a skill file and no `skills/v1` provider is active                                                   |
-| `skill_invalid`       | a skill file cannot be read or parsed                                                                               |
-| `registration_failed` | `skills/v1` rejects the skill, `unavailable_tool` included                                                          |
+`duplicate_tool`, the code of the `ContractError` that `tools/v1.register`
+throws when another bundle in the same generation view already registered a
+tool named `web`, fails the bundle's activation
+([bundles/foundation/core/src/host/tools.ts](../../foundation/core/src/host/tools.ts)).
+A skill that cannot be read or parsed, or that `skills/v1` refuses, does not:
+the host SDK skips it, logs `skill not registered` with its path and code, and
+the bundle activates without it
+([packages/bundle/src/sdk/host/skills.ts](../../../packages/bundle/src/sdk/host/skills.ts)).
 
 ### During a call
 

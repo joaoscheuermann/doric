@@ -1,8 +1,9 @@
 // PC18, PC33 (D28): the `papercraft` skill. Its committed text is at most
 // 8,000 characters and its first rule names `openui`; the host registers it
 // at activation with order 3410 and `allowedTools: ['comment_reply']`; a
-// registration that fails (`unavailable_tool`) is caught, no skill is listed,
-// and fences still draw.
+// registration that fails (`duplicate_skill`: another bundle holds the name;
+// `skills/v1` 1.3.0 no longer refuses a skill for its `allowedTools`) is
+// caught, no skill is listed, and fences still draw.
 //
 // Over the real host entry (`src/host/index.ts`) activated on the fakes of
 // `tests/support/host.ts`.
@@ -132,12 +133,12 @@ describe('PC18: the registration at activation', () => {
   });
 });
 
-describe('PC33: without comment_reply', () => {
-  test('the unavailable_tool failure is caught, no skill is listed, and fences still draw', async () => {
+describe('PC33: with the papercraft skill name taken', () => {
+  test('the duplicate_skill failure is caught, no skill is listed, and fences still draw', async () => {
     const host = await start({
       skillError: new ContractError(
-        'unavailable_tool',
-        'comment_reply is not a registered tool',
+        'duplicate_skill',
+        'Duplicate skill name "papercraft": bundle "other" and bundle "papercraft".',
       ),
     });
 

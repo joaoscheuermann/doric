@@ -1,6 +1,5 @@
 import { join } from 'node:path';
 
-import { createFileRegistry } from '@bufbuild/protobuf';
 import {
   type AlternativeChoices,
   applyCompositionOverrides,
@@ -19,27 +18,9 @@ import {
   selectAlternatives,
   type Variables,
 } from 'bundle';
-import { file_doric_events_v1_events } from 'bundle/contracts/gen/doric/events/v1/events_pb.js';
-import { file_doric_hooks_v1_hooks } from 'bundle/contracts/gen/doric/hooks/v1/hooks_pb.js';
-import { file_doric_log_v1_log } from 'bundle/contracts/gen/doric/log/v1/log_pb.js';
-import { file_doric_models_provider_v1_provider } from 'bundle/contracts/gen/doric/models/provider/v1/provider_pb.js';
-import { file_doric_models_v1_models } from 'bundle/contracts/gen/doric/models/v1/models_pb.js';
-import { file_doric_secrets_backend_v1_backend } from 'bundle/contracts/gen/doric/secrets/backend/v1/backend_pb.js';
-import { file_doric_secrets_v1_secrets } from 'bundle/contracts/gen/doric/secrets/v1/secrets_pb.js';
-import { file_doric_settings_v1_settings } from 'bundle/contracts/gen/doric/settings/v1/settings_pb.js';
+import { SkillsService } from 'bundle/contracts/gen/doric/skills/v1/skills_pb.js';
+import { ToolsService } from 'bundle/contracts/gen/doric/tools/v1/tools_pb.js';
 import {
-  file_doric_skills_v1_skills,
-  SkillsService,
-} from 'bundle/contracts/gen/doric/skills/v1/skills_pb.js';
-import { file_doric_storage_backend_v1_backend } from 'bundle/contracts/gen/doric/storage/backend/v1/backend_pb.js';
-import { file_doric_storage_v1_storage } from 'bundle/contracts/gen/doric/storage/v1/storage_pb.js';
-import {
-  file_doric_tools_v1_tools,
-  ToolsService,
-} from 'bundle/contracts/gen/doric/tools/v1/tools_pb.js';
-import {
-  type CatalogIndex,
-  createCatalogIndex,
   type Platform,
   type PlatformOptions,
   readStagedCatalogIndex,
@@ -47,6 +28,7 @@ import {
   stagedCommandOf,
   stagedHostPart,
   startPlatform,
+  withBasicContracts,
 } from 'bundle/platform';
 import { DiagnosticsStore, type ResolvedEnvironment } from 'bundle/runtime';
 import type { Logger } from 'pino';
@@ -193,51 +175,6 @@ const isLogLevel = (level: string): level is LogLevel =>
 
 const messageOf = (error: unknown): string =>
   error instanceof Error ? error.message : String(error);
-
-/**
- * The files of the basic `HOST` contracts. `packages/bundle` defines them, so
- * no bundle's `descriptors.binpb` holds the ones its own files do not import,
- * though bundles provide them (`core`'s `hooks/v1`, `postgres`'s
- * `storage.backend/v1`).
- */
-const basicHostFiles = [
-  file_doric_hooks_v1_hooks,
-  file_doric_log_v1_log,
-  file_doric_tools_v1_tools,
-  file_doric_skills_v1_skills,
-  file_doric_settings_v1_settings,
-  file_doric_secrets_v1_secrets,
-  file_doric_secrets_backend_v1_backend,
-  file_doric_storage_v1_storage,
-  file_doric_storage_backend_v1_backend,
-  file_doric_events_v1_events,
-  file_doric_models_v1_models,
-  file_doric_models_provider_v1_provider,
-];
-
-/**
- * `staged`, falling back to the basic `HOST` contracts for what it lacks; the
- * staged descriptors win where both hold a file.
- */
-const withBasicContracts = (staged: CatalogIndex): CatalogIndex => {
-  const basic = createCatalogIndex(basicHostFiles);
-  const desktop = [
-    ...staged.desktopMethods(),
-    ...basic
-      .desktopMethods()
-      .filter(({ path }) => staged.method(path) === undefined),
-  ];
-
-  return {
-    method: (path) => staged.method(path) ?? basic.method(path),
-    service: (fullName) => staged.service(fullName) ?? basic.service(fullName),
-    contract: (id) => staged.contract(id) ?? basic.contract(id),
-    desktopMethods: () => desktop,
-    // No basic contract is part of the public API (`api.*`).
-    publicMethods: () => staged.publicMethods(),
-    registry: createFileRegistry(basic.registry, staged.registry),
-  };
-};
 
 /**
  * The host resolution of generation 1: the staged bundles discovered, the

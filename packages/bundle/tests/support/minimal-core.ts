@@ -100,7 +100,7 @@ export const createMinimalSkills = () => {
     register: defineMethod({
       input: skillsMethods.register.input,
       output: skillsMethods.register.output,
-      execute: ([skill, options], call, services) => {
+      execute: ([skill, options], call) => {
         const bundleId = call.caller.bundleId;
 
         if (registered.some((entry) => entry.skill.name === skill.name)) {
@@ -110,23 +110,7 @@ export const createMinimalSkills = () => {
           );
         }
 
-        // skills/v1 1.1.0: any tool the tools/v1 list holds (D10-6).
-        const tools = new Set(
-          services
-            .use(ToolsV1)
-            .list()
-            .map((entry) => entry.tool.name),
-        );
-
-        for (const name of skill.allowedTools) {
-          if (!tools.has(name)) {
-            throw new ContractError(
-              'unavailable_tool',
-              `Skill "${skill.name}" in bundle "${bundleId}" references unavailable tool "${name}".`,
-            );
-          }
-        }
-
+        // skills/v1 1.3.0 (SK-1): `allowedTools` is stored as given.
         const entry: RegisteredSkill = {
           bundleId,
           alwaysAvailable: options?.alwaysAvailable ?? false,

@@ -3,12 +3,13 @@
 // (R18), and the bundle ships it as a patch, 2.0.4.
 // Step 4(d) moves the bundle to the workspace and runtime contracts, the
 // next patch, 2.0.5. Step 5(b) adds the thread-spawn element, the minor 2.1.0.
+// S62d3 registers its skills through `skills/v1@^1.3.0`, the minor 2.2.0.
 
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 
-test('the threads sheet scans the workspace client sources, at version 2.1.0', () => {
+test('the threads sheet scans the workspace client sources, at version 2.2.0', () => {
   const sheet = readFileSync(
     'bundles/features/threads/src/client/styles.css',
     'utf8',
@@ -27,5 +28,5 @@ test('the threads sheet scans the workspace client sources, at version 2.1.0', (
     1,
     'The sheet does not scan the workspace client sources once.',
   );
-  assert.equal(manifest.version, '2.1.0');
+  assert.equal(manifest.version, '2.2.0');
 });

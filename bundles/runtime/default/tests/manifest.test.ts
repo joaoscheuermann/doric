@@ -2,7 +2,7 @@
 // client part that draws `load_skill` calls in the chat through
 // `chat.views/v1` (listed under `optional`), defined through `ui/v1`, on
 // platform `^1.10.0`. Phase 8 trades `mcp/v1` for the contract it declares,
-// `default.skill-sources/v1`, under `optional` — the minor 2.8.0. What it
+// `default.skill-sources/v1`, under `optional` — the minor 2.8.0; S62d3 ships the patch 2.8.1. What it
 // provided and required before stays.
 
 import assert from 'node:assert/strict';
@@ -22,8 +22,8 @@ const manifest = JSON.parse(
 ) as Manifest;
 
 describe('the default manifest', () => {
-  test('is version 2.8.0 on platform ^1.10.0', () => {
-    assert.equal(manifest.version, '2.8.0');
+  test('is version 2.8.1 on platform ^1.10.0', () => {
+    assert.equal(manifest.version, '2.8.1');
     assert.equal(manifest.engines.doric, '^1.10.0');
   });
 

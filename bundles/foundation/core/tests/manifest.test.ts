@@ -2,7 +2,8 @@
 // (bundle isolation 6(b)): the minor 1.16.0, still asking for platform ^1.0.0
 // (AC6.3: no range rises). Since grpc-processes S62c it provides models/v1 at
 // its .proto header version, 1.5.0, and lists models.provider/v1, which its
-// host process calls, as optional.
+// host process calls, as optional. S62d3 (SK-1): `skills/v1` 1.3.0 stores a
+// skill's `allowedTools` as given, a contract minor, so core ships as 1.17.0.
 
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
@@ -25,15 +26,24 @@ const manifest = async (): Promise<Manifest> =>
     ),
   ) as Manifest;
 
-void test('core ships as 1.16.0, provides models/v1@1.5.0 and asks for platform ^1.0.0', async () => {
+void test('core ships as 1.17.0, provides models/v1@1.5.0 and asks for platform ^1.0.0', async () => {
   const { version, provides, engines } = await manifest();
 
-  assert.equal(version, '1.16.0');
+  assert.equal(version, '1.17.0');
   assert.deepEqual(
     provides.filter((entry) => entry.startsWith('models/v1@')),
     ['models/v1@1.5.0'],
   );
   assert.equal(engines.doric, '^1.0.0');
+});
+
+void test('core provides skills/v1@1.3.0', async () => {
+  const { provides } = await manifest();
+
+  assert.deepEqual(
+    provides.filter((entry) => entry.startsWith('skills/v1@')),
+    ['skills/v1@1.3.0'],
+  );
 });
 
 void test('core lists models.provider/v1 as optional', async () => {

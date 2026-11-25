@@ -69,6 +69,10 @@ import {
 } from './supervisor/timings.js';
 
 export {
+  basicHostContractFiles,
+  withBasicContracts,
+} from './basic-contracts.js';
+export {
   type CatalogIndex,
   catalogIndexFromDescriptors,
   createCatalogIndex,

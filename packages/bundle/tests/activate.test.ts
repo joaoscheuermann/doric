@@ -490,10 +490,13 @@ void test('skill failures quarantine the bundle with the matching reason', async
     await writeBundle(root, 'foreign', {
       manifest: manifest('foreign'),
       descriptor: descriptorFor(manifest('foreign')),
+      // `skills/v1` 1.3.0 refuses no `allowedTools`; the second skill of the
+      // same name is refused (`duplicate_skill`).
       files: {
         'skills/x/SKILL.md': skillSource('foreign-skill', {
           allowedTools: ['missing-tool'],
         }),
+        'skills/y/SKILL.md': skillSource('foreign-skill'),
       },
     });
 
@@ -599,10 +602,13 @@ void test('a skill refused after the phase quarantines its active bundle, withdr
         manifest('prov', { provides: ['prov.api/v1@1.0.0'] }),
       ),
       host: `export { activate } from ${JSON.stringify(skilledProviderUrl)};\n`,
+      // `skills/v1` 1.3.0 refuses no `allowedTools`; the second skill of the
+      // same name is refused (`duplicate_skill`).
       files: {
         'skills/x/SKILL.md': skillSource('needs-missing', {
           allowedTools: ['prov-tool', 'missing-tool'],
         }),
+        'skills/y/SKILL.md': skillSource('needs-missing'),
       },
     });
 
@@ -623,7 +629,7 @@ void test('a skill refused after the phase quarantines its active bundle, withdr
     assert.match(
       platform.diagnostics().bundles.find(({ id }) => id === 'prov')?.reasons[0]
         ?.message ?? '',
-      /Skill "needs-missing" in bundle "prov" references unavailable tool "missing-tool"\./,
+      /Duplicate skill name "needs-missing"\./,
     );
     assert.deepEqual(reasonCodes(platform, 'user'), ['dependency_quarantined']);
     assert.deepEqual(toolNames(platform), []);
@@ -649,9 +655,7 @@ void test('a manifest without manifestVersion is quarantined with invalid_manife
       bundlesPath: root,
       composition: { enabled: ['mincore', 'old'] },
     });
-    const old = platform
-      .diagnostics()
-      .bundles.filter(({ id }) => id === 'old');
+    const old = platform.diagnostics().bundles.filter(({ id }) => id === 'old');
 
     assert.deepEqual(
       old.map(({ state }) => state),

@@ -18,7 +18,7 @@ describes how bundles are built, loaded and activated.
 
 ## Manifest
 
-- `manifestVersion` `1`, `id` `threads`, `version` `2.1.0`, platform
+- `manifestVersion` `1`, `id` `threads`, `version` `2.2.0`, platform
   `engines.doric` `^1.10.0`, `description` "Delegation capabilities for
   creating and steering direct child threads." ([manifest.json](manifest.json)).
 - Package dependencies: `bundle`, `default`, `desktop`, `lucide-react`,
@@ -29,6 +29,8 @@ describes how bundles are built, loaded and activated.
   ([package.json](package.json)).
 - `requires`:
   - `tools/v1@^1.5.0`: registers the eight tools ([src/host/index.ts](src/host/index.ts)).
+  - `skills/v1@^1.3.0`: the host SDK registers the bundle's skills (see
+    [Skills](#skills)).
   - `runtime.threads/v1@^1.7.0`: every tool's work on the children
     ([src/host/threads.ts](src/host/threads.ts)).
   - `ui/v1@^1.0.0`: defines the two custom elements and creates chat's
@@ -169,7 +171,8 @@ The runtime checks the model and effort against the parent's provider and
 Each skill is a `SKILL.md` whose frontmatter gives `name`, `description` and
 `order`; the build checks each one and copies it into the built bundle
 ([packages/bundle/src/build/cli.ts](../../../packages/bundle/src/build/cli.ts),
-[packages/bundle/src/loader/skills.ts](../../../packages/bundle/src/loader/skills.ts)).
+[packages/bundle/src/loader/skills.ts](../../../packages/bundle/src/loader/skills.ts));
+the host SDK registers them from the bundle's own process after `activate` (`registerBundleSkills`, [packages/bundle/src/sdk/host/skills.ts](../../../packages/bundle/src/sdk/host/skills.ts)), reading them through `context.assets`, so `host.assets` lists `src/skills/*/SKILL.md`; a skill that cannot be registered is skipped and logged (`skill not registered`). `allowed-tools` is a run-time reference for the model: `skills/v1` 1.3.0 stores it as given and does not check it against `tools/v1`.
 
 | Skill               | Order | Always available | Purpose                                                                  |
 | ------------------- | ----- | ---------------- | ------------------------------------------------------------------------ |

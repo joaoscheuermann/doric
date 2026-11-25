@@ -178,6 +178,26 @@ export const resolveLogHost = (): ResolvedEnvironment =>
     candidateV2('stranger', {}),
   ]);
 
+/**
+ * The host resolution of the SDK's own skill registration (S62d3 addendum 2,
+ * SK-2):
+ *
+ * - `core` (manifest v1): provides `hooks/v1`, `tools/v1`, `skills/v1@1.3.0`;
+ * - `app` and `other`: their host part requires `skills/v1@^1.3.0`, so
+ *   `ProviderChanged` for `skills/v1` reaches them.
+ */
+export const resolveSkillsHost = (): ResolvedEnvironment =>
+  resolveCandidates([
+    candidateV1('core', [
+      'hooks/v1@1.0.0',
+      'tools/v1@1.0.0',
+      'skills/v1@1.3.0',
+    ]),
+    ...['app', 'other'].map((id) =>
+      candidateV2(id, { host: { requires: ['skills/v1@^1.3.0'] } }),
+    ),
+  ]);
+
 const resolveCandidates = (
   candidates: readonly CatalogCandidate[],
 ): ResolvedEnvironment =>

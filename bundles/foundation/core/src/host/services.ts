@@ -296,7 +296,7 @@ export const createCoreServices = (
     },
   );
   const tools = createToolsService(bind);
-  const skills = createSkillsService(bind, tools);
+  const skills = createSkillsService(bind);
   const hooks = createHooksService(
     bind,
     typesOf,
@@ -342,11 +342,7 @@ export const createCoreServices = (
     return bind().own(traced);
   };
   /** The context of an in-process call of `service`'s `method`. */
-  const inProcess = (
-    method: DescMethod,
-    signal: AbortSignal,
-    call?: Call,
-  ) =>
+  const inProcess = (method: DescMethod, signal: AbortSignal, call?: Call) =>
     createHandlerContext({
       service: method.parent,
       method,

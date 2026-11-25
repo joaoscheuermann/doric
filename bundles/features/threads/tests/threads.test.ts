@@ -61,8 +61,9 @@ void test('activation provides no service and registers no event', async () => {
 });
 
 // Bundle isolation 5(b), change 3: threads 2.1.0 draws `thread-spawn` calls
-// through `chat.views/v1` (under `optional`), on platform `^1.10.0`.
-void test('the manifest is 2.1.0 on platform ^1.10.0 and declares no provided contract', async () => {
+// through `chat.views/v1` (under `optional`), on platform `^1.10.0`. S62d3
+// registers its skills through `skills/v1@^1.3.0`, the minor 2.2.0.
+void test('the manifest is 2.2.0 on platform ^1.10.0 and declares no provided contract', async () => {
   const manifest = JSON.parse(
     await readFile(new URL('../../manifest.json', import.meta.url), 'utf8'),
   ) as {
@@ -74,7 +75,7 @@ void test('the manifest is 2.1.0 on platform ^1.10.0 and declares no provided co
     readonly desktopScope?: Record<string, unknown>;
   };
 
-  assert.equal(manifest.version, '2.1.0');
+  assert.equal(manifest.version, '2.2.0');
   assert.equal(manifest.engines.doric, '^1.10.0');
   assert.ok(
     (manifest.optional ?? []).includes('chat.views/v1'),

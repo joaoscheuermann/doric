@@ -521,8 +521,10 @@ relays to the registering instance's `ToolHandlerService` (router target bundle,
 generation and incarnation), inheriting the caller's deadline; a tool the call
 does not see is `not_found`, an unreachable instance `unavailable`.
 `InstanceGone` drops the instance's tools and skills. Skills fail
-`duplicate_skill` across bundles and `unavailable_tool` for an `allowedTools`
-entry the caller does not see. Since S51a, `tools/v1` 1.6.0 has
+`duplicate_skill` across bundles; since S62d3 (`skills/v1` 1.3.0)
+`allowedTools` is stored as given, and each host part's own
+`src/skills/*/SKILL.md` are registered by the host SDK after its `activate`.
+Since S51a, `tools/v1` 1.6.0 has
 `ToolsService.Check`, relayed to the registering instance's
 `ToolHandlerService.Check`.
 
@@ -1290,7 +1292,7 @@ whenever its result is `failed`.
   the call server) answers a request that decoded but broke a protovalidate
   rule: a unary request, a server stream's request, and each message of a
   client stream. It gets the method and every `InputViolation { field, ruleId,
-  message }` in protovalidate's order, `field` holding proto field names only
+message }` in protovalidate's order, `field` holding proto field names only
   (list and map subscripts dropped). A returned `ContractError` ends the call;
   `undefined`, a throwing hook or no hook keep `invalid_input`; an undecodable
   request or a rule error never reaches it. `serve.ts` and `createTestRouter`
@@ -1308,11 +1310,11 @@ whenever its result is `failed`.
   6.22): `transport`'s Express route bodies move, unchanged, into operations
   (`src/host/api/operations/`) over `TransportPorts`, a narrowed
   `TransportServices`; each handler is `sendAnswer(response, await
-  operations.x(routeInput(request)))` (`src/host/api/answer.ts`: `ApiAnswer`,
+operations.x(routeInput(request)))` (`src/host/api/answer.ts`: `ApiAnswer`,
   `apiError`, `apiFailure`, `answerValue`, `routeInputOf`). Kernel only:
   mount points, order, statuses and Socket.IO are unchanged, except that an
   unknown lease status on a files read answers `409
-  project_files_unavailable`. `DeleteThread` keeps `204` (decision Q8). The
+project_files_unavailable`. `DeleteThread` keeps `204` (decision Q8). The
   `doric.api.*` services follow in S60c/S60d.
 - 2026-11-24: phase 3, slice S60c, of
   [`docs/designs/grpc-processes.md`](../designs/grpc-processes.md) (version
@@ -1374,7 +1376,7 @@ whenever its result is `failed`.
   passes `startup`, a no-op before `activate`. `docker` and `firecracker`:
   `registerSandboxPoolStep(hooks, context, environment)` registers on
   `onHostStartHook` a step that stages `sandbox_pool` and logs `Configuring
-  sandbox pool` then `Sandbox pool configured` with the `logSandboxPool`
+sandbox pool` then `Sandbox pool configured` with the `logSandboxPool`
   fields (`dockerSocketShared` for docker); a failing startup call fails
   `Handle` with its code; `main.ts` serves `HookHandlerService` and registers
   the step in `activate`. The kernel still boots the running host until S62c.
@@ -1530,3 +1532,21 @@ whenever its result is `failed`.
   `doric-host-e2e`'s `package.json`, and `tests/helpers/socket-inbox.ts` is
   deleted. Decisions: one `package-lock.json` line, made by this slice only
   (Q4); AC3.5 does not assert the pause reason (Q7).
+- 2026-11-24: phase 3, slice S62d3, of
+  [`docs/designs/grpc-processes.md`](../designs/grpc-processes.md) (version
+  6.36): `withBasicContracts` and `basicHostContractFiles` move to
+  `bundle/platform` (`packages/bundle/src/platform/basic-contracts.ts`), used
+  by the host's boot. Each bundle registers its own `src/skills/*/SKILL.md`
+  from its process: the host SDK (`registerBundleSkills`) reads them through
+  `context.assets` after `activate` and registers them before
+  `ActivateResult`, tracked for replay; a bad skill is skipped and logged
+  `skill not registered`. `skills/v1` 1.3.0 stores `allowedTools` as given.
+  Manifests: `core` 1.17.0, `files` 1.10.0, `git` 1.4.0, `threads` 2.2.0, `web`
+  1.1.0, `default` 2.8.1. `doric-host`'s `bundles.test.ts` restores the owed
+  host cases (C3-4, T3.2, T3.11, T7) and drops the kernel fixtures
+  `crash-on-activate` and `probe`; the e2e gains T6 and stops on a failed
+  Project with its `errorCode`. Decisions: SK-1 (Doric does not enforce
+  `allowed-tools`), SK-2 (no platform registration, no ordering), replacing
+  D10-6; `unavailable_tool` stays in the shared list until group F; the
+  `yaml` parser in each host part's `main.mjs` (about 270 KB) is accepted;
+  PC23 is S62d3b; T8 moves to S71 and P9 is met.

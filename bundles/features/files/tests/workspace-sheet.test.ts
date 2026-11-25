@@ -4,13 +4,14 @@
 // Step 4(d) moves the bundle to the workspace and runtime contracts, the
 // next patch, 1.7.8. Step 5(b) adds the edit element, the minor 1.8.0.
 // Step 5(c) change 3 moves it to `chat.hooks/v2`, the patch 1.8.1. Phase 9
-// declares `files.decorations/v1`, the minor 1.9.0.
+// declares `files.decorations/v1`, the minor 1.9.0. S62d3 registers its skills
+// through `skills/v1@^1.3.0`, the minor 1.10.0.
 
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 
-test('the files sheet scans the workspace client sources, at version 1.9.0', () => {
+test('the files sheet scans the workspace client sources, at version 1.10.0', () => {
   const sheet = readFileSync(
     'bundles/features/files/src/client/styles.css',
     'utf8',
@@ -29,5 +30,5 @@ test('the files sheet scans the workspace client sources, at version 1.9.0', () 
     1,
     'The sheet does not scan the workspace client sources once.',
   );
-  assert.equal(manifest.version, '1.9.0');
+  assert.equal(manifest.version, '1.10.0');
 });

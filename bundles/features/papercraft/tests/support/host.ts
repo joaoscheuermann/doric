@@ -4,8 +4,8 @@
 // `history.truncated` marker is appended), `runtime.hooks/v1` through a
 // recording `hooks/v1`, `events/v1` (an append becomes a row of the log, and
 // is refused without a prompt scope), `skills/v1` and `tools/v1` (recording
-// registries; with `otherTools`, `skills/v1.register` applies the core's rule
-// and raises `unavailable_tool` for an `allowedTools` entry no live tool has),
+// registries; `skills/v1.register` stores `allowedTools` as given, as the
+// core's `skills/v1` 1.3.0 does, and `otherTools` only go live at `hostStart`),
 // `runtime.lease/v1` (no lease, or a given sandbox) and
 // `files/v1` (a map of files, or none).
 //
@@ -18,7 +18,6 @@ import {
   AppHooksV1,
   type Call,
   type CallScope,
-  ContractError,
   type Disposable,
   defineMethod,
   defineService,
@@ -125,8 +124,8 @@ export interface WorldOptions {
   readonly skillError?: Error;
   /**
    * Tools other bundles register, live once every bundle has loaded (at
-   * `hostStart`). When given, `skills/v1.register` checks every
-   * `allowedTools` entry against the live tools, as the core's registry does.
+   * `hostStart`). `skills/v1.register` does not check `allowedTools` against
+   * them (`skills/v1` 1.3.0, SK-1).
    */
   readonly otherTools?: readonly string[];
 }
@@ -369,18 +368,9 @@ export const world = (options: WorldOptions = {}): World => {
       SkillSchemaInput,
       { alwaysAvailable?: boolean; order?: number } | undefined,
     ]) => {
-      if (options.skillError !== undefined) throw options.skillError;
-      if (options.otherTools !== undefined) {
-        const live = new Set(liveTools());
-        const missing = skill.allowedTools?.find((name) => !live.has(name));
-        if (missing !== undefined) {
-          const error = new ContractError(
-            'unavailable_tool',
-            `Skill "${skill.name}" references unavailable tool "${missing}".`,
-          );
-          skillErrors.push(error);
-          throw error;
-        }
+      if (options.skillError !== undefined) {
+        skillErrors.push(options.skillError);
+        throw options.skillError;
       }
       const entry: World['skills'][number] = {
         skill,

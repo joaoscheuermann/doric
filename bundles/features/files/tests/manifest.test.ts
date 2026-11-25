@@ -15,7 +15,9 @@
 // declares `files.decorations/v1` (listed under `optional`) and names no
 // `git.*` contract. grpc-processes S62c provides files/v1 at its .proto
 // header version, 1.4.0, and lists log/v1 and secrets/v1 as optional, as
-// every host part does.
+// every host part does. grpc-processes S62d3 (SK-2) ships 1.10.0: its host
+// part registers its own `src/skills/*/SKILL.md` through `skills/v1@^1.3.0`,
+// read as `host.assets`.
 
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -23,6 +25,7 @@ import { describe, test } from 'node:test';
 
 type Manifest = {
   readonly version: string;
+  readonly host?: { readonly assets?: readonly string[] };
   readonly engines: { readonly doric: string };
   readonly provides: readonly string[];
   readonly requires: readonly string[];
@@ -59,8 +62,8 @@ describe('the files manifest', () => {
     );
   });
 
-  test('provides files/v1@1.4.0 at version 1.9.0 on platform ^1.10.0', () => {
-    assert.equal(manifest.version, '1.9.0');
+  test('provides files/v1@1.4.0 at version 1.10.0 on platform ^1.10.0', () => {
+    assert.equal(manifest.version, '1.10.0');
     assert.deepEqual(
       manifest.provides.filter((ref) => ref.startsWith('files/v1@')),
       ['files/v1@1.4.0'],
@@ -106,6 +109,17 @@ describe('the files manifest', () => {
     for (const id of ['log/v1', 'secrets/v1']) {
       assert.ok(manifest.optional.includes(id), id);
     }
+  });
+
+  test('requires skills/v1@^1.3.0 and lists src/skills/*/SKILL.md in host.assets', () => {
+    assert.deepEqual(
+      manifest.requires.filter((ref) => ref.startsWith('skills/')),
+      ['skills/v1@^1.3.0'],
+    );
+    assert.ok(
+      (manifest.host?.assets ?? []).includes('src/skills/*/SKILL.md'),
+      JSON.stringify(manifest.host),
+    );
   });
 
   test('takes chat.hooks/v2 as its only optional chat hooks', () => {

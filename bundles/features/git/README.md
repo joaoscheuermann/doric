@@ -15,7 +15,7 @@ the bundle are in [`AGENTS.md`](AGENTS.md).
 
 [`manifest.json`](manifest.json) declares:
 
-- `id`: `git`; `version`: `1.3.0`; `engines.doric`: `^1.0.0`; `description`:
+- `id`: `git`; `version`: `1.4.0`; `engines.doric`: `^1.0.0`; `description`:
   "Git repository management capabilities for the Doric agent."
 - `provides`:
 
@@ -31,6 +31,7 @@ the bundle are in [`AGENTS.md`](AGENTS.md).
   | Contract                        | Part         | Use                                                                                                                                                                                                                 |
   | ------------------------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
   | `tools/v1@^1.5.0`               | host         | registers the `git` tool ([`src/host/index.ts`](src/host/index.ts))                                                                                                                                                 |
+  | `skills/v1@^1.3.0`              | host         | the host SDK registers the bundle's skills (see [Skills](#skills))                                                                                                                                                  |
   | `runtime.workspace/v1@^1.3.0`   | host         | the tool's working directory, and every Thread read of `git.commands/v1` through `withThread` ([`src/host/sandbox.ts`](src/host/sandbox.ts), [`src/host/service.ts`](src/host/service.ts))                          |
   | `runtime.lease/v1@^1.4.0`       | host         | the tool's sandbox, and every Project read of `git.commands/v1` through `withLease` ([`src/host/sandbox.ts`](src/host/sandbox.ts), [`src/host/service.ts`](src/host/service.ts))                                    |
   | `secrets/v1@^1.3.0`             | host, client | registers the `GIT` credential kind; lists the stored credentials for the Versioning section ([`src/host/index.ts`](src/host/index.ts), [`src/client/settings/versioning.tsx`](src/client/settings/versioning.tsx)) |
@@ -162,9 +163,8 @@ Behavior:
 ## Skills
 
 Each skill's frontmatter has `name`, `description`, `allowed-tools: [git]` and
-an `order` that sets its global position in the system prompt. The loader
-([`packages/bundle/src/loader/skills.ts`](../../../packages/bundle/src/loader/skills.ts))
-resolves `allowed-tools` against the whole `tools/v1` catalog.
+an `order` that sets its global position in the system prompt;
+the host SDK registers them from the bundle's own process after `activate` (`registerBundleSkills`, [packages/bundle/src/sdk/host/skills.ts](../../../packages/bundle/src/sdk/host/skills.ts)), reading them through `context.assets`, so `host.assets` lists `src/skills/*/SKILL.md`; a skill that cannot be registered is skipped and logged (`skill not registered`). `allowed-tools` is a run-time reference for the model: `skills/v1` 1.3.0 stores it as given and does not check it against `tools/v1`.
 
 | Skill                                                                          | `order` | Use                                                                              |
 | ------------------------------------------------------------------------------ | ------- | -------------------------------------------------------------------------------- |

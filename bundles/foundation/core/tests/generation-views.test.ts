@@ -298,7 +298,7 @@ test('in one process every registration is in the kernel partition and behaves a
   assert.equal(w.catalogReads, 0);
 });
 
-test('skills resolve allowed tools and unique names inside their own generation', async () => {
+test('skills keep allowed tools as given and unique names inside their own generation', async () => {
   const tools = createTools();
   const skills = createSkills();
   const w = world([], [tools, skills]);
@@ -323,7 +323,8 @@ test('skills resolve allowed tools and unique names inside their own generation'
     w.services,
   );
 
-  // Generation 2 of the same bundle has not registered `read` yet.
+  // Generation 2 of the same bundle has not registered `read` yet: the
+  // skill is stored as given (skills/v1 1.3.0, SK-1).
   assert.equal(
     errorCode(() =>
       registerSkill(
@@ -332,16 +333,11 @@ test('skills resolve allowed tools and unique names inside their own generation'
         w.services,
       ),
     ),
-    'unavailable_tool',
+    undefined,
   );
 
   registerTool(
     [tool('read'), { alwaysAvailable: false }],
-    callOf('files', 2),
-    w.services,
-  );
-  registerSkill(
-    [skill('reader', ['read']), undefined],
     callOf('files', 2),
     w.services,
   );

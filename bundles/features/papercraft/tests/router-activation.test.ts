@@ -81,12 +81,12 @@ void test('A1: activate registers the cwd event type, the two hook handlers and 
   assert.deepEqual(world.calls, []);
 });
 
-void test('A2: a skills/v1.Register failing unavailable_tool leaves the skill out, activate resolves and Library answers', async (t) => {
+void test('A2: a skills/v1.Register failing duplicate_skill leaves the skill out, activate resolves and Library answers', async (t) => {
   const world = routerWorld();
   stopAfter(t, world);
   world.failures.registerSkill = new ContractError(
-    'unavailable_tool',
-    'comment_reply is not a registered tool.',
+    'duplicate_skill',
+    'Duplicate skill name "papercraft": bundle "other" and bundle "papercraft".',
   );
 
   await world.activate();

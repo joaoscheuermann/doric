@@ -28,15 +28,15 @@ bundle's complete description.
 
 [`manifest.json`](manifest.json):
 
-| Field             | Value                                                                                                                                                                                                                                                                                                       |
-| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `manifestVersion` | `1`                                                                                                                                                                                                                                                                                                         |
-| `id`              | `files`, version `1.9.0`, engine `doric ^1.10.0`                                                                                                                                                                                                                                                            |
-| `description`     | "Core capabilities available to the Doric agent."                                                                                                                                                                                                                                                           |
-| `provides`        | `files/v1@1.4.0`, `files.sandbox/v1@1.0.0`, `files.refresh/v1@1.0.0`, `files.open-file/v1@1.0.0`                                                                                                                                                                                                            |
-| `requires`        | `tools/v1@^1.5.0`, `runtime.workspace/v1@^1.2.0`, `runtime.lease/v1@^1.4.0`, `runtime.attachments/v1@^1.1.0`, `ui/v1@^1.0.0`, `regions/v1@^1.0.0`, `commands/v1@^1.0.0`, `hooks/v1@^1.0.0`, `workspace.selection/v1@^1.0.0`, `runtime.records/v1@^1.0.0`, `layout.panel/v3@^3.0.0`, `layout.tabs/v2@^2.0.0` |
-| `optional`        | `files.decorations/v1`, `chat.hooks/v2`, `chat.views/v1`, `log/v1`, `secrets/v1`                                                                                                                                                                                                                            |
-| `desktopScope`    | `files/v1`: `projectId`, `threadId`, `promptId`                                                                                                                                                                                                                                                             |
+| Field             | Value                                                                                                                                                                                                                                                                                                                           |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `manifestVersion` | `1`                                                                                                                                                                                                                                                                                                                             |
+| `id`              | `files`, version `1.10.0`, engine `doric ^1.10.0`                                                                                                                                                                                                                                                                               |
+| `description`     | "Core capabilities available to the Doric agent."                                                                                                                                                                                                                                                                               |
+| `provides`        | `files/v1@1.4.0`, `files.sandbox/v1@1.0.0`, `files.refresh/v1@1.0.0`, `files.open-file/v1@1.0.0`                                                                                                                                                                                                                                |
+| `requires`        | `tools/v1@^1.5.0`, `skills/v1@^1.3.0`, `runtime.workspace/v1@^1.2.0`, `runtime.lease/v1@^1.4.0`, `runtime.attachments/v1@^1.1.0`, `ui/v1@^1.0.0`, `regions/v1@^1.0.0`, `commands/v1@^1.0.0`, `hooks/v1@^1.0.0`, `workspace.selection/v1@^1.0.0`, `runtime.records/v1@^1.0.0`, `layout.panel/v3@^3.0.0`, `layout.tabs/v2@^2.0.0` |
+| `optional`        | `files.decorations/v1`, `chat.hooks/v2`, `chat.views/v1`, `log/v1`, `secrets/v1`                                                                                                                                                                                                                                                |
+| `desktopScope`    | `files/v1`: `projectId`, `threadId`, `promptId`                                                                                                                                                                                                                                                                                 |
 
 The engine `^1.10.0` is what `desktop/ui/collapsible-block`, which draws the
 edit block in the conversation, needs
@@ -721,9 +721,9 @@ take.
 `order` and, optionally, `alwaysAvailable` and `allowed-tools`. `order` is the
 skill's global position in the system prompt, mirrored by the folder's
 two-digit prefix; position 1200 is the `web-research` skill of
-[`web`](../web/README.md). `allowed-tools` resolve against the whole
-`tools/v1` catalog. The build validates every skill
-([`packages/bundle/src/build/cli.ts`](../../../packages/bundle/src/build/cli.ts)).
+[`web`](../web/README.md). The build validates every skill
+([`packages/bundle/src/build/cli.ts`](../../../packages/bundle/src/build/cli.ts));
+the host SDK registers them from the bundle's own process after `activate` (`registerBundleSkills`, [packages/bundle/src/sdk/host/skills.ts](../../../packages/bundle/src/sdk/host/skills.ts)), reading them through `context.assets`, so `host.assets` lists `src/skills/*/SKILL.md`; a skill that cannot be registered is skipped and logged (`skill not registered`). `allowed-tools` is a run-time reference for the model: `skills/v1` 1.3.0 stores it as given and does not check it against `tools/v1`.
 
 | Order | Skill                         | Always available | Allowed tools                               |
 | ----- | ----------------------------- | ---------------- | ------------------------------------------- |

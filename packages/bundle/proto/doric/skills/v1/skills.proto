@@ -1,9 +1,11 @@
-// `skills/v1` (host, 1.2.0): the skills bundles offer a model. A bundle
+// `skills/v1` (host, 1.3.0): the skills bundles offer a model. A bundle
 // registers a skill as data; `core` keeps it with the registering instance
 // and lists it. The SDK registers its skills again when the provider changes.
 //
 // 1.2.0: `register` answers a `registrationId`; `Unregister` replaces the
 // `Disposable`.
+// 1.3.0: `allowedTools` is stored as given and not checked against
+// `tools/v1`; `Register` no longer answers `unavailable_tool`.
 syntax = "proto3";
 
 package doric.skills.v1;
@@ -20,9 +22,9 @@ option (doric.platform.v1.contract) = {
 // The skill registry.
 service SkillsService {
   // Registers a skill for the calling instance and answers a
-  // `registrationId`. A name another bundle holds is `duplicate_skill`; an
-  // `allowedTools` entry that is not a tool the caller's `tools/v1` list
-  // holds is `unavailable_tool`.
+  // `registrationId`. A name another bundle holds is `duplicate_skill`.
+  // `allowedTools` is a reference for the model at run time: it is stored as
+  // given (without duplicates) and names tools that need not be registered.
   rpc Register(RegisterRequest) returns (RegisterResponse);
   // Removes a registration; an unknown id is a no-op.
   rpc Unregister(UnregisterRequest) returns (UnregisterResponse);

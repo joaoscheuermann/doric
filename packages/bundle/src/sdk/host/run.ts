@@ -54,6 +54,7 @@ import {
 } from './log.js';
 import { createReplays, type Replays } from './replay.js';
 import { type CallServer, createCallServer } from './serve.js';
+import { registerBundleSkills } from './skills.js';
 
 /**
  * One entry of a host part's static `services` list: a generated service
@@ -136,10 +137,12 @@ export interface BundleDefinition<
    */
   readonly logSink?: (context: HostContext) => LogSink;
   /**
-   * Runs once, on `Activate`. Resolving answers `ActivateResult` with code
-   * 0; throwing or rejecting answers it with the error's status: a
-   * `ContractError` as `toStatus` encodes it, any other value as `internal`
-   * with its message. The process keeps running either way, until `Stop`.
+   * Runs once, on `Activate`. Resolving registers the bundle's own skills (`src/skills/<folder>/SKILL.md`, see
+   * `registerBundleSkills`; only when the bundle directory is known) and then answers `ActivateResult` with code 0,
+   * so they are in `skills/v1.List` once the instance is active; a skill that cannot be registered is logged and
+   * left out, never failing the activation. Throwing or rejecting answers `ActivateResult` with the error's status
+   * (a `ContractError` as `toStatus` encodes it, any other value as `internal` with its message) and registers no
+   * skill. The process keeps running either way, until `Stop`.
    */
   activate(context: HostContext): Promise<void> | void;
   /**
@@ -837,6 +840,11 @@ class HostLink {
   ): Promise<boolean> {
     try {
       await definition.activate(context);
+
+      if (this.bundleDir !== undefined) {
+        await registerBundleSkills(context);
+      }
+
       this.send({
         frame: {
           case: 'activateResult',

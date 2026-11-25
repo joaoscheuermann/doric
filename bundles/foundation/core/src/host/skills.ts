@@ -6,7 +6,6 @@ import {
   type RegisteredSkill,
   SkillsV1,
   skillsMethods,
-  ToolsV1,
 } from 'bundle/contracts';
 
 import { collidesIn, seenBy, viewOf } from '../shared/partition.js';
@@ -24,9 +23,9 @@ const byOrder = (left: Entry, right: Entry): number =>
 /**
  * The core's `skills/v1`: canonical skill records (decoded by SkillSchema)
  * sorted by the global `order` key, then registration order (which the loader
- * keeps in bundle order), with unique names and `allowed-tools` resolved
- * against every tool the caller's tools/v1 list holds (1.1.0, D10-6), all
- * within one generation view (D4-11): the kernel partition plus one generation.
+ * keeps in bundle order), with unique names and `allowedTools` stored as
+ * given (1.3.0), all within one generation view (D4-11): the kernel partition
+ * plus one generation.
  */
 export const createSkills = () => {
   const registered: Entry[] = [];
@@ -49,22 +48,6 @@ export const createSkills = () => {
             'duplicate_skill',
             `Duplicate skill name "${skill.name}": bundle "${taken.bundleId}" and bundle "${bundleId}".`,
           );
-        }
-
-        const available = new Set(
-          services
-            .use(ToolsV1)
-            .list(call)
-            .map((entry) => entry.tool.name),
-        );
-
-        for (const name of skill.allowedTools) {
-          if (!available.has(name)) {
-            throw new ContractError(
-              'unavailable_tool',
-              `Skill "${skill.name}" in bundle "${bundleId}" references unavailable tool "${name}".`,
-            );
-          }
         }
 
         const entry: Entry = {

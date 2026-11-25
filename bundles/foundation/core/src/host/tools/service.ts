@@ -85,11 +85,6 @@ export const createToolsService = (
 ): {
   readonly implementation: ServiceImpl<typeof ToolsService>;
   readonly registrations: InstanceRegistrations;
-  /**
-   * The tools `List` answers to `call`, in `List` order, read in process
-   * (`skills/v1`'s `unavailable_tool` check). Pure.
-   */
-  visible(call: Call): readonly RegisteredTool[];
 } => {
   const table = new RegistrationTable<RegisteredTool>({
     conflictCode: 'duplicate_tool',
@@ -251,7 +246,6 @@ export const createToolsService = (
     registrations: {
       dropInstance: (instance) => table.dropInstance(instance),
     },
-    visible: (call) => seen(call).map(({ value }) => value),
   };
 };
 

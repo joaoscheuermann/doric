@@ -1,7 +1,7 @@
 {
   "manifestVersion": 1,
   "id": "default",
-  "version": "2.8.0",
+  "version": "2.8.1",
   "engines": { "doric": "^1.10.0" },
   "description": "The default agent: system prompt, skills, tools, model resolution and provider history.",
   "provides": [
@@ -26,5 +26,11 @@
     "default.skill-sources/v1",
     "secrets/v1"
   ],
-  "host": { "assets": ["src/host/prompts/*.md", "src/host/agents/*.md"] }
+  "host": {
+    "assets": [
+      "src/host/prompts/*.md",
+      "src/host/agents/*.md",
+      "src/skills/*/SKILL.md"
+    ]
+  }
 }

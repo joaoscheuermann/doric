@@ -58,7 +58,7 @@ feature docs, which state each contract at the level the feature needs:
 | ----------------- | ---------------------------------------------------------- |
 | `manifestVersion` | `1`                                                        |
 | `id`              | `core`                                                     |
-| `version`         | `1.16.0`                                                   |
+| `version`         | `1.17.0`                                                   |
 | `engines`         | `doric: ^1.0.0`                                            |
 | `description`     | Default provider of the basic Doric services.              |
 | `requires`        | `storage.backend/v1@^1.0.0`, `secrets.backend/v1@^1.0.0`   |
@@ -72,7 +72,7 @@ feature docs, which state each contract at the level the feature needs:
 | `hooks/v1@1.1.0`                    | service |  ✓   |      ✓      |       ✓       |
 | `log/v1@1.1.0`                      | service |  ✓   |      ✓      |       ✓       |
 | `tools/v1@1.6.0`                    | service |  ✓   |             |               |
-| `skills/v1@1.2.0`                   | service |  ✓   |             |               |
+| `skills/v1@1.3.0`                   | service |  ✓   |             |               |
 | `settings/v1@1.1.0`                 | service |  ✓   |      ✓      |               |
 | `secrets/v1@1.3.0`                  | service |  ✓   |             |               |
 | `storage/v1@1.1.0`                  | service |  ✓   |             |               |
@@ -618,9 +618,11 @@ and `options` is `{ alwaysAvailable?: boolean, order?: positive safe integer }`;
 `list(call?) → Promise<{ bundleId, alwaysAvailable, order?, skill }[]>`.
 
 Behavior ([`src/host/skills.ts`](src/host/skills.ts)): `register` is
-`duplicate_skill` when a visible skill has the name, and `unavailable_tool`
-when an `allowed-tools` entry is not the name of a tool in the caller's
-`tools/v1.list`. `alwaysAvailable` defaults to `false`. `list` answers the
+`duplicate_skill` when a visible skill has the name. Since 1.3.0 it stores
+`allowedTools` as given (without duplicates), whatever `tools/v1` holds: it is
+a reference for the model at run time, and `Register` no longer answers
+`unavailable_tool` ([`src/host/skills/service.ts`](src/host/skills/service.ts)).
+`alwaysAvailable` defaults to `false`. `list` answers the
 visible skills sorted by `order`, unordered ones last, then by registration
 order.
 

@@ -31,9 +31,8 @@ export interface SkillRegistrationOptions {
 
 export interface Skills {
   /**
-   * Validates with SkillSchema; throws 'duplicate_skill' for a taken name and
-   * 'unavailable_tool' when an allowedTools entry is not a tool the caller's
-   * tools/v1 list holds, whichever bundle registered it (1.1.0).
+   * Validates with SkillSchema; throws 'duplicate_skill' for a taken name. `allowedTools` is stored as given and
+   * not checked against tools/v1 (1.3.0).
    */
   register(
     skill: SkillSchemaInput,

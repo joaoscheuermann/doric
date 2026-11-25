@@ -98,7 +98,9 @@ void test('lists canonical skills in bundle order with their availability flag',
   }
 });
 
-void test('allowed-tools resolve against any registered tool; an unknown one quarantines the bundle', async () => {
+// SK-1 (`skills/v1` 1.3.0): `allowed-tools` is stored as given; a name no
+// bundle registers as a tool refuses nothing.
+void test('allowed-tools are stored as given, whether or not a bundle registers the tool', async () => {
   const host = await boot([
     await core(),
     bundle('alpha', { tools: ['a-tool'] }),
@@ -110,20 +112,14 @@ void test('allowed-tools resolve against any registered tool; an unknown one qua
 
   try {
     assert.equal(states(host.platform).beta, 'active');
-    assert.equal(states(host.platform).gamma, 'quarantined');
-    assert.deepEqual(reasonCodes(host.platform, 'gamma'), [
-      'registration_failed',
-    ]);
-    assert.match(
-      host.platform.diagnostics().bundles.find(({ id }) => id === 'gamma')
-        ?.reasons[0]?.message ?? '',
-      /Skill "dangling" in bundle "gamma" references unavailable tool "no-tool"\./,
-    );
+    assert.equal(states(host.platform).gamma, 'active');
+    assert.deepEqual(reasonCodes(host.platform, 'gamma'), []);
     assert.deepEqual(
       (await host.platform.services.use(SkillsV1).list()).map(
-        ({ bundleId, skill }) => `${bundleId}:${skill.name}`,
+        ({ bundleId, skill }) =>
+          `${bundleId}:${skill.name}:${skill.allowedTools.join(',')}`,
       ),
-      ['beta:borrows'],
+      ['beta:borrows:a-tool', 'gamma:dangling:a-tool,no-tool'],
     );
   } finally {
     await host.close();

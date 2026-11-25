@@ -27,7 +27,7 @@ How bundles are built and loaded is in
 | ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `manifestVersion` | `1`                                                                                                                                                                  |
 | `id`              | `default` (equal to the `name` of [`package.json`](package.json))                                                                                                    |
-| `version`         | `2.8.0`                                                                                                                                                              |
+| `version`         | `2.8.1`                                                                                                                                                              |
 | `engines.doric`   | `^1.10.0`                                                                                                                                                            |
 | `description`     | "The default agent: system prompt, skills, tools, model resolution and provider history."                                                                            |
 | `provides`        | `executor/v1@1.6.0`, `default.hooks/v1@1.1.0`, `default.agents/v1@1.1.0`                                                                                             |
@@ -44,7 +44,7 @@ The package exports `./contracts` ([`src/contracts/index.ts`](src/contracts/inde
 | contracts | [`src/contracts/`](src/contracts/index.ts)           | Declares `default.hooks/v1`, `default.agents/v1` and `default.skill-sources/v1`, with their types and schemas.                                                                                                                                                                                                                     |
 | host      | [`src/host/`](src/host/index.ts)                     | Provides `executor/v1` and `default.agents/v1`, and defines `default.hooks/v1`. Runs in the host's generation process (the Node process of a bundle generation, apart from the kernel; [Process isolation](../../../docs/architecture/bundles/process-isolation.md)), next to `runtime`, which calls the executor for each prompt. |
 | client    | [`src/client/`](src/client/index.ts)                 | Defines the element `default-skill-call` and registers it as the drawing of `load_skill` calls in the conversation.                                                                                                                                                                                                                |
-| skills    | [`src/skills/`](src/skills/coding-workflow/SKILL.md) | Ships the `coding-workflow` skill, which the loader registers through `skills/v1` for the bundle (see below).                                                                                                                                                                                                                      |
+| skills    | [`src/skills/`](src/skills/coding-workflow/SKILL.md) | Ships the `coding-workflow` skill, which the host SDK registers through `skills/v1` for the bundle (see below).                                                                                                                                                                                                                    |
 
 The bundle has no desktop part. The build copies every `.md` file below
 `src/host` into `dist/host`
@@ -61,8 +61,10 @@ strict: `name` and `description` (non-empty), and the optional
 body, which must not be empty. A skill that fails the check fails the build
 with `Invalid skill "<path>": <cause>`; a valid one is copied to
 `dist/skills/<dir>/SKILL.md`, without the other files of its folder. The
-loader finds the copies in lexical directory order and registers each
-through `skills/v1` for the bundle
+host SDK (`registerBundleSkills`) finds them in lexical directory order and
+registers each through `skills/v1` from the bundle's process, after
+`activate`, reading `src/skills/<dir>/SKILL.md` through `context.assets`; a
+skill it cannot register is skipped and logged as `skill not registered`
 ([`packages/bundle/src/build/cli.ts`](../../../packages/bundle/src/build/cli.ts),
 [`packages/bundle/src/loader/skills.ts`](../../../packages/bundle/src/loader/skills.ts),
 [`packages/bundle` README](../../../packages/bundle/README.md)).
@@ -120,8 +122,8 @@ Until `activate` resolves, every method fails `unavailable` with
 `provider_error` with the error's data in `details.providerError`, a
 `ToolErrorObject` answers `tool_error` with its data in `details.toolError`,
 and a `ContractError` passes unchanged. Since S62c1 the manifest's `host.assets` is
-`["src/host/prompts/*.md", "src/host/agents/*.md"]`, which the
-process needs, since `context.assets.read` refuses a path outside them.
+`["src/host/prompts/*.md", "src/host/agents/*.md", "src/skills/*/SKILL.md"]`
+(the skill glob since 2.8.1), which the process needs, since `context.assets.read` refuses a path outside them.
 
 ## Contracts it provides
 
@@ -1301,23 +1303,23 @@ the schema and the initial configuration, with `maxTurns`, are in
 
 ## Errors and failure behavior
 
-| Failure                                                        | Result                                                                                          |
-| -------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| Failure                                                        | Result                                                                                                                                                         |
+| -------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Missing or invalid built-in agent file                         | `activate` rejects, naming the file by its bundle-relative path; the kernel entry is quarantined with `activate_failed`, and the process entry serves nothing. |
-| Missing or invalid template                                    | The run that first renders it fails.                                                            |
-| Unavailable Thread execution                                   | Warning logged; `run` rejects with `code: 'thread_execution_unavailable'`.                      |
-| Tool not made with `defineTool`, unmet tool setting            | `run` rejects before the model is called.                                                       |
-| Invalid agent instructions on the Thread                       | `run` rejects before its first model request.                                                   |
-| `tools/v1`, `skills/v1`, `host-config/v1` or `models/v1` fails | `run` rejects with that error.                                                                  |
-| Unknown time zone                                              | `run` rejects with a `RangeError`.                                                              |
-| Sandbox, workspace or a skill source cannot answer             | The list it would add is empty or kept; the run goes on.                                        |
-| Generation process lost under a tool call                      | History saved as it stands; `run` rejects with the abort reason; the next run answers the call. |
-| Context overflow                                               | One forced condensation; the run fails with the provider's error.                               |
-| `session.attachment` rejects                                   | The request carrying that line rejects, and so does every later request of the run carrying it. |
-| Compaction failure                                             | `compaction.failed` recorded; a run goes on, `compact` answers `failed`.                        |
-| `load_skill` failure                                           | Only that tool call fails.                                                                      |
-| `default.agents/v1` failure                                    | `ContractError` `invalid_input`, `not_found` or `invalid_definition`.                           |
-| A write fails                                                  | The runtime's persistence error reaches the run.                                                |
+| Missing or invalid template                                    | The run that first renders it fails.                                                                                                                           |
+| Unavailable Thread execution                                   | Warning logged; `run` rejects with `code: 'thread_execution_unavailable'`.                                                                                     |
+| Tool not made with `defineTool`, unmet tool setting            | `run` rejects before the model is called.                                                                                                                      |
+| Invalid agent instructions on the Thread                       | `run` rejects before its first model request.                                                                                                                  |
+| `tools/v1`, `skills/v1`, `host-config/v1` or `models/v1` fails | `run` rejects with that error.                                                                                                                                 |
+| Unknown time zone                                              | `run` rejects with a `RangeError`.                                                                                                                             |
+| Sandbox, workspace or a skill source cannot answer             | The list it would add is empty or kept; the run goes on.                                                                                                       |
+| Generation process lost under a tool call                      | History saved as it stands; `run` rejects with the abort reason; the next run answers the call.                                                                |
+| Context overflow                                               | One forced condensation; the run fails with the provider's error.                                                                                              |
+| `session.attachment` rejects                                   | The request carrying that line rejects, and so does every later request of the run carrying it.                                                                |
+| Compaction failure                                             | `compaction.failed` recorded; a run goes on, `compact` answers `failed`.                                                                                       |
+| `load_skill` failure                                           | Only that tool call fails.                                                                                                                                     |
+| `default.agents/v1` failure                                    | `ContractError` `invalid_input`, `not_found` or `invalid_definition`.                                                                                          |
+| A write fails                                                  | The runtime's persistence error reaches the run.                                                                                                               |
 
 ## Build and test
 

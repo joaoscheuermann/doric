@@ -46,11 +46,22 @@ const bundlesPath = 'app/backend/doric-host/dist/bundles';
 interface Project {
   readonly id: string;
   readonly state: string;
+  /** Why the Project failed; absent unless it failed. */
+  readonly errorCode?: string;
 }
 interface Thread {
   readonly id: string;
   readonly state: string;
   readonly lastSequence?: number;
+  /** The working directory, absolute in the sandbox. */
+  readonly cwd?: string;
+  /** The repository at `cwd` itself: "git" or "github"; absent when none. */
+  readonly cwdRepo?: string;
+}
+/** `doric.terminal.v1.TerminalSession`, the fields read here. */
+interface TerminalSession {
+  readonly id: string;
+  readonly state: string;
 }
 interface ThreadEvent {
   readonly projectId: string;
@@ -414,10 +425,24 @@ void test('delegates across isolated conversations sharing a real project sandbo
     (await projectWatch.next()).terminalSnapshot !== undefined,
     'the second item is the terminalSnapshot',
   );
+  if (snapshot.project?.state === 'failed') {
+    assert.fail(
+      `Project failed: ${snapshot.project.errorCode ?? 'no errorCode'}`,
+    );
+  }
   if (snapshot.project?.state !== 'ready') {
-    await projectWatch.until(
-      (item) => item.projectUpdated?.state === 'ready',
-      180_000,
+    const settled = (
+      await projectWatch.until(
+        (item) =>
+          item.projectUpdated?.state === 'ready' ||
+          item.projectUpdated?.state === 'failed',
+        180_000,
+      )
+    ).projectUpdated;
+    assert.equal(
+      settled?.state,
+      'ready',
+      `Project failed: ${settled?.errorCode ?? 'no errorCode'}`,
     );
   }
 
@@ -670,7 +695,7 @@ void test("killing default's process under a running prompt brings a new default
     { name: 'Respawn project' },
   );
   for (let attempt = 0; ; attempt += 1) {
-    const { state } = (
+    const { state, errorCode } = (
       await api<{ project: Project }>(
         'projects.v1.ProjectsService/GetProject',
         {
@@ -679,7 +704,10 @@ void test("killing default's process under a running prompt brings a new default
       )
     ).project;
     if (state === 'ready') break;
-    assert.ok(attempt < 900 && state !== 'failed', `Project ${state}`);
+    assert.ok(
+      attempt < 900 && state !== 'failed',
+      `Project ${state}${errorCode === undefined ? '' : `: ${errorCode}`}`,
+    );
     await delay(200);
   }
   const { thread } = await api<{ thread: Thread }>(
@@ -728,5 +756,120 @@ void test("killing default's process under a running prompt brings a new default
   );
   assert.deepEqual(model.failures, []);
 
+  assert.equal(await host.stop(), 0);
+});
+
+void test('a repository created outside the Thread reaches its Watch as cwdRepo after GetGit', {
+  skip,
+  timeout: 300_000,
+}, async (t) => {
+  const { model, host, api, watch, configure } = await startFixture(t);
+  await configure();
+  const { project } = await api<{ project: Project }>(
+    'projects.v1.ProjectsService/CreateProject',
+    { name: 'Git hint project' },
+  );
+  for (let attempt = 0; ; attempt += 1) {
+    const { state, errorCode } = (
+      await api<{ project: Project }>(
+        'projects.v1.ProjectsService/GetProject',
+        {
+          projectId: project.id,
+        },
+      )
+    ).project;
+    if (state === 'ready') break;
+    assert.ok(
+      attempt < 900 && state !== 'failed',
+      `Project ${state}${errorCode === undefined ? '' : `: ${errorCode}`}`,
+    );
+    await delay(200);
+  }
+  const { thread } = await api<{ thread: Thread }>(
+    'projects.v1.ProjectsService/CreateThread',
+    { projectId: project.id, name: 'Git hint thread' },
+  );
+  assert.equal(thread.cwd, '/workspace');
+  const threadWatch = await watch<ThreadItem>(
+    'threads.v1.ThreadsService/Watch',
+    { threadId: thread.id },
+  );
+  assert.ok((await threadWatch.next()).threadSnapshot !== undefined);
+
+  // A first prompt settles, so the Thread's own refresh after a job has run
+  // on a directory with no repository. The script answers it with text only.
+  const prompt = await api<{ promptId: string }>(
+    'threads.v1.ThreadsService/Prompt',
+    { threadId: thread.id, prompt: followup },
+  );
+  await threadWatch.until(
+    (item) => finishedOf(item)?.promptId === prompt.promptId,
+    120_000,
+  );
+  assert.deepEqual(model.failures, []);
+
+  // The repository is created outside the Thread's jobs: a manual shell runs
+  // `git init`, and the shell's output proves it ran. The marker is computed,
+  // so the echoed input never contains it.
+  const { terminalSession } = await api<{ terminalSession: TerminalSession }>(
+    'threads.v1.ThreadsService/CreateTerminal',
+    { threadId: thread.id },
+  );
+  const terminalOutput = async () =>
+    (
+      await api<{
+        terminalSnapshot: { terminal: TerminalSession; output?: string };
+      }>('terminals.v1.TerminalsService/GetTerminal', {
+        terminalId: terminalSession.id,
+        after: 0,
+      })
+    ).terminalSnapshot;
+  for (let attempt = 0; ; attempt += 1) {
+    const { terminal } = await terminalOutput();
+    if (terminal.state === 'running') break;
+    assert.ok(
+      attempt < 150 && terminal.state === 'starting',
+      `terminal ${terminal.state}`,
+    );
+    await delay(200);
+  }
+  await api('terminals.v1.TerminalsService/SendInput', {
+    terminalId: terminalSession.id,
+    data: 'git init -q /workspace && echo T6-$((6 * 7))\n',
+  });
+  for (let attempt = 0; ; attempt += 1) {
+    const { output = '' } = await terminalOutput();
+    if (output.includes('T6-42')) break;
+    assert.ok(attempt < 150, `no git init in the terminal: ${output}`);
+    await delay(200);
+  }
+
+  // Nothing of the Thread's own has refreshed the hint since: only the Git
+  // read below can.
+  const before = await api<{ thread: Thread }>(
+    'threads.v1.ThreadsService/GetThread',
+    { threadId: thread.id },
+  );
+  assert.equal(before.thread.cwdRepo, undefined);
+
+  const git = await api<{ status: string }>(
+    'threads.v1.ThreadsService/GetGit',
+    { threadId: thread.id },
+  );
+  assert.equal(git.status, 'ready');
+  // GetGit may answer before the hint is written; the Watch opened before it
+  // carries the change as a Thread update.
+  const updated = (
+    await threadWatch.until(
+      (item) => item.threadUpdated?.cwdRepo === 'git',
+      30_000,
+    )
+  ).threadUpdated;
+  assert.equal(updated?.id, thread.id);
+  assert.equal(updated?.cwd, '/workspace');
+
+  await api('terminals.v1.TerminalsService/DeleteTerminal', {
+    terminalId: terminalSession.id,
+  });
   assert.equal(await host.stop(), 0);
 });

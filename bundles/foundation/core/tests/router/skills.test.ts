@@ -1,6 +1,6 @@
 // `skills/v1` served by `core` over the router (S40a): skills as data under
-// D4's key rule (the skill name), with `allowedTools` checked against the
-// tools the Register call sees through `tools/v1`.
+// D4's key rule (the skill name), with `allowedTools` stored as given
+// (`skills/v1` 1.3.0, SK-1).
 
 import assert from 'node:assert/strict';
 import test from 'node:test';
@@ -188,40 +188,36 @@ void test('a name another bundle serves is duplicate_skill; the same instance re
     );
   }));
 
-void test('an allowedTools entry the Register call does not see is unavailable_tool', () =>
+// SK-1 (`skills/v1` 1.3.0): `allowedTools` is a reference for the model at
+// run time; `Register` stores it as given, whatever `tools/v1` holds.
+void test('allowedTools naming tools no call sees are stored and listed as given', () =>
   withCore(async (core) => {
     await registerTool(core, 'mcp', 'search', 'p1');
 
-    await rejectsWith(
-      register(skills(core, 'notes'), 'triage', { allowedTools: ['missing'] }),
-      'unavailable_tool',
-      (message) => {
-        assert.equal(
-          message,
-          'Skill "triage" in bundle "notes" references unavailable tool "missing".',
-        );
-      },
-    );
-    // A tool of `p1` is not seen by an unscoped Register …
-    await rejectsWith(
-      register(skills(core, 'notes'), 'triage', { allowedTools: ['search'] }),
-      'unavailable_tool',
-    );
-    // … nor by one scoped to another Project …
-    await rejectsWith(
-      register(skills(core, 'notes', 'p2'), 'triage', {
-        allowedTools: ['search'],
-      }),
-      'unavailable_tool',
-    );
-    // … but is by one scoped to `p1`.
-    await register(skills(core, 'notes', 'p1'), 'triage', {
+    // A tool nobody registered, from an unscoped Register …
+    await register(skills(core, 'notes'), 'unknown', {
+      allowedTools: ['missing'],
+    });
+    // … a tool of `p1`, from an unscoped Register …
+    await register(skills(core, 'notes'), 'unscoped', {
       allowedTools: ['search'],
+    });
+    // … and from one scoped to another Project.
+    await register(skills(core, 'notes', 'p2'), 'other-project', {
+      allowedTools: ['search', 'missing'],
     });
 
     assert.deepEqual(
-      (await listed(core)).map(({ skill }) => skill?.allowedTools),
-      [['search']],
+      (await listed(core)).map(({ skill, bundleId }) => [
+        skill?.name,
+        skill?.allowedTools,
+        bundleId,
+      ]),
+      [
+        ['unknown', ['missing'], 'notes'],
+        ['unscoped', ['search'], 'notes'],
+        ['other-project', ['search', 'missing'], 'notes'],
+      ],
     );
   }));
 
