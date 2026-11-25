@@ -7,21 +7,25 @@ import {
   createTerminalApi,
   type TerminalHost,
   terminalApiMessages,
+  terminalHostOf,
 } from '../src/client/api.js';
 import type {
   Terminal,
   TerminalUpdate,
 } from '../src/client/domain/terminals.js';
 import { createTerminalStore } from '../src/client/store.js';
+import { TerminalService } from '../src/contracts/gen/doric/terminal/v1/terminal_pb.js';
 import type { TerminalSession } from '../src/contracts/index.js';
 import { deferred } from './support/deferred.js';
+import { terminalWindow } from './support/terminal-connect.js';
 
 /*
  * The window's terminal calls and state (moved from the layout's provisional
- * adapter, `useTerminals` and the manual part of its tabs store): the
- * payload guards and failure sentences of the old terminal REST client, the
- * ordered keystrokes, and what a list change does to tabs, manual shells and
- * the Project's file reads.
+ * adapter, `useTerminals` and the manual part of its tabs store): the payload
+ * guards and failure sentences of the old terminal REST client, every
+ * method's mapping to `TerminalService` and the scope only `list` and `create`
+ * name (slice S65d, `terminalHostOf`), the ordered keystrokes, and what a list
+ * change does to tabs, manual shells and the Project's file reads.
  */
 
 const session = (
@@ -55,6 +59,18 @@ const host = (overrides: Partial<TerminalHost> = {}): TerminalHost => ({
   rename: async () => true,
   ...overrides,
 });
+
+/** The client part's calls over Connect to today's `TerminalHost`. */
+const apiOver = (terminalHost: TerminalHost) => {
+  const window = terminalWindow(() => terminalHost);
+
+  return {
+    api: createTerminalApi(() =>
+      terminalHostOf((scope) => window.services.use(TerminalService, scope)),
+    ),
+    window,
+  };
+};
 
 void describe('terminal client calls', () => {
   void test('a lost bridge is the backend being unavailable; any other failure is one sentence', async () => {
@@ -170,6 +186,45 @@ void describe('terminal client calls', () => {
       host({ list: async () => [{ ...session(), extra: 1 } as never] }),
     );
     assert.deepEqual(await api.list('project-1'), [session()]);
+  });
+});
+
+describe('the calls over TerminalService', () => {
+  test('every method reaches its RPC, and only list and create carry a scope', async () => {
+    const { api, window } = apiOver(host());
+
+    await api.list('project-1');
+    await api.create('thread-1');
+    await api.snapshot('terminal-1');
+    await api.input('terminal-1', 'x');
+    await api.resize('terminal-1', 80, 24);
+    await api.stop('terminal-1');
+    await api.rename('terminal-1', 'bash');
+
+    // `list` names its Project and `create` its Thread; a terminal-addressed
+    // call names its terminal in the request, so the host needs no scope.
+    assert.deepEqual(
+      window.calls.map(({ method, scope }) => [method, scope]),
+      [
+        [`${TerminalService.typeName}/List`, { projectId: 'project-1' }],
+        [`${TerminalService.typeName}/Create`, { threadId: 'thread-1' }],
+        [`${TerminalService.typeName}/Snapshot`, undefined],
+        [`${TerminalService.typeName}/Input`, undefined],
+        [`${TerminalService.typeName}/Resize`, undefined],
+        [`${TerminalService.typeName}/Stop`, undefined],
+        [`${TerminalService.typeName}/Rename`, undefined],
+      ],
+    );
+  });
+
+  test('an answer the adapter cannot read is the invalid answer, not a failure', async () => {
+    const { api } = apiOver(
+      host({ list: async () => [{ ...session(), state: 'gone' } as never] }),
+    );
+
+    await assert.rejects(api.list('project-1'), {
+      message: 'Doric returned an invalid terminal.',
+    });
   });
 });
 

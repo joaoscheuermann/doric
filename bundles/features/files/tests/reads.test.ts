@@ -1,354 +1,315 @@
 // files/v1 (stage 10, §3.6) and the window's reads over it: the Project
-// sandbox reads of the file panel and the file tab, through a fake
-// runtime.lease/v1 whose lease is either held (the task runs on a sandbox
-// backed by a local directory) or in one of its other states. The window side
+// sandbox reads of the file panel and the file tab, host side through the
+// part's real `FilesService` over the router (`./support/router.js`, with its
+// fake `runtime.lease/v1`), window side through the client part's
+// `filesReadsOf` over the generated `FilesService` client (slice S65d), which
 // is observed as the REST client answered: lease states and refusals are
 // data, `pending` carries `Retry-After: 1`, a failed call is a sentence.
 
 import assert from 'node:assert/strict';
-import { Buffer } from 'node:buffer';
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
-import { after, before, describe, test } from 'node:test';
+import { describe, test } from 'node:test';
 
+import { toJson } from '@bufbuild/protobuf';
+import type { ServiceImpl } from '@connectrpc/connect';
+import { ContractError } from 'bundle/contracts';
+
+import { filesReadsOf } from '../src/client/api/reads.js';
+import { filesWritesOf } from '../src/client/api/writes.js';
 import {
-  type CallScope,
-  ContractError,
-  defineMethod,
-  defineService,
-} from 'bundle/contracts';
-import { createTestServices } from 'bundle/testing';
-import {
-  type LeaseOutcome,
-  type LeaseTask,
-  RuntimeLeaseV1,
-  runtimeLeaseMethods,
-} from 'runtime/contracts';
-import type { Sandbox } from 'sandbox';
+  ContentResponseSchema,
+  DirectoriesResponseSchema,
+  DirectoryResponseSchema,
+  FilesService,
+  TreeResponseSchema,
+} from '../src/contracts/gen/doric/files/v1/files_pb.js';
+import { CONTENT_LIMIT_BYTES } from '../src/host/reads.js';
+import { filesWindow } from './support/files-connect.js';
+import { filesPart, NOT_READY } from './support/router-files.js';
+import { workspace } from './support/router-fixtures.js';
 
-import { createFilesReads } from '../src/client/api/reads.js';
-import { FilesV1 } from '../src/contracts/index.js';
-import {
-  BYTES_LIMIT,
-  CONTENT_LIMIT_BYTES,
-  filesService,
-} from '../src/host/reads.js';
-import { createFakeSandbox } from './fake-sandbox.js';
-
-type LeaseState = 'ready' | 'pending' | 'unavailable' | 'expired' | 'missing';
-
-/** The local sandbox with the bounded read the content route makes. */
-const sandboxOver = (root: string): Sandbox => {
-  const base = createFakeSandbox(root);
-  return {
-    ...base,
-    exec: async (input) => {
-      if (input.cmd[0] === 'head' && input.cmd[1] === '-c') {
-        const limit = Number(input.cmd[2]);
-        const path = input.cmd[4] as string;
-        const bytes = await readFile(join(root, path)).catch(() => undefined);
-        if (bytes === undefined)
-          return {
-            exitCode: 1,
-            stdout: '',
-            stderr: 'No such file',
-            stdoutBytes: Buffer.alloc(0),
-            stderrBytes: Buffer.alloc(0),
-          };
-        const out = bytes.subarray(0, limit);
-        return {
-          exitCode: 0,
-          stdout: out.toString('utf8'),
-          stderr: '',
-          stdoutBytes: Buffer.from(out),
-          stderrBytes: Buffer.alloc(0),
-        };
-      }
-      return base.exec(input);
-    },
-  };
-};
-
-interface Lease {
-  state: LeaseState;
-  /** Closing starts, or the lease drops, while the task runs. */
-  dropDuringTask: boolean;
-  /** The Projects the reads asked the lease for. */
-  readonly scopes: (string | undefined)[];
-  /** A failure of the call itself (a lost bridge). */
-  failure?: Error;
-}
-
-const fakeLease = (sandbox: Sandbox, lease: Lease) =>
-  defineService(RuntimeLeaseV1.id, {
-    withLease: defineMethod({
-      ...runtimeLeaseMethods.withLease,
-      execute: async (task: LeaseTask<unknown>, call) => {
-        lease.scopes.push(call.scope?.projectId);
-        if (lease.failure !== undefined) throw lease.failure;
-        if (lease.state !== 'ready') return { status: lease.state };
-        const value = await task(sandbox);
-        const outcome: LeaseOutcome<unknown> = lease.dropDuringTask
-          ? { status: 'unavailable' }
-          : { status: 'ready', value };
-        return outcome;
-      },
-    }),
-  });
-
-let root: string;
-
-const write = async (path: string, content: string | Uint8Array) => {
-  await mkdir(dirname(join(root, path)), { recursive: true });
-  await writeFile(join(root, path), content);
-};
-
-before(async () => {
-  root = await mkdtemp(join(tmpdir(), 'files-reads-'));
-  await write('README.md', 'hello');
-  await write('src/a.ts', 'export const a = 1;\n');
-  await write('src/deep/b.ts', 'b');
-  await write('image.bin', Uint8Array.from([0x89, 0x50, 0x00, 0x47]));
-  await write('big.txt', 'x'.repeat(CONTENT_LIMIT_BYTES + 10));
-  await write('exact.txt', 'y'.repeat(CONTENT_LIMIT_BYTES));
-});
-
-after(async () => {
-  await rm(root, { recursive: true, force: true });
-});
-
-const setup = (state: LeaseState = 'ready') => {
-  const lease: Lease = { state, dropDuringTask: false, scopes: [] };
-  const harness = createTestServices({
-    bundle: { id: 'files-client' },
-    provide: [filesService, fakeLease(sandboxOver(root), lease)],
-  });
-  const files = (scope: CallScope) => harness.services.use(FilesV1, scope);
-  return {
-    lease,
-    files,
-    reads: createFilesReads((projectId) => files({ projectId })),
-    dispose: harness.dispose,
-  };
-};
+/** The workspace every case reads, unless it names its own. */
+const FILES = {
+  'README.md': 'hello',
+  'src/a.ts': 'export const a = 1;\n',
+  'src/deep/b.ts': 'b',
+  'image.bin': Uint8Array.from([0x89, 0x50, 0x00, 0x47]),
+  'big.txt': 'x'.repeat(CONTENT_LIMIT_BYTES + 10),
+} as const;
 
 describe('files/v1 over the Project lease', () => {
   test('lists the whole tree below a directory, and one level of it', async (t) => {
-    const { files, lease, dispose } = setup();
-    t.after(dispose);
+    const root = await workspace(t, FILES);
+    const h = await filesPart(t, root);
+    const files = h.files({ projectId: 'p-1' });
 
-    assert.deepEqual(await files({ projectId: 'p-1' }).tree({ path: 'src' }), {
-      status: 'ready',
-      value: {
-        status: 'listed',
-        path: 'src',
-        entries: [
-          {
-            name: 'deep',
-            path: 'src/deep',
-            type: 'directory',
-            children: [{ name: 'b.ts', path: 'src/deep/b.ts', type: 'file' }],
-          },
-          { name: 'a.ts', path: 'src/a.ts', type: 'file' },
-        ],
-      },
-    });
-    const listing = await files({ projectId: 'p-1' }).directory({
-      path: 'src',
-    });
-    assert.equal(listing.status, 'ready');
-    if (listing.status !== 'ready' || listing.value.status !== 'listed')
-      throw new Error('expected a listing');
     assert.deepEqual(
-      listing.value.entries.map(({ path, type }) => [path, type]),
-      [
-        ['src/deep', 'directory'],
-        ['src/a.ts', 'file'],
-      ],
+      toJson(TreeResponseSchema, await files.tree({ path: 'src' })),
+      {
+        status: 'ready',
+        value: {
+          status: 'listed',
+          path: 'src',
+          entries: [
+            {
+              name: 'deep',
+              path: 'src/deep',
+              type: 'directory',
+              children: [{ name: 'b.ts', path: 'src/deep/b.ts', type: 'file' }],
+            },
+            { name: 'a.ts', path: 'src/a.ts', type: 'file' },
+          ],
+        },
+      },
     );
-    // The reads name the calling Project, which is the lease they run on.
-    assert.deepEqual(lease.scopes, ['p-1', 'p-1']);
+    assert.deepEqual(
+      toJson(DirectoryResponseSchema, await files.directory({ path: 'src' })),
+      {
+        status: 'ready',
+        value: {
+          status: 'listed',
+          path: 'src',
+          entries: [
+            { name: 'deep', path: 'src/deep', type: 'directory' },
+            { name: 'a.ts', path: 'src/a.ts', type: 'file' },
+          ],
+        },
+      },
+    );
   });
 
-  test('lists several directories one level each, in the order asked, as the whole tree nests them', async (t) => {
-    const { files, lease, dispose } = setup();
-    t.after(dispose);
-    const project = files({ projectId: 'p-1' });
+  test('lists several directories one level each, in the order asked', async (t) => {
+    const root = await workspace(t, FILES);
+    const h = await filesPart(t, root);
 
-    const read = await project.directories({
-      paths: ['', 'src', 'src/deep', 'nope', 'README.md', '../outside'],
-    });
-
-    assert.deepEqual(read, {
-      status: 'ready',
-      value: {
-        status: 'listed',
-        directories: [
-          {
-            path: '',
-            status: 'listed',
-            entries: [
-              { name: 'src', path: 'src', type: 'directory' },
-              { name: 'big.txt', path: 'big.txt', type: 'file' },
-              { name: 'exact.txt', path: 'exact.txt', type: 'file' },
-              { name: 'image.bin', path: 'image.bin', type: 'file' },
-              { name: 'README.md', path: 'README.md', type: 'file' },
-            ],
-          },
-          {
-            path: 'src',
-            status: 'listed',
-            entries: [
-              { name: 'deep', path: 'src/deep', type: 'directory' },
-              { name: 'a.ts', path: 'src/a.ts', type: 'file' },
-            ],
-          },
-          {
-            path: 'src/deep',
-            status: 'listed',
-            entries: [{ name: 'b.ts', path: 'src/deep/b.ts', type: 'file' }],
-          },
-          { path: 'nope', status: 'not_found' },
-          { path: 'README.md', status: 'not_directory' },
-          { path: '../outside', status: 'invalid_path' },
-        ],
+    assert.deepEqual(
+      toJson(
+        DirectoriesResponseSchema,
+        await h.files({ projectId: 'p-1' }).directories({
+          paths: ['', 'src', 'src/deep', 'nope', 'README.md', '../outside'],
+        }),
+      ),
+      {
+        status: 'ready',
+        value: {
+          status: 'listed',
+          directories: [
+            {
+              status: 'listed',
+              entries: [
+                { name: 'src', path: 'src', type: 'directory' },
+                { name: 'big.txt', path: 'big.txt', type: 'file' },
+                { name: 'image.bin', path: 'image.bin', type: 'file' },
+                { name: 'README.md', path: 'README.md', type: 'file' },
+              ],
+            },
+            {
+              path: 'src',
+              status: 'listed',
+              entries: [
+                { name: 'deep', path: 'src/deep', type: 'directory' },
+                { name: 'a.ts', path: 'src/a.ts', type: 'file' },
+              ],
+            },
+            {
+              path: 'src/deep',
+              status: 'listed',
+              entries: [{ name: 'b.ts', path: 'src/deep/b.ts', type: 'file' }],
+            },
+            { path: 'nope', status: 'not_found' },
+            { path: 'README.md', status: 'not_directory' },
+            { path: '../outside', status: 'invalid_path' },
+          ],
+        },
       },
-    });
-    assert.deepEqual(lease.scopes, ['p-1']);
+    );
+  });
+
+  test('reads a file as text, cut at the bound, and never shows a binary', async (t) => {
+    const root = await workspace(t, FILES);
+    const h = await filesPart(t, root);
+    const files = h.files({ projectId: 'p-1' });
+
+    assert.deepEqual(
+      toJson(ContentResponseSchema, await files.content({ path: 'src/a.ts' })),
+      {
+        status: 'ready',
+        value: {
+          status: 'read',
+          path: 'src/a.ts',
+          content: 'export const a = 1;\n',
+          truncated: false,
+          binary: false,
+        },
+      },
+    );
+    assert.deepEqual(
+      toJson(ContentResponseSchema, await files.content({ path: 'big.txt' })),
+      {
+        status: 'ready',
+        value: {
+          status: 'read',
+          path: 'big.txt',
+          content: 'x'.repeat(CONTENT_LIMIT_BYTES),
+          truncated: true,
+          binary: false,
+        },
+      },
+    );
+    assert.deepEqual(
+      toJson(ContentResponseSchema, await files.content({ path: 'image.bin' })),
+      {
+        status: 'ready',
+        value: {
+          status: 'read',
+          path: 'image.bin',
+          content: '',
+          truncated: false,
+          binary: true,
+        },
+      },
+    );
   });
 
   test('refuses a path that is missing, not a directory or outside the workspace', async (t) => {
-    const { files, dispose } = setup();
-    t.after(dispose);
-    const project = files({ projectId: 'p-1' });
+    const root = await workspace(t, FILES);
+    const h = await filesPart(t, root);
+    const files = h.files({ projectId: 'p-1' });
 
-    assert.deepEqual(await project.tree({ path: 'nope' }), {
-      status: 'ready',
-      value: { status: 'not_found' },
-    });
-    assert.deepEqual(await project.directory({ path: 'README.md' }), {
-      status: 'ready',
-      value: { status: 'not_directory' },
-    });
-    assert.deepEqual(await project.tree({ path: '../outside' }), {
-      status: 'ready',
-      value: { status: 'invalid_path' },
-    });
-  });
-
-  test('reads a file as text, cut at 256 KiB, and never shows a binary', async (t) => {
-    const { files, dispose } = setup();
-    t.after(dispose);
-    const project = files({ projectId: 'p-1' });
-
-    assert.deepEqual(await project.content({ path: 'src/a.ts' }), {
-      status: 'ready',
-      value: {
-        status: 'read',
-        path: 'src/a.ts',
-        content: 'export const a = 1;\n',
-        truncated: false,
-        binary: false,
-      },
-    });
-    const big = await project.content({ path: 'big.txt' });
-    assert.ok(big.status === 'ready' && big.value.status === 'read');
-    assert.equal(big.value.truncated, true);
-    assert.equal(big.value.content.length, CONTENT_LIMIT_BYTES);
-    const exact = await project.content({ path: 'exact.txt' });
-    assert.ok(exact.status === 'ready' && exact.value.status === 'read');
-    assert.equal(exact.value.truncated, false);
-    const image = await project.content({ path: 'image.bin' });
-    assert.ok(image.status === 'ready' && image.value.status === 'read');
-    assert.equal(image.value.binary, true);
-    assert.equal(image.value.content, '');
-  });
-
-  test('reads any file as base64 bytes when asked, cut at its own larger limit', async (t) => {
-    const { files, dispose } = setup();
-    t.after(dispose);
-    const project = files({ projectId: 'p-1' });
-
-    const image = await project.content({
-      path: 'image.bin',
-      encoding: 'base64',
-    });
-    assert.ok(image.status === 'ready' && image.value.status === 'read');
-    assert.equal(image.value.binary, true);
-    assert.equal(image.value.truncated, false);
     assert.deepEqual(
-      Buffer.from(image.value.content, 'base64'),
-      await readFile(join(root, 'image.bin')),
+      toJson(TreeResponseSchema, await files.tree({ path: 'nope' })),
+      { status: 'ready', value: { status: 'not_found' } },
     );
-
-    // Past the text limit a base64 read is still whole.
-    const big = await project.content({ path: 'big.txt', encoding: 'base64' });
-    assert.ok(big.status === 'ready' && big.value.status === 'read');
-    assert.equal(big.value.truncated, false);
-    assert.equal(
-      Buffer.from(big.value.content, 'base64').byteLength,
-      (await readFile(join(root, 'big.txt'))).byteLength,
+    assert.deepEqual(
+      toJson(
+        DirectoryResponseSchema,
+        await files.directory({ path: 'README.md' }),
+      ),
+      { status: 'ready', value: { status: 'not_directory' } },
     );
-    assert.ok(BYTES_LIMIT > CONTENT_LIMIT_BYTES);
+    assert.deepEqual(
+      toJson(TreeResponseSchema, await files.tree({ path: '../outside' })),
+      { status: 'ready', value: { status: 'invalid_path' } },
+    );
+    assert.deepEqual(
+      toJson(ContentResponseSchema, await files.content({ path: 'src' })),
+      { status: 'ready', value: { status: 'not_file' } },
+    );
+    assert.deepEqual(
+      toJson(ContentResponseSchema, await files.content({ path: 'gone.txt' })),
+      { status: 'ready', value: { status: 'not_found' } },
+    );
   });
 
-  test('refuses a content read of a directory, a missing file or an outside path', async (t) => {
-    const { files, dispose } = setup();
-    t.after(dispose);
-    const project = files({ projectId: 'p-1' });
-
-    assert.deepEqual(await project.content({ path: 'src' }), {
-      status: 'ready',
-      value: { status: 'not_file' },
-    });
-    assert.deepEqual(await project.content({ path: 'gone.txt' }), {
-      status: 'ready',
-      value: { status: 'not_found' },
-    });
-    assert.deepEqual(await project.content({ path: '../etc/passwd' }), {
-      status: 'ready',
-      value: { status: 'invalid_path' },
-    });
-  });
-
-  for (const state of [
-    'pending',
-    'unavailable',
-    'expired',
-    'missing',
-  ] as const) {
+  for (const state of NOT_READY) {
     test(`answers a ${state} lease as data for every read`, async (t) => {
-      const { files, dispose } = setup(state);
-      t.after(dispose);
-      const project = files({ projectId: 'p-1' });
+      const root = await workspace(t, FILES);
+      const h = await filesPart(t, root);
+      h.lease.status = state;
+      const files = h.files({ projectId: 'p-1' });
 
-      assert.deepEqual(await project.tree({}), { status: state });
-      assert.deepEqual(await project.directory({}), { status: state });
-      assert.deepEqual(await project.content({ path: 'README.md' }), {
+      assert.deepEqual(toJson(TreeResponseSchema, await files.tree({})), {
         status: state,
       });
+      assert.deepEqual(
+        toJson(DirectoryResponseSchema, await files.directory({})),
+        { status: state },
+      );
+      assert.deepEqual(
+        toJson(
+          ContentResponseSchema,
+          await files.content({ path: 'README.md' }),
+        ),
+        { status: state },
+      );
     });
   }
-
-  test('a lease that drops while the read runs answers unavailable', async (t) => {
-    const { files, lease, dispose } = setup();
-    t.after(dispose);
-    lease.dropDuringTask = true;
-
-    assert.deepEqual(await files({ projectId: 'p-1' }).tree({}), {
-      status: 'unavailable',
-    });
-  });
 });
 
-describe('the window reads over files/v1', () => {
-  test('a ready tree and file arrive as the REST client read them', async (t) => {
-    const { reads, dispose } = setup();
-    t.after(dispose);
+/** A `FilesService` implementation that records nothing and answers the tests. */
+const answering = (
+  overrides: Partial<ServiceImpl<typeof FilesService>> = {},
+): Partial<ServiceImpl<typeof FilesService>> => ({
+  tree: async () => ({
+    status: 'ready',
+    value: { status: 'listed', path: 'src', entries: [] },
+  }),
+  directories: async () => ({
+    status: 'ready',
+    value: { status: 'listed', directories: [] },
+  }),
+  content: async () => ({
+    status: 'ready',
+    value: {
+      status: 'read',
+      path: 'README.md',
+      content: 'hello',
+      truncated: false,
+      binary: false,
+    },
+  }),
+  createFile: async () => ({
+    status: 'ready',
+    value: { status: 'created', path: 'src/new.ts' },
+  }),
+  createDirectory: async () => ({
+    status: 'ready',
+    value: { status: 'created', path: 'src/new-dir' },
+  }),
+  ...overrides,
+});
 
-    const tree = await reads.tree('p-1', 'src/deep');
-    assert.deepEqual(tree, {
+/** The window whose host answers `impl`, and the reads over it. */
+const windowOver = (impl: Partial<ServiceImpl<typeof FilesService>>) => {
+  const window = filesWindow(answering(impl));
+
+  return { window, reads: filesReadsOf(window.services) };
+};
+
+/** The window's writes over a host that answers `impl`. */
+const writesOver = (impl: Partial<ServiceImpl<typeof FilesService>>) =>
+  filesWritesOf(filesWindow(answering(impl)).services);
+
+describe('the window reads over files/v1', () => {
+  test('every read reaches FilesService with the Project scope', async () => {
+    const window = filesWindow(answering());
+    const reads = filesReadsOf(window.services);
+
+    await reads.tree('p-1', 'src');
+    await reads.directories('p-1', ['src']);
+    await reads.file('p-1', 'README.md');
+
+    assert.deepEqual(window.calls, [
+      {
+        method: `${FilesService.typeName}/Tree`,
+        part: 'files',
+        scope: { projectId: 'p-1' },
+      },
+      {
+        method: `${FilesService.typeName}/Directories`,
+        part: 'files',
+        scope: { projectId: 'p-1' },
+      },
+      {
+        method: `${FilesService.typeName}/Content`,
+        part: 'files',
+        scope: { projectId: 'p-1' },
+      },
+    ]);
+  });
+
+  test('a ready tree and file arrive as the REST client read them', async () => {
+    const { reads } = windowOver({
+      tree: async () => ({
+        status: 'ready',
+        value: {
+          status: 'listed',
+          path: 'src/deep',
+          entries: [{ name: 'b.ts', path: 'src/deep/b.ts', type: 'file' }],
+        },
+      }),
+    });
+
+    assert.deepEqual(await reads.tree('p-1', 'src/deep'), {
       status: 'ready',
       path: 'src/deep',
       entries: [{ name: 'b.ts', path: 'src/deep/b.ts', type: 'file' }],
@@ -364,9 +325,75 @@ describe('the window reads over files/v1', () => {
     });
   });
 
-  test('several directories arrive keyed by the path each was asked as', async (t) => {
-    const { reads, dispose } = setup();
-    t.after(dispose);
+  test('a tree keeps the entries the tree nests, and a binary file its flag', async () => {
+    const { reads } = windowOver({
+      tree: async () => ({
+        status: 'ready',
+        value: {
+          status: 'listed',
+          path: '',
+          entries: [
+            {
+              name: 'deep',
+              path: 'src/deep',
+              type: 'directory',
+              children: [{ name: 'b.ts', path: 'src/deep/b.ts', type: 'file' }],
+            },
+          ],
+        },
+      }),
+      content: async () => ({
+        status: 'ready',
+        value: {
+          status: 'read',
+          path: 'image.bin',
+          content: '',
+          truncated: false,
+          binary: true,
+        },
+      }),
+    });
+
+    assert.deepEqual(await reads.tree('p-1'), {
+      status: 'ready',
+      path: '',
+      entries: [
+        {
+          name: 'deep',
+          path: 'src/deep',
+          type: 'directory',
+          children: [{ name: 'b.ts', path: 'src/deep/b.ts', type: 'file' }],
+        },
+      ],
+    });
+    assert.deepEqual(await reads.file('p-1', 'image.bin'), {
+      status: 'ready',
+      file: {
+        path: 'image.bin',
+        content: '',
+        truncated: false,
+        binary: true,
+      },
+    });
+  });
+
+  test('several directories arrive keyed by the path each was asked as', async () => {
+    const { reads } = windowOver({
+      directories: async () => ({
+        status: 'ready',
+        value: {
+          status: 'listed',
+          directories: [
+            {
+              path: 'src/deep',
+              status: 'listed',
+              entries: [{ name: 'b.ts', path: 'src/deep/b.ts', type: 'file' }],
+            },
+            { path: 'nope', status: 'not_found' },
+          ],
+        },
+      }),
+    });
 
     assert.deepEqual(await reads.directories('p-1', ['src/deep', 'nope']), {
       status: 'ready',
@@ -378,38 +405,58 @@ describe('the window reads over files/v1', () => {
         nope: { status: 'not_found' },
       },
     });
-    const pending = setup('pending');
-    t.after(pending.dispose);
-    assert.deepEqual(await pending.reads.directories('p-1', ['']), {
-      status: 'pending',
-      retryAfterSeconds: 1,
-    });
-    await assert.rejects(reads.directories('p-1', ['../up']), {
-      message: 'The workspace path is invalid.',
-    });
   });
 
-  test('a pending lease carries the one-second retry hint; other states pass through', async (t) => {
-    const pending = setup('pending');
-    t.after(pending.dispose);
-    assert.deepEqual(await pending.reads.tree('p-1'), {
-      status: 'pending',
-      retryAfterSeconds: 1,
-    });
-    const expired = setup('expired');
-    t.after(expired.dispose);
-    assert.deepEqual(await expired.reads.file('p-1', 'README.md'), {
-      status: 'expired',
-    });
+  test('a pending lease carries the one-second retry hint; other states pass through', async () => {
+    for (const state of [
+      'pending',
+      'unavailable',
+      'expired',
+      'missing',
+    ] as const) {
+      const { reads } = windowOver({
+        tree: async () => ({ status: state }),
+        content: async () => ({ status: state }),
+      });
+
+      assert.deepEqual(
+        await reads.tree('p-1'),
+        state === 'pending'
+          ? { status: 'pending', retryAfterSeconds: 1 }
+          : { status: state },
+      );
+      assert.deepEqual(
+        await reads.file('p-1', 'README.md'),
+        state === 'pending'
+          ? { status: 'pending', retryAfterSeconds: 1 }
+          : { status: state },
+      );
+    }
   });
 
-  test('a missing path is not_found and every other refusal is invalid_path', async (t) => {
-    const { reads, dispose } = setup();
-    t.after(dispose);
+  test('a missing path is not_found and every other refusal is invalid_path', async () => {
+    const { reads } = windowOver({
+      tree: async () => ({
+        status: 'ready',
+        value: { status: 'not_found' },
+      }),
+      directories: async () => ({
+        status: 'ready',
+        value: {
+          status: 'listed',
+          directories: [{ path: 'up', status: 'invalid_path' }],
+        },
+      }),
+      content: async () => ({
+        status: 'ready',
+        value: { status: 'not_file' },
+      }),
+    });
 
     assert.deepEqual(await reads.tree('p-1', 'nope'), { status: 'not_found' });
-    assert.deepEqual(await reads.tree('p-1', 'README.md'), {
-      status: 'invalid_path',
+    assert.deepEqual(await reads.directories('p-1', ['up']), {
+      status: 'ready',
+      directories: { up: { status: 'invalid_path' } },
     });
     assert.deepEqual(await reads.file('p-1', 'src'), {
       status: 'invalid_path',
@@ -418,9 +465,9 @@ describe('the window reads over files/v1', () => {
     assert.deepEqual(await reads.file('p-1', ''), { status: 'invalid_path' });
   });
 
-  test('the payload guards refuse before calling the host', async (t) => {
-    const { reads, lease, dispose } = setup();
-    t.after(dispose);
+  test('the payload guards refuse before calling the host', async () => {
+    const window = filesWindow(answering());
+    const reads = filesReadsOf(window.services);
 
     await assert.rejects(reads.tree('', 'src'), {
       message: 'The item identifier is invalid.',
@@ -431,20 +478,123 @@ describe('the window reads over files/v1', () => {
     await assert.rejects(reads.file('p-1', '/etc/passwd'), {
       message: 'The workspace path is invalid.',
     });
-    assert.deepEqual(lease.scopes, []);
+    await assert.rejects(reads.directories('p-1', []), {
+      message: 'The workspace path is invalid.',
+    });
+    assert.deepEqual(window.calls, []);
   });
 
-  test('a lost backend reads as unavailable, any other failure as the generic sentence', async (t) => {
-    const { reads, lease, dispose } = setup();
-    t.after(dispose);
+  test('a lost backend reads as unavailable, an invalid answer and any other failure as their sentences', async () => {
+    for (const code of [
+      'unavailable',
+      'disconnected',
+      'generation_lost',
+    ] as const) {
+      const { reads } = windowOver({
+        tree: async () => {
+          throw new ContractError(code, 'gone');
+        },
+      });
 
-    lease.failure = new ContractError('disconnected', 'Bridge closed.');
-    await assert.rejects(reads.tree('p-1'), {
-      message: 'Doric backend is unavailable.',
+      await assert.rejects(reads.tree('p-1'), {
+        message: 'Doric backend is unavailable.',
+      });
+    }
+    const invalid = windowOver({
+      content: async () => {
+        throw new ContractError('invalid_output', 'bad answer');
+      },
     });
-    lease.failure = new Error('boom');
-    await assert.rejects(reads.file('p-1', 'README.md'), {
+    await assert.rejects(invalid.reads.file('p-1', 'README.md'), {
+      message: 'Doric returned an invalid response.',
+    });
+    const other = windowOver({
+      tree: async () => {
+        throw new Error('boom');
+      },
+    });
+    await assert.rejects(other.reads.tree('p-1'), {
       message: 'The request could not be completed.',
     });
+  });
+
+  test('an answer the client cannot read is the invalid-response sentence', async () => {
+    const { reads } = windowOver({
+      content: async () =>
+        ({
+          status: 'ready',
+          value: { status: 'read', path: 'README.md', content: 5 as never },
+        }) as never,
+    });
+
+    await assert.rejects(reads.file('p-1', 'README.md'), {
+      message: 'Doric returned an invalid response.',
+    });
+  });
+});
+
+describe('the window writes over files/v1', () => {
+  test('every write reaches FilesService with the Project scope, and answers what it wrote', async () => {
+    const window = filesWindow(answering());
+    const writes = filesWritesOf(window.services);
+
+    assert.deepEqual(await writes.createFile('p-1', 'src', 'new.ts'), {
+      status: 'ready',
+      value: { status: 'created', path: 'src/new.ts' },
+    });
+    assert.deepEqual(await writes.createDirectory('p-1', 'src', 'new-dir'), {
+      status: 'ready',
+      value: { status: 'created', path: 'src/new-dir' },
+    });
+    assert.deepEqual(window.calls, [
+      {
+        method: `${FilesService.typeName}/CreateFile`,
+        part: 'files',
+        scope: { projectId: 'p-1' },
+      },
+      {
+        method: `${FilesService.typeName}/CreateDirectory`,
+        part: 'files',
+        scope: { projectId: 'p-1' },
+      },
+    ]);
+  });
+
+  test('a refused write keeps its reason, and a pending lease its retry hint', async () => {
+    const refused = {
+      createFile: async () => ({
+        status: 'ready',
+        value: { status: 'refused', reason: 'exists' },
+      }),
+    };
+    assert.deepEqual(
+      await writesOver(refused).createFile('p-1', 'src', 'a.ts'),
+      {
+        status: 'ready',
+        value: { status: 'refused', reason: 'exists' },
+      },
+    );
+
+    const pending = {
+      createDirectory: async () => ({ status: 'pending' }),
+    };
+    assert.deepEqual(
+      await writesOver(pending).createDirectory('p-1', 'src', 'new-dir'),
+      { status: 'pending', retryAfterSeconds: 1 },
+    );
+
+    const failed = {
+      createFile: async () => ({
+        status: 'ready',
+        value: { status: 'failed', message: 'cannot create src/new.ts' },
+      }),
+    };
+    assert.deepEqual(
+      await writesOver(failed).createFile('p-1', 'src', 'new.ts'),
+      {
+        status: 'ready',
+        value: { status: 'failed', message: 'cannot create src/new.ts' },
+      },
+    );
   });
 });

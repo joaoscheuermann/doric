@@ -3,8 +3,12 @@
 // phase 5"): `runtime/v2` and `runtime.threads/v1` as the generated
 // `RuntimeService` and `ThreadsService`, answered from `workspace-host`'s
 // Projects, Threads and logs, behind a `HostForward` main's `doric:connect`
-// relay forwards to (`bootPlatform({ hostForward })`). The other contracts
-// stay on the Socket.IO fake until their slices (S65b–S65d) and S66.
+// relay forwards to (`bootPlatform({ hostForward })`). The other host
+// contracts of a workspace window are the callers' `routes` on the same
+// router (`settings-host`'s `serveSettingsConnect`, `workspace-content`'s
+// `gitRoutes` and `filesRoutes`, `workspace-host`'s `usageRoutes` and
+// `resourcesRoutes`, `transcript-500`'s `terminalRoutes`); `screen` is the one
+// contract the harness answers on nothing.
 
 import type { MessageInitShape, MessageShape } from '@bufbuild/protobuf';
 import { type ConnectRouter, createConnectRouter } from '@connectrpc/connect';

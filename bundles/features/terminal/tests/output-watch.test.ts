@@ -255,17 +255,36 @@ describe('terminal output watch', () => {
     watches.close();
   });
 
-  test('subscribes again, reporting nothing, when the host generation serving the stream is lost', async () => {
+  test('a lost host generation is a failed connection that opens no stream again', async () => {
     const { terminals, watches, fireTimers } = setup();
     const updates: TerminalOutputUpdate[] = [];
     watches.watch('terminal', 0, (update) => void updates.push(update));
     await tick();
 
     terminals.end(new ContractError('generation_lost', 'Generation 1 exited.'));
+    await tick();
+    fireTimers();
+
+    assert.deepEqual(updates.at(-1), {
+      kind: 'error',
+      message: 'The terminal connection failed.',
+    });
+    assert.equal(terminals.openStreams.length, 0);
+    watches.close();
+  });
+
+  test('an unreachable host still subscribes again after a second', async () => {
+    const { terminals, watches, fireTimers } = setup();
+    const updates: TerminalOutputUpdate[] = [];
+    watches.watch('terminal', 0, (update) => void updates.push(update));
+    await tick();
+
+    terminals.end(new ContractError('unavailable', 'The host is gone.'));
+    assert.equal(terminals.openStreams.length, 0);
+    assert.ok(updates.every((update) => update.kind !== 'error'));
     fireTimers();
 
     assert.equal(terminals.openStreams.length, 1);
-    assert.ok(updates.every((update) => update.kind !== 'error'));
     watches.close();
   });
 

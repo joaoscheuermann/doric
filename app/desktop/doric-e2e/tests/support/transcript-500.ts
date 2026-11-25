@@ -15,13 +15,32 @@
 // - Everything is settled: no stream stays live.
 //
 // `serveTranscript` answers the Thread `TRANSCRIPT_THREAD` with this log, and
-// `terminal/v1` with no terminals.
+// `terminal/v1` (over Connect through `terminalRoutes(host)`) with no
+// terminals.
+
+import type { ConnectRouter, ServiceImpl } from '@connectrpc/connect';
+import { terminalOneofs } from 'terminal/contracts';
+import {
+  ListResponseSchema,
+  TerminalService,
+  WatchProjectResponseSchema,
+} from 'terminal/contracts/gen/doric/terminal/v1/terminal_pb.js';
 
 import type { FakeHost } from './harness';
 import { serveSettingsConnect } from './settings-host';
 import { serveWorkspaceConnect } from './workspace-connect';
-import { gitRoutes, type ThreadEventRow } from './workspace-content';
-import { THREADS, type WorkspaceThread } from './workspace-host';
+import {
+  filesRoutes,
+  gitRoutes,
+  proto,
+  type ThreadEventRow,
+} from './workspace-content';
+import {
+  resourcesRoutes,
+  THREADS,
+  usageRoutes,
+  type WorkspaceThread,
+} from './workspace-host';
 
 /** The Thread whose transcript is measured: "Accessibility audit" of Checkout redesign. */
 export const TRANSCRIPT_THREAD: WorkspaceThread = (() => {
@@ -366,11 +385,39 @@ const first = (input: unknown): Record<string, unknown> => {
 const idOf = (input: unknown): unknown =>
   Array.isArray(input) ? input[0] : input;
 
+/** The `TerminalService` handlers of each host, as `serveTerminal` added them. */
+const terminalHandlers = new WeakMap<
+  FakeHost,
+  Partial<ServiceImpl<typeof TerminalService>>
+>();
+
+/** Adds `handlers` to the `TerminalService` of `host`. */
+export const serveTerminal = (
+  host: FakeHost,
+  handlers: Partial<ServiceImpl<typeof TerminalService>>,
+): void => {
+  terminalHandlers.set(host, {
+    ...terminalHandlers.get(host),
+    ...handlers,
+  });
+};
+
+/**
+ * Registers the `TerminalService` handlers `serveTerminal` added for `host`
+ * on `router` (none: nothing is registered).
+ */
+export const terminalRoutes =
+  (host: FakeHost) =>
+  (router: ConnectRouter): void => {
+    const handlers = terminalHandlers.get(host);
+    if (handlers !== undefined) router.service(TerminalService, handlers);
+  };
+
 /**
  * Answers the measured Thread with `transcriptLog()` (after `serveWorkspace`,
  * whose answers for the other Threads it keeps), on the Socket.IO fake and
- * over Connect (`forwardConnect`), and `terminal/v1` with no
- * terminals: the transcript is settled, so no live output is watched.
+ * over Connect (`forwardConnect`), and `terminal/v1` with no terminals: the
+ * transcript is settled, so no live output is watched.
  */
 export const serveTranscript = (host: FakeHost): void => {
   const log = transcriptLog();
@@ -394,7 +441,28 @@ export const serveTranscript = (host: FakeHost): void => {
     });
   });
   // The same Thread and log over Connect, which the chat and the runtime's
-  // records read (S65a); the workspace's other Threads as `serveWorkspace`.
+  // records read (S65a); the workspace's other Threads and the contracts it
+  // answers over Connect as `serveWorkspace`.
+  serveTerminal(host, {
+    list: () => proto(ListResponseSchema, { terminals: [] }),
+    watchProject: async function* (request, context) {
+      yield proto(
+        WatchProjectResponseSchema,
+        { kind: 'snapshot', projectId: request.projectId, terminals: [] },
+        terminalOneofs,
+      );
+
+      // The stream stays open, as the window's terminal feed watches the
+      // Project until it cancels.
+      await new Promise<void>((resolve) => {
+        if (context.signal.aborted) resolve();
+        else
+          context.signal.addEventListener('abort', () => resolve(), {
+            once: true,
+          });
+      });
+    },
+  });
   host.forwardConnect(
     serveWorkspaceConnect({
       threads: [record],
@@ -402,12 +470,11 @@ export const serveTranscript = (host: FakeHost): void => {
       routes: (router) => {
         serveSettingsConnect(router);
         gitRoutes(host)(router);
+        filesRoutes(host)(router);
+        usageRoutes(host)(router);
+        resourcesRoutes(host)(router);
+        terminalRoutes(host)(router);
       },
     }).forward,
   );
-  host.serve('terminal/v1', 'list', () => []);
-  host.stream('terminal/v1', 'watchProject', (input, push) => {
-    const projectId = idOf(input);
-    push({ kind: 'snapshot', projectId, terminals: [] });
-  });
 };

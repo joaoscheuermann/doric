@@ -2,9 +2,8 @@ import type { Services } from 'bundle/contracts';
 import { useMemo } from 'react';
 import { RuntimeRecordsV1 } from 'runtime/contracts';
 
-import { ResourcesV1 } from '../../contracts/index.js';
 import { WorkspaceSelectionV1 } from '../api/peers.js';
-import { createResourcesReads } from '../api/resources.js';
+import { createResourcesReads, resourcesHostOf } from '../api/resources.js';
 import { useService, useSubscribed } from '../hooks/use-service.js';
 import { ConnectionBadge } from './connection-badge.js';
 
@@ -35,13 +34,7 @@ export function ResourcesMonitorView({
     false,
   );
   const reads = useMemo(
-    () =>
-      createResourcesReads((id) =>
-        services.use(
-          ResourcesV1,
-          id === undefined ? undefined : { projectId: id },
-        ),
-      ),
+    () => createResourcesReads(resourcesHostOf(services)),
     [services],
   );
   return (

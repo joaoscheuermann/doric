@@ -1,14 +1,21 @@
-// The window's screen call over the client → host bridge: `attach` ensures the
-// Project's session and answers where the window embeds it. Each call resolves
-// the contract bound to that Project's scope, which is what the host's
-// `runtime.lease/v1` reads.
+// The window's screen call over Connect: `attach` ensures the Project's
+// session and answers where the window embeds it.
 //
 // Nothing here throws at the caller but an invalid identifier: a lost bridge, a
 // failed request and an answer that is not a status all read as "no answer",
 // which the desktop part shows as a retryable failure.
+//
+// Slice S65d: the host is `SessionsService`'s generated client over Connect,
+// its answer read back with today's `screenAttachSchema`.
 
-import type { ScreenAttach, ScreenSessions } from '../contracts/index.js';
-import { screenAttachSchema } from '../contracts/index.js';
+import type { Client } from '@connectrpc/connect';
+import { decode } from 'runtime/contracts';
+
+import {
+  AttachResponseSchema,
+  type SessionsService,
+} from '../contracts/gen/doric/screen/sessions/v2/sessions_pb.js';
+import { type ScreenAttach, screenAttachSchema } from '../contracts/index.js';
 
 export const screenApiMessages = {
   /** The identifier a Project id must be before it reaches the host. */
@@ -20,8 +27,10 @@ export interface ScreenApi {
   attach(projectId: string): Promise<ScreenAttach | null>;
 }
 
-/** The contract bound to the scope of the Project a view watches. */
-export type ScreenHost = (projectId: string) => Pick<ScreenSessions, 'attach'>;
+/** The generated client bound to the scope of the Project a view watches. */
+export type ScreenHost = (
+  projectId: string,
+) => Pick<Client<typeof SessionsService>, 'attach'>;
 
 const identifier = (value: unknown): string => {
   if (
@@ -41,8 +50,10 @@ export const createScreenApi = (sessions: ScreenHost): ScreenApi => ({
     const id = identifier(projectId);
 
     try {
-      const answer = await sessions(id).attach(id);
-      const parsed = screenAttachSchema.safeParse(answer);
+      const answer = await sessions(id).attach({ projectId: id });
+      const parsed = screenAttachSchema.safeParse(
+        decode(AttachResponseSchema, answer),
+      );
 
       return parsed.success ? parsed.data : null;
     } catch {

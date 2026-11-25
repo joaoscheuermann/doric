@@ -5,8 +5,17 @@
 // client's reading of the route's answer. Terminal calls carry no deadline
 // (Q5).
 
-import { isContractError } from 'bundle/contracts';
+import { type Client, ConnectError } from '@connectrpc/connect';
+import {
+  type CallScope,
+  fromConnectError,
+  isContractError,
+} from 'bundle/contracts';
 
+import type {
+  TerminalService as TerminalServiceDescriptor,
+  TerminalSession as TerminalSessionMessage,
+} from '../contracts/gen/doric/terminal/v1/terminal_pb.js';
 import type { TerminalService } from '../contracts/index.js';
 import type { Terminal } from './domain/terminals.js';
 import { createInputQueue } from './input-queue.js';
@@ -142,20 +151,125 @@ export const terminalFrom = (value: unknown): Terminal => {
   };
 };
 
+/** The `TerminalService` calls the window's host makes. */
+export type TerminalCalls = Pick<
+  Client<typeof TerminalServiceDescriptor>,
+  'list' | 'create' | 'snapshot' | 'input' | 'resize' | 'stop' | 'rename'
+>;
+
+/** A Doric error for a failed call; any other error unchanged. */
+const doricError = (error: unknown): unknown =>
+  error instanceof ConnectError ? fromConnectError(error) : error;
+
+/**
+ * One `TerminalSession` message as today's `Terminal`. The api's own
+ * `terminalFrom` checks it, so an answer this cannot read is its invalid-terminal
+ * sentence rather than a host failure.
+ */
+const terminalOfMessage = (message: TerminalSessionMessage): Terminal => ({
+  id: message.id,
+  projectId: message.projectId,
+  threadId: message.threadId,
+  origin: message.origin as Terminal['origin'],
+  command: message.command,
+  cwd: message.cwd,
+  startedAt: message.startedAt,
+  // The wire has no `null`: absent is no limit.
+  timeoutMs: message.timeoutMs ?? null,
+  state: message.state as Terminal['state'],
+  pty: message.pty,
+  ...(message.name === undefined ? {} : { name: message.name }),
+});
+
+/**
+ * `terminal/v1` over `TerminalService`'s generated client, in today's shape.
+ *
+ * Only `list` and `create` name the Project or Thread they act for in the
+ * call's scope; every other method takes its terminal id in the request and
+ * carries no scope. A `ConnectError` reads as its Doric error.
+ */
+export const terminalHostOf = (
+  client: (scope: CallScope) => TerminalCalls,
+): TerminalHost => {
+  const call = async <Value>(run: () => Promise<Value>): Promise<Value> => {
+    try {
+      return await run();
+    } catch (error) {
+      throw doricError(error);
+    }
+  };
+
+  return {
+    list: async (projectId) => {
+      const answer = await call(() =>
+        client({ projectId }).list({ projectId }),
+      );
+      return answer.terminals.map(terminalOfMessage);
+    },
+    create: async (threadId, size) => {
+      const answer = await call(() =>
+        client({ threadId }).create({
+          threadId,
+          ...(size.cols === undefined ? {} : { cols: size.cols }),
+          ...(size.rows === undefined ? {} : { rows: size.rows }),
+        }),
+      );
+      return answer.terminalSession === undefined
+        ? undefined
+        : terminalOfMessage(answer.terminalSession);
+    },
+    snapshot: async (id, after) => {
+      const answer = await call(() =>
+        client({}).snapshot({ terminalId: id, after }),
+      );
+      if (answer.terminalSnapshot === undefined) return undefined;
+      const read = answer.terminalSnapshot;
+      if (read.terminal === undefined) {
+        throw new Error(terminalApiMessages.invalidTerminalSnapshot);
+      }
+      return {
+        terminal: terminalOfMessage(read.terminal),
+        output: read.output,
+        offset: read.offset,
+        truncated: read.truncated,
+      };
+    },
+    input: async (id, data) =>
+      (await call(() => client({}).input({ terminalId: id, data }))).sent,
+    resize: async (id, cols, rows) =>
+      (await call(() => client({}).resize({ terminalId: id, cols, rows })))
+        .resized,
+    stop: async (id) =>
+      (await call(() => client({}).stop({ terminalId: id }))).stopped,
+    rename: async (id, name) =>
+      (
+        await call(() =>
+          client({}).rename({
+            terminalId: id,
+            ...(name === null ? {} : { name }),
+          }),
+        )
+      ).renamed,
+  };
+};
+
 export const createTerminalApi = (
   terminals: () => TerminalHost,
 ): TerminalApi => {
   const writes = createInputQueue();
+  // Bound lazily, so a guarded payload calls no host.
+  let bound: TerminalHost | undefined;
+  const host = (): TerminalHost => (bound ??= terminals());
 
   return {
     list: async (projectId) => {
       const id = identifier(projectId);
-      const items = await terminalHost(() => terminals().list(id));
+      const items = await terminalHost(() => host().list(id));
       return items.map(terminalFrom);
     },
     create: async (threadId) => {
       const id = identifier(threadId);
-      const terminal = await terminalHost(() => terminals().create(id, {}));
+      const terminal = await terminalHost(() => host().create(id, {}));
       // `undefined` is the route's 409 `terminal_unavailable`.
       if (terminal === undefined) {
         throw new Error(terminalApiMessages.terminalFailed);
@@ -164,7 +278,7 @@ export const createTerminalApi = (
     },
     snapshot: async (terminalId) => {
       const id = identifier(terminalId);
-      const result = await terminalHost(() => terminals().snapshot(id, 0));
+      const result = await terminalHost(() => host().snapshot(id, 0));
       // `undefined` is the route's 404 `terminal_missing`.
       if (result === undefined) {
         throw new Error(terminalApiMessages.terminalFailed);
@@ -189,7 +303,7 @@ export const createTerminalApi = (
       const text = terminalInput(data);
       await writes.enqueue(id, async () => {
         // `false` is the route's 404 `terminal_missing`.
-        if (!(await terminalHost(() => terminals().input(id, text))))
+        if (!(await terminalHost(() => host().input(id, text))))
           throw new Error(terminalApiMessages.terminalFailed);
       });
     },
@@ -197,19 +311,19 @@ export const createTerminalApi = (
       const id = identifier(terminalId);
       const width = terminalDimension(cols);
       const height = terminalDimension(rows);
-      if (!(await terminalHost(() => terminals().resize(id, width, height)))) {
+      if (!(await terminalHost(() => host().resize(id, width, height)))) {
         throw new Error(terminalApiMessages.terminalFailed);
       }
     },
     stop: async (terminalId) => {
       const id = identifier(terminalId);
       // The route answers 204 whether or not the terminal still existed.
-      await terminalHost(() => terminals().stop(id));
+      await terminalHost(() => host().stop(id));
     },
     rename: async (terminalId, name) => {
       const id = identifier(terminalId);
       // `false` is `terminal_missing`: the row goes with its removal notice.
-      return await terminalHost(() => terminals().rename(id, name));
+      return await terminalHost(() => host().rename(id, name));
     },
   };
 };

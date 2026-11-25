@@ -1,13 +1,21 @@
 // What the prototype's Project shows inside a Thread (Figma `99:8035`): the
 // conversation of "Plan the checkout flow", the sandbox's file tree and its
-// Git state, answered over the fake host for what the real chat, files and
+// Git state, answered over Connect for what the real chat, files and
 // git bundles call (`runtime.threads/v1.watchThread`, `files/v1`,
 // `git.commands/v1`). Shapes follow the dev fake host (`scripts/fake-host/`)
-// and the bundles' contracts. `git.commands/v1` is the window's
-// `CommandsService` over Connect (slice S65c): `gitRoutes(host)` registers
-// it on the router main's `doric:connect` relay forwards to.
+// and the bundles' contracts. `files/v1` (slice S65d) and `git.commands/v1`
+// (S65c) are the window's `FilesService` and `CommandsService` over Connect:
+// `filesRoutes(host)` and `gitRoutes(host)` register them on the router
+// main's `doric:connect` relay forwards to.
 
 import type { ConnectRouter, ServiceImpl } from '@connectrpc/connect';
+import {
+  ContentResponseSchema,
+  DirectoriesResponseSchema,
+  DirectoryResponseSchema,
+  FilesService,
+  TreeResponseSchema,
+} from 'files/contracts/gen/doric/files/v1/files_pb.js';
 import {
   BranchesResponseSchema,
   ChangesResponseSchema,
@@ -17,7 +25,7 @@ import {
   StatusResponseSchema,
   SwitchBranchResponseSchema,
 } from 'git/contracts/gen/doric/git/commands/v1/commands_pb.js';
-import { encode } from 'runtime/contracts';
+import { encode, type OneofMapping } from 'runtime/contracts';
 
 import type { FakeHost } from './harness';
 import { EXECUTION } from './settings-host';
@@ -144,18 +152,6 @@ export function PaymentForm() {
 }
 `;
 
-/** A tuple's first item, or the value: the argument a wire message carries. */
-const first = (input: unknown): unknown =>
-  Array.isArray(input) ? input[0] : input;
-
-const record = (input: unknown): Record<string, unknown> => {
-  const value = first(input);
-
-  return typeof value === 'object' && value !== null
-    ? (value as Record<string, unknown>)
-    : {};
-};
-
 /** One row of a Thread's durable log, as `watchThread` replays it. */
 export interface ThreadEventRow {
   readonly projectId: string;
@@ -228,11 +224,45 @@ export const conversation = (input: {
 
 /**
  * Today's JSON as the proto message `schema` (the host's codec: `null`
- * leaves a field unset). The answer is untyped: this CommonJS project sees
- * `@bufbuild/protobuf`'s CJS types, `runtime/contracts` its ESM ones.
+ * leaves a field unset), its discriminated oneofs flattened by `oneofs`.
+ * The answer is untyped: this CommonJS project sees `@bufbuild/protobuf`'s
+ * CJS types, `runtime/contracts` its ESM ones.
  */
-export const gitProto = (schema: object, value: unknown): never =>
-  encode(schema as unknown as Parameters<typeof encode>[0], value) as never;
+export const proto = (
+  schema: object,
+  value: unknown,
+  oneofs: readonly OneofMapping[] = [],
+): never =>
+  encode(
+    schema as unknown as Parameters<typeof encode>[0],
+    value,
+    oneofs,
+  ) as never;
+
+/** The `FilesService` handlers of each host, as its fakes added them. */
+const fileHandlers = new WeakMap<
+  FakeHost,
+  Partial<ServiceImpl<typeof FilesService>>
+>();
+
+/** Adds `handlers` to the `FilesService` of `host`. */
+export const serveFiles = (
+  host: FakeHost,
+  handlers: Partial<ServiceImpl<typeof FilesService>>,
+): void => {
+  fileHandlers.set(host, { ...fileHandlers.get(host), ...handlers });
+};
+
+/**
+ * Registers the `FilesService` handlers `serveFiles` added for `host` on
+ * `router` (none: nothing is registered).
+ */
+export const filesRoutes =
+  (host: FakeHost) =>
+  (router: ConnectRouter): void => {
+    const handlers = fileHandlers.get(host);
+    if (handlers !== undefined) router.service(FilesService, handlers);
+  };
 
 /** The `CommandsService` handlers of each host, as its fakes added them. */
 const gitHandlers = new WeakMap<
@@ -265,10 +295,11 @@ export interface GitCalls {
 }
 
 /**
- * Serves the sandbox reads (`files/v1`) and the Git state (`git.commands/v1`,
- * over Connect through `gitRoutes(host)`) of the workspace: one repository at the root, `payment-form.tsx` modified,
- * `BRANCH` checked out. `switchBranch` checks out the branch it names, so
- * every later read answers it.
+ * Serves the sandbox reads (`files/v1`, over Connect through
+ * `filesRoutes(host)`) and the Git state (`git.commands/v1`, through
+ * `gitRoutes(host)`) of the workspace: one repository at the root,
+ * `payment-form.tsx` modified, `BRANCH` checked out. `switchBranch` checks
+ * out the branch it names, so every later read answers it.
  */
 export const serveSandbox = (host: FakeHost): GitCalls => {
   const calls: GitCalls = { switches: [] };
@@ -290,52 +321,56 @@ export const serveSandbox = (host: FakeHost): GitCalls => {
     worktreeStatus: 'M',
   };
 
-  host.serve('files/v1', 'tree', (input) =>
-    ready({
-      status: 'listed',
-      path: (record(input).path as string | undefined) ?? '',
-      entries: FILE_TREE,
-    }),
-  );
-  host.serve('files/v1', 'directory', (input) =>
-    ready({
-      status: 'listed',
-      path: (record(input).path as string | undefined) ?? '',
-      entries: FILE_TREE.map(({ children: _, ...entry }) => entry),
-    }),
-  );
-  // The Files panel reads its tree per directory (`files/v1@1.3.0`).
-  host.serve('files/v1', 'directories', (input) =>
-    ready({
-      status: 'listed',
-      directories: ((record(input).paths as string[] | undefined) ?? []).map(
-        (path) => {
-          const children =
-            path === '' ? FILE_TREE : directoryIn(FILE_TREE, path)?.children;
-          return children === undefined
-            ? { path, status: 'not_found' }
-            : {
-                path,
-                status: 'listed',
-                entries: children.map(({ children: _, ...entry }) => entry),
-              };
-        },
+  serveFiles(host, {
+    tree: ({ path }) =>
+      proto(
+        TreeResponseSchema,
+        ready({ status: 'listed', path: path ?? '', entries: FILE_TREE }),
       ),
-    }),
-  );
-  host.serve('files/v1', 'content', (input) =>
-    ready({
-      status: 'read',
-      path: record(input).path,
-      content: PAYMENT_FORM_SOURCE,
-      truncated: false,
-      binary: false,
-    }),
-  );
+    directory: ({ path }) =>
+      proto(
+        DirectoryResponseSchema,
+        ready({
+          status: 'listed',
+          path: path ?? '',
+          entries: FILE_TREE.map(({ children: _, ...entry }) => entry),
+        }),
+      ),
+    // The Files panel reads its tree per directory (`files/v1@1.3.0`).
+    directories: ({ paths }) =>
+      proto(
+        DirectoriesResponseSchema,
+        ready({
+          status: 'listed',
+          directories: paths.map((path) => {
+            const children =
+              path === '' ? FILE_TREE : directoryIn(FILE_TREE, path)?.children;
+            return children === undefined
+              ? { path, status: 'not_found' }
+              : {
+                  path,
+                  status: 'listed',
+                  entries: children.map(({ children: _, ...entry }) => entry),
+                };
+          }),
+        }),
+      ),
+    content: ({ path }) =>
+      proto(
+        ContentResponseSchema,
+        ready({
+          status: 'read',
+          path,
+          content: PAYMENT_FORM_SOURCE,
+          truncated: false,
+          binary: false,
+        }),
+      ),
+  });
 
   serveGit(host, {
     status: () =>
-      gitProto(
+      proto(
         StatusResponseSchema,
         ready({
           repo: true,
@@ -355,15 +390,15 @@ export const serveSandbox = (host: FakeHost): GitCalls => {
           submodules: 0,
         }),
       ),
-    branches: () => gitProto(BranchesResponseSchema, ready(branches())),
+    branches: () => proto(BranchesResponseSchema, ready(branches())),
     switchBranch: ({ threadId, branch, cwd }) => {
       calls.switches.push({ threadId, branch, cwd });
       head = branch;
 
-      return gitProto(SwitchBranchResponseSchema, ready(branches()));
+      return proto(SwitchBranchResponseSchema, ready(branches()));
     },
     changes: ({ path }) =>
-      gitProto(
+      proto(
         ChangesResponseSchema,
         ready({
           status: 'read',
@@ -374,7 +409,7 @@ export const serveSandbox = (host: FakeHost): GitCalls => {
         }),
       ),
     diff: ({ path }) =>
-      gitProto(
+      proto(
         DiffResponseSchema,
         ready({
           status: 'read',
@@ -383,7 +418,7 @@ export const serveSandbox = (host: FakeHost): GitCalls => {
         }),
       ),
     fileDiff: ({ repository }) =>
-      gitProto(
+      proto(
         FileDiffResponseSchema,
         ready({
           status: 'read',

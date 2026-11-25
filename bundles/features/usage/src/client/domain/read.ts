@@ -3,8 +3,23 @@
 // a lost bridge is the backend being unavailable, and a Thread the host does
 // not know is a failed read, as the REST 404 was.
 
-import { isContractError } from 'bundle/contracts';
+import { ConnectError } from '@connectrpc/connect';
+import {
+  type CallArg,
+  type ClientServices,
+  ContractError,
+  fromConnectError,
+  isContractError,
+  type Services,
+} from 'bundle/contracts';
+import { decode, threadUsageSchema } from 'runtime/contracts';
+import { ThreadUsageSchema as ThreadUsageMessageSchema } from 'runtime/contracts/gen/doric/runtime/v2/runtime_pb.js';
+import type { z } from 'zod';
 
+import {
+  type CompactResponse,
+  UsageService,
+} from '../../contracts/gen/doric/usage/v1/usage_pb.js';
 import type {
   CompactResult,
   ThreadUsage,
@@ -36,6 +51,22 @@ const identifier = (value: unknown): string => {
     throw new Error(usageMessages.invalidIdentifier);
   }
   return value;
+};
+
+/** A `ConnectError`'s Doric error; any other error unchanged. */
+const doricError = (error: unknown): unknown =>
+  error instanceof ConnectError ? fromConnectError(error) : error;
+
+/** `value` parsed by `schema`, or `invalid_output`. */
+const checked = <O extends z.ZodType>(
+  schema: O,
+  value: unknown,
+): z.output<O> => {
+  const parsed = schema.safeParse(value);
+  if (!parsed.success) {
+    throw new ContractError('invalid_output', parsed.error.message);
+  }
+  return parsed.data;
 };
 
 const failure = (error: unknown): Error => {
@@ -132,4 +163,132 @@ export const compactResultMessage = (result: CompactResult): string => {
     default:
       return 'This thread cannot be compacted.';
   }
+};
+
+/** The caller's epoch deadline as a relative `timeoutMs`, at least one. */
+const timeoutOf = (call?: CallArg): { readonly timeoutMs?: number } => {
+  const at =
+    call !== undefined && 'deadline' in call ? call.deadline : undefined;
+  if (typeof at !== 'number' || !Number.isFinite(at)) return {};
+  return { timeoutMs: Math.max(1, Math.ceil(at - Date.now())) };
+};
+
+const invalidUsage = (): never => {
+  throw new ContractError(
+    'invalid_output',
+    'usage/v1 answered outside its contract.',
+  );
+};
+
+const compactRefusals = [
+  'disabled',
+  'missing_history',
+  'nothing_to_compact',
+] as const;
+
+const compactFailures = ['summarizer_failed', 'unsafe_boundary'] as const;
+
+const compactStatuses = [
+  'missing',
+  'inactive',
+  'busy',
+  'not_supported',
+] as const;
+
+/** `CompactResponse` as today's `CompactResult`. */
+const compactOf = (message: CompactResponse): CompactResult => {
+  if (message.status === 'compacted') {
+    if (
+      message.condensedMessages === undefined ||
+      message.retainedMessages === undefined ||
+      message.tokensFreed === undefined
+    ) {
+      return invalidUsage();
+    }
+    return {
+      status: 'compacted',
+      condensedMessages: message.condensedMessages,
+      retainedMessages: message.retainedMessages,
+      tokensFreed: message.tokensFreed,
+    };
+  }
+  if (message.status === 'refused') {
+    if (
+      message.reason === undefined ||
+      !(compactRefusals as readonly string[]).includes(message.reason)
+    ) {
+      return invalidUsage();
+    }
+    return {
+      status: 'refused',
+      reason: message.reason as (typeof compactRefusals)[number],
+    };
+  }
+  if (message.status === 'failed') {
+    if (
+      message.code === undefined ||
+      !(compactFailures as readonly string[]).includes(message.code)
+    ) {
+      return invalidUsage();
+    }
+    return {
+      status: 'failed',
+      code: message.code as (typeof compactFailures)[number],
+    };
+  }
+  if ((compactStatuses as readonly string[]).includes(message.status)) {
+    return { status: message.status as (typeof compactStatuses)[number] };
+  }
+  return invalidUsage();
+};
+
+/**
+ * `usage/v1` over `UsageService`'s generated client, in today's shape: each
+ * call's epoch deadline becomes its `timeoutMs`, an absent `thread_usage` is
+ * `undefined`, and a `ConnectError` reads as its Doric error.
+ */
+export const usageHostOf = (services: Services): Usage => {
+  const client = (services as ClientServices).use(UsageService);
+
+  return {
+    thread: async (threadId, call) => {
+      try {
+        const answer = await client.thread({ threadId }, timeoutOf(call));
+        return answer.threadUsage === undefined
+          ? undefined
+          : checked(
+              threadUsageSchema,
+              decode(ThreadUsageMessageSchema, answer.threadUsage),
+            );
+      } catch (error) {
+        throw failure(doricError(error));
+      }
+    },
+    compact: async (threadId, call) => {
+      try {
+        return compactOf(await client.compact({ threadId }, timeoutOf(call)));
+      } catch (error) {
+        throw failure(doricError(error));
+      }
+    },
+    compactionTarget: async (call) => {
+      try {
+        const answer = await client.compactionTarget({}, timeoutOf(call));
+        return { pressurePercent: answer.pressurePercent };
+      } catch (error) {
+        throw failure(doricError(error));
+      }
+    },
+    setCompactionTarget: async (input, call) => {
+      try {
+        const answer = await client.setCompactionTarget(
+          { pressurePercent: input.pressurePercent },
+          timeoutOf(call),
+        );
+        return { pressurePercent: answer.pressurePercent };
+      } catch (error) {
+        throw failure(doricError(error));
+      }
+    },
+  };
 };

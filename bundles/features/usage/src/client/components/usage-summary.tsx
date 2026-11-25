@@ -1,11 +1,13 @@
-import type { Services } from 'bundle/contracts';
+import type { ClientServices, Services } from 'bundle/contracts';
 import { useEffect, useState, useSyncExternalStore } from 'react';
 
-import { type Usage, UsageV1 } from '../../contracts/index.js';
+import { UsageService } from '../../contracts/gen/doric/usage/v1/usage_pb.js';
+import type { Usage } from '../../contracts/index.js';
 import {
   type SelectionSource,
   WorkspaceSelectionV1,
 } from '../api/workspace.js';
+import { usageHostOf } from '../domain/read.js';
 import { ThreadUsage } from './thread-usage.js';
 
 /** A contract's API while a provider serves it, else undefined. */
@@ -27,8 +29,8 @@ const useService = <T,>(
 };
 
 const bindUsage = (services: Services, set: (api: Usage | undefined) => void) =>
-  services.whenAvailable(UsageV1, (api) => {
-    set(api);
+  (services as ClientServices).whenAvailable(UsageService, () => {
+    set(usageHostOf(services));
     return () => set(undefined);
   });
 

@@ -29,13 +29,13 @@
 // again (as a reconnect does), or gets the error that ended it; the stream
 // closes when the last watcher stops.
 //
-// Both: a dropped connection
-// (`disconnected`, `unavailable`) or a lost host generation (`generation_lost`)
-// reports nothing and subscribes again when the connection reports
-// `connected`, or after one second when it never went down, as Socket.IO
-// reconnected. Any other end of the stream reports
-// 'The terminal connection failed.' (the socket's `connect_error`) and stays
-// ended.
+// Both: a dropped connection (`disconnected`, `unavailable`) reports nothing
+// and subscribes again when the connection reports `connected`, or after one
+// second when it never went down, as Socket.IO reconnected. The SDK reopens a
+// resumable stream the host lost with its generation (`generation_lost`) on
+// its own, so that one is not reopened here. Any other end of the stream
+// reports 'The terminal connection failed.' (the socket's `connect_error`) and
+// stays ended.
 
 import {
   type ContractError,
@@ -117,7 +117,7 @@ export interface TerminalWatches extends TerminalWatchApi {
 
 const silent = (error: ContractError | undefined): boolean =>
   isContractError(error) &&
-  ['disconnected', 'unavailable', 'generation_lost'].includes(error.code);
+  ['disconnected', 'unavailable'].includes(error.code);
 
 const defaultSchedule = (run: () => void, ms: number): (() => void) => {
   const timer = setTimeout(run, ms);

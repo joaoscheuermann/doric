@@ -11,11 +11,13 @@
 import {
   type Cleanup,
   type ClientContext,
+  type ClientServices,
   type Disposable,
   UiV1,
 } from 'bundle/contracts';
 
-import { ScreenSessionsV2, ScreenViewsV1 } from '../contracts/index.js';
+import { SessionsService } from '../contracts/gen/doric/screen/sessions/v2/sessions_pb.js';
+import { ScreenViewsV1 } from '../contracts/index.js';
 import { createScreenApi } from './api.js';
 import { createScreenDialer } from './dial.js';
 import {
@@ -67,7 +69,7 @@ export function activate({ services }: ClientContext): Cleanup {
     (screens) => {
       const dialer = createScreenDialer({
         attach: createScreenApi((projectId) =>
-          services.use(ScreenSessionsV2, { projectId }),
+          (services as ClientServices).use(SessionsService, { projectId }),
         ).attach,
         deliver: (report) => screens.deliver(report),
       });

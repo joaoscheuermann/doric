@@ -6,6 +6,7 @@ import {
   type StreamListener,
   streamListener,
 } from 'bundle/contracts';
+import type { OneofMapping } from 'runtime/contracts';
 import { z } from 'zod';
 
 /*
@@ -184,6 +185,23 @@ export const terminalSnapshotSchema: z.ZodType<
   offset: z.number(),
   truncated: z.boolean(),
 });
+
+/**
+ * `WatchProjectResponse`'s `item` oneof as today's items: the snapshot's
+ * fields sit beside `kind`, an update carries the session under `terminal`,
+ * a removal's fields sit beside `kind`, and output sits under `output`.
+ */
+export const terminalOneofs: readonly OneofMapping[] = [
+  {
+    message: 'doric.terminal.v1.WatchProjectResponse',
+    cases: {
+      snapshot: { value: 'snapshot', payload: 'spread' },
+      updated: { value: 'updated', payload: { key: 'terminal' } },
+      removed: { value: 'removed', payload: 'spread' },
+      output: { value: 'output', payload: { key: 'output' } },
+    },
+  },
+];
 
 export const terminalWatchItemSchema: z.ZodType<
   TerminalWatchItem,

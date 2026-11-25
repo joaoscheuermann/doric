@@ -9,10 +9,14 @@ import {
   compactThread,
   readCompactionTarget,
   readThreadUsage,
+  usageHostOf,
   usageQueryKey,
   writeCompactionTarget,
 } from '../src/client/domain/read.js';
+import { UsageService } from '../src/contracts/gen/doric/usage/v1/usage_pb.js';
 import type { Usage } from '../src/contracts/index.js';
+import { settle } from './support/connect.js';
+import { usageWindow } from './support/usage-connect.js';
 
 const empty: ThreadUsage = {
   total: {
@@ -205,5 +209,130 @@ describe('the compaction calls on the footer', () => {
       compactResultMessage({ status: 'busy' }),
       'Wait for the active run (and the queued input) to finish.',
     );
+  });
+});
+
+describe('the footer read over usage/v1', () => {
+  const total = {
+    calls: 2,
+    unpricedCalls: 0,
+    cost: 0.5,
+    inputTokens: 10,
+    outputTokens: 20,
+    cachedInputTokens: 0,
+    reasoningTokens: 0,
+  };
+
+  test('the reads reach UsageService and turn the deadline into a timeoutMs', async () => {
+    const timeouts: number[] = [];
+    const window = usageWindow({
+      thread: (_request, context) => {
+        timeouts.push(context.timeoutMs() ?? -1);
+
+        return { threadUsage: { total, threads: [] } };
+      },
+      compact: (_request, context) => {
+        timeouts.push(context.timeoutMs() ?? -1);
+
+        return { status: 'refused', reason: 'nothing_to_compact' };
+      },
+    });
+    const usage = usageHostOf(window.services);
+
+    await readThreadUsage(usage, 'thread-1');
+    await compactThread(usage, 'thread-1');
+
+    const [read, compact] = timeouts;
+    assert.ok(read !== undefined && read > 0 && read <= 10_000, `${read}`);
+    assert.ok(
+      compact !== undefined && compact > 0 && compact <= 300_000,
+      `${compact}`,
+    );
+    assert.deepEqual(
+      window.calls.map(({ method }) => method),
+      [`${UsageService.typeName}/Thread`, `${UsageService.typeName}/Compact`],
+    );
+    assert.deepEqual(
+      window.calls.map(({ scope }) => scope),
+      [undefined, undefined],
+    );
+  });
+
+  test('an absent thread_usage is the thread-not-found sentence', async () => {
+    const window = usageWindow({ thread: () => ({}) });
+
+    await assert.rejects(
+      readThreadUsage(usageHostOf(window.services), 'gone'),
+      {
+        message: 'The thread was not found.',
+      },
+    );
+  });
+
+  test('the unavailable and invalid-output sentences come from the Doric error', async () => {
+    for (const code of [
+      'unavailable',
+      'disconnected',
+      'generation_lost',
+    ] as const) {
+      const window = usageWindow({
+        thread: () => {
+          throw new ContractError(code, 'gone');
+        },
+      });
+
+      // `usageHostOf` reads the Doric error; it is the bridge's sentence, and
+      // `readThreadUsage` maps an already-read failure again.
+      await assert.rejects(usageHostOf(window.services).thread('thread-1'), {
+        message: 'Doric backend is unavailable.',
+      });
+    }
+    const invalid = usageWindow({
+      thread: () => {
+        throw new ContractError('invalid_output', 'bad');
+      },
+    });
+    await assert.rejects(usageHostOf(invalid.services).thread('thread-1'), {
+      message: 'Doric returned an invalid response.',
+    });
+  });
+
+  test('the compaction target round-trips through SetCompactionTarget and CompactionTarget', async () => {
+    const written: number[] = [];
+    const window = usageWindow({
+      compactionTarget: () => ({ pressurePercent: 70 }),
+      setCompactionTarget: (request) => {
+        written.push(request.pressurePercent);
+
+        return { pressurePercent: request.pressurePercent };
+      },
+    });
+    const usage = usageHostOf(window.services);
+
+    assert.deepEqual(await readCompactionTarget(usage), {
+      pressurePercent: 70,
+    });
+    assert.deepEqual(await writeCompactionTarget(usage, 65), {
+      pressurePercent: 65,
+    });
+    assert.deepEqual(written, [65]);
+  });
+
+  test('whenAvailable(UsageService) hands the footer a Usage it can read', async () => {
+    const window = usageWindow({
+      thread: () => ({ threadUsage: { total, threads: [] } }),
+    });
+    const found: Usage[] = [];
+
+    window.services.whenAvailable(UsageService, () => {
+      found.push(usageHostOf(window.services));
+    });
+    await settle();
+
+    assert.equal(found.length, 1);
+    assert.deepEqual(await readThreadUsage(found[0] as Usage, 'thread-1'), {
+      total,
+      threads: [],
+    });
   });
 });

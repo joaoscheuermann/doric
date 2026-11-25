@@ -42,6 +42,18 @@
     },
     {
       "path": "../../../bundles/features/git/tsconfig.json"
+    },
+    {
+      "path": "../../../bundles/features/files/tsconfig.json"
+    },
+    {
+      "path": "../../../bundles/features/terminal/tsconfig.json"
+    },
+    {
+      "path": "../../../bundles/features/usage/tsconfig.json"
+    },
+    {
+      "path": "../../../bundles/features/resources/tsconfig.json"
     }
   ]
 }

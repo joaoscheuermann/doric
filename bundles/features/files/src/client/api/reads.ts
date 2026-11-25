@@ -1,24 +1,34 @@
-// The window's calls to `files/v1` over the client → host bridge, in the
-// order the old path made them (moved from the layout's provisional adapter,
-// stage 9 §5.8):
+// The window's calls to `files/v1` over Connect, in the order the old path made
+// them (moved from the layout's provisional adapter, stage 9 §5.8):
 //
 // 1. the main process's payload guards, with their messages;
 // 2. the REST route's own input check, whose 422 became a result;
-// 3. the host outcome, turned into what the REST client answered for the
-//    route's status (a lease state stays data, `pending` with `Retry-After: 1`);
-// 4. a failed call is an `Error` with the message the REST path showed.
+// 3. the host outcome, read back from the `FilesService` messages as what the
+//    REST client answered for the route's status (a lease state stays data,
+//    `pending` with `Retry-After: 1`);
+// 4. a failed call is an `Error` with the message the REST path showed; a
+//    `ConnectError` reads as its Doric error (`fromConnectError`).
+//
+// Slice S65d: the host is `FilesService`'s generated client over Connect.
 
-import { isContractError, type Services } from 'bundle/contracts';
+import { type Client, ConnectError } from '@connectrpc/connect';
+import {
+  type ClientServices,
+  fromConnectError,
+  isContractError,
+  type Services,
+} from 'bundle/contracts';
 
 import {
-  type ContentRead,
-  DIRECTORIES_LIMIT,
-  type DirectoriesRead,
-  type Files,
-  FilesV1,
-  type LeaseOutcome,
-  type TreeRead,
-} from '../../contracts/index.js';
+  type ContentRead as ContentReadMessage,
+  type DirectoriesRead as DirectoriesReadMessage,
+  type DirectoryListingRead as DirectoryListingReadMessage,
+  FilesService,
+  type SandboxEntry as SandboxEntryMessage,
+  type SandboxTreeNode as SandboxTreeNodeMessage,
+  type TreeRead as TreeReadMessage,
+} from '../../contracts/gen/doric/files/v1/files_pb.js';
+import { DIRECTORIES_LIMIT } from '../../contracts/index.js';
 import type {
   DirectoryListing,
   ProjectDirectoriesResult,
@@ -88,45 +98,14 @@ const invalidResponse = (): never => {
   throw new Error(readMessages.invalidResponse);
 };
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null;
-
-const fileEntryFrom = (value: unknown): ProjectFileEntry => {
-  if (
-    !isRecord(value) ||
-    typeof value.name !== 'string' ||
-    typeof value.path !== 'string' ||
-    (value.type !== 'directory' && value.type !== 'file') ||
-    (value.size !== undefined && typeof value.size !== 'number')
-  ) {
-    return invalidResponse();
+const call = async <Value>(operation: () => Promise<Value>): Promise<Value> => {
+  try {
+    return await operation();
+  } catch (error) {
+    throw hostFailure(
+      error instanceof ConnectError ? fromConnectError(error) : error,
+    );
   }
-  return value as ProjectFileEntry;
-};
-
-const treeNodeFrom = (value: unknown): ProjectTreeNode => {
-  const entry = fileEntryFrom(value);
-  if (!isRecord(value) || value.children === undefined) return entry;
-  if (!Array.isArray(value.children)) return invalidResponse();
-  return { ...entry, children: value.children.map(treeNodeFrom) };
-};
-
-const fileContentFrom = (value: unknown): ProjectFileContent => {
-  if (
-    !isRecord(value) ||
-    typeof value.path !== 'string' ||
-    typeof value.content !== 'string' ||
-    typeof value.truncated !== 'boolean' ||
-    typeof value.binary !== 'boolean'
-  ) {
-    return invalidResponse();
-  }
-  return {
-    path: value.path,
-    content: value.content,
-    truncated: value.truncated,
-    binary: value.binary,
-  };
 };
 
 type NotReady =
@@ -136,11 +115,17 @@ type NotReady =
   | { readonly status: 'pending'; readonly retryAfterSeconds: number }
   | { readonly status: 'invalid_path' | 'not_found' };
 
+const leaseStatuses = ['pending', 'unavailable', 'expired', 'missing'] as const;
+
 /** A lease state as the REST client read it: `pending` carried `Retry-After: 1`. */
-const leaseState = (
-  status: 'pending' | 'unavailable' | 'expired' | 'missing',
-): NotReady =>
-  status === 'pending' ? { status, retryAfterSeconds: 1 } : { status };
+const leaseState = (status: string): NotReady => {
+  if (!(leaseStatuses as readonly string[]).includes(status)) {
+    return invalidResponse();
+  }
+  return status === 'pending'
+    ? { status, retryAfterSeconds: 1 }
+    : { status: status as Exclude<(typeof leaseStatuses)[number], 'pending'> };
+};
 
 /**
  * A refusal of the read itself: `not_found` was the 404
@@ -149,38 +134,91 @@ const leaseState = (
 const refusal = (status: string): NotReady =>
   status === 'not_found' ? { status: 'not_found' } : { status: 'invalid_path' };
 
-const call = async <Value>(operation: () => Promise<Value>): Promise<Value> => {
-  try {
-    return await operation();
-  } catch (error) {
-    throw hostFailure(error);
-  }
-};
-
 /** The REST query: the workspace root sent no path. */
 const pathOf = (path: string): { readonly path?: string } =>
   path === '' ? {} : { path };
 
+/** A message's entry fields: a listing entry, or a tree node ('s own). */
+type EntryFields = Pick<SandboxEntryMessage, 'name' | 'path' | 'type' | 'size'>;
+
+/** One workspace entry, as the window reads it. */
+const fileEntryFrom = (entry: EntryFields): ProjectFileEntry => {
+  if (entry.type !== 'directory' && entry.type !== 'file') {
+    return invalidResponse();
+  }
+  return {
+    name: entry.name,
+    path: entry.path,
+    type: entry.type,
+    ...(entry.size === undefined ? {} : { size: entry.size }),
+  };
+};
+
+/** One tree node: the entry and, when it has any, the children nested in it. */
+const treeNodeFrom = (node: SandboxTreeNodeMessage): ProjectTreeNode => {
+  const entry = fileEntryFrom(node);
+  return node.children.length === 0
+    ? entry
+    : { ...entry, children: node.children.map(treeNodeFrom) };
+};
+
+const fileContentFrom = (read: ContentReadMessage): ProjectFileContent => {
+  if (
+    read.path === undefined ||
+    read.content === undefined ||
+    read.truncated === undefined ||
+    read.binary === undefined
+  ) {
+    return invalidResponse();
+  }
+  return {
+    path: read.path,
+    content: read.content,
+    truncated: read.truncated,
+    binary: read.binary,
+  };
+};
+
+/** The REST answer of a tree read: `ready`'s value is the whole tree read. */
+const treeResult = (read: TreeReadMessage): ProjectTreeResult => {
+  if (read.status !== 'listed') return refusal(read.status);
+  if (read.path === undefined) return invalidResponse();
+  return {
+    status: 'ready',
+    path: read.path,
+    entries: read.entries.map(treeNodeFrom),
+  };
+};
+
 /** One directory of a `directories` answer, as the window reads it. */
 const directoryListingFrom = (
-  value: unknown,
+  read: DirectoryListingReadMessage,
 ): { readonly path: string; readonly listing: DirectoryListing } => {
-  if (!isRecord(value) || typeof value.path !== 'string')
-    return invalidResponse();
-  if (value.status === 'listed') {
-    if (!Array.isArray(value.entries)) return invalidResponse();
+  if (read.status === 'listed') {
     return {
-      path: value.path,
-      listing: { status: 'listed', entries: value.entries.map(fileEntryFrom) },
+      path: read.path,
+      listing: { status: 'listed', entries: read.entries.map(fileEntryFrom) },
     };
   }
   if (
-    value.status === 'not_found' ||
-    value.status === 'not_directory' ||
-    value.status === 'invalid_path'
-  )
-    return { path: value.path, listing: { status: value.status } };
+    read.status === 'not_found' ||
+    read.status === 'not_directory' ||
+    read.status === 'invalid_path'
+  ) {
+    return { path: read.path, listing: { status: read.status } };
+  }
   return invalidResponse();
+};
+
+const directoriesResult = (
+  read: DirectoriesReadMessage,
+): ProjectDirectoriesResult => {
+  if (read.status !== 'listed') return refusal(read.status);
+  const directories: Record<string, DirectoryListing> = {};
+  for (const { path, listing } of read.directories.map(directoryListingFrom)) {
+    directories[path] = listing;
+  }
+  return { status: 'ready', directories };
 };
 
 export interface FilesReads {
@@ -199,27 +237,23 @@ export interface FilesReads {
   file(projectId: string, path: string): Promise<ProjectFileResult>;
 }
 
-/** The reads over `files/v1`, each scoped to its Project. */
+/** The `FilesService` calls the reads make. */
+export type FilesCalls = Pick<
+  Client<typeof FilesService>,
+  'tree' | 'directories' | 'content'
+>;
+
+/** The reads over `FilesService`, each scoped to its Project. */
 export const createFilesReads = (
-  files: (projectId: string) => Files,
+  files: (projectId: string) => FilesCalls,
 ): FilesReads => ({
   tree: async (projectId, path) => {
     const id = identifier(projectId);
     const at = relativePath(path);
-    const outcome: LeaseOutcome<TreeRead> = await call(() =>
-      files(id).tree(pathOf(at)),
-    );
+    const outcome = await call(() => files(id).tree(pathOf(at)));
     if (outcome.status !== 'ready') return leaseState(outcome.status);
-    const read = outcome.value as unknown;
-    if (!isRecord(read)) return invalidResponse();
-    if (read.status !== 'listed') return refusal(String(read.status));
-    if (typeof read.path !== 'string' || !Array.isArray(read.entries))
-      return invalidResponse();
-    return {
-      status: 'ready',
-      path: read.path,
-      entries: read.entries.map(treeNodeFrom),
-    };
+    if (outcome.value === undefined) return invalidResponse();
+    return treeResult(outcome.value);
   },
   directories: async (projectId, paths, root) => {
     const id = identifier(projectId);
@@ -227,38 +261,32 @@ export const createFilesReads = (
     const at = relativePath(root);
     if (asked.length === 0 || asked.length > DIRECTORIES_LIMIT)
       throw new Error(readMessages.invalidPath);
-    const outcome: LeaseOutcome<DirectoriesRead> = await call(() =>
+    const outcome = await call(() =>
       files(id).directories({
         paths: asked,
         ...(at === '' ? {} : { root: at }),
       }),
     );
     if (outcome.status !== 'ready') return leaseState(outcome.status);
-    const read = outcome.value as unknown;
-    if (!isRecord(read)) return invalidResponse();
-    if (read.status !== 'listed') return refusal(String(read.status));
-    if (!Array.isArray(read.directories)) return invalidResponse();
-    const directories: Record<string, DirectoryListing> = {};
-    for (const { path, listing } of read.directories.map(directoryListingFrom))
-      directories[path] = listing;
-    return { status: 'ready', directories };
+    if (outcome.value === undefined) return invalidResponse();
+    return directoriesResult(outcome.value);
   },
   file: async (projectId, path) => {
     const id = identifier(projectId);
     const at = relativePath(path);
     // The content route requires a path; the root sent none (422).
     if (at === '') return { status: 'invalid_path' };
-    const outcome: LeaseOutcome<ContentRead> = await call(() =>
-      files(id).content({ path: at }),
-    );
+    const outcome = await call(() => files(id).content({ path: at }));
     if (outcome.status !== 'ready') return leaseState(outcome.status);
-    const read = outcome.value as unknown;
-    if (!isRecord(read)) return invalidResponse();
-    if (read.status !== 'read') return refusal(String(read.status));
+    if (outcome.value === undefined) return invalidResponse();
+    const read = outcome.value;
+    if (read.status !== 'read') return refusal(read.status);
     return { status: 'ready', file: fileContentFrom(read) };
   },
 });
 
-/** The reads bound to a part's services. */
+/** The reads bound to a part's services: `FilesService` over Connect, scoped to the Project. */
 export const filesReadsOf = (services: Services): FilesReads =>
-  createFilesReads((projectId) => services.use(FilesV1, { projectId }));
+  createFilesReads((projectId) =>
+    (services as ClientServices).use(FilesService, { projectId }),
+  );

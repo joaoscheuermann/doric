@@ -15,6 +15,7 @@
 import {
   type Cleanup,
   type ClientContext,
+  type ClientServices,
   type Disposable,
   DoricConnectionV1,
   NavigationV1,
@@ -27,8 +28,8 @@ import {
 import { toast } from 'desktop/ui/sonner';
 import type { SHELL_HEADER_ACTIONS } from 'layout/contracts';
 
-import { TerminalServiceV1 } from '../contracts/index.js';
-import { createTerminalApi } from './api.js';
+import { TerminalService } from '../contracts/gen/doric/terminal/v1/terminal_pb.js';
+import { createTerminalApi, terminalHostOf } from './api.js';
 import {
   defineTerminalCallElement,
   TERMINAL_CALL_TAG,
@@ -52,6 +53,7 @@ import {
   WorkspaceSidebarV1,
 } from './peers.js';
 import { createTerminalStore, type TerminalStore } from './store.js';
+import { terminalStreamsOf } from './stream-source.js';
 import {
   TERMINAL_TAB_ICON_TAG,
   TERMINAL_VIEW_TAG,
@@ -156,12 +158,14 @@ const opener =
   };
 
 export function activate({ services }: ClientContext): Cleanup {
-  const terminals = () => services.use(TerminalServiceV1);
-  const api = createTerminalApi(terminals);
+  const window = services as ClientServices;
+  const api = createTerminalApi(() =>
+    terminalHostOf((scope) => window.use(TerminalService, scope)),
+  );
   const watches = createTerminalWatches({
-    terminals: {
-      watchProject: (id, listener) => terminals().watchProject(id, listener),
-    },
+    terminals: terminalStreamsOf((projectId) =>
+      window.use(TerminalService, { projectId }),
+    ),
     snapshot: (id) => api.snapshot(id),
     connection: services.use(DoricConnectionV1),
   });

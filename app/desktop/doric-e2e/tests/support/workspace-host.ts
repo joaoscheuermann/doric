@@ -1,10 +1,28 @@
 // The host side of a workspace window: the Projects and Threads of the
 // prototype (Figma `99:8035`, `99:8508`, `85:7520`), answered over the fake
 // host for what the real core, layout, resources, chat, files and git bundles
-// call (`runtime/v2`, `runtime.threads/v1`, `resources/v1`, and through
-// `workspace-content` `files/v1` and `git.commands/v1`).
+// call (`runtime/v2`, `runtime.threads/v1`, and through `workspace-content`
+// `files/v1` and `git.commands/v1`); `usage/v1` and `resources/v1` are the
+// window's `UsageService` and `ResourcesService` over Connect (slice S65d),
+// as `files/v1` and `git.commands/v1` are through `filesRoutes(host)` and
+// `gitRoutes(host)`.
 
+import type { ConnectRouter, ServiceImpl } from '@connectrpc/connect';
+import {
+  CreateDirectoryResponseSchema,
+  CreateFileResponseSchema,
+} from 'files/contracts/gen/doric/files/v1/files_pb.js';
 import { DiscardResponseSchema } from 'git/contracts/gen/doric/git/commands/v1/commands_pb.js';
+import {
+  HostResponseSchema,
+  ProjectResponseSchema,
+  ResourcesService,
+} from 'resources/contracts/gen/doric/resources/v1/resources_pb.js';
+import {
+  CompactionTargetResponseSchema,
+  ThreadResponseSchema,
+  UsageService,
+} from 'usage/contracts/gen/doric/usage/v1/usage_pb.js';
 
 import type { FakeHost } from './harness';
 import { EXECUTION, serveSettingsConnect } from './settings-host';
@@ -13,9 +31,11 @@ import {
   CHANGED_FILE,
   CWD,
   conversation,
+  filesRoutes,
   type GitCalls,
-  gitProto,
   gitRoutes,
+  proto,
+  serveFiles,
   serveGit,
   serveSandbox,
   type ThreadEventRow,
@@ -349,9 +369,64 @@ const first = (input: unknown): Record<string, unknown> => {
 
 const GIB = 1024 ** 3;
 
+/** The `UsageService` handlers of each host, as `serveUsage` added them. */
+const usageHandlers = new WeakMap<
+  FakeHost,
+  Partial<ServiceImpl<typeof UsageService>>
+>();
+
+/** Adds `handlers` to the `UsageService` of `host`. */
+export const serveUsage = (
+  host: FakeHost,
+  handlers: Partial<ServiceImpl<typeof UsageService>>,
+): void => {
+  usageHandlers.set(host, { ...usageHandlers.get(host), ...handlers });
+};
+
 /**
- * Serves the workspace's Projects, Threads and their conversations, resource
- * readings, files and Git state, and the settings bundle's host contracts
+ * Registers the `UsageService` handlers `serveUsage` added for `host` on
+ * `router` (none: nothing is registered).
+ */
+export const usageRoutes =
+  (host: FakeHost) =>
+  (router: ConnectRouter): void => {
+    const handlers = usageHandlers.get(host);
+    if (handlers !== undefined) router.service(UsageService, handlers);
+  };
+
+/** The `ResourcesService` handlers of each host, as its fakes added them. */
+const resourcesHandlers = new WeakMap<
+  FakeHost,
+  Partial<ServiceImpl<typeof ResourcesService>>
+>();
+
+/** Adds `handlers` to the `ResourcesService` of `host`. */
+export const serveResources = (
+  host: FakeHost,
+  handlers: Partial<ServiceImpl<typeof ResourcesService>>,
+): void => {
+  resourcesHandlers.set(host, {
+    ...resourcesHandlers.get(host),
+    ...handlers,
+  });
+};
+
+/**
+ * Registers the `ResourcesService` handlers `serveResources` added for `host`
+ * on `router` (none: nothing is registered).
+ */
+export const resourcesRoutes =
+  (host: FakeHost) =>
+  (router: ConnectRouter): void => {
+    const handlers = resourcesHandlers.get(host);
+    if (handlers !== undefined) router.service(ResourcesService, handlers);
+  };
+
+/**
+ * Serves the workspace's Projects, Threads and their conversations through
+ * the runtime's and the chat's Connect services, the resource readings
+ * (`resources/v1`), the footers' charges (`usage/v1`), the files and Git
+ * state (`workspace-content`), and the settings bundle's host contracts
  * (`settings-host`); answers the `git.commands/v1` calls made.
  */
 export const serveWorkspace = (host: FakeHost): GitCalls => {
@@ -415,47 +490,64 @@ export const serveWorkspace = (host: FakeHost): GitCalls => {
       events: logOf(String(threadId)).filter((row) => row.sequence > from),
     });
   });
-  host.serve('usage/v1', 'thread', (input) => {
-    const id = String(Array.isArray(input) ? input[0] : input);
-
-    return THREADS.some((item) => item.id === id)
-      ? (USAGE.get(id) ?? { total: usageOf(0, []).total, threads: [] })
-      : undefined;
+  serveUsage(host, {
+    // A Thread without usage answers no calls, which the footer draws as "—".
+    thread: ({ threadId }) =>
+      proto(
+        ThreadResponseSchema,
+        THREADS.some((item) => item.id === threadId)
+          ? {
+              threadUsage: USAGE.get(threadId) ?? {
+                total: usageOf(0, []).total,
+                threads: [],
+              },
+            }
+          : {},
+      ),
+    compactionTarget: () =>
+      proto(CompactionTargetResponseSchema, { pressurePercent: 80 }),
   });
-  host.serve('usage/v1', 'compactionTarget', () => ({ pressurePercent: 80 }));
-  host.serve('resources/v1', 'host', () => ({
-    at: EPOCH,
-    cpuCount: 8,
-    cpuPercent: 23,
-    loadAverage: 1.4,
-    memoryTotalBytes: 16 * GIB,
-    memoryUsedBytes: 6.2 * GIB,
-    uptimeSeconds: 86_400,
-  }));
-  host.serve('resources/v1', 'project', () => ({
-    status: 'ready',
-    value: {
-      status: 'ready',
-      at: EPOCH,
-      cpuPercent: 12,
-      cpuCount: 4,
-      memoryUsedBytes: 1.1 * GIB,
-      memoryLimitBytes: 4 * GIB,
-    },
-  }));
+  serveResources(host, {
+    host: () =>
+      proto(HostResponseSchema, {
+        at: EPOCH,
+        cpuCount: 8,
+        cpuPercent: 23,
+        loadAverage: 1.4,
+        memoryTotalBytes: 16 * GIB,
+        memoryUsedBytes: 6.2 * GIB,
+        uptimeSeconds: 86_400,
+      }),
+    project: () =>
+      proto(ProjectResponseSchema, {
+        status: 'ready',
+        value: {
+          status: 'ready',
+          at: EPOCH,
+          cpuPercent: 12,
+          cpuCount: 4,
+          memoryUsedBytes: 1.1 * GIB,
+          memoryLimitBytes: 4 * GIB,
+        },
+      }),
+  });
 
   serveWorkspaceWrites(host);
   const git = serveSandbox(host);
   // The window's Connect calls (S65a: the runtime's records and the chat;
-  // S65c: the settings' host contracts and `git.commands/v1`): the same
-  // Projects, Threads and logs, chat's agent mark, the settings and the Git
-  // state. The handlers above stay for the client parts not yet on Connect
-  // (S65d).
+  // S65c: the settings' host contracts and `git.commands/v1`; S65d:
+  // `files/v1`, `usage/v1` and `resources/v1`): the same Projects, Threads
+  // and logs, chat's agent mark, the settings, the Git state, the sandbox
+  // and the footers' readings. What stays on the envelope is the `runtime/v2`
+  // and `runtime.threads/v1` handlers above.
   host.forwardConnect(
     serveWorkspaceConnect({
       routes: (router) => {
         serveSettingsConnect(router);
         gitRoutes(host)(router);
+        filesRoutes(host)(router);
+        usageRoutes(host)(router);
+        resourcesRoutes(host)(router);
       },
     }).forward,
   );
@@ -470,36 +562,33 @@ export const TAKEN_NAME = 'checkout.tsx';
 export const REFUSED_DISCARD = CHANGED_FILE;
 
 /**
- * The §4.4 writes: `files/v1` `createFile` and `createDirectory` create every
- * name but `TAKEN_NAME`, which is refused as `exists`; `git.commands/v1`
- * `discard` discards every target but `REFUSED_DISCARD`, refused with the
- * host's merge-conflict sentence. Nothing is written: later reads answer as
- * before.
+ * The §4.4 writes: `files/v1` `createFile` and `createDirectory` (over
+ * Connect, through `filesRoutes(host)`) create every name but `TAKEN_NAME`,
+ * which is refused as `exists`; `git.commands/v1` `discard` discards every
+ * target but `REFUSED_DISCARD`, refused with the host's merge-conflict
+ * sentence. Nothing is written: later reads answer as before.
  */
 const serveWorkspaceWrites = (host: FakeHost): void => {
-  const create = (input: unknown) => {
-    const { directory, name } = first(input) as {
-      directory: string;
-      name: string;
-    };
+  const create = (directory: string, name: string) => ({
+    status: 'ready',
+    value:
+      name === TAKEN_NAME
+        ? { status: 'refused', reason: 'exists' }
+        : {
+            status: 'created',
+            path: directory === '' ? name : `${directory}/${name}`,
+          },
+  });
 
-    return {
-      status: 'ready',
-      value:
-        name === TAKEN_NAME
-          ? { status: 'refused', reason: 'exists' }
-          : {
-              status: 'created',
-              path: directory === '' ? name : `${directory}/${name}`,
-            },
-    };
-  };
-
-  host.serve('files/v1', 'createFile', create);
-  host.serve('files/v1', 'createDirectory', create);
+  serveFiles(host, {
+    createFile: ({ directory, name }) =>
+      proto(CreateFileResponseSchema, create(directory, name)),
+    createDirectory: ({ directory, name }) =>
+      proto(CreateDirectoryResponseSchema, create(directory, name)),
+  });
   serveGit(host, {
     discard: ({ paths, all }) =>
-      gitProto(
+      proto(
         DiscardResponseSchema,
         !all && paths.includes(REFUSED_DISCARD)
           ? {
