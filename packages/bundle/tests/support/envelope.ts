@@ -20,6 +20,7 @@ import {
   createTransportPair,
   describeRecord,
   type ErrorClassRegistry,
+  matchesTarget,
   ProcessLink,
   registerRemote,
   type SchemaValidators,
@@ -138,14 +139,12 @@ export const processes = (options: ProcessesOptions = {}): Processes => {
       generation,
       validators,
       errors: options.errors ?? createErrorClassRegistry(),
-      resolve: ({ contract, provider }) =>
+      // As the runner resolves: the provider and, for a bundle with several
+      // records, the record key the sender resolved.
+      resolve: ({ contract, ...target }) =>
         directory
           .providers(contract)
-          .find(
-            (record) =>
-              record.origin !== 'remote' &&
-              (provider === undefined || record.bundleId === provider),
-          ),
+          .find((record) => matchesTarget(record, target)),
       principalOf: (bundleId) => principals.get(bundleId),
       report: (entry) => reports.push(entry),
     });

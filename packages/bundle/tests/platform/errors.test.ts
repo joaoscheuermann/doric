@@ -74,7 +74,6 @@ const errorTable: Readonly<Record<string, Code>> = {
   unsupported_operation: Code.Unimplemented,
   unavailable: Code.Unavailable,
   generation_lost: Code.Unavailable,
-  unavailable_tool: Code.Unavailable,
   credential_storage_unavailable: Code.Unavailable,
   disconnected: Code.Unavailable,
   storage_not_migrated: Code.Unavailable,

@@ -15,7 +15,10 @@ the host, integrate with its API, or change the kernel.
 > this branch replaces; [Startup and failures](#startup-and-failures) and
 > [Shutdown](#shutdown) describe the platform boot. Slice S63b deleted the
 > bridge (`src/lib/bridge/`) and `src/lib/socket-buffer.ts`; the sections that
-> name them describe the removed kernel path. The public API is
+> name them describe the removed kernel path. Slice S67 deleted the kernel
+> itself (`packages/bundle/src/process/`, with `kernel.ts` and `partition.ts`),
+> the loader's `activate.ts` and the in-process host `startHost`, so the
+> sections below that name those files describe removed code. The public API is
 > `doric.api.*` on the gateway
 > ([grpc-processes.md](../../../docs/designs/grpc-processes.md)).
 
@@ -347,7 +350,7 @@ which inherits the host's environment and reads its own variables there
   ([`src/lib/bundles/boot.ts`](src/lib/bundles/boot.ts)). A composition that
   cannot be read or parsed puts the host in recovery mode with
   `invalid composition: <reason>`, and startup fails at `bundle_load`
-  ([`activate.ts`](../../../packages/bundle/src/loader/activate.ts)).
+  ([`boot.ts`](src/lib/bundles/boot.ts), [`platform/index.ts`](../../../packages/bundle/src/platform/index.ts)).
 - `DORIC_LOG_FILE` (default `doric.log`): file that receives the debug-level
   log; the console shows info and above. A relative path resolves against the
   process's working directory, and the file is appended to, never truncated
@@ -471,7 +474,7 @@ lines follow that order. The text below, up to the bundle list, describes
 the kernel path before S62c3.
 
 The kernel runs four kinds of bundle in its own process
-([`partition.ts`](../../../packages/bundle/src/process/partition.ts)):
+(`partition.ts`):
 
 - the **foundation**: the providers the composition chooses under `providers`
   for a contract the core provides or requires
@@ -479,7 +482,7 @@ The kernel runs four kinds of bundle in its own process
 - the core;
 - the **embedded** bundles, which the kernel path's `startBundles` accepted as
   in-memory bundles with no directory
-  ([`partition.ts`](../../../packages/bundle/src/process/partition.ts)); the
+  (`partition.ts`); the
   shipped host passed none and the platform has no such option
   ([`platform/index.ts`](../../../packages/bundle/src/platform/index.ts),
   `PlatformOptions`);
@@ -702,7 +705,7 @@ In order:
    - `credential_activation`: `core` logs `Activating stored credentials` and
      reads the stored credentials once through `secrets/v1`, so an unreachable
      database or an unusable `DORIC_CREDENTIAL_KEY` fails here
-     ([`core/src/host/secrets/activation.ts`](../../../bundles/foundation/core/src/host/secrets/activation.ts)).
+     ([`core/src/host/services.ts`](../../../bundles/foundation/core/src/host/services.ts)).
    - `configuration_activation`: `host-config` logs
      `Activating Doric configuration`, reads the stored configuration,
      prepares its model providers through `models/v1` and logs
@@ -766,8 +769,8 @@ in a `Bundle recovery mode` line.
   running kernel cannot take, because its own bundles would change, stays in
   the file. The kernel applies the file on every start, so a disabled bundle
   stays disabled until the file is deleted
-  ([`composition-actions.ts`](../../../packages/bundle/src/process/composition-actions.ts),
-  [`kernel.ts`](../../../packages/bundle/src/process/kernel.ts);
+  ([`composition-actions.ts`](../../../packages/bundle/src/platform/composition-actions.ts),
+  `kernel.ts`;
   [composition-and-distribution.md](../../../docs/architecture/bundles/composition-and-distribution.md#composition-overrides),
   [splash-and-recovery.md](../../../docs/architecture/bundles/splash-and-recovery.md)).
 - A core that cannot activate, or a composition whose `required` contracts or
@@ -1362,7 +1365,7 @@ one that is already running.
 `GET /providers/kinds` answers `{ kinds }`: the provider kinds a provider
 bundle registers and advertises, as `models/v1` lists them
 ([`routes/providers.ts`](../../../bundles/foundation/transport/src/host/routes/providers.ts),
-[`models/index.ts`](../../../bundles/foundation/core/src/host/models/index.ts),
+[`models/service.ts`](../../../bundles/foundation/core/src/host/models/service.ts),
 [`basic/models.ts`](../../../packages/bundle/src/contracts/basic/models.ts)).
 A registered kind that is not advertised, such as `codex`
 ([`codex/src/host/kind.ts`](../../../bundles/providers/codex/src/host/kind.ts)),
@@ -1399,7 +1402,7 @@ on ([`routes/providers.ts`](../../../bundles/foundation/transport/src/host/route
   one of `options`, `secret` is a UUID). Only the form of a `secret` value is
   checked: a UUID that names no credential passes, and the catalog is then
   read without a secret
-  ([`models/index.ts`](../../../bundles/foundation/core/src/host/models/index.ts)).
+  ([`models/service.ts`](../../../bundles/foundation/core/src/host/models/service.ts)).
 - `502 model_catalog_unreadable` (`The provider model catalog could not be
 read.`): the kind has no catalog, or the read failed.
 
@@ -2724,7 +2727,7 @@ key that sealed it. The postgres bundle reads the key at the first credential
 read or write and keeps the cipher it builds
 ([`secrets/backend.ts`](../../../bundles/foundation/postgres/src/host/secrets/backend.ts)).
 At startup, the `credential_activation` step lists every stored credential
-once ([`secrets/activation.ts`](../../../bundles/foundation/core/src/host/secrets/activation.ts)),
+once ([`core/src/host/services.ts`](../../../bundles/foundation/core/src/host/services.ts)),
 so a failure below that a read hits fails startup there. As with every start
 step, the reason is not logged: the log shows `Activating stored credentials`,
 then `Doric failed to start` with `stage: credential_activation`
@@ -2752,7 +2755,7 @@ then `Doric failed to start` with `stage: credential_activation`
 
 **Redaction.** The core replaces every occurrence of each non-empty stored
 secret with `[REDACTED]` in an event before it is written
-([`events/facade.ts`](../../../bundles/foundation/core/src/host/events/facade.ts),
+([`events/service.ts`](../../../bundles/foundation/core/src/host/events/service.ts),
 [`secrets/cache.ts`](../../../bundles/foundation/core/src/host/secrets/cache.ts))
 and in every log line
 ([`shared/log.ts`](../../../bundles/foundation/core/src/shared/log.ts),

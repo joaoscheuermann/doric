@@ -595,6 +595,52 @@ void test("activation reaches no backend; the first settings call defines core's
   }
 });
 
+void test("spaces follow the router's stamp: each generation registers its own; a value written in one is watched and read in each that registered it", async () => {
+  const core = await served();
+
+  try {
+    const first = core.client(SettingsService, 'notes', { generation: 1 });
+    const second = core.client(SettingsService, 'notes', { generation: 2 });
+    const space = { id: 'notes.prefs/v1', messageType: 'notes.Prefs' };
+    const { registrationId } = await first.register(space);
+
+    await second.register(space);
+    await rejectsWith(second.register(space), 'registration_conflict');
+
+    const stop = new AbortController();
+    const watched = [first, second].map((client) =>
+      client
+        .watch({ id: 'notes.prefs/v1' }, { signal: stop.signal })
+        [Symbol.asyncIterator](),
+    );
+    const pending = watched.map((items) => items.next());
+
+    // Whether each stream opened before or after this write, its first item
+    // is this write's entry: there is no present entry before it.
+    await second.set({ id: 'notes.prefs/v1', value: prefs({ size: 3 }) });
+
+    const heard = await Promise.all(pending);
+
+    stop.abort();
+    await Promise.all(
+      watched.map((items) => items.next().catch(() => undefined)),
+    );
+    assert.deepEqual(
+      heard.map((item) => jsonOf(item.value?.settingsEntry?.value)),
+      [{ size: 3 }, { size: 3 }],
+    );
+
+    await first.unregister({ registrationId });
+    assert.deepEqual(
+      jsonOf((await second.get({ id: 'notes.prefs/v1' })).value),
+      { size: 3 },
+    );
+    await rejectsWith(first.get({ id: 'notes.prefs/v1' }), 'unknown_settings');
+  } finally {
+    await core.close();
+  }
+});
+
 void test('an InstanceGone disposes the spaces that instance registered; their entries stay', async () => {
   const store = createMemoryStore();
   const core = await served({ store });

@@ -3,7 +3,15 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-import type { LogRecord } from '../../src/contracts/index.js';
+import {
+  AppHooksV1,
+  bindRegistrant,
+  type ContractTool,
+  HooksV1,
+  type HostContext,
+  type LogRecord,
+  type Services,
+} from '../../src/contracts/index.js';
 import type {
   Descriptor,
   DescriptorEntry,
@@ -18,12 +26,6 @@ const here = dirname(fileURLToPath(import.meta.url));
 /** File URL of the compiled `bundle/contracts` the tests themselves load. */
 export const contractsUrl = pathToFileURL(
   join(here, '..', '..', 'src', 'contracts', 'index.js'),
-).href;
-
-/** File URL of the compiled minimal core module. */
-export const minimalCoreUrl = pathToFileURL(join(here, 'minimal-core.js')).href;
-export const skilledProviderUrl = pathToFileURL(
-  join(here, 'skilled-provider.js'),
 ).href;
 
 export const withRoot = async <T>(
@@ -180,3 +182,45 @@ export const captureSink = (): CapturedSink => {
 
   return { records, write: (record) => records.push(record) };
 };
+
+/** A registrable tool that records the services it was bound to. */
+export const fakeTool = (name: string, bound: Services[] = []) => {
+  const definition = {
+    name,
+    inputSchema: { type: 'object' },
+    outputSchema: { type: 'object' },
+  };
+
+  return {
+    name,
+    definition,
+    [bindRegistrant]: (services: Services): ContractTool => {
+      bound.push(services);
+
+      return {
+        name,
+        definition,
+        input: undefined as never,
+        output: undefined as never,
+        settings: [],
+        execute: async () => {
+          await Promise.resolve();
+
+          return {};
+        },
+      };
+    },
+  };
+};
+
+/** Records AppHooksV1 activation events seen by a bundle's handler. */
+export const observeActivations =
+  (seen: string[]) =>
+  ({ services }: HostContext) => {
+    services
+      .use(HooksV1)
+      .use(AppHooksV1)
+      .onActivateHook(({ bundleId }) => {
+        seen.push(bundleId);
+      });
+  };

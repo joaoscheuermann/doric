@@ -9,12 +9,11 @@ import test, { type TestContext } from 'node:test';
 
 import type { DescService, MessageInitShape } from '@bufbuild/protobuf';
 import { type Client, ConnectError } from '@connectrpc/connect';
-import {
-  ajvValidators,
-  type BundleInstance,
-  type HostInstances,
-  type HostRegistrations,
-  type TrackOptions,
+import type {
+  BundleInstance,
+  HostInstances,
+  HostRegistrations,
+  TrackOptions,
 } from 'bundle';
 import {
   type Caller,
@@ -27,6 +26,7 @@ import {
   type CommitRequestSchema,
   StorageService,
 } from 'bundle/contracts/gen/doric/storage/v1/storage_pb.js';
+import { ajvValidators } from 'bundle/host';
 import { createTestRouter } from 'bundle/testing';
 import { z } from 'zod';
 
@@ -100,7 +100,10 @@ const isCode = (code: string, details?: unknown) => (error: unknown) => {
 /** Asserts a raw call failed with the Doric code `code`. */
 const rejectsRaw = async (promise: Promise<unknown>, code: string) => {
   await assert.rejects(promise, (error: unknown) => {
-    assert.ok(error instanceof ConnectError, `expected a ConnectError: ${error}`);
+    assert.ok(
+      error instanceof ConnectError,
+      `expected a ConnectError: ${error}`,
+    );
     assert.equal(fromConnectError(error).code, code, error.message);
 
     return true;
@@ -225,7 +228,10 @@ void test('a zod type reaches the facade as a definition whose schema checks val
     `expected an issue at ['title'], got ${JSON.stringify(refused.error?.issues)}`,
   );
   assert.deepEqual(
-    definition.indexes.map((index) => ({ ...index, fields: [...index.fields] })),
+    definition.indexes.map((index) => ({
+      ...index,
+      fields: [...index.fields],
+    })),
     [
       { name: 'by_title', fields: ['title'], unique: true },
       { name: 'by_kind', fields: ['kind'] },
@@ -239,7 +245,9 @@ void test('a zod type reaches the facade as a definition whose schema checks val
   );
   assert.equal(await storage.get({ type: note, id: 'n1' }), undefined);
 
-  await storage.commit({ put: [{ type: note, id: 'n1', value: { title: 'A' } }] });
+  await storage.commit({
+    put: [{ type: note, id: 'n1', value: { title: 'A' } }],
+  });
 
   assert.deepEqual(await storage.get({ type: note, id: 'n1' }), {
     type: note,
@@ -395,9 +403,9 @@ void test('InstanceGone disposes every registration of that instance and no othe
   const disposed = facade.calls.filter(({ method }) => method === 'dispose');
 
   assert.deepEqual(
-    disposed.map(({ input, caller }) => ({ input, generation: caller.generation })).sort(
-      (a, b) => String(a.input).localeCompare(String(b.input)),
-    ),
+    disposed
+      .map(({ input, caller }) => ({ input, generation: caller.generation }))
+      .sort((a, b) => String(a.input).localeCompare(String(b.input))),
     [
       { input: note, generation: 1 },
       { input: 'notes.other/v1', generation: 1 },
@@ -412,7 +420,7 @@ void test('InstanceGone disposes every registration of that instance and no othe
 
 // Test list 6 -----------------------------------------------------------------
 
-void test('a replayed definition sends the same request, and dispose names the replay\'s id', async (t) => {
+void test("a replayed definition sends the same request, and dispose names the replay's id", async (t) => {
   const { facade, rawOf } = await open(t);
   const recorder = recording(rawOf());
   const kept: {
@@ -463,7 +471,11 @@ void test('a replayed definition sends the same request, and dispose names the r
 
   replay.options?.onReplayed?.(answer);
 
-  assert.equal(recorder.defines.length, 2, 'the replay sent a second DefineType');
+  assert.equal(
+    recorder.defines.length,
+    2,
+    'the replay sent a second DefineType',
+  );
   assert.deepEqual(recorder.defines[1], recorder.defines[0]);
   assert.notEqual(recorder.answered[1], recorder.answered[0]);
 
@@ -493,7 +505,7 @@ void test('DefineType refuses a schema that does not compile and a malformed typ
 
 // Test list 8 -----------------------------------------------------------------
 
-void test('the facade\'s call carries the client\'s caller and scope', async (t) => {
+void test("the facade's call carries the client's caller and scope", async (t) => {
   const { facade, rawOf } = await open(t);
   const scope = { windowKey: 'w1' };
   const storage = storageClient(rawOf(callerOf('notes', 3), scope));
@@ -546,7 +558,11 @@ void test('a 5 MiB document crosses in chunks and reads back whole through get a
 
   for (const { item } of rest) {
     assert.equal(item.case, 'chunk');
-    assert.ok(item.case === 'chunk' && item.value.length > 0 && item.value.length <= MiB);
+    assert.ok(
+      item.case === 'chunk' &&
+        item.value.length > 0 &&
+        item.value.length <= MiB,
+    );
   }
 });
 
@@ -592,7 +608,10 @@ void test('a missing document is no item, and an empty query one page item', asy
   storage.defineType(noteType);
   await storage.settled();
 
-  assert.deepEqual(await collect(rawOf().get({ type: note, id: 'missing' })), []);
+  assert.deepEqual(
+    await collect(rawOf().get({ type: note, id: 'missing' })),
+    [],
+  );
   assert.equal(await storage.get({ type: note, id: 'missing' }), undefined);
 
   const items = await collect(
@@ -611,7 +630,12 @@ void test('a missing document is no item, and an empty query one page item', asy
     ['page'],
   );
   assert.deepEqual(
-    await storage.query({ type: note, index: 'by_title', equals: ['nobody'], limit: 10 }),
+    await storage.query({
+      type: note,
+      index: 'by_title',
+      equals: ['nobody'],
+      limit: 10,
+    }),
     { items: [] },
   );
 });
@@ -629,7 +653,11 @@ void test('an empty stream reads as one page item with lastSequence 0', async (t
   assert.ok(items[0]?.item.case === 'page');
   assert.equal(items[0].item.value.lastSequence, 0);
   assert.deepEqual(
-    await storageOf().read({ stream: events('none'), afterSequence: 0, limit: 10 }),
+    await storageOf().read({
+      stream: events('none'),
+      afterSequence: 0,
+      limit: 10,
+    }),
     { entries: [], lastSequence: 0, truncations: [] },
   );
 });
@@ -659,41 +687,42 @@ void test('an unknown blob is one head with found false; the empty blob one head
 
 type CommitItem = MessageInitShape<typeof CommitRequestSchema>;
 
-const malformedCommits: readonly (readonly [string, readonly CommitItem[]])[] = [
-  ['a chunk first', [{ item: { case: 'chunk', value: utf8.encode('{}') } }]],
+const malformedCommits: readonly (readonly [string, readonly CommitItem[]])[] =
   [
-    'a put with no chunk',
-    [{ item: { case: 'put', value: { type: note, id: 'n1' } } }],
-  ],
-  [
-    'an append with no event',
-    [{ item: { case: 'append', value: { stream: events('t1') } } }],
-  ],
-  [
-    'two truncate items',
+    ['a chunk first', [{ item: { case: 'chunk', value: utf8.encode('{}') } }]],
     [
-      {
-        item: {
-          case: 'truncate',
-          value: { stream: events('t1'), afterSequence: 0 },
-        },
-      },
-      {
-        item: {
-          case: 'truncate',
-          value: { stream: events('t2'), afterSequence: 0 },
-        },
-      },
+      'a put with no chunk',
+      [{ item: { case: 'put', value: { type: note, id: 'n1' } } }],
     ],
-  ],
-  [
-    'a put whose chunk is not JSON',
     [
-      { item: { case: 'put', value: { type: note, id: 'n1' } } },
-      { item: { case: 'chunk', value: utf8.encode('{') } },
+      'an append with no event',
+      [{ item: { case: 'append', value: { stream: events('t1') } } }],
     ],
-  ],
-];
+    [
+      'two truncate items',
+      [
+        {
+          item: {
+            case: 'truncate',
+            value: { stream: events('t1'), afterSequence: 0 },
+          },
+        },
+        {
+          item: {
+            case: 'truncate',
+            value: { stream: events('t2'), afterSequence: 0 },
+          },
+        },
+      ],
+    ],
+    [
+      'a put whose chunk is not JSON',
+      [
+        { item: { case: 'put', value: { type: note, id: 'n1' } } },
+        { item: { case: 'chunk', value: utf8.encode('{') } },
+      ],
+    ],
+  ];
 
 void test('a malformed commit stream fails with invalid_input without calling the facade', async (t) => {
   const { facade, rawOf } = await open(t);
@@ -701,7 +730,10 @@ void test('a malformed commit stream fails with invalid_input without calling th
   for (const [what, items] of malformedCommits) {
     await t.test(what, async () => {
       await rejectsRaw(rawOf().commit(streamOf(items)), 'invalid_input');
-      assert.deepEqual(methodsOf(facade).filter((m) => m === 'commit'), []);
+      assert.deepEqual(
+        methodsOf(facade).filter((m) => m === 'commit'),
+        [],
+      );
     });
   }
 });
@@ -720,7 +752,12 @@ void test('a facade error crosses with its code and details', async (t) => {
   await storage.commit(create);
   await assert.rejects(
     storage.commit(create),
-    isCode('revision_conflict', { type: note, id: 'n1', expected: 0, actual: 1 }),
+    isCode('revision_conflict', {
+      type: note,
+      id: 'n1',
+      expected: 0,
+      actual: 1,
+    }),
   );
 });
 

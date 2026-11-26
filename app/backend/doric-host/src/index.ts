@@ -1,7 +1,7 @@
 import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import type { StartupSink } from 'bundle';
+import type { StartupSink } from 'bundle/platform';
 import pino from 'pino';
 import pretty from 'pino-pretty';
 

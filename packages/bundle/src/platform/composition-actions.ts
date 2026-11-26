@@ -2,8 +2,7 @@
 // bundle" and "Return to default composition" from the desktop splash. Each
 // writes the composition overrides, then publishes the host's next
 // resolution, whose catalog read applies them; a change the running host
-// cannot take (its core changed) is kept and applies at the next boot. The
-// kernel's `process/composition-actions.ts` stays until S67 deletes it.
+// cannot take (its core changed) is kept and applies at the next boot.
 
 import { ContractError } from '../contracts/error.js';
 import {
@@ -52,8 +51,7 @@ export interface PlatformCompositionOptions {
  * logs `Composition change applies at the next host start`
  * `{status, reason, path}` and fails with `unavailable`, message the
  * result's reason, details `{ status }`. The overrides stay written either
- * way, so the next boot applies them. Messages are the kernel's
- * (`process/composition-actions.ts`).
+ * way, so the next boot applies them.
  */
 export const createPlatformCompositionActions = (
   options: PlatformCompositionOptions,

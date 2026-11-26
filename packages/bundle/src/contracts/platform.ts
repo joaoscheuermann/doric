@@ -170,7 +170,6 @@ export const quarantineCodes = [
   'registration_failed',
   'skill_invalid',
   'generation_failed',
-  'kernel_requires_generation',
   // gRPC processes (phase 2)
   'invalid_bundle',
   'health_timeout',

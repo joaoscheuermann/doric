@@ -2,8 +2,7 @@
 // `docs/designs/grpc-processes.md`, section 17, "Storage until phase 4";
 // phase 3, slice S38): `storage.backend/v1` and `secrets.backend/v1` over
 // today's PostgreSQL rows, served through the router. Built into
-// `dist/host/main.mjs`; the running host keeps the kernel entry
-// (`./index.ts`) until the switch, slice S62.
+// `dist/host/main.mjs`.
 
 import { BackendService as SecretsBackendService } from 'bundle/contracts/gen/doric/secrets/backend/v1/backend_pb.js';
 import { BackendService as StorageBackendService } from 'bundle/contracts/gen/doric/storage/backend/v1/backend_pb.js';

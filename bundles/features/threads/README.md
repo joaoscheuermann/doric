@@ -71,7 +71,7 @@ true, order })`, in this order and at these global model-visible orders
 It provides no service and registers no event. `tools/v1` sorts tools by
 `order`, then by registration order (bundle activation order, then call order),
 so a tool of another bundle at the same order sorts by that rule
-([packages/bundle/src/contracts/basic/tools.ts](../../../packages/bundle/src/contracts/basic/tools.ts), [bundles/foundation/core/src/host/tools.ts](../../foundation/core/src/host/tools.ts)).
+([packages/bundle/src/contracts/basic/tools.ts](../../../packages/bundle/src/contracts/basic/tools.ts), [bundles/foundation/core/src/host/tools/service.ts](../../foundation/core/src/host/tools/service.ts)).
 
 ### How a tool reaches the runtime
 

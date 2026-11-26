@@ -91,17 +91,18 @@ feature docs, which state each contract at the level the feature needs:
 | `navigation/v1@1.1.0`               | service |      |             |       ✓       |
 | `regions/v1@1.0.0`                  | service |      |             |       ✓       |
 
-The parts are [`src/host/index.ts`](src/host/index.ts),
+The parts are the host part's process entry
+[`src/host/main.ts`](src/host/main.ts),
 [`src/desktop/index.ts`](src/desktop/index.ts) and
-[`src/client/index.ts`](src/client/index.ts). The host part also has a process
-entry, [`src/host/main.ts`](src/host/main.ts): it calls `runBundle`
+[`src/client/index.ts`](src/client/index.ts). The host entry calls `runBundle`
 (`bundle/host`) with the nine services listed statically from
 `CoreServices.implementations`, loads its message registry at `activate` with
 `loadCatalogTypes` from `doric.catalog/v1.Descriptors` (a `Descriptors` failure
 keeps its code; a malformed set or missing import fails `invalid_output`),
 passes `logSink: core.logSink` so that its own `context.log` writes records in
 process as `log/v1.WriteBatch` from its instance would, without the router, and
-is built to `dist/host/main.mjs` beside the kernel entry. Code that two parts share is in
+is built to `dist/host/main.mjs`; the kernel entry `src/host/index.ts` was
+deleted in slice S67 and the build writes no `dist/host/index.js`. Code that two parts share is in
 `src/shared/`, and the core's own contract declarations are in
 [`src/contracts/`](src/contracts/index.ts). Every basic contract (every id
 without a `core.` prefix above) has its specification, cardinality and
@@ -112,14 +113,10 @@ the core implements that specification.
 
 - Each part runs in one process
   ([`process-isolation.md`](../../../docs/architecture/bundles/process-isolation.md)).
-  On the host, the **kernel** is the host process itself, and a
-  **generation** is one Node process, forked by the kernel, that runs every
-  other scheduled host bundle; a call made in the kernel has generation 0, and
-  a call made in generation `n` carries `n` across the envelope. The core is
-  kernel-resident, so its host part always runs in the kernel
-  ([`partition.ts`](../../../packages/bundle/src/process/partition.ts)), and a
-  bundle in a generation process reaches its contracts through a stub over
-  the envelope. On the desktop, the Electron main process plays the kernel and
+  On the host, the core's host part runs in its own process
+  ([`src/host/main.ts`](src/host/main.ts)), and other bundles reach its
+  contracts over the platform's router; the kernel and its generation
+  processes were deleted in slice S67. On the desktop, the Electron main process plays the kernel and
   provides only platform contracts (`doric.windows/v1`, `doric.menus/v1`,
   `doric.cache/v1`, `doric.migrations/v1`, `doric.log/v1` and others); the
   core's `desktopMain` part runs, with every other `desktopMain` part of the
@@ -155,7 +152,7 @@ the core implements that specification.
 - Each part calls `services.provide` for each of its contracts. A `provide` is
   inert when the composition chose another provider for that contract, and the
   core then reaches the chosen one through `services.use`, as any bundle does
-  ([`src/host/index.ts`](src/host/index.ts),
+  ([`src/host/services.ts`](src/host/services.ts),
   [`src/desktop/index.ts`](src/desktop/index.ts),
   [`src/client/index.ts`](src/client/index.ts)).
 - Activation does no I/O: a storage type is declared to the backend on the
@@ -170,7 +167,7 @@ the core implements that specification.
   `doric.startup/v1`, logs `Activating stored credentials` through
   `doric.startup/v1.log`, and calls `list` on the active `secrets/v1`
   provider, which reads the stored credentials
-  ([`src/host/secrets/activation.ts`](src/host/secrets/activation.ts)). A
+  ([`src/host/services.ts`](src/host/services.ts)). A
   storage that cannot connect, or a credential key that is missing or
   unusable, rejects the step, and the host's start fails: the host logs
   `Doric failed to start` at level `fatal` with `{ stage }` naming the last
@@ -181,35 +178,35 @@ the core implements that specification.
 - On the host, the core defines `core.event-hooks/v1` during activation. If
   that `define` fails for any reason (a host with no catalog, such as a unit
   test, is one), the failure is ignored and appends fire no hook
-  ([`src/host/index.ts`](src/host/index.ts)).
+  ([`src/host/services.ts`](src/host/services.ts)).
 
 ## Contracts it uses
 
-| Contract                                | Where               | What for                                                                                                                                                                                                                                                                                                                                               |
-| --------------------------------------- | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `storage.backend/v1`                    | host                | Every `storage/v1` operation, the backend's limits (`capabilities`) and the connection at start ([`src/host/storage/facade.ts`](src/host/storage/facade.ts), [`src/host/secrets/activation.ts`](src/host/secrets/activation.ts))                                                                                                                       |
-| `secrets.backend/v1`                    | host                | Loading, writing and deleting stored credentials ([`src/host/secrets/facade.ts`](src/host/secrets/facade.ts))                                                                                                                                                                                                                                          |
-| `models.provider/v1` (many)             | host                | The model kinds `models/v1` lists and builds, aggregated with `services.whenAvailable` ([`src/host/models/index.ts`](src/host/models/index.ts))                                                                                                                                                                                                        |
-| `storage/v1`                            | host                | Storing settings and appending events, and declaring the core's two storage types, through the active provider ([`src/host/settings/facade.ts`](src/host/settings/facade.ts), [`src/host/events/facade.ts`](src/host/events/facade.ts), [`src/host/index.ts`](src/host/index.ts))                                                                      |
-| `secrets/v1`                            | host                | The redaction list of events, the secret a model kind reads, the start step's `list` ([`src/host/events/facade.ts`](src/host/events/facade.ts), [`src/host/models/index.ts`](src/host/models/index.ts), [`src/host/secrets/activation.ts`](src/host/secrets/activation.ts)); the redaction list of `log/v1` ([`src/shared/log.ts`](src/shared/log.ts)) |
-| `secrets/v1`                            | `desktopMain`       | The redaction list of `log/v1`, which has no provider there, so records are not redacted ([`src/shared/log.ts`](src/shared/log.ts))                                                                                                                                                                                                                    |
-| `hooks/v1`                              | host                | Defining `core.event-hooks/v1` and registering the start step ([`src/host/index.ts`](src/host/index.ts), [`src/host/secrets/activation.ts`](src/host/secrets/activation.ts))                                                                                                                                                                           |
-| `hooks/v1`                              | `desktopMain`       | Defining `core.hooks/v1` and registering the app-ready and app-activate steps ([`src/desktop/index.ts`](src/desktop/index.ts), [`src/desktop/windows.ts`](src/desktop/windows.ts))                                                                                                                                                                     |
-| `log/v1`                                | host                | `Model catalog could not be read` ([`src/host/models/index.ts`](src/host/models/index.ts))                                                                                                                                                                                                                                                             |
-| `log/v1`                                | `desktopMain`       | `Selection migration did not run` ([`src/desktop/migrations.ts`](src/desktop/migrations.ts))                                                                                                                                                                                                                                                           |
-| `log/v1`                                | client              | `Could not set the menu context of the window path.` ([`src/client/menu-context.ts`](src/client/menu-context.ts))                                                                                                                                                                                                                                      |
-| `tools/v1`                              | host                | Skills check the tools they allow ([`src/host/skills.ts`](src/host/skills.ts))                                                                                                                                                                                                                                                                         |
-| `commands/v1`                           | `desktopMain`       | Registering `core.open-settings/v1` and running the commands a window sends ([`src/desktop/index.ts`](src/desktop/index.ts), [`src/desktop/commands-bridge.ts`](src/desktop/commands-bridge.ts))                                                                                                                                                       |
-| `core.commands/v1`, `menus/v1`          | client              | Sending a command the window does not hold to `desktopMain`; reporting the menu context of the window path ([`src/client/commands.ts`](src/client/commands.ts), [`src/client/menu-context.ts`](src/client/menu-context.ts))                                                                                                                            |
-| `ui/v1`, `navigation/v1`, `regions/v1`  | client              | The structural elements, which draw through `ui/v1`, follow the route and show a region's items ([`src/client/index.ts`](src/client/index.ts), [`src/client/elements/outlet.ts`](src/client/elements/outlet.ts), [`src/client/elements/region.ts`](src/client/elements/region.ts))                                                                     |
-| `doric.catalog/v1`                      | every part          | The manifests (`provides`) for ownership checks, the activation order of hook handlers, the active generation and the active host providers ([`src/shared/state.ts`](src/shared/state.ts), [`src/shared/hooks.ts`](src/shared/hooks.ts), [`src/shared/partition.ts`](src/shared/partition.ts))                                                         |
-| `doric.diagnostics/v1`                  | every part          | Reporting a failing hook handler, log write or settings listener ([`src/shared/hooks.ts`](src/shared/hooks.ts), [`src/shared/log.ts`](src/shared/log.ts), [`src/shared/state.ts`](src/shared/state.ts))                                                                                                                                                |
-| `doric.log/v1`, `doric.bundle/v1`       | every part          | Writing log records, and the environment a record names ([`src/shared/log.ts`](src/shared/log.ts))                                                                                                                                                                                                                                                     |
-| `doric.app.hooks/v1`                    | host, `desktopMain` | The host start step; the desktop's app-ready and app-activate steps ([`src/host/secrets/activation.ts`](src/host/secrets/activation.ts), [`src/desktop/index.ts`](src/desktop/index.ts))                                                                                                                                                               |
-| `doric.startup/v1`                      | host                | The `credential_activation` stage and its log line ([`src/host/secrets/activation.ts`](src/host/secrets/activation.ts))                                                                                                                                                                                                                                |
-| `doric.windows/v1`, `doric.menus/v1`    | `desktopMain`       | Opening, focusing and remembering windows; the menu skeleton, items, keybindings and contexts ([`src/desktop/windows.ts`](src/desktop/windows.ts), [`src/desktop/index.ts`](src/desktop/index.ts), [`src/desktop/menus.ts`](src/desktop/menus.ts))                                                                                                     |
-| `doric.migrations/v1`, `doric.cache/v1` | `desktopMain`       | Copying the saved selection into the app origin; the directory of the local settings file ([`src/desktop/migrations.ts`](src/desktop/migrations.ts), [`src/desktop/settings.ts`](src/desktop/settings.ts))                                                                                                                                             |
-| `doric.elements/v1`                     | client              | Owning custom element tags and giving each created element its owner's services ([`src/client/ui.ts`](src/client/ui.ts))                                                                                                                                                                                                                               |
+| Contract                                | Where               | What for                                                                                                                                                                                                                                                                                                                                 |
+| --------------------------------------- | ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `storage.backend/v1`                    | host                | Every `storage/v1` operation, the backend's limits (`capabilities`) and the connection at start ([`src/host/storage/facade.ts`](src/host/storage/facade.ts), [`src/host/services.ts`](src/host/services.ts))                                                                                                                             |
+| `secrets.backend/v1`                    | host                | Loading, writing and deleting stored credentials ([`src/host/secrets/facade.ts`](src/host/secrets/facade.ts))                                                                                                                                                                                                                            |
+| `models.provider/v1` (many)             | host                | The model kinds `models/v1` lists and builds, aggregated with `services.whenAvailable` ([`src/host/models/service.ts`](src/host/models/service.ts))                                                                                                                                                                                      |
+| `storage/v1`                            | host                | Storing settings and appending events, and declaring the core's two storage types, through the active provider ([`src/host/settings/service.ts`](src/host/settings/service.ts), [`src/host/events/service.ts`](src/host/events/service.ts))                                                                                              |
+| `secrets/v1`                            | host                | The redaction list of events, the secret a model kind reads, the start step's `list` ([`src/host/events/service.ts`](src/host/events/service.ts), [`src/host/models/service.ts`](src/host/models/service.ts), [`src/host/services.ts`](src/host/services.ts)); the redaction list of `log/v1` ([`src/shared/log.ts`](src/shared/log.ts)) |
+| `secrets/v1`                            | `desktopMain`       | The redaction list of `log/v1`, which has no provider there, so records are not redacted ([`src/shared/log.ts`](src/shared/log.ts))                                                                                                                                                                                                      |
+| `hooks/v1`                              | host                | Defining `core.event-hooks/v1` and registering the start step ([`src/host/services.ts`](src/host/services.ts))                                                                                                                                                                                                                           |
+| `hooks/v1`                              | `desktopMain`       | Defining `core.hooks/v1` and registering the app-ready and app-activate steps ([`src/desktop/index.ts`](src/desktop/index.ts), [`src/desktop/windows.ts`](src/desktop/windows.ts))                                                                                                                                                       |
+| `log/v1`                                | host                | `Model catalog could not be read` ([`src/host/models/service.ts`](src/host/models/service.ts))                                                                                                                                                                                                                                           |
+| `log/v1`                                | `desktopMain`       | `Selection migration did not run` ([`src/desktop/migrations.ts`](src/desktop/migrations.ts))                                                                                                                                                                                                                                             |
+| `log/v1`                                | client              | `Could not set the menu context of the window path.` ([`src/client/menu-context.ts`](src/client/menu-context.ts))                                                                                                                                                                                                                        |
+| `tools/v1`                              | host                | Skills check the tools they allow ([`src/host/skills/service.ts`](src/host/skills/service.ts))                                                                                                                                                                                                                                           |
+| `commands/v1`                           | `desktopMain`       | Registering `core.open-settings/v1` and running the commands a window sends ([`src/desktop/index.ts`](src/desktop/index.ts), [`src/desktop/commands-bridge.ts`](src/desktop/commands-bridge.ts))                                                                                                                                         |
+| `core.commands/v1`, `menus/v1`          | client              | Sending a command the window does not hold to `desktopMain`; reporting the menu context of the window path ([`src/client/commands.ts`](src/client/commands.ts), [`src/client/menu-context.ts`](src/client/menu-context.ts))                                                                                                              |
+| `ui/v1`, `navigation/v1`, `regions/v1`  | client              | The structural elements, which draw through `ui/v1`, follow the route and show a region's items ([`src/client/index.ts`](src/client/index.ts), [`src/client/elements/outlet.ts`](src/client/elements/outlet.ts), [`src/client/elements/region.ts`](src/client/elements/region.ts))                                                       |
+| `doric.catalog/v1`                      | every part          | The manifests (`provides`) for ownership checks, the activation order of hook handlers, the active generation and the active host providers ([`src/shared/state.ts`](src/shared/state.ts), [`src/shared/hooks.ts`](src/shared/hooks.ts), [`src/shared/partition.ts`](src/shared/partition.ts))                                           |
+| `doric.diagnostics/v1`                  | every part          | Reporting a failing hook handler, log write or settings listener ([`src/shared/hooks.ts`](src/shared/hooks.ts), [`src/shared/log.ts`](src/shared/log.ts), [`src/shared/state.ts`](src/shared/state.ts))                                                                                                                                  |
+| `doric.log/v1`, `doric.bundle/v1`       | every part          | Writing log records, and the environment a record names ([`src/shared/log.ts`](src/shared/log.ts))                                                                                                                                                                                                                                       |
+| `doric.app.hooks/v1`                    | host, `desktopMain` | The host start step; the desktop's app-ready and app-activate steps ([`src/host/services.ts`](src/host/services.ts), [`src/desktop/index.ts`](src/desktop/index.ts))                                                                                                                                                                     |
+| `doric.startup/v1`                      | host                | The `credential_activation` stage and its log line ([`src/host/services.ts`](src/host/services.ts))                                                                                                                                                                                                                                      |
+| `doric.windows/v1`, `doric.menus/v1`    | `desktopMain`       | Opening, focusing and remembering windows; the menu skeleton, items, keybindings and contexts ([`src/desktop/windows.ts`](src/desktop/windows.ts), [`src/desktop/index.ts`](src/desktop/index.ts), [`src/desktop/menus.ts`](src/desktop/menus.ts))                                                                                       |
+| `doric.migrations/v1`, `doric.cache/v1` | `desktopMain`       | Copying the saved selection into the app origin; the directory of the local settings file ([`src/desktop/migrations.ts`](src/desktop/migrations.ts), [`src/desktop/settings.ts`](src/desktop/settings.ts))                                                                                                                               |
+| `doric.elements/v1`                     | client              | Owning custom element tags and giving each created element its owner's services ([`src/client/ui.ts`](src/client/ui.ts))                                                                                                                                                                                                                 |
 
 Every contract above that the core also provides is reached through
 `services.use`, so the core uses whichever provider the composition chose.
@@ -257,7 +254,7 @@ declared in [`platform.ts`](../../../packages/bundle/src/contracts/platform.ts).
   same text serves an `invalid_input` and the `invalid_output` of stored
   settings that fail their schema
   ([`src/shared/issues.ts`](src/shared/issues.ts),
-  [`src/host/settings/facade.ts`](src/host/settings/facade.ts)). Two
+  [`src/host/settings/service.ts`](src/host/settings/service.ts)). Two
   providers differ. `hooks/v1.execute` puts zod's own error message in its
   `invalid_input` and the issues in `details.issues`
   ([`src/shared/hooks.ts`](src/shared/hooks.ts)). `models/v1` throws a plain
@@ -268,7 +265,7 @@ declared in [`platform.ts`](../../../packages/bundle/src/contracts/platform.ts).
   `Unknown provider kind: <kind>` (no `models.provider/v1` provider has the
   kind) and `Configured provider is unavailable.` (no configuration is active,
   it has no provider with the id, or the provider cannot be built)
-  ([`src/host/models/index.ts`](src/host/models/index.ts),
+  ([`src/host/models/service.ts`](src/host/models/service.ts),
   [`src/host/models/providers.ts`](src/host/models/providers.ts)). In the
   caller's process the `Error` arrives as it is; across a process boundary the
   envelope turns it into a `ContractError` with code `internal` and the same
@@ -288,7 +285,7 @@ message }` with the listener's bundle, in the host and `desktopMain` parts
   ([`src/shared/state.ts`](src/shared/state.ts),
   [`src/shared/hooks.ts`](src/shared/hooks.ts),
   [`src/shared/log.ts`](src/shared/log.ts),
-  [`src/host/settings/facade.ts`](src/host/settings/facade.ts),
+  [`src/host/settings/service.ts`](src/host/settings/service.ts),
   [`src/desktop/settings.ts`](src/desktop/settings.ts)).
 - **Write queue.** Each activated part (host and `desktopMain`) has one write
   queue: `settings/v1.set` and, on the host, the `secrets/v1` writes
@@ -422,8 +419,9 @@ Behavior of the core's provider ([`src/shared/hooks.ts`](src/shared/hooks.ts)):
   call.
 - **Deadlines.** Each `observe`, `transform` and `decide` handler is awaited
   within a deadline: 10 000 ms (`DEFAULT_HOOK_DEADLINE_MS`; the
-  `hooks.deadlineMs` option of the host and `desktopMain` parts'
-  `createActivate`, which tests use, replaces it) for a bundle's hooks; for
+  `hooks.deadlineMs` option of the `desktopMain` part's `createActivate`
+  ([`src/desktop/index.ts`](src/desktop/index.ts)), which tests use, replaces
+  it) for a bundle's hooks; for
   `doric.window.hooks/v1`, the time left to the call's deadline, and none for
   `onCloseHook`. A deadline of 0 means none: a window
   hook gets it when the call has no deadline or its deadline has passed. A
@@ -528,8 +526,7 @@ the core's host contracts, these are `secrets/v1.registerReferences` and
 
 In a host process, `createCoreServices({ types, validators, now?, hookDeadlineMs? })`
 ([`services.ts`](src/host/services.ts)) answers `{ services, activate(context) }`
-and serves `storage/v1`, `settings/v1`, `secrets/v1`, `events/v1`, `tools/v1`, `skills/v1`, `hooks/v1`, `log/v1` and `models/v1` over the router beside the kernel
-entry; calls before `activate` fail `unavailable`. Storage views are
+and serves `storage/v1`, `settings/v1`, `secrets/v1`, `events/v1`, `tools/v1`, `skills/v1`, `hooks/v1`, `log/v1` and `models/v1` over the router; calls before `activate` fail `unavailable`. Storage views are
 partitioned by the router-stamped caller generation, and types are released on
 `InstanceGone` (data kept). Settings values are protobuf messages (`Any`)
 validated with protovalidate; reads ignore fields the message lacks, and a
@@ -555,8 +552,8 @@ for a tool the call does not see and `unavailable` for an unreachable instance.
 a scoped tool: an unknown tool fails `not_found`
 (`Tool "<name>" is not registered.`), an unreachable instance `unavailable`,
 and the owner's `tool_error` is kept.
-Skills fail `duplicate_skill` across bundles and `unavailable_tool` for an
-`allowedTools` entry the caller does not see. `InstanceGone` drops an
+Skills fail `duplicate_skill` across bundles; `allowedTools` is stored as
+given. `InstanceGone` drops an
 instance's tools and skills. Hooks: `Define` is accepted from the contract's
 provider only (`doric.*` only from doric; a second provider fails
 `registration_conflict`); `Run` only from the bundle serving the definition
@@ -598,7 +595,7 @@ outputSchema, strict? }`), `settings` (the configuration fields, an array),
 `resultModalities?`, `check?(payload)` and `execute(payload, call)`. A
 `RegisteredTool` is `{ bundleId, alwaysAvailable, order?, projectId?, tool }`.
 
-Behavior ([`src/host/tools.ts`](src/host/tools.ts)):
+Behavior ([`src/host/tools/service.ts`](src/host/tools/service.ts)):
 
 - `register` is `duplicate_tool` when a tool of the same name is visible to
   the registration's generation and either one is unscoped or both belong to
@@ -617,11 +614,12 @@ Shape ([`skills.ts`](../../../packages/bundle/src/contracts/basic/skills.ts)):
 and `options` is `{ alwaysAvailable?: boolean, order?: positive safe integer }`;
 `list(call?) → Promise<{ bundleId, alwaysAvailable, order?, skill }[]>`.
 
-Behavior ([`src/host/skills.ts`](src/host/skills.ts)): `register` is
+Behavior ([`src/host/skills/service.ts`](src/host/skills/service.ts)): `register` is
 `duplicate_skill` when a visible skill has the name. Since 1.3.0 it stores
 `allowedTools` as given (without duplicates), whatever `tools/v1` holds: it is
 a reference for the model at run time, and `Register` no longer answers
-`unavailable_tool` ([`src/host/skills/service.ts`](src/host/skills/service.ts)).
+`unavailable_tool`, a code removed from the shared list in slice S67
+([`src/host/skills/service.ts`](src/host/skills/service.ts)).
 `alwaysAvailable` defaults to `false`. `list` answers the
 visible skills sorted by `order`, unordered ones last, then by registration
 order.
@@ -707,7 +705,7 @@ schema })` ([`define.ts`](../../../packages/bundle/src/contracts/define.ts)).
 milliseconds, and `generation` is the global settings counter after that
 write.
 
-Behavior on the host ([`src/host/settings/facade.ts`](src/host/settings/facade.ts)):
+Behavior on the host ([`src/host/settings/service.ts`](src/host/settings/service.ts)):
 
 - `register` applies the definition ownership rule; a space visible to the
   registration's generation is `registration_conflict`
@@ -832,7 +830,7 @@ Promise<void>`. A sink's `scopeKeys` are 1 to 16 unique scope keys, its
 `stream` is at most 256 characters, and every `{key}` placeholder in it is
 one of its keys.
 
-Behavior ([`src/host/events/facade.ts`](src/host/events/facade.ts)):
+Behavior ([`src/host/events/service.ts`](src/host/events/service.ts)):
 
 - `register` applies the definition ownership rule and refuses a payload that
   declares `type` (`invalid_input`); a type visible to the registration's
@@ -842,7 +840,7 @@ Behavior ([`src/host/events/facade.ts`](src/host/events/facade.ts)):
   `registration_conflict` ([`src/host/events/sinks.ts`](src/host/events/sinks.ts)).
   A bundle registers a sink only for streams it owns (`not_owner`), checked
   with each placeholder filled with a sample value; the platform registers a
-  sink for any stream ([`src/host/events/facade.ts`](src/host/events/facade.ts)).
+  sink for any stream ([`src/host/events/service.ts`](src/host/events/service.ts)).
 - `append` refuses an unregistered type (`unknown_event`), a caller that is
   not the type's owner (`not_owner`), a generation with no sink and a call
   scope that lacks a key of the sink (`invalid_scope`, naming
@@ -887,14 +885,14 @@ SVG of at most 16 384 characters. The `languageModel` is a process-local
 handle: in the process that built it, it is the provider's object; any use of
 it in another process fails with `local_only`.
 
-Behavior ([`src/host/models/index.ts`](src/host/models/index.ts)):
+Behavior ([`src/host/models/service.ts`](src/host/models/service.ts)):
 
 - The core watches every `models.provider/v1` record. Each record's `kind()`,
   `advertised()` and `catalogCapacity()` are read once and kept in
   registration order; a record whose descriptor cannot be read is left out,
   and one whose `catalogCapacity()` fails counts as `false`. When a record
   goes away, the providers it built are dropped
-  ([`src/host/models/registry.ts`](src/host/models/registry.ts)).
+  ([`src/host/models/service.ts`](src/host/models/service.ts)).
 - `kinds` answers the advertised descriptors in registration order; `kind`
   answers the first registered kind with the id, advertised or not.
 - `catalog` answers `absent` for an unregistered kind. Otherwise it takes the
@@ -1298,10 +1296,11 @@ key that the backend needs is the backend's configuration.
 | Event sink keys and stream         | 1–16 keys, 256 characters      | [`events.ts`](../../../packages/bundle/src/contracts/basic/events.ts)   |
 | Icon requests, models, names, SVGs | 64, 1000, 512, 16 384          | [`models.ts`](../../../packages/bundle/src/contracts/basic/models.ts)   |
 
-The host part's `createActivate({ hooks: { deadlineMs }, now })` and the main
-process part's `createActivate` take a hook deadline (0 or less: none) and a
-clock for settings write times; the shipped parts use the defaults
-([`src/host/index.ts`](src/host/index.ts), [`src/desktop/index.ts`](src/desktop/index.ts)).
+The main process part's `createActivate` takes a hook deadline (0 or less:
+none) and a clock for settings write times; the host part's
+`createCoreServices` takes `hookDeadlineMs` and `now`; the shipped parts use
+the defaults ([`src/host/services.ts`](src/host/services.ts),
+[`src/desktop/index.ts`](src/desktop/index.ts)).
 
 ## Build and test
 
@@ -1320,5 +1319,6 @@ npx nx run bundle-core:test
   ([`tsconfig.parts.json`](tsconfig.parts.json)) and the client part with the
   DOM library ([`tsconfig.client.json`](tsconfig.client.json)).
 - `test` builds this bundle and the bundles its tests load, compiles
-  `tests/`, and runs `tests/*.test.ts` (host), `tests/desktop/` (main process)
+  `tests/`, and runs `tests/*.test.ts` and `tests/router/` (host), `tests/desktop/` (main
+  process)
   and `tests/client/` (windows on `happy-dom`) with `node --test`.

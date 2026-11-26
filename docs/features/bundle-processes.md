@@ -592,7 +592,8 @@ tests depend on timing.
 S41c gives core its process entry `src/host/main.ts`, which calls `runBundle`
 (`bundle/host`) with its nine services listed statically as `[Service,
 implementation]` pairs from `CoreServices.implementations`; it is built to
-`dist/host/main.mjs` (about 2 MB) beside the kernel entry.
+`dist/host/main.mjs` (about 2 MB); its kernel entry `src/host/index.ts` is
+deleted in S67.
 `CoreServicesOptions.types` may be a function: `main.ts` loads the registry at
 `activate` with `loadCatalogTypes` from `doric.catalog/v1.Descriptors`. A
 `Descriptors` failure fails `activate` with its code; a malformed set or a
@@ -621,7 +622,8 @@ declare `log/v1` or `secrets/v1` log to stdout; since S62c1 every host part
 lists both as optional.
 
 From S43 the host parts serve their contracts beside their kernel entries (see
-[Evolution](#evolution) for each slice); the parts the executor path uses
+[Evolution](#evolution) for each slice); since S67 `core` and `postgres` have
+no kernel entry and serve only through their process entries. The parts the executor path uses
 work as follows. A thrown llms provider error crosses the router as
 `provider_error` and a thrown tool error as `tool_error`, both
 `FAILED_PRECONDITION` with every field of the error's data in
@@ -637,7 +639,8 @@ calls make one `Check` before each `Execute`. A cancelled `Run` or `Compact`
 is not aborted: `runtime` signals it through
 `executor.session/v1.WatchCancel`, waits for the call, and cancels it only
 after a 5 s grace; a failure after the cancel answers `run_cancelled` or
-`compaction_cancelled`. The kernel entries stay in use until S62.
+`compaction_cancelled`. The kernel entries stayed in use until S62; S67 deletes
+the kernel, the in-process host and the kernel entries of `core` and `postgres`.
 
 Since S62a the build also counts what a host part serves without recording it
 (`hostProvides`, `packages/bundle/src/build/host-provides.ts`): the `HOST` or
@@ -1774,3 +1777,24 @@ sandbox pool` then `Sandbox pool configured` with the `logSandboxPool`
   relay enforces no `desktopScope` (RK37 of the spec); the forward's error is a
   `ContractError` `unavailable` rather than a `ConnectError`; the e2e fake
   host's Socket.IO half is unused and is deleted in group F.
+- 2026-11-26: phase 3, slice S67, of
+  [the spec](../designs/grpc-processes.md) (version 6.46): the kernel and the
+  in-process host are deleted. Gone: `packages/bundle/src/process/` (its
+  `ajv.ts` moves to `src/sdk/host/ajv.ts`, and `bundle/host` keeps
+  `ajvValidators`, which the root `bundle` no longer exports),
+  `src/loader/activate.ts` (`startHost`), the kernel `doric.startup/v1`
+  provider and `providePlatformServices`' `startup` option, `unavailable_tool`
+  from the shared error-code list (no longer "until group F"),
+  `kernel_requires_generation` from the quarantine reasons, the root `bundle`
+  exports of the kernel, its transport and partitions (`StartupSink` stays in
+  `bundle/platform`, where `doric-host` imports it), `storage/memory`'s
+  `memoryFoundation`, `core`'s kernel entry and facades and `postgres`'
+  `src/host/index.ts` (`activatePostgres`, `postgresEmbedded`); both bundles'
+  `host-build.test.ts` assert that `dist/host/index.js` is absent. Decisions:
+  `packages/bundle/tests/generation.test.ts` stays (it tests the live
+  `activateEnvironment` and `generationOf`), `postgres`' `connectDatabase`
+  stays for `createPostgres`, `core`'s `models/providers.ts` keeps
+  `ConfiguredProvider`, `work-hold.test.ts` stays (Q-F3), and `core`'s
+  dependency on `tool` is a boundary exception until S70. The kernel's
+  lost-hold handover and window-hold cases are retired with no counterpart:
+  the platform drains on work holds per instance.

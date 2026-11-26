@@ -17,7 +17,6 @@ import {
   DoricDiagnosticsV1,
   DoricGenerationV1,
   DoricLogV1,
-  DoricStartupV1,
   type GenerationDescription,
   type LogRecord,
   type PeerSignal,
@@ -37,7 +36,7 @@ export interface LogSink {
 
 /**
  * The host-only `doric.catalog/v1` members the desktop consumes (API mínima
- * [S8-9]); the kernel serves them, desktopMain and client do not.
+ * [S8-9]); the host serves them, desktopMain and client do not.
  */
 export interface CatalogDistributionProvider {
   distribution(call: Call): Promise<DistributionCatalog>;
@@ -198,13 +197,13 @@ const specs = platformContracts;
 /**
  * Registers the platform providers of one environment under principal
  * `doric`: `doric.catalog/v1`, `doric.diagnostics/v1`, `doric.bundle/v1`,
- * `doric.log/v1` and, when given, `doric.generation/v1`. Pure: the host
- * kernel, the host child and the desktopMain runner share it.
+ * `doric.log/v1` and, when given, `doric.generation/v1`. Pure: the
+ * desktopMain runner and the desktop client share it.
  */
 export const providePlatformServices = (
   platform: Principal,
   options: {
-    /** The catalog the call sees (its operation generation's, in the kernel). */
+    /** The catalog the call sees. */
     readonly snapshot: (call: Call) => CatalogSnapshot;
     readonly diagnostics: DiagnosticsStore;
     /** The diagnostics the call sees; default the store's snapshot. */
@@ -214,20 +213,11 @@ export const providePlatformServices = (
     readonly distribution?: CatalogDistributionProvider;
     /** The host's recovery members of `doric.catalog/v1`. */
     readonly composition?: CatalogCompositionProvider;
-    /** The kernel's `doric.generation/v1` (absent in a single-process host). */
+    /** `doric.generation/v1`, when the caller's environment has one. */
     readonly generation?: {
       describe(call: Call): GenerationDescription;
       hold(work: WorkHold, call: Call): Disposable;
       signal(signal: PeerSignal, call: Call): void | Promise<void>;
-    };
-    /** The host's `doric.startup/v1` record (absent outside the host kernel). */
-    readonly startup?: {
-      stage(name: string): void;
-      log(record: {
-        readonly level: 'debug' | 'info' | 'warn' | 'error';
-        readonly fields: Readonly<Record<string, unknown>>;
-        readonly message: string;
-      }): void;
     };
   },
 ): void => {
@@ -345,35 +335,6 @@ export const providePlatformServices = (
           input: methods.signal.input,
           output: methods.signal.output,
           execute: (peer: PeerSignal, call) => generation.signal(peer, call),
-        }),
-      }),
-    );
-  }
-
-  const { startup } = options;
-
-  if (startup !== undefined) {
-    const methods = specs['doric.startup/v1'].methods;
-
-    services.provide(
-      definePlatformService(DoricStartupV1, {
-        stage: defineMethod({
-          input: methods.stage.input,
-          output: methods.stage.output,
-          execute: (name: string) => {
-            startup.stage(name);
-          },
-        }),
-        log: defineMethod({
-          input: methods.log.input,
-          output: methods.log.output,
-          execute: (record: {
-            readonly level: 'debug' | 'info' | 'warn' | 'error';
-            readonly fields: Readonly<Record<string, unknown>>;
-            readonly message: string;
-          }) => {
-            startup.log(record);
-          },
         }),
       }),
     );

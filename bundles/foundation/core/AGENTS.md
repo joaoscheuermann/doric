@@ -88,8 +88,9 @@ or route: the core serves whichever bundle calls it.
 - Never log a secret and never put one in an error; redact log fields and
   event bodies with `src/shared/redact.ts` and the list of
   `secrets/v1.redactions()`.
-- Add the tests of a host contract as `tests/<contract>.test.ts`, booting a host
-  with the memory backends through `tests/support/host.ts`; of the main process
+- Add the tests of a host contract as `tests/router/<contract>.test.ts`,
+  serving the core over the router with the memory backends through
+  `tests/support/router.ts`; of the main process
   part in `tests/desktop/`, through `tests/support/desktop.ts`; and of the
   client part in `tests/client/`, through `tests/client/support/window.ts`.
 - Before adding an exception for this bundle, open

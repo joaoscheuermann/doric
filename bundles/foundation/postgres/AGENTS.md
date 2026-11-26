@@ -19,9 +19,8 @@ of the core.
   equivalent to it or update it in the same change.
 - Change the shape of `storage.backend/v1` or `secrets.backend/v1` only in
   `packages/bundle/src/contracts/basic/`, never in this bundle.
-- Keep the `version` and the `provides` versions that `postgresEmbedded`
-  declares in `src/host/postgres.ts` equal to those of
-  [`manifest.json`](manifest.json), and change them in the same change.
+- Declare the `version` and the `provides` versions only in
+  [`manifest.json`](manifest.json); no source declares them.
 - Keep `requires` of `manifest.json` an empty list and add no `optional`: a
   foundation bundle activates before the core and may use only `doric.*`
   contracts.
@@ -89,8 +88,7 @@ of the core.
   `tests/support/database.ts`, seeds it through `query`, then applies the new
   migration with `migrate('<new directory>')` and checks the data it must
   keep.
-- Keep `tests/health.test.ts` and the database-free cases of
-  `tests/activate.test.ts` free of PostgreSQL, and skip every other suite
+- Keep `tests/health.test.ts` free of PostgreSQL, and skip every other suite
   without `DORIC_TEST_DATABASE_URL` through `skipWithoutDatabase`.
 - Before adding an exception for this bundle, open
   [`tests/boundary-exceptions.json`](../../../tests/boundary-exceptions.json)

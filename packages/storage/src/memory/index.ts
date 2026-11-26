@@ -1,12 +1,8 @@
 /**
  * In-memory `storage.backend/v1` and `secrets.backend/v1`: the executable
- * reference of the storage protocol, and the foundation of core and kernel
+ * reference of the storage protocol, and the foundation of storage and core
  * unit tests. Never part of a shipped composition.
  */
-export {
-  type MemoryFoundationOptions,
-  memoryFoundation,
-} from './foundation.js';
 export {
   type MemorySecretsOptions,
   memorySecretsBackend,

@@ -92,7 +92,7 @@ This bundle implements all six methods and emits no events.
 Each answer is defined in [`src/host/kind.ts`](src/host/kind.ts) and turned
 into a method by [`src/host/provider.ts`](src/host/provider.ts).
 `models/v1.kind('openai')` resolves the kind whether or not it is advertised
-([`bundles/foundation/core/src/host/models/registry.ts`](../../foundation/core/src/host/models/registry.ts)),
+([`bundles/foundation/core/src/host/models/service.ts`](../../foundation/core/src/host/models/service.ts)),
 and `models/v1.contextWindow` reads context capacity only from a kind whose
 `catalogCapacity()` is `true`
 ([`bundles/foundation/core/src/host/models/capacity.ts`](../../foundation/core/src/host/models/capacity.ts)).

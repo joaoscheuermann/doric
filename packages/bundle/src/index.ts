@@ -32,12 +32,6 @@ export type {
 } from './contracts/skill.js';
 export { SkillSchema } from './contracts/skill.js';
 export {
-  type HostPlatform,
-  type PlatformCallOptions,
-  type StartHostOptions,
-  startHost,
-} from './loader/activate.js';
-export {
   type BuildCatalogInput,
   buildCatalog,
   type EmbeddedBundle,
@@ -82,31 +76,6 @@ export {
   parseSkillDocument,
   readSkill,
 } from './loader/skills.js';
-export { ajvValidators } from './process/ajv.js';
-export {
-  defaultRunnerPath,
-  forkGeneration,
-  type GenerationChange,
-  type GenerationLease,
-  type GenerationManager,
-  type GenerationSummary,
-  type KernelDistributionSource,
-  type KernelPlatform,
-  type LostGeneration,
-  type PublishResult,
-  type SpawnedGeneration,
-  type StartKernelOptions,
-  type StartupSink,
-  startKernel,
-  type WorkHoldRef,
-} from './process/kernel.js';
-export { childTransport, parentTransport } from './process/node-transport.js';
-export {
-  type HostPartition,
-  isKernelResident,
-  kernelSignature,
-  partitionCatalog,
-} from './process/partition.js';
 export type {
   Alternative,
   AlternativeChoices,

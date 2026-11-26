@@ -28,8 +28,13 @@ import {
   ServiceDirectory,
   type ServiceRuntime,
 } from '../src/runtime/index.js';
-import { captureSink, embedded, manifest } from './support/fixtures.js';
-import { fakeTool, observeActivations } from './support/host.js';
+import {
+  captureSink,
+  embedded,
+  fakeTool,
+  manifest,
+  observeActivations,
+} from './support/fixtures.js';
 import { minimalCore } from './support/minimal-core.js';
 
 // Operation generation ---------------------------------------------------------

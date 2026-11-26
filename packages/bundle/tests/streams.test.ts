@@ -21,7 +21,6 @@ import {
   streamListener,
   toStreamObserver,
 } from '../src/contracts/index.js';
-import { ajvValidators } from '../src/process/ajv.js';
 import {
   documentMethodSpecs,
   wireMessageSchema,
@@ -34,7 +33,7 @@ import {
   STREAM_KEY,
   streamItemSchema,
 } from '../src/runtime/index.js';
-import { processes, snapshot } from './support/envelope.js';
+import { ajvValidators, processes, snapshot } from './support/envelope.js';
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, 10));
 

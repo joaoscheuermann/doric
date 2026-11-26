@@ -17,6 +17,10 @@ import {
   ref,
 } from '../src/contracts/index.js';
 import {
+  describeRecord,
+  registerRemote,
+} from '../src/runtime/envelope/index.js';
+import {
   createPrincipal,
   emptyCatalogView,
   LayeredDirectory,
@@ -432,6 +436,80 @@ void test('a child whenAvailable fires for kernel providers; a kernel view loses
     'kernel got pong',
     'kernel lost files',
   ]);
+});
+
+// Provider records across the envelope (57-WP-K).
+
+interface Kind {
+  id(): Promise<string>;
+  find(name: string): Promise<{ readonly name: string } | undefined>;
+}
+
+const KindV1 = ref<Kind>('kind/v1');
+
+/**
+ * Three `kind/v1` records of one generation bundle, in a fixed order, as the
+ * kernel side sees them once each record is announced across the link.
+ */
+const kindsSeenByKernel = async (): Promise<Kind[]> => {
+  const world = processes();
+  const kinds = world.generation.principal('kinds');
+
+  for (const id of ['first', 'second', 'third']) {
+    kinds.services.provide(
+      defineService(
+        KindV1,
+        {
+          id: defineMethod({
+            input: z.tuple([]),
+            output: z.string(),
+            execute: async () => id,
+          }),
+          find: defineMethod({
+            input: z.string(),
+            output: z.object({ name: z.string() }).optional(),
+            execute: async (name) => (name === id ? { name } : undefined),
+          }),
+        },
+        { cardinality: 'many' },
+      ),
+    );
+  }
+
+  for (const record of world.generation.directory.providers('kind/v1')) {
+    registerRemote(
+      world.kernel.link,
+      world.kernel.directory,
+      describeRecord(record),
+    );
+  }
+
+  const records: Kind[] = [];
+
+  world.kernel.principal('consumer').services.whenAvailable(KindV1, (api) => {
+    records.push(api);
+  });
+  await flush();
+
+  return records;
+};
+
+void test('each record a generation bundle provides for a many contract crosses the link and answers on its own', async () => {
+  const records = await kindsSeenByKernel();
+
+  assert.deepEqual(await Promise.all(records.map((record) => record.id())), [
+    'first',
+    'second',
+    'third',
+  ]);
+});
+
+void test('an optional output that is undefined crosses the envelope as undefined', async () => {
+  const [first] = await kindsSeenByKernel();
+
+  assert.ok(first !== undefined);
+  assert.deepEqual(await first.find('first'), { name: 'first' });
+  assert.equal(await first.find('missing'), undefined);
 });
 
 const compiled = resolve(dirname(fileURLToPath(import.meta.url)), '..', 'src');

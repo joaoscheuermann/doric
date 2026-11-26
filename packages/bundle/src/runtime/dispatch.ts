@@ -97,7 +97,6 @@ const registrationConflicts: ReadonlySet<string> = new Set([
   'duplicate_skill',
   'registration_conflict',
   'not_owner',
-  'unavailable_tool',
   'provider_conflict',
   'undeclared_provide',
   'cardinality_mismatch',

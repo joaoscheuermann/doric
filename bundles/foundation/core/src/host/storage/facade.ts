@@ -2,27 +2,18 @@ import {
   type Call,
   type CommitBatch,
   ContractError,
-  defineMethod,
-  defineService,
   EventsV1,
-  type Services,
   type StorageBackend,
-  StorageBackendV1,
   type StorageCapabilities,
-  type StorageTypeDefinition,
-  StorageV1,
-  storageMethods,
 } from 'bundle/contracts';
 import { checkBatchLimits, parseStreamId } from 'storage';
 import type { StorageFacade } from 'storage/rpc';
 
 import { describeIssues } from '../../shared/issues.js';
-import { routedViewOf, type View, viewOf } from '../../shared/partition.js';
+import { routedViewOf, type View } from '../../shared/partition.js';
 import {
-  assertDefinitionOwner,
   assertDefinitionOwnerIn,
   type CatalogLookup,
-  type CoreState,
   PLATFORM,
 } from '../../shared/state.js';
 import type { CoreBinding } from '../binding.js';
@@ -246,122 +237,14 @@ const commitTo = async (
 };
 
 /**
- * The core's `storage/v1`: a facade over the chosen `storage.backend/v1` that
- * enforces ownership (types by namespace and `provides`, streams by their
- * first segment), validates every written value with the type's schema,
- * refuses a batch over the backend's limits before sending it, and declares
- * a type to the backend only when the first operation on it runs. Defining a
- * type does no I/O, so activation never reaches the database.
- */
-export const createStorage = (state: CoreState) => {
-  const types = createTypeRegistry();
-  const capabilities = createLimits();
-
-  const backendOf = (services: Services) => services.use(StorageBackendV1);
-
-  return defineService(StorageV1, {
-    defineType: defineMethod({
-      ...storageMethods.defineType,
-      execute: (definition: StorageTypeDefinition, call, services) => {
-        assertDefinitionOwner(
-          state,
-          call,
-          services,
-          definition.type,
-          'storage type',
-        );
-        assertIndexes(definition);
-
-        return types.register(
-          definition,
-          call.caller.bundleId,
-          fingerprintOf(definition),
-          viewOf(call, services),
-        );
-      },
-    }),
-    get: defineMethod({
-      ...storageMethods.get,
-      execute: async (key, call, services) => {
-        const backend = () => backendOf(services);
-
-        await readable(types, key.type, viewOf(call, services), backend, call);
-
-        return await backend().get(key, call);
-      },
-    }),
-    query: defineMethod({
-      ...storageMethods.query,
-      execute: async (query, call, services) => {
-        const backend = () => backendOf(services);
-
-        await readable(
-          types,
-          query.type,
-          viewOf(call, services),
-          backend,
-          call,
-        );
-
-        return await backend().query(query, call);
-      },
-    }),
-    read: defineMethod({
-      ...storageMethods.read,
-      execute: async (request, call, services) => {
-        assertStreamReader(request.stream, call);
-
-        return await backendOf(services).read(request, call);
-      },
-    }),
-    commit: defineMethod({
-      ...storageMethods.commit,
-      execute: async (batch, call, services) =>
-        await commitTo(
-          types,
-          capabilities,
-          batch,
-          viewOf(call, services),
-          () => state.catalog(call, services),
-          () => backendOf(services),
-          call,
-        ),
-    }),
-    health: defineMethod({
-      ...storageMethods.health,
-      execute: async (_input, call, services) =>
-        await backendOf(services).health(call),
-    }),
-    putBlob: defineMethod({
-      ...storageMethods.putBlob,
-      execute: async (bytes, call, services) =>
-        await backendOf(services).putBlob(bytes, call),
-    }),
-    getBlob: defineMethod({
-      ...storageMethods.getBlob,
-      execute: async (hash, call, services) =>
-        await backendOf(services).getBlob(hash, call),
-    }),
-    deleteBlob: defineMethod({
-      ...storageMethods.deleteBlob,
-      execute: async (hash, call, services) => {
-        await backendOf(services).deleteBlob(hash, call);
-      },
-    }),
-  });
-};
-
-/**
  * The core's `storage/v1` over the router, for `serveStorage`: the rules of
- * {@link createStorage} with the router's stamp for the generation view
+ * the facade with the router's stamp for the generation view
  * (`routedViewOf`), the catalog of `doric.catalog/v1` read asynchronously,
  * and the backend `activate` bound. `defineType` settles once its ownership
  * check read the catalog. Every method fails with `unavailable` until
  * `activate` ran.
  */
-export const createStorageFacade = (
-  bind: () => CoreBinding,
-): StorageFacade => {
+export const createStorageFacade = (bind: () => CoreBinding): StorageFacade => {
   const types = createTypeRegistry();
   const capabilities = createLimits();
 

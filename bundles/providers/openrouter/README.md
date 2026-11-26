@@ -7,7 +7,7 @@ catalog, so Doric knows each model's context window and what each model
 accepts, and it repairs a rejected structured response with corrected attempts.
 The kind is advertised: `models/v1.kinds()` lists it among the provider kinds
 you choose from when you connect a model
-([`bundles/foundation/core/src/host/models/registry.ts`](../../foundation/core/src/host/models/registry.ts)).
+([`bundles/foundation/core/src/host/models/service.ts`](../../foundation/core/src/host/models/service.ts)).
 
 It is a provider bundle with one host part, which provides the kind as one
 `models.provider/v1` record that the `models/v1` of the
@@ -98,7 +98,7 @@ This bundle registers exactly one record, with `{ cardinality: 'many' }`
 
 How `models/v1` uses `advertised` and `catalogCapacity` is stated in the
 [`core` README](../../foundation/core/README.md#modelsv1)
-([`bundles/foundation/core/src/host/models/registry.ts`](../../foundation/core/src/host/models/registry.ts),
+([`bundles/foundation/core/src/host/models/service.ts`](../../foundation/core/src/host/models/service.ts),
 [`bundles/foundation/core/src/host/models/capacity.ts`](../../foundation/core/src/host/models/capacity.ts)).
 
 ## The `openrouter` kind
@@ -147,7 +147,7 @@ transport and keeps no cache:
    `authorization: Bearer <secret>` when `secret` is given and not empty.
    `models/v1` passes as `secret` the stored credential that the
    configuration's `token` names
-   ([`bundles/foundation/core/src/host/models/index.ts`](../../foundation/core/src/host/models/index.ts)).
+   ([`bundles/foundation/core/src/host/models/service.ts`](../../foundation/core/src/host/models/service.ts)).
 3. It parses the answer with `modelCatalog` of `llms`
    ([`packages/llms/src/lib/providers/models.ts`](../../../packages/llms/src/lib/providers/models.ts)):
    each object of the answer's `data` array becomes one `CatalogModel` with

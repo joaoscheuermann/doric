@@ -1,6 +1,3 @@
-import type { EmbeddedBundle } from 'bundle';
-import type { HostContext } from 'bundle/contracts';
-
 import { createDatabaseHandle } from './database.js';
 import type { PostgresOptions } from './options.js';
 import { secretsBackend } from './secrets/backend.js';
@@ -35,57 +32,5 @@ export const createPostgres = (options: PostgresOptions = {}): Postgres => {
     }),
     secrets: secretsBackend(handle.client, environment),
     close: handle.close,
-  };
-};
-
-/** The host part: provides both services and closes the client on deactivation. */
-export const activatePostgres =
-  (options: PostgresOptions = {}) =>
-  ({ services }: HostContext) => {
-    const postgres = createPostgres(options);
-
-    services.provide(postgres.storage);
-    services.provide(postgres.secrets);
-
-    return () => postgres.close();
-  };
-
-const contracts = ['storage.backend/v1', 'secrets.backend/v1'] as const;
-const version = '1.0.0';
-
-/**
- * The bundle as an embedded foundation, for tests that boot a host over
- * PostgreSQL without staging it. The composition must still choose it in
- * `providers` for both backends.
- */
-export const postgresEmbedded = (
-  options: PostgresOptions & { readonly id?: string } = {},
-): EmbeddedBundle => {
-  const id = options.id ?? 'postgres';
-
-  return {
-    manifest: {
-      manifestVersion: 1,
-      id,
-      version,
-      engines: { doric: '^1.0.0' },
-      description: 'PostgreSQL storage and secrets backends over Prisma.',
-      provides: contracts.map((contract) => `${contract}@${version}`),
-      requires: [],
-    },
-    descriptor: {
-      descriptorVersion: 1,
-      bundle: { id, version },
-      contracts: contracts.map((contract) => ({
-        id: contract,
-        version,
-        kind: 'service' as const,
-        environment: 'host' as const,
-        cardinality: 'one' as const,
-        local: false,
-        schema: `schemas/${contract}.json`,
-      })),
-    },
-    host: { activate: activatePostgres(options) },
   };
 };

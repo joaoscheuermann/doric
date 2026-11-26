@@ -621,6 +621,19 @@ void test('a closed principal refuses stub calls', () => {
   assert.throws(() => stub.say('x'), codeOf('unavailable'));
 });
 
+void test('only a sequence hook takes an order', () => {
+  assert.throws(
+    () =>
+      defineHook({ kind: 'observe', input: z.object({}), order: 'reverse' }),
+    /Only a sequence hook takes an order/,
+  );
+  assert.equal(
+    defineHook({ kind: 'sequence', input: z.object({}), order: 'reverse' })
+      .order,
+    'reverse',
+  );
+});
+
 void test('hooks/v1 consumers get one handle per owner and register through the provider', async () => {
   const { principal } = setup();
   const OwnerHooksV1 = defineHooks('owner.hooks/v1', {

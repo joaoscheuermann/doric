@@ -5,6 +5,7 @@
 
 import { hasOption } from '@bufbuild/protobuf';
 
+import { basicContractSpec } from '../contracts/basic/index.js';
 import {
   event as eventOption,
   settings as settingsOption,
@@ -61,10 +62,13 @@ export interface HostProvide {
  * Leaves out every id that `recorded` holds in environment `host` (the
  * recording already provides it) or `desktopMain` (B2: the desktop part's
  * contract gets no host entry; `chat.composer/v1` while `chat` is
- * version 1). Ignores handler services, services of `CLIENT` or `PLATFORM`
- * contracts, and entries that name no service of `index` (the version 2
- * environment check reports those). A `provides` entry that does not parse
- * is skipped.
+ * version 1), except a basic contract whose fixed table lists both `host`
+ * and `desktopMain` (`hooks/v1`, `log/v1`, `settings/v1`): each environment
+ * has its own provider of it, so `core`'s desktopMain recording leaves its
+ * host service its host entry. Ignores handler services, services of
+ * `CLIENT` or `PLATFORM` contracts, and entries that name no service of
+ * `index` (the version 2 environment check reports those). A `provides`
+ * entry that does not parse is skipped.
  *
  * Pure and deterministic; never throws.
  */
@@ -88,8 +92,9 @@ export const hostProvides = (input: {
   const answered = new Set(
     recorded
       .filter(
-        ({ environment }) =>
-          environment === 'host' || environment === 'desktopMain',
+        ({ id, environment }) =>
+          environment === 'host' ||
+          (environment === 'desktopMain' && !inHostAndDesktopMain(id)),
       )
       .map(({ id }) => id),
   );
@@ -149,6 +154,13 @@ export const hostProvides = (input: {
   }
 
   return provides;
+};
+
+/** Whether `id` is a basic contract the fixed table puts in `host` and `desktopMain`. */
+const inHostAndDesktopMain = (id: string): boolean => {
+  const environments = basicContractSpec(id)?.environments ?? [];
+
+  return environments.includes('host') && environments.includes('desktopMain');
 };
 
 const isHostContract = (contract: ContractInfo): boolean =>

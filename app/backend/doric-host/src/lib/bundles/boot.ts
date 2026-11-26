@@ -14,7 +14,6 @@ import {
   PLATFORM_VERSION,
   readComposition,
   readCompositionOverrides,
-  type StartupSink,
   selectAlternatives,
   type Variables,
 } from 'bundle';
@@ -25,6 +24,7 @@ import {
   type PlatformOptions,
   readStagedCatalogIndex,
   runHostHook,
+  type StartupSink,
   stagedCommandOf,
   stagedHostPart,
   startPlatform,

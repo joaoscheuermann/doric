@@ -1,6 +1,6 @@
 // The generation runner: one bundle generation in its own process. It is
-// environment-generic and browser-safe; the Node entry (`process/runner-main`)
-// and the desktop entry (stage 8) only add a transport and their loaders.
+// environment-generic and browser-safe; the desktop entry (stage 8) only adds
+// a transport and its loaders.
 
 import { z } from 'zod';
 

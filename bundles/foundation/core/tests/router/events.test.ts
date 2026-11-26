@@ -461,3 +461,22 @@ void test('after Unsink or Unregister an append is invalid_scope or unknown_even
     await core.close();
   }
 });
+
+void test("events follow the router's stamp: each generation registers its own, once, and an Unregister frees only its generation", async () => {
+  const core = await served();
+
+  try {
+    const first = core.client(EventsService, 'notes', { generation: 1 });
+    const second = core.client(EventsService, 'notes', { generation: 2 });
+    const event = { type: 'notes.added/v1', messageType: 'notes.Added' };
+    const { registrationId } = await first.register(event);
+
+    await second.register(event);
+    await first.unregister({ registrationId });
+
+    await rejectsWith(second.register(event), 'registration_conflict');
+    await first.register(event);
+  } finally {
+    await core.close();
+  }
+});

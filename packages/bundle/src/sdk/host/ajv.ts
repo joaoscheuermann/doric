@@ -1,11 +1,11 @@
 import { Ajv2020 } from 'ajv/dist/2020.js';
 
-import type { JsonObject } from '../contracts/types.js';
+import type { JsonObject } from '../../contracts/types.js';
 import type {
   SchemaCheck,
   SchemaValidators,
-} from '../runtime/envelope/validators.js';
-import { canonicalJson, compilableSchema } from '../runtime/json-schema.js';
+} from '../../runtime/envelope/validators.js';
+import { canonicalJson, compilableSchema } from '../../runtime/json-schema.js';
 
 const pathOf = (instancePath: string): (string | number)[] =>
   instancePath

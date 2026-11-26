@@ -1,5 +1,5 @@
 // The host's composition overrides (HR-6): the file the splash recovery
-// actions persist, how a catalog read applies it, and the kernel's
+// actions persist, how a catalog read applies it, and the platform's
 // `doric.catalog/v1.disable` / `resetComposition`.
 
 import assert from 'node:assert/strict';
@@ -7,16 +7,28 @@ import { readdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { DoricCatalogV1 } from '../src/contracts/index.js';
 import {
   applyCompositionOverrides,
+  buildCatalog,
   clearCompositionOverrides,
   compositionOverridesPath,
+  discoverBundles,
   readCompositionOverrides,
   writeCompositionOverrides,
 } from '../src/index.js';
-import { withRoot } from './support/fixtures.js';
-import { bootKernel, writeProbe } from './support/generation-fixtures.js';
+import { createPlatformCompositionActions } from '../src/platform/composition-actions.js';
+import {
+  createHopCall,
+  PLATFORM_VERSION,
+  type ResolvedEnvironment,
+} from '../src/runtime/index.js';
+import {
+  captureLog,
+  descriptorFor,
+  manifest,
+  withRoot,
+  writeBundle,
+} from './support/fixtures.js';
 
 const composition = {
   core: 'core',
@@ -74,92 +86,158 @@ void test('disabled bundles leave enabled; the core and providers stay', () => {
   );
 });
 
-const stateOf = (kernel: Awaited<ReturnType<typeof bootKernel>>, id: string) =>
-  kernel.platform.catalog().bundles.find((bundle) => bundle.id === id)?.state;
+/** The composition as written: a core and one probe bundle, both installed. */
+const written = {
+  core: 'mincore',
+  enabled: ['mincore', 'probe'],
+  providers: {},
+};
 
-void test('a host boot applies the overrides, and ignores a malformed file', async () => {
-  for (const [content, expected] of [
-    ['{"disabled":["probe"]}', 'disabled'],
-    ['not json', 'active'],
-  ] as const) {
-    await withRoot(async (root) => {
-      const path = join(root, 'composition.overrides.json');
+/** Installs the two bundles of `written` under `<root>/bundles`. */
+const install = async (root: string) => {
+  for (const id of written.enabled) {
+    const source = manifest(id);
 
-      await writeProbe(root);
-      await writeFile(path, content);
-
-      const kernel = await bootKernel(root, ['probe'], {
-        compositionOverrides: path,
-      });
-
-      try {
-        assert.equal(stateOf(kernel, 'probe'), expected);
-      } finally {
-        await kernel.platform.stop();
-      }
+    await writeBundle(join(root, 'bundles'), id, {
+      manifest: source,
+      descriptor: descriptorFor(source),
     });
   }
-});
+};
 
-void test('disable publishes a generation without the bundle, and resetComposition one with it again', async () => {
+/**
+ * The host's catalog read of generation `generation`, as the host makes it:
+ * the installed bundles with `written` and its overrides applied; an
+ * overrides file that cannot be read becomes an issue.
+ */
+const readCatalog = async (
+  root: string,
+  generation: number,
+): Promise<ResolvedEnvironment> => {
+  const issues: string[] = [];
+  let composition = written;
+
+  try {
+    composition = applyCompositionOverrides(
+      written,
+      await readCompositionOverrides(join(root, 'composition.overrides.json')),
+    );
+  } catch (error) {
+    issues.push(error instanceof Error ? error.message : String(error));
+  }
+
+  return buildCatalog({
+    installed: await discoverBundles(join(root, 'bundles')),
+    embedded: [],
+    composition,
+    platformVersion: PLATFORM_VERSION,
+    generation,
+    issues,
+  });
+};
+
+const stateOf = (resolved: ResolvedEnvironment, id: string) =>
+  resolved.entries.find((entry) => entry.id === id)?.state;
+
+/** The platform's recovery actions over `readCatalog`, with a recording publish. */
+const actionsOver = async (root: string) => {
+  let current = await readCatalog(root, 1);
+  const published: ResolvedEnvironment[] = [];
+  const actions = createPlatformCompositionActions(
+    {
+      overridesPath: join(root, 'composition.overrides.json'),
+      read: async () => written,
+      resolve: (generation) => readCatalog(root, generation),
+    },
+    {
+      current: () => current,
+      publish: async (next) => {
+        published.push(next);
+        current = next;
+
+        return { status: 'published', bundles: [] };
+      },
+      log: captureLog(),
+    },
+  );
+  const call = createHopCall({
+    caller: { bundleId: 'doric', version: PLATFORM_VERSION, generation: 1 },
+    generationSignal: new AbortController().signal,
+  });
+
+  return { actions, published, call };
+};
+
+void test('a catalog read over the overrides lists the bundle disabled; a malformed file is refused on read and the read records it as an issue', async () => {
   await withRoot(async (root) => {
     const path = join(root, 'composition.overrides.json');
 
-    await writeProbe(root);
+    await install(root);
+    await writeFile(path, '{"disabled":["probe"]}');
 
-    const kernel = await bootKernel(root, ['probe'], {
-      compositionOverrides: path,
-    });
-    const catalog = kernel.platform.services.use(DoricCatalogV1);
+    const disabled = await readCatalog(root, 1);
 
-    try {
-      await catalog.disable({ bundleId: 'probe' });
+    assert.equal(stateOf(disabled, 'probe'), 'disabled');
+    assert.equal(stateOf(disabled, 'mincore'), 'scheduled');
+    assert.deepEqual(disabled.issues, []);
 
-      assert.equal(kernel.platform.generation, 2);
-      assert.equal(stateOf(kernel, 'probe'), 'disabled');
-      assert.deepEqual(JSON.parse(await readFile(path, 'utf8')), {
-        disabled: ['probe'],
-      });
+    await writeFile(path, 'not json');
+    await assert.rejects(readCompositionOverrides(path));
 
-      // The composition file itself is not rewritten.
-      assert.deepEqual(
-        JSON.parse(await readFile(kernel.compositionPath, 'utf8')).enabled,
-        ['mincore', 'probe'],
-      );
+    const malformed = await readCatalog(root, 1);
 
-      await catalog.resetComposition();
-
-      assert.equal(kernel.platform.generation, 3);
-      assert.equal(stateOf(kernel, 'probe'), 'active');
-      assert.equal(await readCompositionOverrides(path), undefined);
-    } finally {
-      await kernel.platform.stop();
-    }
+    assert.equal(stateOf(malformed, 'probe'), 'scheduled');
+    assert.equal(malformed.issues.length, 1);
   });
 });
 
-void test('disable refuses the core and a bundle outside the composition without publishing', async () => {
+void test('disable writes the overrides and publishes a resolution without the bundle; reset clears them', async () => {
   await withRoot(async (root) => {
     const path = join(root, 'composition.overrides.json');
 
-    await writeProbe(root);
+    await install(root);
 
-    const kernel = await bootKernel(root, ['probe'], {
-      compositionOverrides: path,
+    const { actions, published, call } = await actionsOver(root);
+
+    await actions.disable({ bundleId: 'probe' }, call);
+
+    assert.deepEqual(JSON.parse(await readFile(path, 'utf8')), {
+      disabled: ['probe'],
     });
-    const catalog = kernel.platform.services.use(DoricCatalogV1);
+    assert.equal(published.length, 1);
+    assert.equal(published[0]?.generation, 2);
+    assert.equal(
+      stateOf(published[0] as ResolvedEnvironment, 'probe'),
+      'disabled',
+    );
 
-    try {
-      await assert.rejects(catalog.disable({ bundleId: 'mincore' }), {
-        code: 'invalid_input',
-      });
-      await assert.rejects(catalog.disable({ bundleId: 'nowhere' }), {
-        code: 'not_found',
-      });
-      assert.equal(kernel.platform.generation, 1);
-      assert.equal(await readCompositionOverrides(path), undefined);
-    } finally {
-      await kernel.platform.stop();
-    }
+    await actions.resetComposition(call);
+
+    assert.equal(await readCompositionOverrides(path), undefined);
+    assert.equal(published.length, 2);
+    assert.equal(published[1]?.generation, 3);
+    assert.equal(
+      stateOf(published[1] as ResolvedEnvironment, 'probe'),
+      'scheduled',
+    );
+  });
+});
+
+void test('disable refuses the core (invalid_input) and an unknown bundle (not_found) without publishing', async () => {
+  await withRoot(async (root) => {
+    const path = join(root, 'composition.overrides.json');
+
+    await install(root);
+
+    const { actions, published, call } = await actionsOver(root);
+
+    await assert.rejects(actions.disable({ bundleId: 'mincore' }, call), {
+      code: 'invalid_input',
+    });
+    await assert.rejects(actions.disable({ bundleId: 'nowhere' }, call), {
+      code: 'not_found',
+    });
+    assert.deepEqual(published, []);
+    assert.equal(await readCompositionOverrides(path), undefined);
   });
 });

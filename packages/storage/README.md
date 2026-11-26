@@ -23,11 +23,11 @@ bundles that store data is in
 
 ## Who uses it
 
-| Entry point           | Imported by                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `storage`             | The `postgres` bundle, which implements `storage.backend/v1` with these helpers ([`backend.ts`](../../bundles/foundation/postgres/src/host/storage/backend.ts), [`commit.ts`](../../bundles/foundation/postgres/src/host/storage/commit.ts), [`declare.ts`](../../bundles/foundation/postgres/src/host/storage/declare.ts), [`query.ts`](../../bundles/foundation/postgres/src/host/storage/query.ts)); the `core` bundle's `storage/v1` and `events/v1` facades, which apply the same batch and stream-id rules before calling the backend ([`storage/facade.ts`](../../bundles/foundation/core/src/host/storage/facade.ts), [`events/facade.ts`](../../bundles/foundation/core/src/host/events/facade.ts)) |
-| `storage/memory`      | Tests only: the tests of `core`, `runtime` and `mcp` and of the host, which boot over the memory backends ([`core/tests/support/host.ts`](../../bundles/foundation/core/tests/support/host.ts), [`runtime/tests/store/support.ts`](../../bundles/runtime/runtime/tests/store/support.ts), [`mcp/tests/support/world.ts`](../../bundles/features/mcp/tests/support/world.ts), [`credential-adapter.test.ts`](../../app/backend/doric-host/tests/credential-adapter.test.ts))                                                                                                                                                                                                                                  |
-| `storage/conformance` | The test suite of each storage backend: `postgres` and this package's memory backend ([`postgres/tests/conformance.test.ts`](../../bundles/foundation/postgres/tests/conformance.test.ts), [`memory-conformance.test.ts`](tests/memory-conformance.test.ts))                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| Entry point           | Imported by                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `storage`             | The `postgres` bundle, which implements `storage.backend/v1` with these helpers ([`backend.ts`](../../bundles/foundation/postgres/src/host/storage/backend.ts), [`commit.ts`](../../bundles/foundation/postgres/src/host/storage/commit.ts), [`declare.ts`](../../bundles/foundation/postgres/src/host/storage/declare.ts), [`query.ts`](../../bundles/foundation/postgres/src/host/storage/query.ts)); the `core` bundle's `storage/v1` and `events/v1` facades, which apply the same batch and stream-id rules before calling the backend ([`storage/facade.ts`](../../bundles/foundation/core/src/host/storage/facade.ts), [`events/service.ts`](../../bundles/foundation/core/src/host/events/service.ts)) |
+| `storage/memory`      | Tests only: the tests of `core`, `runtime` and `mcp` and of the host, which boot over the memory backends ([`core/tests/support/router.ts`](../../bundles/foundation/core/tests/support/router.ts), [`runtime/tests/store/support.ts`](../../bundles/runtime/runtime/tests/store/support.ts), [`mcp/tests/support/world.ts`](../../bundles/features/mcp/tests/support/world.ts), [`credential-adapter.test.ts`](../../app/backend/doric-host/tests/credential-adapter.test.ts))                                                                                                                                                                                                                                |
+| `storage/conformance` | The test suite of each storage backend: `postgres` and this package's memory backend ([`postgres/tests/conformance.test.ts`](../../bundles/foundation/postgres/tests/conformance.test.ts), [`memory-conformance.test.ts`](tests/memory-conformance.test.ts))                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 
 No other bundle imports it: bundles reach storage through the core's
 `storage/v1` facade ([Storage and history](../../docs/architecture/bundles/storage.md)).
@@ -43,7 +43,7 @@ Node.js (`Buffer`, `node:crypto`, and `node:test` in the kit)
 | Specifier              | Source                                                 | Contents                                                                                                                                                                                                                           |
 | ---------------------- | ------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `storage`              | [`src/index.ts`](src/index.ts)                         | Index keys, query cursors, stream ids, conflict and limit errors, batch accounting                                                                                                                                                 |
-| `storage/memory`       | [`src/memory/index.ts`](src/memory/index.ts)           | `memoryStorageBackend`, `memorySecretsBackend`, `createMemoryStore`, `memoryFoundation`                                                                                                                                            |
+| `storage/memory`       | [`src/memory/index.ts`](src/memory/index.ts)           | `memoryStorageBackend`, `memorySecretsBackend`, `createMemoryStore`                                                                                                                                                                |
 | `storage/conformance`  | [`src/conformance/index.ts`](src/conformance/index.ts) | `runStorageConformance`, `runConformanceCase`, `conformanceCases` and the harness types                                                                                                                                            |
 | `storage/rpc`          | [`src/rpc/index.ts`](src/rpc/index.ts)                 | `serveStorageBackend`, `storageBackendClient`, `serveSecretsBackend`, `secretsBackendClient`, `serveStorage`, `storageClient` and the chunked JSON codec (`encodeJson`, `decodeJson`, `chunkBytes`, `joinChunks`, `maxChunkBytes`) |
 | `storage/rpc/chunks`   | [`src/rpc/chunks.ts`](src/rpc/chunks.ts)               | The chunked JSON codec alone, without `node:` imports, for browser-safe callers such as `runtime/contracts`                                                                                                                        |
@@ -434,38 +434,6 @@ one, is `credential_key_required`
 (`DORIC_CREDENTIAL_KEY is required while a stored credential holds a secret.`)
 ([`secrets-backend.ts`](src/memory/secrets-backend.ts)).
 
-### `memoryFoundation`
-
-```ts
-interface MemoryFoundationOptions {
-  readonly store?: MemoryStore; // a new store by default
-  readonly storage?: MemoryStorageOptions;
-  readonly secrets?: MemorySecretsOptions;
-  readonly id?: string; // 'memory' by default
-}
-
-function memoryFoundation(options?: MemoryFoundationOptions): EmbeddedBundle;
-```
-
-An embedded foundation bundle that provides both memory backends to a host
-([`foundation.ts`](src/memory/foundation.ts)). Its manifest has the given id,
-version `1.0.0`, `engines.doric` `^1.0.0`, `provides`
-`storage.backend/v1@1.0.0` and `secrets.backend/v1@1.0.0`, and no `requires`;
-its descriptor declares both as `service` contracts of the `host` environment
-with cardinality `one`. The manifest has `manifestVersion: 1` and the
-description `In-memory storage and secrets backends for tests.`; the
-descriptor has `descriptorVersion: 1` and `bundle: { id, version: '1.0.0' }`,
-and each contract entry has `version: '1.0.0'`, `local: false` and
-`schema: 'schemas/<contract id>.json'`. Its host part provides `memoryStorageBackend(store,
-options.storage)` and `memorySecretsBackend(options.secrets)` at activation.
-
-The composition must still choose it under `providers` for each contract;
-without that choice the host starts in recovery mode
-([`memory-foundation.test.ts`](tests/memory-foundation.test.ts)). Two hosts
-booted over the same `store` see the same storage data; each activation
-creates a new secrets backend from `options.secrets`, so secret rows are not
-shared between hosts.
-
 ## `storage/rpc`: the backends over the router
 
 Temporary: phase 4 of
@@ -851,8 +819,7 @@ npx nx run storage:test       # tsc -p tsconfig.spec.json, then node --test dist
 Each target builds its dependencies (`bundle`) first. The tests are
 [`keys.test.ts`](tests/keys.test.ts) and [`protocol.test.ts`](tests/protocol.test.ts)
 for the helpers, [`memory-backends.test.ts`](tests/memory-backends.test.ts)
-and [`memory-foundation.test.ts`](tests/memory-foundation.test.ts) for the
-memory backends, and the two kit suites above.
+for the memory backends, and the two kit suites above.
 
 ## Related documents
 

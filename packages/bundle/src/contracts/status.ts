@@ -126,7 +126,6 @@ const errorTable: ReadonlyArray<readonly [Code, readonly string[]]> = [
     [
       'unavailable',
       'generation_lost',
-      'unavailable_tool',
       'credential_storage_unavailable',
       'disconnected',
       'storage_not_migrated',

@@ -28,7 +28,7 @@ the conformance kit every storage backend shares.
 | `requires`        | none                                                   |
 | `optional`        | `log/v1`, `secrets/v1`                                 |
 
-The bundle has one part, the host part ([`src/host/index.ts`](src/host/index.ts)).
+The bundle has one part, the host part ([`src/host/main.ts`](src/host/main.ts)).
 It declares no slot, no contracts module (`src/contracts/` does not exist) and
 no contract of its own: both contracts it provides are declared in
 [`bundle/contracts`](../../../packages/bundle/src/contracts/basic/storage.ts).
@@ -43,7 +43,7 @@ both contracts; the Doric host does so in
 foundation bundle activates before the core, so `postgres` uses only `doric.*`
 contracts, which need no declaration.
 
-Beside the kernel entry, [`src/host/main.ts`](src/host/main.ts) runs the same
+[`src/host/main.ts`](src/host/main.ts) runs the
 backends as a host process with `runBundle` from `bundle/host`, serving
 `storage.backend/v1` and `secrets.backend/v1` through `storage/rpc`'s adapters.
 `createPostgresBackends` (exported from `postgres/testing`) checks each
@@ -74,8 +74,10 @@ development dependencies are `prisma` (`7.9.1`), `pg` and `@types/pg`.
 | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `doric.startup/v1` | `storage.backend/v1.connect` sets the host's startup stage `database_client` with `stage(name)` and writes two `info` lines with `log(record)` around the connection ([`start.ts`](src/host/start.ts)). The contract's shape is in [`platform.ts`](../../../packages/bundle/src/contracts/platform.ts); how start steps use it is in [hooks](../../../docs/architecture/bundles/hooks.md) and [observability](../../../docs/architecture/bundles/observability.md). |
 
-The bundle provides `storage.backend/v1` and `secrets.backend/v1` during
-`activate` with `services.provide` ([`postgres.ts`](src/host/postgres.ts)).
+The bundle serves `storage.backend/v1` and `secrets.backend/v1` through the
+router from its host process: [`main.ts`](src/host/main.ts) builds the
+backends with `createPostgresBackends` ([`backends.ts`](src/host/backends.ts))
+and passes them to `runBundle`.
 
 ## `storage.backend/v1` (version 1.1.0)
 
@@ -638,13 +640,6 @@ these are taken, for tests:
 - `createPostgres(options?)` returns `{ storage, secrets, close() }`: the two
   service definitions over one lazily created client, and the close that
   disconnects a client created from the URL.
-- `postgresEmbedded(options?)` returns the bundle as an embedded bundle (id
-  `postgres` unless `options.id` is given), for tests that boot a host over
-  PostgreSQL without staging the bundle; the composition must still choose it
-  in `providers` for both backends. Its manifest and descriptor declare
-  version `1.0.0` and provide `storage.backend/v1@1.0.0` and
-  `secrets.backend/v1@1.0.0`, with the same descriptor fields as
-  `dist/contracts.json` ([`postgres.ts`](src/host/postgres.ts)).
 - `PrismaClient` and the type `Database`, so a test can seed or read the
   database directly; the types `PostgresOptions` and `DiskMeasurement`
   (`{ blocks: bigint; bavail: bigint }`).
@@ -685,8 +680,7 @@ The size report of `coalesce-deltas-size.test.ts` also needs
   truncation, and the feed;
 - `secrets.test.ts` and `secrets-legacy.test.ts` cover the credential table
   and the envelope;
-- `health.test.ts` and the first two cases of `activate.test.ts` run without
-  a database;
+- `health.test.ts` runs without a database;
 - `migration.test.ts`, `coalesce-deltas.test.ts` and
   `drop-legacy-tables.test.ts` apply the migrations over seeded data and
   check the schema and records they leave.

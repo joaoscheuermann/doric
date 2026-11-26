@@ -2,8 +2,7 @@
 // "Generations and drain"): compares the next resolution with the running
 // one bundle by bundle, answers `kernel_restart_required` when `core`
 // changed (A48, D32), and otherwise moves each changed bundle to a new
-// generation in activation order. Replaces the generation manager's publish
-// (`process/manager.ts`) for the platform.
+// generation in activation order.
 
 import type { ResolvedEnvironment } from '../../runtime/catalog.js';
 
@@ -18,11 +17,6 @@ import type { ResolvedEnvironment } from '../../runtime/catalog.js';
  *   (`generation_failed` in the diagnostics); every other changed bundle
  *   was handled as for `published`. `reason` names the failed bundles;
  * - `kernel_restart_required`: `core` changed, and no bundle was changed.
- *
- * Differs from the generation manager's `PublishResult`
- * (`process/manager.ts`), which this one replaces in phase 3: `published`
- * carries the changed bundles instead of one generation number, since
- * generations are per bundle (U7), and `failed` adds `bundles`.
  */
 export type PublishResult =
   | { readonly status: 'published'; readonly bundles: readonly string[] }
