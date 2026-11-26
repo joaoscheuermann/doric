@@ -1,3 +1,10 @@
 {
-  "violations": []
+  "violations": [
+    {
+      "check": "core",
+      "target": "transport/contracts/gen/doric/api/status/v1/status_pb.js",
+      "decision": "docs/designs/grpc-processes.md",
+      "until": "never: Electron main may import transport's generated status client (owner's decision for group E, slice S66)"
+    }
+  ]
 }

@@ -20,7 +20,7 @@
         "main": "app/desktop/doric/src/main.ts",
         "tsConfig": "app/desktop/doric/tsconfig.app.json",
         "assets": ["app/desktop/doric/src/assets"],
-        "externalDependencies": ["socket.io-client"],
+        "externalDependencies": [],
         "webpackConfig": "app/desktop/doric/webpack.config.js"
       },
       "configurations": {
@@ -99,7 +99,10 @@
         ],
         "parallel": false
       },
-      "dependsOn": ["^build"]
+      "dependsOn": [
+        "^build",
+        { "projects": "bundle-postgres", "target": "build" }
+      ]
     }
   }
 }

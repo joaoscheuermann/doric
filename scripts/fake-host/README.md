@@ -1,8 +1,18 @@
 # The development fake host
 
-The fake host is a Node script that stands in for the Doric host so the real
-desktop app can open a workspace with no PostgreSQL, no Docker sandbox and no
-model provider. It serves the repository's own staged bundles, an in-memory
+> **Legacy.** Since slice S66 of
+> [`docs/designs/grpc-processes.md`](../../docs/designs/grpc-processes.md),
+> Electron main and the window reach the host over Connect on HTTP/2, which
+> this script does not serve, so the desktop app no longer runs against it. The
+> script stays until a later slice retires it: removing it needs the root
+> `package.json` edited (its two npm scripts; the script imports the `socket.io`
+> server, and `socket.io-client` sits in `dependencies`), which no group E slice
+> of that change does.
+
+The fake host is a Node script that stood in for the Doric host so the real
+desktop app could open a workspace with no PostgreSQL, no Docker sandbox and no
+model provider, while main still talked to the host over the Socket.IO bridge
+(see the note above). It serves the repository's own staged bundles, an in-memory
 workspace that starts with two Projects, a seeded conversation and the
 `comments/v1` registry, over HTTP and the Socket.IO namespace `/doric/bridge`
 ([`main.mjs`](main.mjs), [`server.mjs`](server.mjs)). It is a development

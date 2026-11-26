@@ -1,31 +1,26 @@
 // T2.2 (bundle-isolation, step 2(b), AC2.3): the core's desktop-facing
 // contracts take no scope keys from a window. Driven through the single IPC
 // dispatcher over the real core bundle's built manifest, descriptor and
-// schemas. The two remote ends are the real boundaries and are faked: the
-// generation process (a provider record per desktopMain contract) and the
-// host (an in-memory socket that answers every call).
+// schemas. The generation process is a fake (a provider record per desktopMain
+// contract); a host contract left on the envelope is refused by main itself,
+// since windows reach the host over `doric:connect`.
 
 import assert from 'node:assert/strict';
 import { before, beforeEach, describe, test } from 'node:test';
 
 import type { JsonObject } from 'bundle/contracts';
 import {
-  type CallMessage,
   type DistributionCatalog,
   type ProviderRecord,
   ServiceDirectory,
 } from 'bundle/runtime';
 
-import { ConnectionRelay } from '../src/connection/relay';
 import { generationView } from '../src/platform/bridge/client-routing';
 import {
   type DesktopEvent,
   Dispatcher,
+  hostUnavailable,
 } from '../src/platform/bridge/dispatcher';
-import {
-  type BridgeSocket,
-  createHostBridge,
-} from '../src/platform/bridge/host-bridge';
 import { createSchemaValidators } from '../src/platform/bridge/validation';
 import { resolveDistribution } from '../src/platform/catalog/resolve';
 import type { GenerationProcess } from '../src/platform/generation/process';
@@ -37,7 +32,11 @@ import {
 } from '../src/platform/windows/registry';
 import { coreDistribution } from './support/core';
 
-/** The core contracts that accept no scope key from a window, in spec order. */
+/**
+ * The core contracts that accept no scope key from a window, in spec order.
+ * The first three are served by the host (`DESKTOP`-exposed methods of host
+ * contracts); the last three are the generation process's desktopMain ones.
+ */
 const SCOPE_FREE = [
   'windows/v1',
   'menus/v1',
@@ -91,36 +90,8 @@ before(async () => {
   ({ catalog, artifacts } = await coreDistribution());
 });
 
-/** The host side of the bridge: connected, answering each call by contract. */
-const answeringHost = (): BridgeSocket => {
-  const listeners = new Map<string, (message: unknown) => void>();
-
-  return {
-    connected: true,
-    on: (name, listener) => {
-      listeners.set(name, listener as (message: unknown) => void);
-    },
-    emit: (name, message) => {
-      if (name !== 'call') {
-        return;
-      }
-
-      const call = message as CallMessage;
-      const answer = CALLS[call.contract as ScopeFree];
-
-      queueMicrotask(() =>
-        listeners.get('result')?.({
-          kind: 'result',
-          id: call.id,
-          ok: true,
-          output: answer?.output,
-        }),
-      );
-    },
-    connect: () => undefined,
-    disconnect: () => undefined,
-  };
-};
+/** The contracts the host serves, rather than the generation process. */
+const HOST_CONTRACTS = new Set<ScopeFree>(['tools/v1', 'models/v1', 'secrets/v1']);
 
 /** The core's desktopMain providers as the generation process lists them. */
 const desktopMainRecords = (): ServiceDirectory => {
@@ -204,7 +175,6 @@ beforeEach(() => {
   dispatcher = new Dispatcher({
     registry,
     validators: createSchemaValidators(),
-    host: createHostBridge(answeringHost()),
     log: silentLog,
     splashContents: () => undefined,
     splashStates: new SplashStates(),
@@ -228,7 +198,11 @@ beforeEach(() => {
     bindingsFor: () => [],
     dispatchCommand: async () => undefined,
     diagnostic: () => undefined,
-    connection: new ConnectionRelay(),
+    // This suite never reads the connection: the fake never changes.
+    connection: {
+      status: () => 'disconnected' as const,
+      subscribe: () => () => undefined,
+    },
     openExternal: async () => undefined,
     appearanceGet: () => 'dark',
     appearanceSet: async () => undefined,
@@ -267,6 +241,20 @@ describe('core contracts take no scope keys from a window (T2.2)', () => {
 
     test(`serves a window call to ${contract} with no scope`, async () => {
       const result = await windowCall(contract);
+
+      if (HOST_CONTRACTS.has(contract)) {
+        // A host contract's envelope path is closed: the window reaches the
+        // host over `doric:connect`.
+        assert.deepEqual(result, {
+          ok: false,
+          error: {
+            code: hostUnavailable().code,
+            message: hostUnavailable().message,
+          },
+        });
+
+        return;
+      }
 
       assert.deepEqual(result, { ok: true, output: CALLS[contract].output });
     });

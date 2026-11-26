@@ -1,11 +1,11 @@
 // The host side of a workspace window: the Projects and Threads of the
-// prototype (Figma `99:8035`, `99:8508`, `85:7520`), answered over the fake
-// host for what the real core, layout, resources, chat, files and git bundles
-// call (`runtime/v2`, `runtime.threads/v1`, and through `workspace-content`
-// `files/v1` and `git.commands/v1`); `usage/v1` and `resources/v1` are the
-// window's `UsageService` and `ResourcesService` over Connect (slice S65d),
-// as `files/v1` and `git.commands/v1` are through `filesRoutes(host)` and
-// `gitRoutes(host)`.
+// prototype (Figma `99:8035`, `99:8508`, `85:7520`) that the real core,
+// layout, resources, chat, files and git bundles read. `runtime/v2` and
+// `runtime.threads/v1` are the generated Connect services `workspace-connect`
+// serves from these values; `files/v1` and `git.commands/v1` are served
+// through `filesRoutes(host)` and `gitRoutes(host)`, and `usage/v1` and
+// `resources/v1` as the window's `UsageService` and `ResourcesService` (slice
+// S65d).
 
 import type { ConnectRouter, ServiceImpl } from '@connectrpc/connect';
 import {
@@ -358,14 +358,6 @@ export const PROJECT_PATH = `/projects/${CHECKOUT.id}`;
 /** Checkout redesign with its Thread open (`99:8035`): the chat bundle's route. */
 export const THREAD_PATH = `${PROJECT_PATH}/threads/${PLAN.id}`;
 
-/** A tuple's first item, or the value: the argument a wire message carries. */
-const first = (input: unknown): Record<string, unknown> => {
-  const value = Array.isArray(input) ? input[0] : input;
-
-  return typeof value === 'object' && value !== null
-    ? (value as Record<string, unknown>)
-    : {};
-};
 
 const GIB = 1024 ** 3;
 
@@ -430,66 +422,6 @@ export const resourcesRoutes =
  * (`settings-host`); answers the `git.commands/v1` calls made.
  */
 export const serveWorkspace = (host: FakeHost): GitCalls => {
-  const threadsOf = (projectId: unknown) =>
-    THREADS.filter((item) => item.projectId === projectId);
-
-  host.serve('runtime/v2', 'projects', () => ({ items: [...PROJECTS] }));
-  host.serve('runtime/v2', 'project', (input) => {
-    const id = Array.isArray(input) ? input[0] : input;
-
-    return PROJECTS.find((item) => item.id === id);
-  });
-  host.serve('runtime/v2', 'projectActivity', () =>
-    [...PROJECTS]
-      .sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt))
-      .map((item) => ({
-        project: item,
-        activityAt: item.updatedAt,
-        ...(threadsOf(item.id).length > 0
-          ? { latestActiveThreadId: PLAN.id }
-          : {}),
-      })),
-  );
-  host.stream('runtime/v2', 'watchProject', (input, push) => {
-    const { projectId } = first(input);
-
-    push({
-      kind: 'snapshot',
-      projectId,
-      project: PROJECTS.find((item) => item.id === projectId) ?? null,
-      threads: threadsOf(projectId),
-    });
-  });
-  host.serve('runtime.threads/v1', 'threads', (input) => ({
-    items: threadsOf(first(input).projectId),
-  }));
-  host.serve('runtime.threads/v1', 'thread', (input) => {
-    const id = Array.isArray(input) ? input[0] : input;
-
-    return THREADS.find((item) => item.id === id);
-  });
-  // Nothing queued behind any Thread's prompt.
-  host.serve('runtime.threads/v1', 'queue', (input) => {
-    const id = Array.isArray(input) ? input[0] : input;
-
-    return THREADS.some((item) => item.id === id)
-      ? { revision: 0, paused: false, stopping: false, items: [] }
-      : undefined;
-  });
-  host.stream('runtime.threads/v1', 'watchThread', (input, push) => {
-    const { threadId, afterSequence } = first(input);
-    const found = THREADS.find((item) => item.id === threadId);
-    const from = typeof afterSequence === 'number' ? afterSequence : 0;
-
-    push({
-      kind: 'snapshot',
-      threadId,
-      projectId: found?.projectId ?? null,
-      project: PROJECTS.find((item) => item.id === found?.projectId) ?? null,
-      thread: found ?? null,
-      events: logOf(String(threadId)).filter((row) => row.sequence > from),
-    });
-  });
   serveUsage(host, {
     // A Thread without usage answers no calls, which the footer draws as "—".
     thread: ({ threadId }) =>

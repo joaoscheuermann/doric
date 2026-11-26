@@ -41,6 +41,9 @@
       "path": "../../../bundles/foundation/host-config/tsconfig.json"
     },
     {
+      "path": "../../../bundles/foundation/transport"
+    },
+    {
       "path": "../../../bundles/features/git/tsconfig.json"
     },
     {

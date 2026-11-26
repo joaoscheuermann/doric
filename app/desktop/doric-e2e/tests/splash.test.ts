@@ -6,6 +6,12 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 
+import { create } from '@bufbuild/protobuf';
+import {
+  CatalogService,
+  DisableResponseSchema,
+  ResetCompositionResponseSchema,
+} from 'bundle/contracts/gen/doric/platform/catalog/v1/catalog_pb.js';
 import { app, nativeTheme, type WebContents } from 'electron';
 
 import type { SplashState } from '../../doric/src/platform/splash/protocol';
@@ -398,8 +404,12 @@ describe('splash and recovery page', () => {
     );
     const next = await coreDistribution({ generation: 2 });
 
-    host.serve('doric.catalog/v1', 'disable', () => {
-      host.publish(next.catalog, next.artifacts);
+    host.serve(CatalogService, {
+      disable: () => {
+        host.publish(next.catalog, next.artifacts);
+
+        return create(DisableResponseSchema, {});
+      },
     });
 
     const booted = await bootPlatform({ host });
@@ -449,8 +459,12 @@ describe('splash and recovery page', () => {
     const host = await startFakeHost({ catalog, artifacts });
     const next = await coreDistribution({ generation: 2 });
 
-    host.serve('doric.catalog/v1', 'resetComposition', () => {
-      host.publish(next.catalog, next.artifacts);
+    host.serve(CatalogService, {
+      resetComposition: () => {
+        host.publish(next.catalog, next.artifacts);
+
+        return create(ResetCompositionResponseSchema, {});
+      },
     });
 
     const booted = await bootPlatform({ host });

@@ -184,13 +184,12 @@ desktop UI.
   [`.gitignore`](.gitignore)).
 - The **desktop app** connects to `DORIC_HOST_URL`, or `http://127.0.0.1:3000`
   when unset ([`main.ts`](app/desktop/doric/src/main.ts),
-  [`host-bridge.ts`](app/desktop/doric/src/platform/bridge/host-bridge.ts)). It
+  [`connect.ts`](app/desktop/doric/src/platform/host/connect.ts)). It
   calls no REST route: it reaches the host's services through the Socket.IO
   namespace `/doric/bridge`, sending `call`, `cancel`, `subscribe` and
   `unsubscribe`, which the host answers with `result`, `event` and `end`, and
   follows its connection status through a second connection to the same
-  namespace ([`host-bridge.ts`](app/desktop/doric/src/platform/bridge/host-bridge.ts),
-  [`status.ts`](app/desktop/doric/src/connection/status.ts),
+  namespace ([`connect.ts`](app/desktop/doric/src/platform/host/connect.ts),
   `socket.ts`,
   [the desktop bridge](app/backend/doric-host/README.md#the-desktop-bridge)).
   The sandbox's screen loads over HTTP and WebSocket from the host's relay

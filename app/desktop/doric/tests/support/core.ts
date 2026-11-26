@@ -1,6 +1,6 @@
 // The real bundles as the host would distribute them: their built dist files
-// (desktop and client parts, contracts, schemas), plus the host-only bundles
-// their manifests require.
+// (desktop and client parts, contracts, schemas), plus the real postgres
+// foundation that satisfies the core's backends.
 
 import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
@@ -40,15 +40,28 @@ export const THREADS_DIST = resolve('bundles/features/threads/dist');
 export const DEFAULT_DIST = resolve('bundles/runtime/default/dist');
 /** The real host-config bundle: only its manifest, descriptor and schemas. */
 const HOST_CONFIG_DIST = resolve('bundles/foundation/host-config/dist');
+/** The real foundation bundle: its manifest names the backends it serves. */
+export const POSTGRES_DIST = resolve('bundles/foundation/postgres/dist');
 
-/** The host-only foundation that satisfies the core's backends. */
-export const memoryFoundation: FixtureBundle = {
-  id: 'memory',
-  phase: 'foundation',
-  provides: [
-    { id: 'storage.backend/v1', environment: 'host', local: true },
-    { id: 'secrets.backend/v1', environment: 'host', local: true },
-  ],
+/**
+ * The host-only foundation that satisfies the core's backends: the `.backend/v1`
+ * contracts the real `postgres` bundle provides, in the manifest's order, cut
+ * to the synthetic descriptors' shape (no host part; the host answers the
+ * calls).
+ */
+export const postgresFoundation = async (): Promise<FixtureBundle> => {
+  const manifest = JSON.parse(
+    await readFile(join(POSTGRES_DIST, 'manifest.json'), 'utf8'),
+  ) as { readonly id: string; readonly provides: readonly string[] };
+
+  return {
+    id: manifest.id,
+    phase: 'foundation',
+    provides: manifest.provides
+      .map((entry) => entry.slice(0, entry.indexOf('@')))
+      .filter((id) => id.endsWith('.backend/v1'))
+      .map((id) => ({ id, environment: 'host' as const, local: true })),
+  };
 };
 
 export interface BuiltBundle {
@@ -218,19 +231,19 @@ const hostContractsOf = (
  * A distribution of built bundles (activated in the order given), the
  * foundation and fixture bundles; the artifacts serve every file by hash.
  */
-const builtDistribution = (input: {
+const builtDistribution = async (input: {
   readonly built: readonly BuiltBundle[];
   readonly bundles?: readonly FixtureBundle[];
   readonly core?: string;
   readonly generation?: number;
   readonly hostBoot?: string;
-}): {
+}): Promise<{
   readonly catalog: DistributionCatalog;
   readonly artifacts: ReadonlyMap<string, Buffer>;
-} => {
+}> => {
   const fixture = fixtureDistribution({
     core: input.core ?? 'core',
-    bundles: [memoryFoundation, ...(input.bundles ?? [])],
+    bundles: [await postgresFoundation(), ...(input.bundles ?? [])],
     ...(input.generation === undefined ? {} : { generation: input.generation }),
     ...(input.hostBoot === undefined ? {} : { hostBoot: input.hostBoot }),
   });
@@ -301,7 +314,7 @@ export const coreDistribution = async (
 }> => {
   const withCore = (input.core ?? 'core') === 'core';
 
-  return builtDistribution({
+  return await builtDistribution({
     ...input,
     built: withCore ? [await coreBundle()] : [],
   });
@@ -322,7 +335,7 @@ const HOST_ONLY_KEPT: Readonly<Record<string, readonly string[]>> = {
 
 /**
  * The workspace distribution: the real core, layout, resources, git, files,
- * chat, usage, settings, workspace and account, the memory foundation, and host-only cuts of the runtime,
+ * chat, usage, settings, workspace and account, the postgres foundation, and host-only cuts of the runtime,
  * comments and host-config bundles that provide the host contracts those
  * bundles `require` and none of them provides (`runtime/v2`,
  * `runtime.threads/v1`, `runtime.records/v1` with the runtime's client part,
@@ -400,7 +413,7 @@ export const workspaceDistribution = async (
     }
   }
 
-  return builtDistribution({
+  return await builtDistribution({
     built: [...real, ...hostOnly],
     bundles: [...(input.bundles ?? [])],
   });

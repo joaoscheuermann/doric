@@ -1,24 +1,17 @@
 // The composition root of the desktop (section 10.2): the technical
-// platform and the host's `/status` monitor. Since the stage-9 cut-over the
-// only IPC is the platform's `doric:desktop` dispatcher; product rules (which
-// windows open, their sizes, the menu) live in the core's desktopMain part and
-// the UI in client bundles.
+// platform and the host's Connect connection. Since the stage-9 cut-over the
+// only IPC is the platform's `doric:desktop` dispatcher beside `doric:connect`;
+// product rules (which windows open, their sizes, the menu) live in the core's
+// desktopMain part and the UI in client bundles.
 
 import './platform/protocol/privileges';
 
 import { app, BrowserWindow, Notification, nativeTheme } from 'electron';
 
-import { createConnectionManager } from './connection/manager';
-import {
-  type ConnectionMonitor,
-  createConnectionService,
-} from './connection/status';
 import { DesktopPlatform } from './platform/app';
-import { HOST_URL } from './platform/bridge/host-bridge';
+import { connectHost, HOST_URL } from './platform/host/connect';
 import { createPlatformLog } from './platform/log';
 import type { NotificationApi } from './platform/native/notifications';
-
-let connection: ConnectionMonitor | null = null;
 
 /** Electron's notifications behind the platform's one notification function. */
 const electronNotifications: NotificationApi = {
@@ -31,12 +24,12 @@ void app.whenReady().then(async () => {
   const log = createPlatformLog();
   // The host origin the app reaches Doric on: `DORIC_HOST_URL` for a host
   // that is not on the app's own loopback, the loopback default otherwise.
-  // The bridge and the `/status` monitor both follow it.
-  const hostUrl = process.env.DORIC_HOST_URL ?? HOST_URL;
+  // Every host call and the status watch follow it.
+  const host = connectHost({ url: process.env.DORIC_HOST_URL ?? HOST_URL });
   const platform = new DesktopPlatform({
     mainDir: __dirname,
     userData: app.getPath('userData'),
-    hostUrl,
+    host,
     packaged: app.isPackaged,
     argv: process.argv,
     notifications: electronNotifications,
@@ -55,15 +48,8 @@ void app.whenReady().then(async () => {
   });
   await platform.prepare();
 
-  // Every window follows the `/status` monitor through the single IPC
-  // (doric.shell/v1.connection).
-  connection = createConnectionService(createConnectionManager(hostUrl));
-  platform.connection.attach(connection);
-  app.once('will-quit', () => {
-    connection?.close();
-    connection = null;
-    void platform.stop();
-  });
+  // `platform.stop()` closes the host connection and every generation.
+  app.once('will-quit', () => void platform.stop());
 
   app.on('activate', () => {
     if (

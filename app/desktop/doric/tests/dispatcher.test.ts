@@ -1,6 +1,8 @@
 // The single IPC dispatcher (section 14.3), driven with the payloads the
 // preload sends and fake ipc events: the window's webContents is the real
-// boundary; the generation process and the host are the two remote ends.
+// boundary; the generation process is the remote end. A host contract left
+// on the envelope is answered by main itself, since windows reach the host
+// over `doric:connect`.
 
 import assert from 'node:assert/strict';
 import { beforeEach, describe, test } from 'node:test';
@@ -8,8 +10,6 @@ import { beforeEach, describe, test } from 'node:test';
 import type { Call, JsonObject } from 'bundle/contracts';
 import { type ProviderRecord, ServiceDirectory } from 'bundle/runtime';
 
-import { ConnectionRelay } from '../src/connection/relay';
-import type { ConnectionListener } from '../src/connection/status';
 import type { ThemeSource } from '../src/platform/appearance';
 import {
   type GenerationView,
@@ -18,14 +18,15 @@ import {
 import {
   type DesktopEvent,
   Dispatcher,
-} from '../src/platform/bridge/dispatcher';
-import {
-  createHostBridge,
   hostUnavailable,
-} from '../src/platform/bridge/host-bridge';
+} from '../src/platform/bridge/dispatcher';
 import { createSchemaValidators } from '../src/platform/bridge/validation';
 import { resolveDistribution } from '../src/platform/catalog/resolve';
 import type { GenerationProcess } from '../src/platform/generation/process';
+import type {
+  ConnectionListener,
+  ConnectionStatus,
+} from '../src/platform/host/connect';
 import { silentLog } from '../src/platform/log';
 import { SplashStates } from '../src/platform/splash/state';
 import {
@@ -214,8 +215,7 @@ let records: ServiceDirectory;
 let dispatcher: Dispatcher;
 let workspace: WindowEntry;
 let window: ReturnType<typeof fakeContents>;
-let hostConnected: boolean;
-let relay: ConnectionRelay;
+let connection: ReturnType<typeof statusSource>;
 let opened: string[];
 let splashId: number | undefined;
 /** Every action the `splashAct` dependency received. */
@@ -227,8 +227,11 @@ let savedThemes: ThemeSource[];
 /** What the `appearanceSet` dependency does with a theme. */
 let saveTheme: (theme: ThemeSource) => Promise<void>;
 
-/** The `/status` monitor's surface: a status and its change listeners. */
-const statusSource = (initial: 'connected' | 'disconnected') => {
+/**
+ * A host connection as `DispatcherDeps.connection` reads it: `status` and its
+ * change listeners. `set` publishes changes only, as the connection does.
+ */
+const statusSource = (initial: ConnectionStatus) => {
   let current = initial;
   const listeners = new Set<ConnectionListener>();
 
@@ -239,7 +242,11 @@ const statusSource = (initial: 'connected' | 'disconnected') => {
 
       return () => listeners.delete(listener);
     },
-    set: (status: 'connected' | 'disconnected') => {
+    set: (status: ConnectionStatus) => {
+      if (status === current) {
+        return;
+      }
+
       current = status;
 
       for (const listener of listeners) {
@@ -264,8 +271,7 @@ beforeEach(() => {
   registry = new WindowRegistry();
   calls = [];
   records = new ServiceDirectory();
-  hostConnected = false;
-  relay = new ConnectionRelay();
+  connection = statusSource('disconnected');
   opened = [];
   splashId = undefined;
   splashActs = [];
@@ -332,20 +338,9 @@ beforeEach(() => {
   };
   registry.add(workspace);
 
-  const host = createHostBridge({
-    get connected() {
-      return hostConnected;
-    },
-    on: () => undefined,
-    emit: () => undefined,
-    connect: () => undefined,
-    disconnect: () => undefined,
-  });
-
   dispatcher = new Dispatcher({
     registry,
     validators: createSchemaValidators(),
-    host,
     log: silentLog,
     splashContents: () => splashId,
     splashStates: new SplashStates(),
@@ -379,7 +374,7 @@ beforeEach(() => {
     bindingsFor: () => [{ key: 'CmdOrCtrl+K', command: 'probe.ping/v1' }],
     dispatchCommand: async () => undefined,
     diagnostic: () => undefined,
-    connection: relay,
+    connection,
     openExternal: async (url) => {
       opened.push(url);
     },
@@ -588,7 +583,7 @@ describe('desktop IPC dispatcher', () => {
     assert.deepEqual(await pending, { ok: true, output: 'aborted' });
   });
 
-  test('a host call while the bridge is down answers today’s unavailable message', async () => {
+  test('a call left on the envelope for a host contract answers the host refusal', async () => {
     await describeWindow();
 
     const result = await dispatcher.handle(event(window.contents), {
@@ -636,7 +631,6 @@ describe('desktop IPC dispatcher', () => {
   });
 
   test('every window follows the host connection: the current status first, then each change, until it navigates', async () => {
-    const source = statusSource('connected');
     const subscribe = (contents: ReturnType<typeof fakeContents>, id: string) =>
       dispatcher.handle(event(contents.contents), {
         op: 'subscribe',
@@ -673,11 +667,11 @@ describe('desktop IPC dispatcher', () => {
       output: undefined,
     });
     await subscribe(settings, 's-conn');
-    relay.attach(source);
-    source.set('disconnected');
-    source.set('disconnected');
+    connection.set('connected');
+    connection.set('disconnected');
+    connection.set('disconnected');
     dispatcher.navigating(settings.contents.id);
-    source.set('connected');
+    connection.set('connected');
 
     const statuses = (sent: Sent[], id: string) =>
       sent
@@ -841,7 +835,7 @@ describe('desktop IPC dispatcher', () => {
       }),
     });
 
-    // The route is the host's: with the host down it answers the host refusal.
+    // The route is the host's: the envelope answers the host refusal.
     assert.equal(
       (result as { error?: { message: string } }).error?.message,
       hostUnavailable().message,
@@ -916,7 +910,7 @@ describe('desktop IPC dispatcher', () => {
     assert.equal(calls.length, 0);
   });
 
-  test('a host call is refused for an undeclared scope key before it reaches the host', async () => {
+  test('a host call is refused for an undeclared scope key before the host refusal', async () => {
     await describeWindow();
 
     const result = await dispatcher.handle(event(window.contents), {

@@ -1,25 +1,55 @@
 // What the Electron tests boot: the real desktop platform over the built
-// platform assets, a fake host (a Socket.IO server in this process, the real
-// network boundary) and either a fixture shell whose bootstrap is
-// desktop/client's or the real built renderer shell.
+// platform assets, a fake host (a Connect server over `node:http2` on this
+// process's loopback port, the real network boundary, with the envelope's
+// Socket.IO bridge beside it on the same port) and either a fixture shell
+// whose bootstrap is desktop/client's or the real built renderer shell.
 
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
-import { createServer, type Server as HttpServer } from 'node:http';
-import type { AddressInfo } from 'node:net';
+import { createServer as createHttpServer } from 'node:http';
+import {
+  createServer as createHttp2Server,
+  type ServerHttp2Session,
+} from 'node:http2';
+import { type AddressInfo, createServer as createNetServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
-import type { DistributionCatalog } from 'bundle/runtime';
+import {
+  create,
+  type DescService,
+  getOption,
+  hasOption,
+  toJson,
+} from '@bufbuild/protobuf';
+import { Code, ConnectError, type ServiceImpl } from '@connectrpc/connect';
+import { connectNodeAdapter } from '@connectrpc/connect-node';
+import {
+  CatalogService,
+  GetResponseSchema,
+  ReadArtifactResponseSchema,
+  WatchResponseSchema,
+} from 'bundle/contracts/gen/doric/platform/catalog/v1/catalog_pb.js';
+import {
+  DiagnosticsService,
+  ReportResponseSchema,
+} from 'bundle/contracts/gen/doric/platform/diagnostics/v1/diagnostics_pb.js';
+import { contract as contractOption } from 'bundle/contracts/gen/doric/platform/v1/options_pb.js';
+import {
+  catalogSnapshotMessage,
+  type DistributionCatalog,
+  distributionMessage,
+} from 'bundle/runtime';
 import { BrowserWindow, nativeTheme, type WebContents } from 'electron';
 import { Server, type Socket } from 'socket.io';
-
-import { createConnectionManager } from '../../../doric/src/connection/manager';
 import {
-  type ConnectionMonitor,
-  createConnectionService,
-} from '../../../doric/src/connection/status';
+  ReadySchema,
+  StatusService,
+  WatchResponseSchema as StatusWatchResponseSchema,
+} from 'transport/contracts/gen/doric/api/status/v1/status_pb.js';
+
 import { DesktopPlatform } from '../../../doric/src/platform/app';
 import type { HostForward } from '../../../doric/src/platform/bridge/connect-relay';
+import { connectHost } from '../../../doric/src/platform/host/connect';
 import {
   createPlatformLog,
   type PlatformLog,
@@ -33,6 +63,10 @@ import type { Clock } from '../../../doric/src/platform/splash/timing';
 export const MAIN_DIR = resolve('dist/app/desktop/doric');
 export const PRELOAD = join(MAIN_DIR, 'preload.js');
 
+/** What the fake answers an envelope call with now that the host is Connect. */
+export const UNAVAILABLE_HOST_MESSAGE = 'Doric backend is unavailable.';
+
+/** One call a served service received: its contract, method and input. */
 export interface HostCall {
   readonly contract: string;
   readonly method: string;
@@ -42,30 +76,23 @@ export interface HostCall {
 export interface FakeHost {
   readonly url: string;
   readonly calls: HostCall[];
-  /** Publishes a new distribution and tells every `watch()` subscriber. */
+  /** Publishes a new distribution and tells every `Watch` subscriber. */
   publish(
     catalog: DistributionCatalog,
     artifacts?: ReadonlyMap<string, Buffer>,
   ): void;
-  /** Refuses the next `count` connections (the host is down). */
+  /**
+   * Ends the next `count` `StatusService.Watch` calls with `UNAVAILABLE` (the
+   * host is starting, or down).
+   */
   refuse(count: number): void;
   /**
-   * Answers `contract method` calls with `handler` (other host methods); it
-   * receives the call's input and the scope the call carries.
+   * Serves `service` with `implementation` over Connect, merging the methods it
+   * omits into the ones a previous `serve` gave (or the fake's defaults).
    */
-  serve(
-    contract: string,
-    method: string,
-    handler: (input: unknown, scope: unknown) => unknown,
-  ): void;
-  /**
-   * Answers `contract method` subscriptions: `handler` receives the input and
-   * a `push` that sends one stream value; it may return a cleanup.
-   */
-  stream(
-    contract: string,
-    method: string,
-    handler: (input: unknown, push: (value: unknown) => void) => unknown,
+  serve<Desc extends DescService>(
+    service: Desc,
+    implementation: Partial<ServiceImpl<Desc>>,
   ): void;
   /**
    * Answers the window's Connect calls (`doric:connect`) of the host
@@ -78,6 +105,22 @@ export interface FakeHost {
   close(): Promise<void>;
 }
 
+/** The contract a service's `.proto` declares (`(doric.platform.v1.contract)`). */
+const contractIdOf = (service: DescService): string =>
+  hasOption(service.file, contractOption)
+    ? getOption(service.file, contractOption).id
+    : service.typeName;
+
+/** Resolves when `signal` aborts (or at once, when it already has). */
+const aborted = (signal: AbortSignal): Promise<void> =>
+  new Promise<void>((done) => {
+    if (signal.aborted) {
+      done();
+    } else {
+      signal.addEventListener('abort', () => done(), { once: true });
+    }
+  });
+
 export const startFakeHost = async (input: {
   readonly catalog: DistributionCatalog;
   readonly artifacts: ReadonlyMap<string, Buffer | string>;
@@ -87,96 +130,191 @@ export const startFakeHost = async (input: {
     [...input.artifacts].map(([hash, content]) => [hash, Buffer.from(content)]),
   );
   const calls: HostCall[] = [];
-  const watchers = new Map<string, Socket>();
-  const handlers = new Map<
+  /** Handlers of the Connect services served, by `typeName`. */
+  const served = new Map<
     string,
-    (input: unknown, scope: unknown) => unknown
+    {
+      readonly service: DescService;
+      readonly implementation: Record<string, unknown>;
+    }
   >();
-  const streams = new Map<
-    string,
-    (input: unknown, push: (value: unknown) => void) => unknown
-  >();
-  const cleanups = new Map<string, () => void>();
+  /** Every open `CatalogService.Watch`, told of each published catalog. */
+  const watchers = new Set<(next: DistributionCatalog) => void>();
   let connect: HostForward | undefined;
   let refusals = 0;
-  const http: HttpServer = createServer();
+
+  const catalogHandlers = (): Partial<ServiceImpl<typeof CatalogService>> => ({
+    get: () =>
+      create(GetResponseSchema, {
+        catalogSnapshot: catalogSnapshotMessage(catalog.host),
+      }),
+    distribution: () => distributionMessage(catalog),
+    readArtifact: async function* (request) {
+      const bytes = artifacts.get(request.sha256);
+
+      if (bytes === undefined) {
+        throw new ConnectError(`No artifact ${request.sha256}.`, Code.NotFound);
+      }
+
+      yield create(ReadArtifactResponseSchema, {
+        chunk: new Uint8Array(bytes),
+      });
+    },
+    watch: async function* (_request, context) {
+      const queue: DistributionCatalog[] = [];
+      let wake: (() => void) | undefined;
+      const push = (next: DistributionCatalog): void => {
+        queue.push(next);
+        wake?.();
+        wake = undefined;
+      };
+      const signal = (): void => {
+        wake?.();
+        wake = undefined;
+      };
+
+      context.signal.addEventListener('abort', signal);
+      watchers.add(push);
+
+      try {
+        yield create(WatchResponseSchema, {
+          catalogSnapshot: catalogSnapshotMessage(catalog.host),
+        });
+
+        for (;;) {
+          if (context.signal.aborted) {
+            return;
+          }
+
+          const next = queue.shift();
+
+          if (next === undefined) {
+            await new Promise<void>((done) => {
+              wake = done;
+            });
+            continue;
+          }
+
+          yield create(WatchResponseSchema, {
+            catalogSnapshot: catalogSnapshotMessage(next.host),
+          });
+        }
+      } finally {
+        context.signal.removeEventListener('abort', signal);
+        watchers.delete(push);
+      }
+    },
+  });
+
+  const statusHandlers = (): Partial<ServiceImpl<typeof StatusService>> => ({
+    watch: async function* (_request, context) {
+      if (refusals > 0) {
+        refusals -= 1;
+
+        throw new ConnectError('The host is starting.', Code.Unavailable);
+      }
+
+      yield create(StatusWatchResponseSchema, {
+        event: { case: 'ready', value: create(ReadySchema) },
+      });
+
+      // The host stays reachable until the caller cancels.
+      await aborted(context.signal);
+    },
+  });
+
+  const diagnosticsHandlers = (): Partial<
+    ServiceImpl<typeof DiagnosticsService>
+  > => ({
+    report: () => create(ReportResponseSchema, {}),
+  });
+
+  served.set(CatalogService.typeName, {
+    service: CatalogService,
+    implementation: { ...catalogHandlers() },
+  });
+  served.set(StatusService.typeName, {
+    service: StatusService,
+    implementation: { ...statusHandlers() },
+  });
+  served.set(DiagnosticsService.typeName, {
+    service: DiagnosticsService,
+    implementation: { ...diagnosticsHandlers() },
+  });
+
+  /** `implementation` with each method recording its call in `calls` first. */
+  const recorded = <Desc extends DescService>(
+    service: Desc,
+    implementation: Partial<ServiceImpl<Desc>>,
+  ): ServiceImpl<Desc> =>
+    Object.fromEntries(
+      Object.entries(implementation).map(([name, method]) => {
+        const desc = service.methods.find((item) => item.localName === name);
+
+        return [
+          name,
+          (request: unknown, context: unknown) => {
+            calls.push({
+              contract: contractIdOf(service),
+              method: name,
+              input:
+                desc === undefined
+                  ? request
+                  : toJson(desc.input, request as never),
+            });
+
+            return (
+              method as (request: unknown, context: unknown) => unknown
+            )(request, context);
+          },
+        ];
+      }),
+    ) as ServiceImpl<Desc>;
+
+  const adapter = (): ReturnType<typeof connectNodeAdapter> =>
+    connectNodeAdapter({
+      routes: (router) => {
+        for (const { service, implementation } of served.values()) {
+          router.service(
+            service,
+            recorded(
+              service,
+              implementation as Partial<ServiceImpl<DescService>>,
+            ),
+          );
+        }
+      },
+    });
+
+  let handle = adapter();
+
+  const http = createHttpServer();
+  const http2 = createHttp2Server((request, response) => {
+    handle(request, response);
+  });
+  /** The open HTTP/2 sessions, so `close` can end the ones a forward holds. */
+  const sessions = new Set<ServerHttp2Session>();
+
+  http2.on('session', (session: ServerHttp2Session) => {
+    sessions.add(session);
+    session.once('close', () => sessions.delete(session));
+  });
   const io = new Server(http);
   const bridge = io.of('/doric/bridge');
 
-  bridge.use((_socket, next) => {
-    if (refusals > 0) {
-      refusals -= 1;
-      next(new Error('The host is starting.'));
-
-      return;
-    }
-
-    next();
-  });
-  bridge.on('connection', (socket) => {
-    socket.on('call', (message: { id: string; scope?: unknown } & HostCall) => {
+  bridge.on('connection', (socket: Socket) => {
+    socket.on('call', (message: { id: string } & HostCall) => {
       calls.push({
         contract: message.contract,
         method: message.method,
         input: message.input,
       });
-
-      const answer = (output: unknown) =>
-        socket.emit('result', {
-          kind: 'result',
-          id: message.id,
-          ok: true,
-          output,
-        });
-      const fail = (code: string, text: string) =>
-        socket.emit('result', {
-          kind: 'result',
-          id: message.id,
-          ok: false,
-          error: { code, message: text },
-        });
-
-      if (
-        message.contract === 'doric.catalog/v1' &&
-        message.method === 'distribution'
-      ) {
-        answer(catalog);
-      } else if (
-        message.contract === 'doric.catalog/v1' &&
-        message.method === 'artifact'
-      ) {
-        const sha256 = (message.input as { sha256: string }).sha256;
-        const bytes = artifacts.get(sha256);
-
-        if (bytes === undefined) {
-          fail('not_found', `No artifact ${sha256}.`);
-        } else {
-          answer({ sha256, base64: bytes.toString('base64') });
-        }
-      } else if (
-        message.contract === 'doric.diagnostics/v1' &&
-        message.method === 'report'
-      ) {
-        answer(undefined);
-      } else if (handlers.has(`${message.contract} ${message.method}`)) {
-        const handler = handlers.get(
-          `${message.contract} ${message.method}`,
-        ) as (input: unknown, scope: unknown) => unknown;
-
-        void Promise.resolve()
-          .then(() => handler(message.input, message.scope))
-          .then(answer, (error: unknown) =>
-            fail(
-              'internal',
-              error instanceof Error ? error.message : String(error),
-            ),
-          );
-      } else {
-        fail(
-          'unavailable',
-          `${message.contract} ${message.method} is not served.`,
-        );
-      }
+      socket.emit('result', {
+        kind: 'result',
+        id: message.id,
+        ok: false,
+        error: { code: 'unavailable', message: UNAVAILABLE_HOST_MESSAGE },
+      });
     });
     socket.on('subscribe', (message: { id: string } & HostCall) => {
       calls.push({
@@ -184,39 +322,53 @@ export const startFakeHost = async (input: {
         method: message.method,
         input: message.input,
       });
-
-      if (
-        message.contract === 'doric.catalog/v1' &&
-        message.method === 'watch'
-      ) {
-        watchers.set(message.id, socket);
-      } else if (streams.has(`${message.contract} ${message.method}`)) {
-        const handler = streams.get(
-          `${message.contract} ${message.method}`,
-        ) as (input: unknown, push: (value: unknown) => void) => unknown;
-        const cleanup = handler(message.input, (value) =>
-          socket.emit('event', {
-            kind: 'event',
-            id: message.id,
-            values: [value],
-          }),
-        );
-
-        if (typeof cleanup === 'function') {
-          cleanups.set(message.id, cleanup as () => void);
-        }
-      }
+      socket.emit('end', {
+        kind: 'end',
+        id: message.id,
+        error: { code: 'unavailable', message: UNAVAILABLE_HOST_MESSAGE },
+      });
     });
-    socket.on('unsubscribe', (message: { id: string }) => {
-      watchers.delete(message.id);
-      cleanups.get(message.id)?.();
-      cleanups.delete(message.id);
-    });
+    socket.on('unsubscribe', () => undefined);
   });
 
-  await new Promise<void>((done) => http.listen(0, '127.0.0.1', done));
+  // One loopback port speaks both: HTTP/2 for Connect (main's forward and its
+  // own calls) and HTTP/1.1 for the envelope's Socket.IO bridge. The HTTP/2
+  // connection preface ("PRI …") tells them apart.
+  const listener = createNetServer((socket) => {
+    // Paused until the first bytes tell the protocols apart, so neither server
+    // reads (and drops) them.
+    socket.pause();
 
-  const { port } = http.address() as AddressInfo;
+    const route = (): void => {
+      const chunk = socket.read();
+
+      if (chunk === null) {
+        return;
+      }
+
+      socket.unshift(chunk);
+
+      if (chunk.length < 3) {
+        socket.once('readable', route);
+
+        return;
+      }
+
+      if (chunk.subarray(0, 3).toString('latin1') === 'PRI') {
+        http2.emit('connection', socket);
+      } else {
+        http.emit('connection', socket);
+      }
+    };
+
+    socket.once('readable', route);
+  });
+
+  await new Promise<void>((done) =>
+    listener.listen(0, '127.0.0.1', () => done()),
+  );
+
+  const { port } = listener.address() as AddressInfo;
 
   return {
     url: `http://127.0.0.1:${port}`,
@@ -228,22 +380,24 @@ export const startFakeHost = async (input: {
         artifacts.set(hash, bytes);
       }
 
-      for (const [id, socket] of watchers) {
-        socket.emit('event', {
-          kind: 'event',
-          id,
-          values: [{ generation: next.generation }],
-        });
+      for (const push of [...watchers]) {
+        push(next);
       }
     },
     refuse: (count) => {
       refusals = count;
     },
-    serve: (contract, method, handler) => {
-      handlers.set(`${contract} ${method}`, handler);
-    },
-    stream: (contract, method, handler) => {
-      streams.set(`${contract} ${method}`, handler);
+    serve: (service, implementation) => {
+      const prior = served.get(service.typeName)?.implementation ?? {};
+
+      served.set(service.typeName, {
+        service,
+        implementation: {
+          ...prior,
+          ...(implementation as Record<string, unknown>),
+        },
+      });
+      handle = adapter();
     },
     forwardConnect: (forward) => {
       connect = forward;
@@ -254,6 +408,19 @@ export const startFakeHost = async (input: {
     close: async () => {
       io.disconnectSockets(true);
       await new Promise<void>((done) => io.close(() => done()));
+
+      for (const session of sessions) {
+        session.destroy();
+      }
+
+      await new Promise<void>((done) =>
+        http2.close(() => {
+          done();
+        }),
+      );
+      await new Promise<void>((done) => {
+        listener.close(() => done());
+      });
     },
   };
 };
@@ -426,7 +593,7 @@ export const bootPlatform = async (input: {
   const platform = new DesktopPlatform({
     mainDir: MAIN_DIR,
     userData,
-    hostUrl: input.host.url,
+    host: connectHost({ url: input.host.url }),
     packaged: true,
     argv: input.argv ?? [],
     notifications,
@@ -459,17 +626,6 @@ export const bootPlatform = async (input: {
   nativeTheme.on('updated', repaintBackgrounds);
 
   await platform.prepare();
-
-  // Also what `main.ts` attaches: the `/doric/bridge` connection monitor every
-  // window's `doric.connection/v1` follows (the badge, the layout).
-  let connection: ConnectionMonitor | undefined;
-
-  if (input.shell === 'renderer') {
-    connection = createConnectionService(
-      createConnectionManager(input.host.url),
-    );
-    platform.connection.attach(connection);
-  }
 
   if (process.env.DORIC_TEST_LOG !== undefined) {
     platform.splashStates.subscribe((state) =>
@@ -516,7 +672,6 @@ export const bootPlatform = async (input: {
     },
     dispose: async () => {
       nativeTheme.off('updated', repaintBackgrounds);
-      connection?.close();
       await platform.dispose();
 
       // A directory the caller passed is the caller's.

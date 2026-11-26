@@ -738,10 +738,16 @@ Electron main's `createConnectRelay` checks the sender, the request, the
 `doric-client-part`, that the client part is active and that the method is a
 `DESKTOP` method of a `HOST`, non-platform contract of the window's generation,
 indexed from the distributed `descriptors.binpb` (none or unreadable: a warning
-and `unknown_contract`), then the scope; it replaces `windowKey`, drops
-`doric-caller*` and forwards over HTTP/2 to the host. `bundle/client` and
-`@connectrpc/connect` are client externals served once by the window import
-map. Main reaches the host's catalog and status only from S66.
+and `unknown_contract`), then decodes the scope (it relays the scope without
+checking it against the contract's declared scope kinds, RK37 of the spec); it
+replaces `windowKey`, drops `doric-caller*` and forwards over HTTP/2 to the
+host. `bundle/client` and `@connectrpc/connect` are client externals served
+once by the window import map. Since S66 Electron main's own calls, the catalog
+and the status included, go over Connect too, on one `connectHost` connection
+(`src/platform/host/connect.ts`) whose `api.status/v1` watch is the connection
+status and whose forward carries a window's Connect request;
+`src/platform/bridge/host-bridge.ts` and
+`src/connection/{manager,status,relay}.ts` are deleted.
 
 Since S65a, `runtime`'s and `chat`'s client parts call the host this way.
 `runtime` builds `RuntimeService` and `ThreadsService` clients lazily through
@@ -1659,8 +1665,10 @@ sandbox pool` then `Sandbox pool configured` with the `logSandboxPool`
   change.
 - 2026-11-25: group E's plan and phase 3, slice S64, of
   [`docs/designs/grpc-processes.md`](../designs/grpc-processes.md) (version
-  6.37). Plan: S63a → S63b → S64 → S65a–d → S66; `scripts/fake-host` is
-  retired in group E; main may import `transport`'s generated status client.
+  6.37). Plan: S63a → S63b → S64 → S65a–d → S66; `scripts/fake-host` is to
+  be retired in group E, though S66 leaves it in place because retiring it
+  needs the root `package.json` edited, which no group E slice does; main may
+  import `transport`'s generated status client.
   Known risk accepted: `Disable` and `ResetComposition` stay reachable without
   authentication on the public listener, since the host runs on a private
   network reached only through a Tailscale tunnel; without that, bind
@@ -1746,3 +1754,23 @@ sandbox pool` then `Sandbox pool configured` with the `logSandboxPool`
   Open: the `ClientServices` casts stay until the props are narrowed, and the
   e2e `terminalRoutes` fake holds its `WatchProject` stream open with a snapshot
   alone, so no `updated` or `output` item is exercised over Connect.
+- 2026-11-25: phase 3, slice S66, of
+  [the spec](../designs/grpc-processes.md) (version 6.45): Electron main speaks
+  Connect. `src/platform/host/connect.ts` holds `connectHost`; one
+  `Http2SessionManager` and one `ConnectTransport` over it serve the
+  `api.status/v1` `StatusService.Watch` that is the connection status, main's
+  own calls and the forward a window's Connect request travels on;
+  `subscribe` hears changes and `onStatus` every attempt's outcome.
+  `src/platform/bridge/host-bridge.ts` and
+  `src/connection/{manager,status,relay}.ts` are deleted; `DispatcherDeps.host`
+  (a `HostBridge`) is removed, the existing `connection: ConnectionSource` now
+  imports from `host/connect`, and a host route on the envelope answers `unavailable`; `project.json` sets `externalDependencies: []`. Tests:
+  new `tests/host-connect.test.ts`; the e2e `startFakeHost` is a Connect server
+  on `node:http2` beside the legacy Socket.IO envelope; the envelope refusal is
+  covered by `tests/dispatcher.test.ts` and `tests/core-scope.test.ts`; loopback
+  HTTP/2 tests cover the forward's body, response, streaming and cancel, which
+  fixed a forward that sent no request body. Open: `scripts/fake-host` is not retired (that
+  needs the root `package.json`, which no group E slice edits); the Connect
+  relay enforces no `desktopScope` (RK37 of the spec); the forward's error is a
+  `ContractError` `unavailable` rather than a `ConnectError`; the e2e fake
+  host's Socket.IO half is unused and is deleted in group F.

@@ -1,19 +1,23 @@
 // The technical desktop platform, composed (section 10): the `doric://app`
-// protocol, the windows and menus main owns, the host bridge, the verified
+// protocol, the windows and menus main owns, the host connection, the verified
 // artifact cache, one desktopMain utility process per generation, the
 // single IPC dispatcher and the splash and recovery surface.
 
 import { readFile } from 'node:fs/promises';
-import { connect as connectHttp2, type OutgoingHttpHeaders } from 'node:http2';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
+import { fromJson } from '@bufbuild/protobuf';
+import { ValueSchema } from '@bufbuild/protobuf/wkt';
+import { createClient } from '@connectrpc/connect';
 import {
   CommandsV1,
   ContractError,
   type Diagnostics,
   type NotificationRequest,
 } from 'bundle/contracts';
+import { CatalogService } from 'bundle/contracts/gen/doric/platform/catalog/v1/catalog_pb.js';
+import { DiagnosticsService } from 'bundle/contracts/gen/doric/platform/diagnostics/v1/diagnostics_pb.js';
 import {
   type CatalogIndex,
   catalogIndexFromDescriptors,
@@ -24,17 +28,13 @@ import {
   createPrincipal,
   type DistributionBundle,
   type DistributionCatalog,
-  distributionArtifactSchema,
-  distributionCatalogSchema,
-  newTrace,
+  distributionCatalogOf,
   PLATFORM_ASSETS_VERSION,
   PLATFORM_VERSION,
   ServiceDirectory,
   statesOf,
-  type WireCall,
 } from 'bundle/runtime';
 import type {
-  ConnectHeaders,
   WindowChrome,
   WindowFailure,
   WindowMode,
@@ -52,7 +52,6 @@ import {
   utilityProcess,
 } from 'electron';
 
-import { ConnectionRelay } from '../connection/relay';
 import { applyTheme, resolveThemeSource } from './appearance';
 import { AppearanceStore } from './appearance-store';
 import { removeArtifactsCache } from './artifacts-cleanup';
@@ -63,12 +62,6 @@ import {
 } from './bridge/client-routing';
 import { createConnectRelay, type HostForward } from './bridge/connect-relay';
 import { Dispatcher } from './bridge/dispatcher';
-import {
-  type BridgeSocket,
-  connectBridgeSocket,
-  createHostBridge,
-  type HostBridge,
-} from './bridge/host-bridge';
 import { createSchemaValidators } from './bridge/validation';
 import { ArtifactCache, type ArtifactFetch } from './catalog/artifacts';
 import { type LoadOutcome, Startup } from './catalog/distribution';
@@ -82,6 +75,7 @@ import { provideBroker } from './generation/broker';
 import { utilityTransport } from './generation/electron-transport';
 import { encodeRunnerArguments } from './generation/module-hooks';
 import { GenerationProcess } from './generation/process';
+import type { HostConnection } from './host/connect';
 import { Lifecycle } from './lifecycle';
 import { createPlatformLog, messageOf, type PlatformLog } from './log';
 import { NativeMenus } from './menus/native-menus';
@@ -127,7 +121,8 @@ export interface DesktopPlatformOptions {
   /** The directory of the built `main.js` (`__dirname`). */
   readonly mainDir: string;
   readonly userData: string;
-  readonly hostUrl: string;
+  /** The host connection every host call and window stream travels on. */
+  readonly host: HostConnection;
   readonly packaged: boolean;
   readonly argv: readonly string[];
   readonly notifications: NotificationApi;
@@ -136,7 +131,6 @@ export interface DesktopPlatformOptions {
   readonly clock?: Clock;
   /** Test seams. */
   readonly resources?: Resources;
-  readonly socket?: BridgeSocket;
   readonly preload?: string;
   readonly runnerPath?: string;
   readonly flushDeadlineMs?: number;
@@ -144,8 +138,8 @@ export interface DesktopPlatformOptions {
   /** Opens an https URL in the system browser; Electron's `shell` by default. */
   readonly openExternal?: (url: string) => Promise<void>;
   /**
-   * How `doric:connect` reaches the host (tests); by default an HTTP/2
-   * forward to `hostUrl`.
+   * How `doric:connect` reaches the host (tests); by default the connection's
+   * forward, over its HTTP/2 session.
    */
   readonly hostForward?: HostForward;
 }
@@ -160,94 +154,30 @@ interface Live {
   readonly index: CatalogIndex | undefined;
 }
 
-const PLATFORM_CALLER = (generation: number): WireCall['caller'] => ({
-  bundleId: 'doric',
-  version: PLATFORM_VERSION,
-  generation,
-});
-
-const platformWire = (generation: number, deadline = 0): WireCall => ({
-  caller: PLATFORM_CALLER(generation),
-  trace: { traceparent: newTrace().traceparent },
-  deadline,
-  generation,
-});
-
 const hostKey = (catalog: DistributionCatalog): string =>
   `${catalog.storage?.hostId ?? ''}\u0000${catalog.hostBoot}\u0000${catalog.generation}`;
 
-/** Headers HTTP/2 refuses, or that `node:http2` sets itself. */
-const http2Refused = new Set([
-  'connection',
-  'host',
-  'keep-alive',
-  'proxy-connection',
-  'transfer-encoding',
-  'upgrade',
-  'content-length',
-]);
+/** Every byte of a server stream of `{ chunk }` items, in order. */
+const collectStream = async (
+  body: AsyncIterable<{ readonly chunk: Uint8Array }>,
+): Promise<Uint8Array> => {
+  const chunks: Uint8Array[] = [];
+  let length = 0;
 
-/**
- * Forwards `doric:connect` requests to the host's public listener over one
- * HTTP/2 session, opened on first use and again after it ends.
- */
-const http2Forward = (hostUrl: string): HostForward => {
-  let session: ReturnType<typeof connectHttp2> | undefined;
-  const sessionOf = () => {
-    if (session === undefined || session.closed || session.destroyed) {
-      const opened = connectHttp2(hostUrl);
+  for await (const item of body) {
+    chunks.push(item.chunk);
+    length += item.chunk.byteLength;
+  }
 
-      // A session error fails its open requests; the next request reconnects.
-      opened.on('error', () => {
-        if (session === opened) {
-          session = undefined;
-        }
-      });
-      session = opened;
-    }
+  const bytes = new Uint8Array(length);
+  let offset = 0;
 
-    return session;
-  };
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
 
-  return {
-    request: (input, signal) =>
-      new Promise((resolve, reject) => {
-        const headers: OutgoingHttpHeaders = {
-          ':method': 'POST',
-          ':path': input.path,
-        };
-
-        for (const [name, value] of input.headers) {
-          if (!http2Refused.has(name.toLowerCase())) {
-            headers[name.toLowerCase()] = value;
-          }
-        }
-
-        const stream = sessionOf().request(headers, { signal });
-
-        stream.once('error', reject);
-        stream.once('response', (response) => {
-          const pairs: [string, string][] = [];
-
-          for (const [name, value] of Object.entries(response)) {
-            if (name.startsWith(':') || value === undefined) {
-              continue;
-            }
-
-            for (const one of Array.isArray(value) ? value : [value]) {
-              pairs.push([name, String(one)]);
-            }
-          }
-
-          resolve({
-            status: Number(response[':status']),
-            headers: pairs satisfies ConnectHeaders,
-            body: stream,
-          });
-        });
-        stream.end(input.body);
-      }),
-  };
+  return bytes;
 };
 
 /** Every `descriptors.binpb` of `bundles` the cache holds. */
@@ -272,9 +202,6 @@ const descriptorSets = async (
   return sets;
 };
 
-const decodeBase64 = (base64: string): Uint8Array =>
-  new Uint8Array(Buffer.from(base64, 'base64'));
-
 export class DesktopPlatform {
   readonly options: DesktopPlatformOptions;
   readonly log: PlatformLog;
@@ -283,13 +210,11 @@ export class DesktopPlatform {
   readonly registry = new WindowRegistry();
   readonly answers = new CloseAnswers();
   readonly splashStates = new SplashStates();
-  readonly host: HostBridge;
+  readonly host: HostConnection;
   readonly cache: ArtifactCache;
   readonly windows: NativeWindows;
   readonly menus: NativeMenus;
   readonly dispatcher: Dispatcher;
-  /** Stage 9: what windows read as the host connection status (D9-5). */
-  readonly connection = new ConnectionRelay();
   readonly startup: Startup;
   readonly lifecycle: Lifecycle;
   readonly #paths;
@@ -335,9 +260,7 @@ export class DesktopPlatform {
     );
     this.#platformMap = platformImportMap(this.resources.platformRoot);
     this.cache = new ArtifactCache(this.#paths.bundles, this.#paths.staging);
-    this.host = createHostBridge(
-      options.socket ?? connectBridgeSocket(options.hostUrl),
-    );
+    this.host = options.host;
     this.#kernelPrincipal = createPrincipal(
       {
         directory: this.#kernel,
@@ -403,7 +326,7 @@ export class DesktopPlatform {
       },
       tokens: this.tokens,
       preload: this.#preload,
-      hostUrl: options.hostUrl,
+      hostUrl: options.host.url,
       answers: this.answers,
       quitting: () => this.lifecycle.quitting,
       log: this.log,
@@ -466,7 +389,6 @@ export class DesktopPlatform {
     this.dispatcher = new Dispatcher({
       registry: this.registry,
       validators: this.#validators,
-      host: this.host,
       log: this.log,
       splashContents: () => this.#splash?.contentsId,
       splashStates: this.splashStates,
@@ -488,7 +410,7 @@ export class DesktopPlatform {
           { windowKey: entry.key, diagnostic },
           'Window diagnostic',
         ),
-      connection: this.connection,
+      connection: this.host,
       openExternal: (url) => {
         // Only the origin is logged: the query may carry a login's state.
         this.log.info({ origin: new URL(url).origin }, 'Opening the browser');
@@ -522,12 +444,12 @@ export class DesktopPlatform {
         close: () => this.#closeSplash(),
       },
       host: {
-        url: options.hostUrl,
+        url: host.url,
         get connected() {
           return host.connected;
         },
-        onStatus: (listener) => host.onStatus(listener),
-        retry: () => host.retry(),
+        onStatus: host.onStatus,
+        retry: host.retry,
       },
       log: this.log,
       recovery: options.argv.includes('--recovery'),
@@ -539,23 +461,13 @@ export class DesktopPlatform {
         await this.#runHook('onAppReadyHook', {});
       },
       disable: async (bundleId) => {
-        await this.host.call(
-          {
-            contract: 'doric.catalog/v1',
-            method: 'disable',
-            input: { bundleId },
-          },
-          platformWire(0),
-        );
+        await createClient(CatalogService, this.host.transport).disable({
+          bundleId,
+        });
       },
       resetComposition: async () => {
-        await this.host.call(
-          {
-            contract: 'doric.catalog/v1',
-            method: 'resetComposition',
-            input: [],
-          },
-          platformWire(0),
+        await createClient(CatalogService, this.host.transport).resetComposition(
+          {},
         );
       },
       diagnostics: () => this.diagnostics(),
@@ -682,7 +594,7 @@ export class DesktopPlatform {
       registry: this.registry,
       view: (generation) => this.#lives.get(generation)?.view,
       index: (generation) => this.#lives.get(generation)?.index,
-      forward: this.options.hostForward ?? http2Forward(this.options.hostUrl),
+      forward: this.options.hostForward ?? this.host.forward,
     });
 
     ipcMain.handle('doric:connect', (event, request: unknown) =>
@@ -829,12 +741,9 @@ export class DesktopPlatform {
 
   async #catalogFor(mode: WindowMode): Promise<DistributionCatalog> {
     if (mode === 'connected') {
-      const raw = await this.host.call(
-        { contract: 'doric.catalog/v1', method: 'distribution', input: [] },
-        platformWire(0),
+      return distributionCatalogOf(
+        await createClient(CatalogService, this.host.transport).distribution({}),
       );
-
-      return distributionCatalogSchema.parse(raw);
     }
 
     const snapshot = await loadCatalogSnapshot(this.#paths.catalogSnapshot);
@@ -897,18 +806,12 @@ export class DesktopPlatform {
     );
     const fetch: ArtifactFetch =
       mode === 'connected'
-        ? async (sha256) => {
-            const raw = await this.host.call(
-              {
-                contract: 'doric.catalog/v1',
-                method: 'artifact',
-                input: { sha256 },
-              },
-              platformWire(0),
-            );
-
-            return decodeBase64(distributionArtifactSchema.parse(raw).base64);
-          }
+        ? async (sha256) =>
+            await collectStream(
+              createClient(CatalogService, this.host.transport).readArtifact({
+                sha256,
+              }),
+            )
         : () =>
             Promise.reject(
               new ContractError('unavailable', 'The host is not connected.'),
@@ -934,25 +837,24 @@ export class DesktopPlatform {
 
     if (mode === 'connected') {
       for (const quarantine of resolution.quarantines) {
-        void this.host
-          .call(
-            {
-              contract: 'doric.diagnostics/v1',
-              method: 'report',
-              input: {
-                bundleId: quarantine.id,
-                kind: 'desktop_quarantine',
-                message: quarantine.reasons
-                  .map((reason) => reason.message)
-                  .join('; '),
-                details: {
-                  version: quarantine.version,
-                  reasons: quarantine.reasons,
-                },
-              },
-            },
-            platformWire(generation),
-          )
+        void createClient(DiagnosticsService, this.host.transport)
+          .report({
+            bundleId: quarantine.id,
+            kind: 'desktop_quarantine',
+            message: quarantine.reasons
+              .map((reason) => reason.message)
+              .join('; '),
+            details: fromJson(ValueSchema, {
+              version: quarantine.version,
+              reasons: quarantine.reasons.map((reason) => ({
+                code: reason.code,
+                message: reason.message,
+                ...(reason.contract === undefined
+                  ? {}
+                  : { contract: reason.contract }),
+              })),
+            }),
+          })
           .catch((error: unknown) =>
             this.log.warn(
               { bundleId: quarantine.id, error: messageOf(error) },
@@ -1241,24 +1143,31 @@ export class DesktopPlatform {
       );
   }
 
-  /** `doric.catalog/v1.watch()`: a new host generation loads in the background. */
+  /** `CatalogService.Watch`: a new host generation loads in the background. */
   #watch(): void {
     if (this.#watching !== undefined || !this.host.connected) {
       return;
     }
 
-    this.#watching = this.host.subscribe(
-      { contract: 'doric.catalog/v1', method: 'watch', input: [] },
-      platformWire(0),
-      {
-        event: () => {
+    const controller = new AbortController();
+    const abort = () => controller.abort();
+    const client = createClient(CatalogService, this.host.transport);
+
+    this.#watching = abort;
+    void (async () => {
+      try {
+        for await (const _ of client.watch({}, { signal: controller.signal })) {
+          void _;
           void this.refresh();
-        },
-        end: () => {
+        }
+      } catch {
+        // The watch ended; a reconnect opens another one.
+      } finally {
+        if (this.#watching === abort) {
           this.#watching = undefined;
-        },
-      },
-    );
+        }
+      }
+    })();
   }
 
   /**
@@ -1277,11 +1186,12 @@ export class DesktopPlatform {
           this.#newest === undefined
             ? undefined
             : this.#lives.get(this.#newest);
-        const raw = await this.host.call(
-          { contract: 'doric.catalog/v1', method: 'distribution', input: [] },
-          platformWire(0),
+        const catalog = distributionCatalogOf(
+          await createClient(
+            CatalogService,
+            this.host.transport,
+          ).distribution({}),
         );
-        const catalog = distributionCatalogSchema.parse(raw);
 
         if (
           newest !== undefined &&

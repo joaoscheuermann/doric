@@ -31,13 +31,12 @@ import {
   type WindowChrome,
   type WindowDescription,
   type WindowFailure,
-  type WindowMode,
 } from 'desktop/protocol';
 import { z } from 'zod';
 
-import type { ConnectionSource } from '../../connection/relay';
 import type { ThemeSource } from '../appearance';
 import type { GenerationProcess } from '../generation/process';
+import type { ConnectionSource } from '../host/connect';
 import type { PlatformLog } from '../log';
 import {
   recoveryActionSchema,
@@ -54,8 +53,6 @@ import {
   mayUse,
   routeOf,
 } from './client-routing';
-import type { HostBridge } from './host-bridge';
-import { hostUnavailable } from './host-bridge';
 import { isShellSender, SENDER_REFUSED_MESSAGE } from './sender';
 import { describeSchemaIssues } from './validation';
 
@@ -71,10 +68,17 @@ export interface DesktopEvent {
   readonly senderFrame?: { readonly url: string } | null;
 }
 
+/**
+ * A host contract left on the envelope, which windows now reach over Connect.
+ * The message is the text the REST client answers today for network failures
+ * and its timeout.
+ */
+export const hostUnavailable = (): ContractError =>
+  new ContractError('unavailable', 'Doric backend is unavailable.');
+
 export interface DispatcherDeps {
   readonly registry: WindowRegistry;
   readonly validators: SchemaValidators;
-  readonly host: HostBridge;
   readonly log: PlatformLog;
   /** The splash's webContents, while it is open. */
   readonly splashContents: () => number | undefined;
@@ -535,58 +539,37 @@ export class Dispatcher {
     this.#streams.set(id, stream);
 
     try {
-      if (target.environment === 'host') {
-        const close = this.#deps.host.subscribe(
-          {
-            contract: target.contract,
-            method: envelope.method,
-            input: envelope.input,
-          },
-          target.wire,
-          {
-            event: (values) => {
-              for (const value of values) {
-                next(value);
-              }
-            },
-            end: (error) => end(error),
-          },
-        );
+      const items = Array.isArray(envelope.input)
+        ? envelope.input
+        : [envelope.input];
+      const controller = new AbortController();
+      const call = restoreCall(target.wire, {
+        signals: [controller.signal],
+        ...(this.#deps.now === undefined ? {} : { now: this.#deps.now }),
+      });
+      // Across the process link the listener crosses with the callback
+      // codec, which carries a function: the items, not the end.
+      const disposable = (target.record as ProviderRecord).invoke(
+        envelope.method,
+        [...items, next],
+        call,
+      ) as { dispose(): void } | Promise<{ dispose(): void }>;
 
-        stream.dispose = close;
-      } else {
-        const items = Array.isArray(envelope.input)
-          ? envelope.input
-          : [envelope.input];
-        const controller = new AbortController();
-        const call = restoreCall(target.wire, {
-          signals: [controller.signal],
-          ...(this.#deps.now === undefined ? {} : { now: this.#deps.now }),
-        });
-        // Across the process link the listener crosses with the callback
-        // codec, which carries a function: the items, not the end.
-        const disposable = (target.record as ProviderRecord).invoke(
-          envelope.method,
-          [...items, next],
-          call,
-        ) as { dispose(): void } | Promise<{ dispose(): void }>;
+      stream.dispose = () => controller.abort();
 
-        stream.dispose = () => controller.abort();
-
-        Promise.resolve(disposable).then(
-          (held) => {
-            if (this.#streams.has(id)) {
-              stream.dispose = () => {
-                controller.abort();
-                held.dispose();
-              };
-            } else {
+      Promise.resolve(disposable).then(
+        (held) => {
+          if (this.#streams.has(id)) {
+            stream.dispose = () => {
+              controller.abort();
               held.dispose();
-            }
-          },
-          (error: unknown) => end(toContractError(error)),
-        );
-      }
+            };
+          } else {
+            held.dispose();
+          }
+        },
+        (error: unknown) => end(toContractError(error)),
+      );
     } catch (error) {
       this.#streams.delete(id);
 
@@ -681,8 +664,6 @@ export class Dispatcher {
 
     const resolved: Omit<Resolved, 'wire' | 'record'> = {
       contract: envelope.contract,
-      environment: route.contract.environment,
-      mode: view.mode,
       schemas: route.schemas[envelope.method],
       stream,
     };
@@ -699,11 +680,9 @@ export class Dispatcher {
     };
 
     if (route.contract.environment === 'host') {
-      if (view.mode !== 'connected' || !this.#deps.host.connected) {
-        throw hostUnavailable();
-      }
-
-      return { ...resolved, wire };
+      // Windows reach host contracts over `doric:connect`; an envelope call
+      // for one is closed, whatever the connection's state.
+      throw hostUnavailable();
     }
 
     const process = this.#deps.process(generation);
@@ -727,18 +706,6 @@ export class Dispatcher {
     envelope: BridgeCallEnvelope,
     signal: AbortSignal,
   ): Promise<unknown> {
-    if (target.environment === 'host') {
-      return await this.#deps.host.call(
-        {
-          contract: target.contract,
-          method: envelope.method,
-          input: envelope.input,
-        },
-        target.wire,
-        signal,
-      );
-    }
-
     const call = restoreCall(target.wire, {
       signals: [signal],
       ...(this.#deps.now === undefined ? {} : { now: this.#deps.now }),
@@ -1049,8 +1016,6 @@ export class Dispatcher {
 
 interface Resolved {
   readonly contract: string;
-  readonly environment: 'desktopMain' | 'host';
-  readonly mode: WindowMode;
   readonly schemas:
     | {
         readonly input: Record<string, unknown>;

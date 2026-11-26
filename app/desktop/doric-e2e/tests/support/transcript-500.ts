@@ -373,18 +373,6 @@ export const transcriptLog = (): readonly ThreadEventRow[] => {
   return rows;
 };
 
-/** A tuple's first item, or the value: the argument a wire message carries. */
-const first = (input: unknown): Record<string, unknown> => {
-  const value = Array.isArray(input) ? input[0] : input;
-  return typeof value === 'object' && value !== null
-    ? (value as Record<string, unknown>)
-    : {};
-};
-
-/** The id a call names first: a bare string, or a tuple's first item. */
-const idOf = (input: unknown): unknown =>
-  Array.isArray(input) ? input[0] : input;
-
 /** The `TerminalService` handlers of each host, as `serveTerminal` added them. */
 const terminalHandlers = new WeakMap<
   FakeHost,
@@ -415,31 +403,13 @@ export const terminalRoutes =
 
 /**
  * Answers the measured Thread with `transcriptLog()` (after `serveWorkspace`,
- * whose answers for the other Threads it keeps), on the Socket.IO fake and
- * over Connect (`forwardConnect`), and `terminal/v1` with no terminals: the
- * transcript is settled, so no live output is watched.
+ * whose answers for the other Threads it keeps) over Connect
+ * (`forwardConnect`), and `terminal/v1` with no terminals: the transcript is
+ * settled, so no live output is watched.
  */
 export const serveTranscript = (host: FakeHost): void => {
   const log = transcriptLog();
   const record = { ...TRANSCRIPT_THREAD, lastSequence: log.length };
-  host.serve('runtime.threads/v1', 'thread', (input) => {
-    const id = idOf(input);
-    return id === record.id ? record : THREADS.find((item) => item.id === id);
-  });
-  host.stream('runtime.threads/v1', 'watchThread', (input, push) => {
-    const { threadId, afterSequence } = first(input);
-    const from = typeof afterSequence === 'number' ? afterSequence : 0;
-    const found = threadId === record.id ? record : undefined;
-    push({
-      kind: 'snapshot',
-      threadId,
-      projectId: record.projectId,
-      project: null,
-      thread: found ?? THREADS.find((item) => item.id === threadId) ?? null,
-      events:
-        found === undefined ? [] : log.filter((row) => row.sequence > from),
-    });
-  });
   // The same Thread and log over Connect, which the chat and the runtime's
   // records read (S65a); the workspace's other Threads and the contracts it
   // answers over Connect as `serveWorkspace`.

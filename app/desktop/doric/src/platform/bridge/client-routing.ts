@@ -282,17 +282,14 @@ export const generationView = (input: {
     generation: input.generation,
     resolved: resolution.client,
     parts,
-    // One record per contract, the route `routeOf` takes: a contract the
-    // same bundle provides in desktopMain and in the host (`hooks/v1`,
-    // `log/v1`, `settings/v1` of the core) would otherwise be registered
-    // twice in the window's directory, which refuses the second.
-    remote: [...routes.values()].map(
-      (list) =>
-        (
-          list.find((route) => route.contract.environment === 'desktopMain') ??
-          (list[0] as RoutedContract)
-        ).contract,
-    ),
+    // Only `desktopMain` routes: a window reaches a host contract over
+    // `doric:connect`, and an envelope call for one stays refused.
+    remote: [...routes.values()].flatMap((list) => {
+      const route = list.find(
+        (candidate) => candidate.contract.environment === 'desktopMain',
+      );
+      return route === undefined ? [] : [route.contract];
+    }),
     hostId: catalog.storage?.hostId ?? '',
     storageGeneration: catalog.storage?.storageGeneration ?? 0,
     hostProviders,
