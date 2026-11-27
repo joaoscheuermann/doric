@@ -1,4 +1,4 @@
-// `papercraft`'s host part as a process (phase 3, S57); the running host keeps `./index.ts` until S62.
+// `papercraft`'s host part as a process (phase 3, S57).
 import { HookHandlerService } from 'bundle/contracts/gen/doric/hooks/v1/hooks_pb.js';
 import { runBundle } from 'bundle/host';
 

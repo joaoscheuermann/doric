@@ -321,7 +321,7 @@ export const compileFailure = (path: string, error: unknown): ContractError =>
       );
 
 /** The export a preview mounts: `entry`, else `default`, else one PascalCase export. */
-export const pickExport = (
+const pickExport = (
   path: string,
   exports: readonly string[],
   entry: string | undefined,
@@ -356,7 +356,7 @@ export const pickExport = (
 };
 
 /** The story a CSF file mounts: `entry`, else its first story in source order. */
-export const pickStory = (
+const pickStory = (
   path: string,
   stories: readonly string[],
   entry: string | undefined,

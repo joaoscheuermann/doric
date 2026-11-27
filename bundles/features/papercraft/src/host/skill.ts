@@ -1,7 +1,5 @@
-// D28's `papercraft` skill: its constants, the skill built from the committed
-// text, and the kernel's read of that text beside this module (S57 D5).
-
-import { readFileSync } from 'node:fs';
+// D28's `papercraft` skill: its constants and the skill built from the
+// committed text.
 
 /** What `host.assets` must match (S62: `"src/host/skills/*.md"`). */
 export const PAPERCRAFT_SKILL_PATH = 'src/host/skills/papercraft.md';
@@ -28,7 +26,3 @@ export const papercraftSkillOf = (text: string): PapercraftSkill => ({
   allowedTools: ['comment_reply'],
   body: text.trim(),
 });
-
-/** `./skills/papercraft.md` read synchronously beside this module; throws the read error (`ENOENT`). No read at import. */
-export const readSkillBesideModule = (): string =>
-  readFileSync(new URL('./skills/papercraft.md', import.meta.url), 'utf8');

@@ -20,8 +20,8 @@ import { buildBundle } from 'bundle';
 // `runBundle` from `bundle/host` and lists `openui.programs/v1`'s
 // `ProgramsService`, `openui.questions/v1`'s `QuestionsService` and the
 // `HookHandlerService` as the static `[Service, implementation]` literals the
-// build reads (S29). The kernel entry, the client, the skill text beside the
-// host and the manifest stay as they were until S62.
+// build reads (S29). The client, the skill text beside the host and the
+// manifest stay as they were; the kernel entry is gone (S68c).
 //
 // `buildBundle` rewrites `dist/`, which other test files read while they
 // run, so this file builds a copy of the bundle inside the package, where
@@ -121,7 +121,7 @@ const runWithoutSpawnEnvironment = (
 const nonEmpty = async (path: string): Promise<boolean> =>
   (await stat(path)).size > 0;
 
-void test('B1: the build bundles openui’s host part into a runnable main.mjs and keeps the kernel entry, the client, the skill text and the manifest', async (t) => {
+void test('B1: the build bundles openui’s host part into a runnable main.mjs and keeps the client, the skill text and the manifest', async (t) => {
   const copy = await copyBundle();
 
   t.after(() => rm(copy, { recursive: true, force: true }));
@@ -132,8 +132,12 @@ void test('B1: the build bundles openui’s host part into a runnable main.mjs a
   const main = join(dist, 'host', 'main.mjs');
 
   assert.ok(await nonEmpty(main), 'dist/host/main.mjs is empty');
+  await assert.rejects(
+    stat(join(dist, 'host', 'index.js')),
+    { code: 'ENOENT' },
+    'the kernel entry dist/host/index.js still exists',
+  );
   for (const kept of [
-    ['host', 'index.js'],
     ['client', 'index.js'],
     ['host', 'skills', 'openui.md'],
   ]) {

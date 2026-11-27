@@ -115,12 +115,12 @@ belongs to the bundle that owns that tag, the conversation or the Thread.
   throwing `invalid_scope` when it lacks either key, as `scopeOf` in
   `src/host/validation.ts` does.
 - Register a new event of this bundle with `events/v1` in
-  `src/host/index.ts`, and add its type to `eventTypes` of `answersProjector`
+  `src/host/routed.ts`, and add its type to `eventTypes` of `answersProjector`
   in `src/client/answers-projector.ts`, so that chat draws no block for its
   rows.
 - Add the tests of each change in the same change: a host or contract test in
   `tests/*.test.ts` over the fake `runtime.threads/v1` of
-  [`tests/support/host.ts`](tests/support/host.ts); a client test in
+  [`tests/support/router.ts`](tests/support/router.ts); a client test in
   `tests/client/*.test.ts` that imports `tests/client/support/dom.ts` first,
   then draws a fence through `ConversationFence` with a fake `layout` and the
   recording services stub of

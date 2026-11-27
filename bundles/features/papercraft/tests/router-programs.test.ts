@@ -200,3 +200,85 @@ void test('P5: a whole turnSequence above the safe integers passes protovalidate
   );
   assert.deepEqual(world.callsOf('threads.threadEvents'), []);
 });
+
+// The kernel suite `library.test.ts` (PC14: the binding by `turnSequence`),
+// moved to the router world in S68c (X3): `Library` answers the library of the
+// last cwd row below the fence's `turnSequence`.
+
+const WEB = '/workspace/web';
+
+/** A ready lease whose runner answers each library job with the library of its `cwd`. */
+const leasedByCwd = (world: RouterWorld): void => {
+  world.lease.status = 'ready';
+  world.lease.sandbox = scriptedSandbox((input) =>
+    builtLibrary(String(input.cwd), String(input.cwd)),
+  );
+};
+
+const rootAt = async (
+  world: RouterWorld,
+  turnSequence: number,
+): Promise<string> => {
+  const answer = await world.programs().library({ turnSequence });
+  return answer.status.case === 'ready'
+    ? answer.status.value.root
+    : (answer.status.case ?? 'unset');
+};
+
+void test('PC14: fences before and after a move bind to their own directory; no cwd row answers none', async (t) => {
+  const world = await activated(t);
+  leasedByCwd(world);
+
+  assert.equal(await rootAt(world, 1), 'none');
+  await world.promptStarted('p1', APP);
+  const before = world.row('p1', 'text.delta', { text: 'fence 1' });
+  await world.cwdChanged(WEB, APP, 'p1');
+  const after = world.row('p1', 'text.delta', { text: 'fence 2' });
+  await world.promptStarted('p2', WEB);
+  const [appRow, webRow] = world.log.filter(
+    ({ type }) => type === 'papercraft.cwd/v1',
+  );
+
+  assert.equal(await rootAt(world, appRow?.sequence ?? 0), 'none');
+  assert.equal(await rootAt(world, before.sequence), APP);
+  assert.equal(await rootAt(world, webRow?.sequence ?? 0), APP);
+  assert.equal(await rootAt(world, after.sequence), WEB);
+});
+
+void test('PC14: a rewind removing the move rebinds later fences; the next hook appends again; a restarted host agrees', async (t) => {
+  const world = await activated(t);
+  leasedByCwd(world);
+
+  await world.promptStarted('p1', APP);
+  await world.promptStarted('p2', WEB);
+  world.row('p2', 'text.delta', { text: 'fence' });
+  world.rewind('p2');
+  const fence = world.row('p3', 'text.delta', { text: 'later fence' });
+  await world.promptStarted('p3', WEB);
+
+  // The rewind dropped p2's row: a fence below p3's new row binds to APP.
+  assert.equal(await rootAt(world, fence.sequence), APP);
+  assert.deepEqual(
+    world.log
+      .filter(({ type }) => type === 'papercraft.cwd/v1')
+      .map(({ promptId, event }) => [promptId, event.cwd]),
+    [
+      ['p1', APP],
+      ['p3', WEB],
+    ],
+  );
+
+  // A host restarted after the rewind reads the same log.
+  const restarted = await activated(t);
+  leasedByCwd(restarted);
+  for (const { promptId, type, event } of world.log) {
+    const { type: _type, ...fields } = event;
+    restarted.row(promptId, type, fields);
+  }
+  const replayed = restarted.log.find(
+    ({ event }) => event.text === 'later fence',
+  );
+  await restarted.promptStarted('p4', WEB);
+
+  assert.equal(await rootAt(restarted, replayed?.sequence ?? 0), APP);
+});

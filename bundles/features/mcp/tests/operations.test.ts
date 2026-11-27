@@ -8,8 +8,8 @@ import { createTestServices } from 'bundle/testing';
 
 import { mcpScopeMessage } from '../src/contracts/index.js';
 import { projectOf } from '../src/host/operations.js';
+import { P1 } from './support/router.js';
 import { codeOf } from './support/wait.js';
-import { P1 } from './support/world.js';
 
 void test('S59a PO1 projectOf answers the call scope Project', async (t) => {
   const world = createTestServices({ bundle: { id: 'mcp' } });

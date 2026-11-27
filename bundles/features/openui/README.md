@@ -43,7 +43,7 @@ The package ([`package.json`](package.json)) exports `./contracts`,
 | Part           | Source                                                                         | Built as                                                                              | What it does                                                                                                     |
 | -------------- | ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
 | contracts      | [`src/contracts/`](src/contracts/index.ts)                                     | `dist/contracts/`, imported as `openui/contracts`                                     | Contract refs and schemas, the event, the pure modules shared with `papercraft`. No React, no OpenUI.            |
-| host           | [`src/host/`](src/host/index.ts)                                               | `dist/host/`                                                                          | The `openui` skill, the error sink `openui.programs/v1`, the question service `openui.questions/v1`.             |
+| host           | [`src/host/`](src/host/main.ts)                                                | `dist/host/`                                                                          | The `openui` skill, the error sink `openui.programs/v1`, the question service `openui.questions/v1`.             |
 | client         | [`src/client/index.ts`](src/client/index.ts)                                   | `dist/client/index.js`, `dist/client/styles.css`                                      | `<openui-fence>`, the fence renderer registration, the answers projector, the live-row watcher.                  |
 | renderer chunk | [`src/client/chunks/renderer.ts`](src/client/chunks/renderer.ts)               | `dist/client/chunks/renderer.js`                                                      | Draws one fence with OpenUI's `Renderer` and the conversation library; actions, checks, question form, diagrams. |
 | renderer sheet | [`src/client/chunks/renderer-styles.ts`](src/client/chunks/renderer-styles.ts) | `dist/client/chunks/renderer-styles.css`, and `dist/client/chunks/renderer-styles.js` | Doric's tokens for OpenUI and react-ui's layered sheet.                                                          |
@@ -209,7 +209,7 @@ the answers delivered and the question `pending`.
 
 Declared with `defineEvent` and registered with `events/v1` at host activation
 ([`src/contracts/questions.ts`](src/contracts/questions.ts),
-[`src/host/index.ts`](src/host/index.ts)). Payload, strict:
+[`src/host/service.ts`](src/host/service.ts)). Payload, strict:
 
 ```ts
 { questionPromptId: string /* non-empty */; digest: string /* 64 hex chars */; answers: AskAnswer[] }
@@ -388,13 +388,13 @@ taken from the question schemas.
   `steer`, `queue`, `resumeQueue` and `prompt` for questions
   ([`src/host/validation.ts`](src/host/validation.ts),
   [`src/host/questions.ts`](src/host/questions.ts)).
-- `runtime.hooks/v1`: `onPromptStartedHook`, through `hooks/v1.whenAvailable`
-  ([`src/host/index.ts`](src/host/index.ts)).
+- `runtime.hooks/v1`: `onPromptStartedHook`, through `hooks.register`
+  ([`src/host/service.ts`](src/host/service.ts)).
 - `events/v1`: `register` and `append` of `openui.answered/v1`
-  ([`src/host/index.ts`](src/host/index.ts),
+  ([`src/host/service.ts`](src/host/service.ts),
   [`src/host/questions.ts`](src/host/questions.ts)).
 - `skills/v1`: `register` of the `openui` skill
-  ([`src/host/index.ts`](src/host/index.ts)).
+  ([`src/host/service.ts`](src/host/service.ts)).
 - `ui/v1`: `define` of `<openui-fence>`
   ([`src/client/index.ts`](src/client/index.ts)).
 - `runtime/contracts` (module): `completedStatements`, `firstCompletedLine`,
@@ -485,22 +485,18 @@ type ThreadUpdateInput = {
 
 ## Host activation
 
-[`src/host/index.ts`](src/host/index.ts) provides `openui.programs/v1` and
-`openui.questions/v1`, registers `openui.answered/v1`, registers
-`validation.promptStarted` as `onPromptStartedHook` once `runtime.hooks/v1` is
-available, and registers the skill. The cleanup disposes the skill, the hook
-and every pending validation timer.
-
-The same services also run as the bundle's own process
-([`src/host/main.ts`](src/host/main.ts), `createOpenuiHost`): it serves
+The host part runs only as the bundle's own process
+([`src/host/main.ts`](src/host/main.ts), `createOpenuiHost` in
+[`src/host/service.ts`](src/host/service.ts)): it serves
 `openui.programs/v1` and `openui.questions/v1`, registers
 `openui.answered/v1`, a `runtime.hooks/v1` handler and the skill, and its
 services answer `unavailable` until activation. A routed request is parsed
-again with the same zod schemas, so a questions digest matches the kernel's;
-stored `openui.answered/v1` rows read the same in both encodings. The skill is
-never read at import: the kernel reads it in activation beside the compiled
-module, the process with `context.assets.read` (which needs the manifest's
-`host.assets`, `["src/host/skills/*.md"]` since S62c1). The 200 ms validation timer's instruct runs
+again with the same zod schemas; stored `openui.answered/v1` rows read the
+same in both encodings. The skill is never read at import: activation reads it
+with `context.assets.read` (which needs the manifest's `host.assets`,
+`["src/host/skills/*.md"]` since S62c1; the build stages it as
+`dist/host/skills/openui.md`). A finished instance's skill registration is
+dropped by the platform. The 200 ms validation timer's instruct runs
 detached.
 
 ### The `openui` skill
@@ -935,7 +931,7 @@ wrapper is `inert` but the diagram keeps its toolbar and viewport.
 ## Configuration
 
 The bundle has no setting and reads no environment variable at run time
-([`src/host/index.ts`](src/host/index.ts),
+([`src/host/service.ts`](src/host/service.ts),
 [`src/client/index.ts`](src/client/index.ts)). `OPENUI_SKILL_UPDATE=1` is
 read only by the skill-text test.
 
@@ -960,7 +956,8 @@ npx nx run bundle-openui:test       # builds first; runs tests/*.test.ts and tes
 ```
 
 Tests under `tests/` are DOM-free host and contract tests over a fake
-`runtime.threads/v1` ([`tests/support/host.ts`](tests/support/host.ts)); tests
+`runtime.threads/v1` on the test router
+([`tests/support/router.ts`](tests/support/router.ts)); tests
 under `tests/client/` boot `happy-dom`
 ([`tests/client/support/dom.ts`](tests/client/support/dom.ts)) and draw
 through `ConversationFence` compiled from source

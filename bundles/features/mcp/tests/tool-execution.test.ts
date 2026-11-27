@@ -21,8 +21,8 @@ import {
   executeMcpTool,
   mcpToolDefinition,
 } from '../src/host/tools.js';
+import { P1 } from './support/router.js';
 import { codeOf } from './support/wait.js';
-import { P1 } from './support/world.js';
 
 const weather: Tool = {
   name: 'get.weather/now',

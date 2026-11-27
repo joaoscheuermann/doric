@@ -1,37 +1,75 @@
-// OAuth for HTTP MCP servers: a background connect never registers a client
-// or opens a browser, sign-in is PKCE with the server as the resource, the
-// tokens live only in secrets/v1 as MCP_TOKEN credentials, and they follow
-// the server's configuration.
+// OAuth for HTTP MCP servers over the router (S68c, X3): what `oauth.test.ts`
+// tested on the kernel entry and the router suites M4, M5, M8 and M9 do not
+// already cover. A background connect never registers a client or opens a
+// browser, sign-in is PKCE with the server as the resource, the tokens live
+// only in `secrets/v1` as MCP_TOKEN credentials, and they follow the server's
+// configuration.
 
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { textTool } from './support/mcp-server.js';
 import { followRedirect } from './support/oauth-server.js';
-import { authorizing, guarded, opened, served } from './support/setup.js';
-import { signInThrough, tokenCredentials } from './support/sign-in.js';
-import { codeOf, eventually, sleep } from './support/wait.js';
 import {
-  activateWorld,
-  createEnvironment,
-  httpServer,
+  activated,
+  failureOf,
   inState,
   P1,
+  type RouterWorld,
+  reactivated,
   serverOf,
-} from './support/world.js';
+  signInThrough,
+  tokenCredentials,
+  viewOf,
+} from './support/router.js';
+import { authorizing, guarded, served } from './support/setup.js';
+import { eventually, sleep } from './support/wait.js';
+import { httpServer } from './support/world.js';
 
-/** Asserts the promise rejects with a contract error of that code. */
-const rejectsWith = (promise: Promise<unknown>, code: string) =>
-  assert.rejects(promise, (error: unknown) => {
-    assert.equal(codeOf(error), code);
-    return true;
-  });
+/** The code `call` failed with. */
+const codeOfFailure = async (call: () => Promise<unknown>): Promise<string> =>
+  (await failureOf(call)).code;
+
+/** `FinishSignIn` of the server, answering its view. */
+const finishSignIn = async (
+  world: RouterWorld,
+  id: string,
+  options: { readonly signal?: AbortSignal } = {},
+) => {
+  const { mcpServerView } = await world
+    .mcp(P1)
+    .finishSignIn({ id }, options.signal === undefined ? {} : options);
+  if (mcpServerView === undefined) throw new Error('No view answered.');
+
+  return viewOf(mcpServerView);
+};
+
+/** The secret of the credential of that name. */
+const secretNamed = (world: RouterWorld, name: string) =>
+  [...world.credentials.values()].find((entry) => entry.name === name)?.secret;
+
+/** Keeps a `Watch` of the Project open until the test ends. */
+const watching = (t: test.TestContext, world: RouterWorld) => {
+  const controller = new AbortController();
+  t.after(() => controller.abort());
+  void (async () => {
+    try {
+      for await (const _item of world
+        .mcp(P1)
+        .watch({}, { signal: controller.signal })) {
+        // Each item is the Project's servers now; only the open stream matters.
+      }
+    } catch {
+      // Cancelled when the test ends.
+    }
+  })();
+};
 
 void test('A1 a server answering 401 with resource metadata needs sign-in, and no client is registered', async (t) => {
-  const world = await opened(t);
+  const world = await activated(t);
   const as = await authorizing(t);
   const server = await guarded(t, as, { tools: [textTool('alpha')] });
-  const created = await world.mcp(P1).create(httpServer('docs', server.url));
+  const created = await world.create(P1, httpServer('docs', server.url));
 
   const servers = await world.watchUntil(
     P1,
@@ -40,19 +78,16 @@ void test('A1 a server answering 401 with resource metadata needs sign-in, and n
   );
 
   assert.equal(serverOf(servers, created.id)?.signedIn, false);
-
   assert.deepEqual(world.liveNames(P1), []);
-
   assert.ok(!as.paths.includes('/register'));
-
   assert.deepEqual(as.registrations, []);
 });
 
 void test('A2 signIn answers a PKCE S256 authorization URL for the server resource with a loopback redirect', async (t) => {
-  const world = await opened(t);
+  const world = await activated(t);
   const as = await authorizing(t);
   const server = await guarded(t, as, { tools: [textTool('alpha')] });
-  const created = await world.mcp(P1).create(httpServer('docs', server.url));
+  const created = await world.create(P1, httpServer('docs', server.url));
 
   const { url } = await world.mcp(P1).signIn({ id: created.id });
   const authorization = new URL(url);
@@ -63,80 +98,35 @@ void test('A2 signIn answers a PKCE S256 authorization URL for the server resour
     `${authorization.origin}${authorization.pathname}`,
     `${as.issuer}/authorize`,
   );
-
   assert.equal(authorization.searchParams.get('code_challenge_method'), 'S256');
-
   assert.ok((authorization.searchParams.get('code_challenge') ?? '') !== '');
-
   assert.ok((authorization.searchParams.get('state') ?? '') !== '');
-
   assert.equal(authorization.searchParams.get('resource'), server.url);
-
   assert.equal(redirect.hostname, '127.0.0.1');
-
   const [registration] = as.registrations;
-
   assert.equal(registration?.token_endpoint_auth_method, 'none');
-
   assert.deepEqual(registration?.redirect_uris, [redirectUri]);
 });
 
-void test('A3 the browser redirect completes sign-in: connected, tokens kept only as MCP_TOKEN credentials', async (t) => {
-  const world = await opened(t);
-  const as = await authorizing(t);
-  const server = await guarded(t, as, { tools: [textTool('alpha')] });
-  const created = await world.mcp(P1).create(httpServer('docs', server.url));
-
-  const { view } = await signInThrough(world, P1, created.id, as);
-  const [tokens] = as.issued;
-
-  assert.equal(view.status.state, 'connected');
-
-  assert.equal(view.signedIn, true);
-
-  assert.ok(tokens !== undefined);
-
-  const stored = tokenCredentials(world, created.id);
-
-  assert.equal(
-    stored.find((entry) => entry.name === `mcp:${created.id}:access`)?.secret,
-    tokens.accessToken,
-  );
-
-  assert.equal(
-    stored.find((entry) => entry.name === `mcp:${created.id}:refresh`)?.secret,
-    tokens.refreshToken,
-  );
-
-  const documents = JSON.stringify(world.env.serverDocuments());
-
-  assert.ok(!documents.includes(tokens.accessToken));
-
-  assert.ok(!documents.includes(tokens.refreshToken));
-
-  assert.deepEqual(world.liveNames(P1), ['mcp__docs__alpha']);
-});
-
 void test('A4 a callback whose iss differs from the advertised issuer fails sign-in and stores no token', async (t) => {
-  const world = await opened(t);
+  const world = await activated(t);
   const as = await authorizing(t, { issParameterSupported: true });
   const server = await guarded(t, as, { tools: [textTool('alpha')] });
-  const created = await world.mcp(P1).create(httpServer('docs', server.url));
-  const mcp = world.mcp(P1);
+  const created = await world.create(P1, httpServer('docs', server.url));
 
-  const { url } = await mcp.signIn({ id: created.id });
+  const { url } = await world.mcp(P1).signIn({ id: created.id });
   const approval = as.approve(url);
-  const finishing = rejectsWith(
-    mcp.finishSignIn({ id: created.id }),
-    'mcp_signin_failed',
-  );
+  const finishing = codeOfFailure(() => finishSignIn(world, created.id));
   await followRedirect(approval, { iss: 'http://evil.example' });
-  await finishing;
 
+  assert.equal(await finishing, 'mcp_signin_failed');
   assert.deepEqual(tokenCredentials(world, created.id), []);
-
   assert.ok(
-    !world.env.secretCalls.created.some((input) => input.kind === 'MCP_TOKEN'),
+    !world
+      .callsOf('secrets.create')
+      .some(
+        ({ request }) => (request as { kind: string }).kind === 'MCP_TOKEN',
+      ),
   );
 });
 
@@ -145,31 +135,30 @@ for (const [label, codeChallengeMethods] of [
   ['supporting only plain', ['plain']],
 ] as const) {
   void test(`A5 an authorization server ${label} fails signIn`, async (t) => {
-    const world = await opened(t);
+    const world = await activated(t);
     const as = await authorizing(t, { codeChallengeMethods });
     const server = await guarded(t, as, { tools: [textTool('alpha')] });
-    const created = await world.mcp(P1).create(httpServer('docs', server.url));
+    const created = await world.create(P1, httpServer('docs', server.url));
 
-    await rejectsWith(
-      world.mcp(P1).signIn({ id: created.id }),
+    assert.equal(
+      await codeOfFailure(() => world.mcp(P1).signIn({ id: created.id })),
       'mcp_signin_failed',
     );
   });
 }
 
 void test('A6 a new activation with an expired access token refreshes it and connects without sign-in', async (t) => {
-  const env = createEnvironment();
   const as = await authorizing(t);
   const server = await guarded(t, as, { tools: [textTool('alpha')] });
-  const first = await activateWorld(env);
-  const created = await first.mcp(P1).create(httpServer('docs', server.url));
+  const first = await activated(t);
+  const created = await first.create(P1, httpServer('docs', server.url));
   await signInThrough(first, P1, created.id, as);
   await first.deactivate();
   const [old] = as.issued;
   assert.ok(old !== undefined);
   as.accessTokens.delete(old.accessToken);
 
-  const world = await opened(t, env);
+  const world = await reactivated(t, first);
   const servers = await world.watchUntil(
     P1,
     inState(created.id, 'connected'),
@@ -177,7 +166,6 @@ void test('A6 a new activation with an expired access token refreshes it and con
   );
 
   assert.equal(serverOf(servers, created.id)?.signedIn, true);
-
   assert.ok(
     as.tokenRequests.some(
       (request) =>
@@ -185,80 +173,64 @@ void test('A6 a new activation with an expired access token refreshes it and con
         request.refresh_token === old.refreshToken,
     ),
   );
-
   const refreshed = as.issued.at(-1);
-
   assert.notEqual(refreshed?.accessToken, old.accessToken);
-
   assert.equal(
-    env.credentialNamed(`mcp:${created.id}:access`)?.secret,
+    secretNamed(world, `mcp:${created.id}:access`),
     refreshed?.accessToken,
   );
-
-  assert.deepEqual(world.liveNames(P1), ['mcp__docs__alpha']);
-});
-
-void test('A7 finishSignIn without a pending signIn is refused as not started', async (t) => {
-  const world = await opened(t);
-  const as = await authorizing(t);
-  const server = await guarded(t, as, { tools: [textTool('alpha')] });
-  const created = await world.mcp(P1).create(httpServer('docs', server.url));
-
-  await rejectsWith(
-    world.mcp(P1).finishSignIn({ id: created.id }),
-    'mcp_signin_not_started',
+  await eventually(
+    () => world.liveNames(P1).join() === 'mcp__docs__alpha',
+    'the tool registered',
+    () => world.registrations,
   );
 });
 
 void test('A7 aborting the finishSignIn call rejects it as aborted', {
   timeout: 30_000,
 }, async (t) => {
-  const world = await opened(t);
+  const world = await activated(t);
   const as = await authorizing(t);
   const server = await guarded(t, as, { tools: [textTool('alpha')] });
-  const created = await world.mcp(P1).create(httpServer('docs', server.url));
+  const created = await world.create(P1, httpServer('docs', server.url));
   await world.mcp(P1).signIn({ id: created.id });
   const controller = new AbortController();
 
-  const finishing = rejectsWith(
-    world
-      .mcp(P1)
-      .finishSignIn({ id: created.id }, { signal: controller.signal }),
-    'mcp_signin_aborted',
-  );
+  const finishing = finishSignIn(world, created.id, {
+    signal: controller.signal,
+  });
   await sleep(50);
   controller.abort();
 
-  await finishing;
+  // Over the wire the caller sees its own cancel; the call rejects, it
+  // never answers a view.
+  await assert.rejects(finishing);
+  assert.deepEqual(tokenCredentials(world, created.id), []);
 });
 
 void test('A7 a newer signIn aborts the older pending finishSignIn', {
   timeout: 30_000,
 }, async (t) => {
-  const world = await opened(t);
+  const world = await activated(t);
   const as = await authorizing(t);
   const server = await guarded(t, as, { tools: [textTool('alpha')] });
-  const created = await world.mcp(P1).create(httpServer('docs', server.url));
+  const created = await world.create(P1, httpServer('docs', server.url));
   await world.mcp(P1).signIn({ id: created.id });
 
-  const older = rejectsWith(
-    world.mcp(P1).finishSignIn({ id: created.id }),
-    'mcp_signin_aborted',
-  );
+  const older = codeOfFailure(() => finishSignIn(world, created.id));
   await sleep(50);
   const { url } = await world.mcp(P1).signIn({ id: created.id });
 
-  await older;
-
+  assert.equal(await older, 'mcp_signin_aborted');
   assert.ok(url.startsWith(`${as.issuer}/authorize`));
 });
 
 void test('A8 a sign-in registers its client as Doric unless the server names another client', async (t) => {
-  const world = await opened(t);
+  const world = await activated(t);
   const as = await authorizing(t);
   const server = await guarded(t, as, { tools: [textTool('alpha')] });
-  const plain = await world.mcp(P1).create(httpServer('docs', server.url));
-  const named = await world.mcp(P1).create({
+  const plain = await world.create(P1, httpServer('docs', server.url));
+  const named = await world.create(P1, {
     name: 'design',
     enabled: true,
     transport: {
@@ -279,14 +251,13 @@ void test('A8 a sign-in registers its client as Doric unless the server names an
 });
 
 void test('A8 changing only the client name keeps the tokens, and the next sign-in registers under the new name', async (t) => {
-  const world = await opened(t);
+  const world = await activated(t);
   const as = await authorizing(t);
   const server = await guarded(t, as, { tools: [textTool('alpha')] });
-  const created = await world.mcp(P1).create(httpServer('docs', server.url));
+  const created = await world.create(P1, httpServer('docs', server.url));
   await signInThrough(world, P1, created.id, as);
 
-  const updated = await world.mcp(P1).update({
-    id: created.id,
+  const updated = await world.update(P1, created.id, {
     name: 'docs',
     enabled: true,
     transport: {
@@ -298,23 +269,20 @@ void test('A8 changing only the client name keeps the tokens, and the next sign-
   });
 
   assert.equal(updated.signedIn, true);
-
   assert.equal(tokenCredentials(world, created.id).length, 2);
-
   await world.mcp(P1).signIn({ id: created.id });
-
   assert.equal(as.registrations.at(-1)?.client_name, 'Claude Code');
 });
 
 void test('A9 a sign-in asks for the scopes the server names unless the transport names its own', async (t) => {
-  const world = await opened(t);
+  const world = await activated(t);
   const as = await authorizing(t);
   const server = await guarded(t, as, {
     tools: [textTool('alpha')],
     scopesSupported: ['files:read'],
   });
-  const plain = await world.mcp(P1).create(httpServer('docs', server.url));
-  const scoped = await world.mcp(P1).create({
+  const plain = await world.create(P1, httpServer('docs', server.url));
+  const scoped = await world.create(P1, {
     name: 'design',
     enabled: true,
     transport: {
@@ -331,9 +299,7 @@ void test('A9 a sign-in asks for the scopes the server names unless the transpor
   );
 
   assert.equal(plainUrl.searchParams.get('scope'), 'files:read');
-
   assert.equal(scopedUrl.searchParams.get('scope'), 'files:read files:write');
-
   assert.deepEqual(
     as.registrations.map((registration) => registration.scope),
     ['files:read', 'files:read files:write'],
@@ -341,14 +307,13 @@ void test('A9 a sign-in asks for the scopes the server names unless the transpor
 });
 
 void test('A9 changing only the scopes and the client info keeps the tokens, and the next sign-in asks for the new scopes', async (t) => {
-  const world = await opened(t);
+  const world = await activated(t);
   const as = await authorizing(t);
   const server = await guarded(t, as, { tools: [textTool('alpha')] });
-  const created = await world.mcp(P1).create(httpServer('docs', server.url));
+  const created = await world.create(P1, httpServer('docs', server.url));
   await signInThrough(world, P1, created.id, as);
 
-  const updated = await world.mcp(P1).update({
-    id: created.id,
+  const updated = await world.update(P1, created.id, {
     name: 'docs',
     enabled: true,
     transport: {
@@ -361,118 +326,63 @@ void test('A9 changing only the scopes and the client info keeps the tokens, and
   });
 
   assert.equal(updated.signedIn, true);
-
   assert.equal(tokenCredentials(world, created.id).length, 2);
-
   const { url } = await world.mcp(P1).signIn({ id: created.id });
-
   assert.equal(new URL(url).searchParams.get('scope'), 'files:write');
-});
-
-void test('M4b changing the URL of a signed-in server drops its tokens and its signed-in state', async (t) => {
-  const world = await opened(t);
-  const as = await authorizing(t);
-  const server = await guarded(t, as, { tools: [textTool('alpha')] });
-  const plain = await served(t, { tools: [textTool('beta')] });
-  const created = await world.mcp(P1).create(httpServer('docs', server.url));
-  await signInThrough(world, P1, created.id, as);
-
-  assert.equal(tokenCredentials(world, created.id).length, 2);
-
-  const updated = await world
-    .mcp(P1)
-    .update({ id: created.id, ...httpServer('docs', plain.url) });
-
-  assert.equal(updated.signedIn, false);
-
-  await eventually(
-    () => tokenCredentials(world, created.id).length === 0,
-    'the MCP_TOKEN credentials deleted',
-    () => tokenCredentials(world, created.id).map((entry) => entry.name),
-  );
-});
-
-void test('M5 removing a signed-in server deletes its MCP_TOKEN credentials', async (t) => {
-  const world = await opened(t);
-  const as = await authorizing(t);
-  const server = await guarded(t, as, { tools: [textTool('alpha')] });
-  const created = await world.mcp(P1).create(httpServer('docs', server.url));
-  await signInThrough(world, P1, created.id, as);
-
-  assert.equal(tokenCredentials(world, created.id).length, 2);
-
-  await world.mcp(P1).remove({ id: created.id });
-
-  assert.deepEqual(tokenCredentials(world, created.id), []);
-
-  assert.deepEqual(world.liveNames(P1), []);
 });
 
 void test('O1 changing the URL of a server cancels its waiting sign-in, whose redirect then stores nothing', {
   timeout: 30_000,
 }, async (t) => {
-  const world = await opened(t);
+  const world = await activated(t);
   const as = await authorizing(t);
   const server = await guarded(t, as, { tools: [textTool('alpha')] });
   const plain = await served(t, { tools: [textTool('beta')] });
-  const created = await world.mcp(P1).create(httpServer('docs', server.url));
+  const created = await world.create(P1, httpServer('docs', server.url));
   const { url } = await world.mcp(P1).signIn({ id: created.id });
   const approval = as.approve(url);
 
-  const finishing = rejectsWith(
-    world.mcp(P1).finishSignIn({ id: created.id }),
-    'mcp_signin_aborted',
-  );
+  const finishing = codeOfFailure(() => finishSignIn(world, created.id));
   await sleep(50);
-  await world
-    .mcp(P1)
-    .update({ id: created.id, ...httpServer('docs', plain.url) });
+  await world.update(P1, created.id, httpServer('docs', plain.url));
 
-  await finishing;
-
+  assert.equal(await finishing, 'mcp_signin_aborted');
   await assert.rejects(followRedirect(approval));
-
   assert.deepEqual(tokenCredentials(world, created.id), []);
 });
 
 void test('O1 removing a server cancels its waiting sign-in', {
   timeout: 30_000,
 }, async (t) => {
-  const world = await opened(t);
+  const world = await activated(t);
   const as = await authorizing(t);
   const server = await guarded(t, as, { tools: [textTool('alpha')] });
-  const created = await world.mcp(P1).create(httpServer('docs', server.url));
+  const created = await world.create(P1, httpServer('docs', server.url));
   await world.mcp(P1).signIn({ id: created.id });
 
-  const finishing = rejectsWith(
-    world.mcp(P1).finishSignIn({ id: created.id }),
-    'mcp_signin_aborted',
-  );
+  const finishing = codeOfFailure(() => finishSignIn(world, created.id));
   await sleep(50);
   await world.mcp(P1).remove({ id: created.id });
 
-  await finishing;
+  assert.equal(await finishing, 'mcp_signin_aborted');
 });
 
 void test('O2 tokens a sign-in earns after its server moved to another URL are not stored', {
   timeout: 30_000,
 }, async (t) => {
-  const world = await opened(t);
+  const world = await activated(t);
   const as = await authorizing(t);
   const server = await guarded(t, as, { tools: [textTool('alpha')] });
   const plain = await served(t, { tools: [textTool('beta')] });
-  const created = await world.mcp(P1).create(httpServer('docs', server.url));
+  const created = await world.create(P1, httpServer('docs', server.url));
   const { url } = await world.mcp(P1).signIn({ id: created.id });
   const approval = as.approve(url);
   const release = as.holdTokens();
 
-  const finishing = world
-    .mcp(P1)
-    .finishSignIn({ id: created.id })
-    .then(
-      () => 'finished',
-      (error: unknown) => codeOf(error),
-    );
+  const finishing = finishSignIn(world, created.id).then(
+    () => 'finished',
+    (error: unknown) => failureOf(() => Promise.reject(error)),
+  );
   await followRedirect(approval);
   await eventually(
     () =>
@@ -481,30 +391,26 @@ void test('O2 tokens a sign-in earns after its server moved to another URL are n
       ),
     'the code exchange reaching the authorization server',
   );
-  await world
-    .mcp(P1)
-    .update({ id: created.id, ...httpServer('docs', plain.url) });
+  await world.update(P1, created.id, httpServer('docs', plain.url));
   release();
 
-  assert.equal(await finishing, 'mcp_signin_aborted');
-
-  assert.deepEqual(tokenCredentials(world, created.id), []);
-
+  const outcome = await finishing;
   assert.equal(
-    serverOf(await world.mcp(P1).list(), created.id)?.signedIn,
-    false,
+    typeof outcome === 'string' ? outcome : outcome.code,
+    'mcp_signin_aborted',
   );
+  assert.deepEqual(tokenCredentials(world, created.id), []);
+  assert.equal(serverOf(await world.list(P1), created.id)?.signedIn, false);
 });
 
 void test('O2 a background refresh that answers after its server moved to another URL stores nothing, and the new URL never sees the token', {
   timeout: 30_000,
 }, async (t) => {
-  const env = createEnvironment();
   const as = await authorizing(t);
   const server = await guarded(t, as, { tools: [textTool('alpha')] });
   const plain = await served(t, { tools: [textTool('beta')] });
-  const first = await activateWorld(env);
-  const created = await first.mcp(P1).create(httpServer('docs', server.url));
+  const first = await activated(t);
+  const created = await first.create(P1, httpServer('docs', server.url));
   await signInThrough(first, P1, created.id, as);
   await first.deactivate();
   const [old] = as.issued;
@@ -512,9 +418,8 @@ void test('O2 a background refresh that answers after its server moved to anothe
   as.accessTokens.delete(old.accessToken);
   const release = as.holdTokens();
 
-  const world = await opened(t, env);
-  const watching = world.mcp(P1).watch(() => undefined);
-  t.after(() => watching.dispose());
+  const world = await reactivated(t, first);
+  watching(t, world);
   await eventually(
     () =>
       as.tokenRequests.some(
@@ -522,9 +427,7 @@ void test('O2 a background refresh that answers after its server moved to anothe
       ),
     'the refresh reaching the authorization server',
   );
-  await world
-    .mcp(P1)
-    .update({ id: created.id, ...httpServer('docs', plain.url) });
+  await world.update(P1, created.id, httpServer('docs', plain.url));
   await world.watchUntil(P1, inState(created.id, 'connected'), 'connected');
   release();
   await eventually(
@@ -535,7 +438,6 @@ void test('O2 a background refresh that answers after its server moved to anothe
   await sleep(200);
 
   assert.deepEqual(tokenCredentials(world, created.id), []);
-
   assert.ok(
     plain.requests.every(
       (request) => request.headers.authorization === undefined,
@@ -546,20 +448,24 @@ void test('O2 a background refresh that answers after its server moved to anothe
 void test('O3 two requests that meet an expired token refresh it one at a time, never reusing a refresh token, and both succeed', {
   timeout: 30_000,
 }, async (t) => {
-  const world = await opened(t);
+  const world = await activated(t);
   const as = await authorizing(t);
   const server = await guarded(t, as, { tools: [textTool('alpha')] });
-  const created = await world.mcp(P1).create(httpServer('docs', server.url));
+  const created = await world.create(P1, httpServer('docs', server.url));
   await signInThrough(world, P1, created.id, as);
+  await eventually(
+    () => world.liveNames(P1).join() === 'mcp__docs__alpha',
+    'the tool registered',
+    () => world.registrations,
+  );
   const [signedIn] = as.issued;
   assert.ok(signedIn !== undefined);
   as.accessTokens.delete(signedIn.accessToken);
   const release = as.holdTokens();
-  const tool = world.tool(P1, 'mcp__docs__alpha');
 
   const calls = Promise.allSettled([
-    tool.execute({}, world.promptCall(P1)),
-    tool.execute({}, world.promptCall(P1)),
+    world.execute('mcp__docs__alpha', P1, {}),
+    world.execute('mcp__docs__alpha', P1, {}),
   ]);
   await eventually(
     () =>
@@ -576,35 +482,27 @@ void test('O3 two requests that meet an expired token refresh it one at a time, 
     settled.map((result) => result.status),
     ['fulfilled', 'fulfilled'],
   );
-
   const refreshed = as.tokenRequests
     .filter((request) => request.grant_type === 'refresh_token')
     .map((request) => request.refresh_token);
-
   assert.equal(new Set(refreshed).size, refreshed.length);
-
-  const access = world.env.credentialNamed(`mcp:${created.id}:access`)?.secret;
-
+  const access = secretNamed(world, `mcp:${created.id}:access`);
   assert.ok(access !== undefined && as.accessTokens.has(access));
-
-  assert.equal(
-    serverOf(await world.mcp(P1).list(), created.id)?.signedIn,
-    true,
-  );
+  assert.equal(serverOf(await world.list(P1), created.id)?.signedIn, true);
 });
 
 void test('O4 a sign-in of another server leaves the waiting one of the first server alone', {
   timeout: 30_000,
 }, async (t) => {
-  const world = await opened(t);
+  const world = await activated(t);
   const as = await authorizing(t);
   const docs = await guarded(t, as, { tools: [textTool('alpha')] });
   const search = await guarded(t, as, { tools: [textTool('beta')] });
-  const first = await world.mcp(P1).create(httpServer('docs', docs.url));
-  const second = await world.mcp(P1).create(httpServer('search', search.url));
+  const first = await world.create(P1, httpServer('docs', docs.url));
+  const second = await world.create(P1, httpServer('search', search.url));
   const { url } = await world.mcp(P1).signIn({ id: first.id });
   const approval = as.approve(url);
-  const finishing = world.mcp(P1).finishSignIn({ id: first.id });
+  const finishing = finishSignIn(world, first.id);
 
   await world.mcp(P1).signIn({ id: second.id });
   await followRedirect(approval);
@@ -615,10 +513,10 @@ void test('O4 a sign-in of another server leaves the waiting one of the first se
 void test('O5 overlapping signIn calls of one server leave only the latest waiting, with the older callback closed', {
   timeout: 30_000,
 }, async (t) => {
-  const world = await opened(t);
+  const world = await activated(t);
   const as = await authorizing(t);
   const server = await guarded(t, as, { tools: [textTool('alpha')] });
-  const created = await world.mcp(P1).create(httpServer('docs', server.url));
+  const created = await world.create(P1, httpServer('docs', server.url));
   const mcp = world.mcp(P1);
 
   const [older, newer] = await Promise.all([
@@ -627,7 +525,7 @@ void test('O5 overlapping signIn calls of one server leave only the latest waiti
   ]);
   const stale = as.approve(older.url);
   const live = as.approve(newer.url);
-  const finishing = mcp.finishSignIn({ id: created.id });
+  const finishing = finishSignIn(world, created.id);
 
   await assert.rejects(followRedirect(stale));
   await followRedirect(live);

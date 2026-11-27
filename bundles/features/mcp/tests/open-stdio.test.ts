@@ -14,8 +14,8 @@ import type { McpTransport } from '../src/contracts/index.js';
 import type { ResolvedEntries } from '../src/host/credentials.js';
 import { openStdio } from '../src/host/open.js';
 import type { McpLease, McpSandbox } from '../src/host/ports.js';
+import { P1 } from './support/router.js';
 import { type FakeSandbox, fakeSandbox } from './support/sandbox.js';
-import { P1 } from './support/world.js';
 
 type Stdio = Extract<McpTransport, { readonly kind: 'stdio' }>;
 

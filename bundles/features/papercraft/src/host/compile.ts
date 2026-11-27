@@ -41,7 +41,7 @@ import { isRelative, packageOf } from './paths.js';
 import type { SandboxBundler } from './sandbox.js';
 
 /** The compiled module and sheet of one component preview. */
-export interface CompiledComponent {
+interface CompiledComponent {
   /** The ESM module: `export function mount(root, { theme })`. */
   readonly js: string;
   /** The Tailwind sheet the module's classes need, linked in its document. */

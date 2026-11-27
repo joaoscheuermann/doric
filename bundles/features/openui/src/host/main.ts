@@ -1,7 +1,6 @@
 // `openui`'s host part as a process (phase 3, S56): `openui.programs/v1`,
 // `openui.questions/v1` and the `onPromptStartedHook` handler served through
-// the router. Built into `dist/host/main.mjs`; the running host keeps the
-// kernel entry (`./index.ts`) until S62.
+// the router. Built into `dist/host/main.mjs`.
 
 import { HookHandlerService } from 'bundle/contracts/gen/doric/hooks/v1/hooks_pb.js';
 import { runBundle } from 'bundle/host';

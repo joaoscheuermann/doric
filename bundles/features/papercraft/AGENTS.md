@@ -39,7 +39,7 @@ not store a program anywhere but the Thread's log, where its fences are.
   sandbox. Read Project files there only through the `SourceReader` passed in.
 - Read Project files from the host only through `files/v1`
   (`src/host/files.ts`), and run sandbox work only through
-  `runtime.lease/v1.withLease` in `src/host/sandbox.ts`; never acquire a lease.
+  `runOnProjectLease` of `src/host/lease.ts`; never acquire a lease.
 - Write inside `.doric/papercraft/` of a Project only through the runner jobs
   of `src/host/sandbox.ts`, which write the ignore files first. Write no other
   Project file, except that `src/host/ignore.ts` alone writes

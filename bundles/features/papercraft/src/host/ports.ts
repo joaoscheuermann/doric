@@ -1,21 +1,11 @@
 // What `papercraft`'s host logic calls outside itself (S57 D1): the `files/v1`
 // reads, the Project's sandbox lease, the Thread log and instruct, and the
-// `papercraft.cwd/v1` append. The kernel serves them over `services`; the
-// process over the router.
+// `papercraft.cwd/v1` append. The process serves them over the router.
 
-import { type Call, EventsV1, type Services } from 'bundle/contracts';
-import {
-  RuntimeLeaseV1,
-  RuntimeThreadsV1,
-  type SteerResult,
-} from 'runtime/contracts';
+import type { Call } from 'bundle/contracts';
+import type { SteerResult } from 'runtime/contracts';
 
-import {
-  cwdEvent,
-  type FilesContentRead,
-  FilesV1,
-  type LeaseOutcome,
-} from '../contracts/index.js';
+import type { FilesContentRead, LeaseOutcome } from '../contracts/index.js';
 import type { RunnerSandbox } from './sandbox.js';
 
 /** Where a `files/v1` read runs: the Project, and the call it is part of (none: outside every call, D2). */
@@ -40,7 +30,7 @@ export type BytesReadOutcome =
 export interface PapercraftFiles {
   /** One file as bounded UTF-8 text (`Content{path}`). */
   content(path: string, at: ReadAt): Promise<LeaseOutcome<FilesContentRead>>;
-  /** One file's exact bytes under `files/v1`'s bound (kernel: base64 `content`; process: `ReadBytes`, D3). */
+  /** One file's exact bytes under `files/v1`'s bound (`ReadBytes`, D3). */
   readBytes(path: string, at: ReadAt): Promise<LeaseOutcome<BytesReadOutcome>>;
 }
 
@@ -111,58 +101,3 @@ export interface PapercraftPorts {
     call?: Call,
   ): Promise<void>;
 }
-
-/**
- * The kernel's ports: each method is today's `services.use(...)` call, made when it runs: `content`/`readBytes` use
- * `call?.scope ?? {projectId}` (base64 `content` for bytes), `run` is `withLease`, `eventsAfter` is `threadEvents`
- * mapped to `{events, lastSequence}`, `instruct`/`appendCwd` as `library.ts` calls them. Kernel only; leaves in group F.
- */
-export const kernelPapercraftPorts = (services: Services): PapercraftPorts => {
-  const content = (
-    input: { readonly path: string; readonly encoding?: 'base64' },
-    { projectId, call }: ReadAt,
-  ): Promise<LeaseOutcome<FilesContentRead>> =>
-    services.use(FilesV1, call?.scope ?? { projectId }).content(input, call);
-
-  return {
-    files: {
-      content: (path, at) => content({ path }, at),
-      readBytes: async (path, at) => {
-        const outcome = await content({ path, encoding: 'base64' }, at);
-        if (outcome.status !== 'ready') return outcome;
-
-        const read = outcome.value;
-
-        return read.status === 'read'
-          ? {
-              status: 'ready',
-              value: {
-                status: 'read',
-                bytes: Buffer.from(read.content, 'base64'),
-                truncated: read.truncated,
-              },
-            }
-          : { status: 'ready', value: read };
-      },
-    },
-    lease: {
-      run: (projectId, task) =>
-        services.use(RuntimeLeaseV1, { projectId }).withLease(task),
-    },
-    threads: {
-      eventsAfter: async (threadId, afterSequence) => {
-        const log = await services
-          .use(RuntimeThreadsV1)
-          .threadEvents({ id: threadId, afterSequence });
-
-        return log === undefined
-          ? undefined
-          : { events: log.events, lastSequence: log.lastSequence };
-      },
-      instruct: (input) => services.use(RuntimeThreadsV1).instruct(input),
-    },
-    appendCwd: async (scope, cwd) => {
-      await services.use(EventsV1, scope).append(cwdEvent, { cwd });
-    },
-  };
-};

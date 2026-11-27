@@ -59,7 +59,7 @@ versions), `esbuild` 0.28.2, `tailwindcss` and `@tailwindcss/oxide` 4.3.3,
 | Part      | Source                                                       | Built as                                                    | What it does                                                                                                            |
 | --------- | ------------------------------------------------------------ | ----------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
 | contracts | [`src/contracts/`](src/contracts/index.ts)                   | `dist/contracts/`, imported as `papercraft/contracts`       | Refs, schemas and method specs of the provided contracts, the event, shared names, structural copies of used contracts. |
-| host      | [`src/host/`](src/host/index.ts)                             | `dist/host/`, with `skills/papercraft.md` copied beside it  | The skill, the two runtime hooks, `papercraft.programs/v1`, the event registration, the `Export` compiler.              |
+| host      | [`src/host/`](src/host/main.ts)                              | `dist/host/`, with `skills/papercraft.md` staged beside it  | The skill, the two runtime hooks, `papercraft.programs/v1`, the event registration, the `Export` compiler.              |
 | desktop   | [`src/desktop/`](src/desktop/index.ts)                       | `dist/desktop/`                                             | `papercraft.open-canvas/v2`, `papercraft.cache/v1`, `papercraft.snapshot/v1`, the `papercraft-program` flush.           |
 | client    | [`src/client/index.ts`](src/client/index.ts)                 | `dist/client/index.js`, `dist/client/styles.css`            | `<papercraft-fence>`, `<papercraft-canvas>`, the canvas route, the projectors, the commands and keybindings.            |
 | frame     | [`src/client/frames/openui.ts`](src/client/frames/openui.ts) | `dist/client/frames/openui.js`                              | The program runtime every fence's iframe loads.                                                                         |
@@ -81,13 +81,10 @@ The host loads `esbuild`, `tailwindcss` and `@tailwindcss/oxide` lazily with
 `require` ([`src/host/native.ts`](src/host/native.ts), `nativeOf` and
 `moduleNative`), never with a value `import()`: esbuild cannot be bundled and
 oxide's `.node` file fails the host build. A runner job rejects with the load
-error when esbuild cannot load. The runner script is read on first use
-(`readRunnerBesideModule`), and a failed read is remembered. The operations
-take their kernel services as ports
-([`src/host/ports.ts`](src/host/ports.ts), `PapercraftPorts`,
-`kernelPapercraftPorts`).
+error when esbuild cannot load. The operations take their services as ports
+([`src/host/ports.ts`](src/host/ports.ts), `PapercraftPorts`).
 
-The host also runs as its own process ([`src/host/main.ts`](src/host/main.ts),
+The host part runs only as its own process ([`src/host/main.ts`](src/host/main.ts),
 `runBundle`; [`src/host/service.ts`](src/host/service.ts),
 `createPapercraftHost`). Its services answer `unavailable` until `activate`,
 which reads the skill, registers the cwd event, the two runtime hooks and the
@@ -100,7 +97,9 @@ file in chunks of at most 1 MiB. The ports are routed
 sandbox runs through `routedPapercraftLease`
 ([`src/host/lease.ts`](src/host/lease.ts), chunked `PutFile`/`GetFile`).
 The process loads native packages with `context.assets.require` and reads
-the skill and runner with `context.assets.read`. Library jobs and lease runs
+the skill and runner with `context.assets.read`, from the `host.assets` the
+build stages (`dist/host/skills/papercraft.md`, `dist/sandbox/runner.mjs`); a
+failed runner read is remembered. Library jobs and lease runs
 are detached; concurrent `cwdAt` lookups for one turn share one promise, so
 two Library calls join one job. The process adds the dependencies
 `@connectrpc/connect` and `files`, and `@bufbuild/protovalidate` for
@@ -116,9 +115,9 @@ All are exported from `papercraft/contracts`
 Provided by the host, every method exposed to the desktop
 ([`src/contracts/programs.ts`](src/contracts/programs.ts),
 [`src/host/programs.ts`](src/host/programs.ts)). Ref: `PapercraftProgramsV1`;
-method specs: `papercraftProgramsMethods`. The provider is registered by
-`createLibraryHooks`, which ignores a `provider_conflict` from a second set of
-hooks over the same services ([`src/host/library.ts`](src/host/library.ts)).
+method specs: `papercraftProgramsMethods`. The process serves it as
+`PapercraftProgramsService` over `createProgramOperations`
+([`src/host/service.ts`](src/host/service.ts)).
 
 ```ts
 interface PapercraftPrograms {
@@ -342,29 +341,29 @@ client registers a projector that claims it and draws nothing
 
 ## Contracts used
 
-| Contract                             | Part            | What for                                                                                  |
-| ------------------------------------ | --------------- | ----------------------------------------------------------------------------------------- |
-| `skills/v1`                          | host            | Registers the `papercraft` skill.                                                         |
-| `events/v1`                          | host            | Registers and appends `papercraft.cwd/v1`.                                                |
-| `hooks/v1`, `runtime.hooks/v1`       | host            | `onPromptStartedHook` and `onThreadCwdChangedHook`.                                       |
-| `runtime.threads/v1`                 | host, client    | `threadEvents` (bindings), `instruct` (library instruct); `watchThread` (comment events). |
-| `runtime.lease/v1`                   | host            | `withLease` runs runner jobs on the Project's current sandbox; it never acquires one.     |
-| `files/v1`                           | host            | Reads Project sources, stylesheets and their `url()` assets, and probes `.git`.           |
-| `comments/v1`                        | client          | `list` of the program comments, `resolve` of a thread.                                    |
-| `openui.programs/v1`                 | client          | `reportErrors` of a drawn fence's errors, tag `papercraft`.                               |
-| `chat.views/v1`                      | client          | `registerFenceRenderer`, `registerProjector`, `watchFences` (canvas window).              |
-| `chat.composer/v1` (optional)        | client, desktop | Drafts in the Thread's stack; `registerFlush` of the `papercraft-program` kind.           |
-| `chat.send/v1` (optional)            | client          | The canvas window's send.                                                                 |
-| `ui/v1`, `navigation/v1`             | client          | Defines the elements; registers the canvas route.                                         |
-| `commands/v1`                        | client, desktop | Registers the canvas commands (client) and `papercraft.open-canvas/v2` (desktop).         |
-| `menus/v1`                           | client          | Adds the keybindings.                                                                     |
-| `windows/v1`                         | desktop         | Opens the canvas window.                                                                  |
-| `doric.cache/v1`, `doric.windows/v1` | desktop         | The cache directory; the window capture.                                                  |
+| Contract                             | Part            | What for                                                                                   |
+| ------------------------------------ | --------------- | ------------------------------------------------------------------------------------------ |
+| `skills/v1`                          | host            | Registers the `papercraft` skill.                                                          |
+| `events/v1`                          | host            | Registers and appends `papercraft.cwd/v1`.                                                 |
+| `hooks/v1`, `runtime.hooks/v1`       | host            | `onPromptStartedHook` and `onThreadCwdChangedHook`.                                        |
+| `runtime.threads/v1`                 | host, client    | `threadEvents` (bindings), `instruct` (library instruct); `watchThread` (comment events).  |
+| `runtime.lease/v1`                   | host            | `runOnProjectLease` runs runner jobs on the Project's current sandbox; never acquires one. |
+| `files/v1`                           | host            | Reads Project sources, stylesheets and their `url()` assets, and probes `.git`.            |
+| `comments/v1`                        | client          | `list` of the program comments, `resolve` of a thread.                                     |
+| `openui.programs/v1`                 | client          | `reportErrors` of a drawn fence's errors, tag `papercraft`.                                |
+| `chat.views/v1`                      | client          | `registerFenceRenderer`, `registerProjector`, `watchFences` (canvas window).               |
+| `chat.composer/v1` (optional)        | client, desktop | Drafts in the Thread's stack; `registerFlush` of the `papercraft-program` kind.            |
+| `chat.send/v1` (optional)            | client          | The canvas window's send.                                                                  |
+| `ui/v1`, `navigation/v1`             | client          | Defines the elements; registers the canvas route.                                          |
+| `commands/v1`                        | client, desktop | Registers the canvas commands (client) and `papercraft.open-canvas/v2` (desktop).          |
+| `menus/v1`                           | client          | Adds the keybindings.                                                                      |
+| `windows/v1`                         | desktop         | Opens the canvas window.                                                                   |
+| `doric.cache/v1`, `doric.windows/v1` | desktop         | The cache directory; the window capture.                                                   |
 
 The host takes `RuntimeLeaseV1`, `RuntimeHooksV1`, `RuntimeThreadsV1` and the
 types `PromptStarted`, `CwdChanged` and `ThreadEvent` from `runtime/contracts`
 ([`src/host/sandbox.ts`](src/host/sandbox.ts),
-[`src/host/index.ts`](src/host/index.ts),
+[`src/host/service.ts`](src/host/service.ts),
 [`src/host/library.ts`](src/host/library.ts)). The client imports from
 `openui/contracts` the fold of a Thread's fences into programs
 (`createProgramFolds`), the error types, `shownErrors`, `OpenuiProgramsV1`
@@ -381,10 +380,12 @@ pinned comments. Load it before writing a papercraft fence.", and the body of
 [`src/host/skills/papercraft.md`](src/host/skills/papercraft.md): the fence and
 its identity, the patch rule, `Export`, data and local state, repository
 libraries, how to write schema files, and how to answer comments. It tells the
-agent to load `openui` first. The body is read in `activate`, not at import
-([`src/host/skill.ts`](src/host/skill.ts), `readSkillBesideModule`). A
-registration that throws leaves the skill out, without retry
-([`src/host/index.ts`](src/host/index.ts)). The body is at most 8,000
+agent to load `openui` first. The body is read in `activate` through
+`context.assets.read`, not at import ([`src/host/skill.ts`](src/host/skill.ts),
+`papercraftSkillOf`). A registration that is refused leaves the skill out,
+without retry ([`src/host/service.ts`](src/host/service.ts),
+[`src/host/routed.ts`](src/host/routed.ts)); a finished instance's
+registration is dropped by the platform. The body is at most 8,000
 characters ([`tests/skill.test.ts`](tests/skill.test.ts)).
 
 ## The fence node
@@ -839,7 +840,7 @@ npx nx run bundle-papercraft:test
 ```
 
 The `test` target builds the bundle, compiles `tests/` and `tests/client/`
-into `dist-tests/`, copies the skill beside the compiled host, and runs
+into `dist-tests/` and runs
 `node --test` over both folders ([`project.json`](project.json)). Tests in
 `tests/` run without a DOM; tests in `tests/client/` boot `happy-dom`. Client
 tests reach the host through a fake `HostClients` over `createRouterTransport`

@@ -44,7 +44,7 @@ export const nativeOf = (
   },
 });
 
-/** `nativeOf(createRequire(import.meta.url))`: the kernel's and the existing tests' default. Loads nothing at import. */
+/** `nativeOf(createRequire(import.meta.url))`: the default when no `native` is given. Loads nothing at import. */
 export const moduleNative: NativePackages = nativeOf(
   createRequire(import.meta.url),
 );

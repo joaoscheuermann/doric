@@ -4,22 +4,12 @@
 
 import { createHash } from 'node:crypto';
 
-import {
-  type AnyServiceDefinition,
-  type Call,
-  ContractError,
-  defineMethod,
-  defineService,
-  type Services,
-} from 'bundle/contracts';
+import { type Call, ContractError } from 'bundle/contracts';
 
-import {
-  type ExportAnswer,
-  type LibraryAnswer,
-  type ModuleEntries,
-  type ModuleRef,
-  PapercraftProgramsV1,
-  papercraftProgramsMethods,
+import type {
+  ExportAnswer,
+  LibraryAnswer,
+  ModuleRef,
 } from '../contracts/index.js';
 import {
   type LibraryComponent,
@@ -40,7 +30,7 @@ import { compileStyles, type StyleAsset } from './css.js';
 import { projectReaders } from './files.js';
 import { moduleNative, type NativePackages } from './native.js';
 import { projectPath } from './paths.js';
-import { kernelPapercraftPorts, type PapercraftFiles } from './ports.js';
+import type { PapercraftFiles } from './ports.js';
 import { type SandboxBundler, sandboxBundleOf } from './sandbox.js';
 
 /** One file of a module, as the memo holds it. */
@@ -134,21 +124,6 @@ export interface ProgramOperations {
   moduleFiles(dir: string, call: Call): readonly ModuleFileBytes[];
   libraryFor(projectId: string, cwd: string): Promise<LibraryAnswer>;
   lastAnswerOf(projectId: string, cwd: string): LastAnswer | undefined;
-  memoOf(projectId: string, root: string): MemoEntry | undefined;
-}
-
-export interface ProgramsHost {
-  /** `papercraft.programs/v1`, ready for `services.provide`. */
-  readonly service: AnyServiceDefinition;
-  /**
-   * The library of `cwd` in `projectId` (D14): the memo's answer while it is
-   * fresh, else one library job (a call during a job waits for the next
-   * one). Never rejects: failures answer `failed`.
-   */
-  libraryFor(projectId: string, cwd: string): Promise<LibraryAnswer>;
-  /** The `cwd`'s last answer, or `undefined` before its first job. */
-  lastAnswerOf(projectId: string, cwd: string): LastAnswer | undefined;
-  /** The memo entry of `(projectId, 'library', root)`, or `undefined`. */
   memoOf(projectId: string, root: string): MemoEntry | undefined;
 }
 
@@ -749,51 +724,5 @@ export const createProgramOperations = (
     libraryFor,
     lastAnswerOf: (projectId, cwd) => lastAnswers.get(cwdKey(projectId, cwd)),
     memoOf: (projectId, root) => memo.get(memoKey(projectId, 'library', root)),
-  };
-};
-
-/**
- * Creates the programs host over `services` and `deps`. Each call makes an
- * independent memo and queue: two hosts share nothing. Never throws.
- */
-export const createPrograms = (
-  services: Services,
-  deps: ProgramsDeps,
-): ProgramsHost => {
-  const operations = createProgramOperations(
-    kernelPapercraftPorts(services).files,
-    deps,
-  );
-
-  const service = defineService(PapercraftProgramsV1, {
-    library: defineMethod({
-      ...papercraftProgramsMethods.library,
-      execute: operations.library,
-    }),
-    export: defineMethod({
-      ...papercraftProgramsMethods.export,
-      execute: operations.export,
-    }),
-    read: defineMethod({
-      ...papercraftProgramsMethods.read,
-      execute: (
-        input: { readonly dir: string },
-        call: Call,
-      ): Promise<ModuleEntries> =>
-        Promise.resolve().then(() => ({
-          entries: operations.moduleFiles(input.dir, call).map((file) => ({
-            path: file.path,
-            sha256: file.sha256,
-            base64: Buffer.from(file.bytes).toString('base64'),
-          })),
-        })),
-    }),
-  });
-
-  return {
-    service,
-    libraryFor: operations.libraryFor,
-    lastAnswerOf: operations.lastAnswerOf,
-    memoOf: operations.memoOf,
   };
 };

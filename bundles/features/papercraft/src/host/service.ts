@@ -136,8 +136,7 @@ export const createPapercraftHost = (
         ));
       // Concurrent `cwdAt` lookups for one (project, thread, turn) share one promise: over the
       // router each re-reads the event log, so without this a second call would reach
-      // `libraryFor` after the first job started instead of joining it (D14). Kept here, not
-      // in `createLibraryOperations`, because the kernel's in-process reads need no sharing.
+      // `libraryFor` after the first job started instead of joining it (D14).
       const lookups = new Map<string, Promise<string | undefined>>();
       // The programs and the library entry need each other: `cwdAt` reaches the entry at call time.
       const programs = createProgramOperations(ports.files, {

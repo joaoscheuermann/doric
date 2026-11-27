@@ -1,5 +1,5 @@
 // The bodies of `mcp/v1`, `default.skill-sources/v1` and the runtime hooks
-// (S59 D1), shared by the kernel's `activate` and the process's services.
+// (S59 D1), served by the process's services.
 
 import { randomUUID } from 'node:crypto';
 
@@ -30,7 +30,7 @@ import {
 } from './skills.js';
 import { newDocument, type ServerDocument, type ServerStore } from './store.js';
 
-/** What the operations run over; built by the kernel's `activate` and the process's `activate` alike. */
+/** What the operations run over; built by the process's `activate`. */
 export interface McpOperationsDeps {
   readonly ports: McpPorts;
   readonly store: ServerStore;
@@ -40,7 +40,7 @@ export interface McpOperationsDeps {
 }
 
 /**
- * The bodies of `mcp/v1`, `default.skill-sources/v1` and the hooks, moved from `index.ts` unchanged. Every method
+ * The bodies of `mcp/v1`, `default.skill-sources/v1` and the hooks, moved from the kernel entry unchanged. Every method
  * takes the Project already read from the call (`projectOf`). Errors are today's `ContractError`s (§4).
  */
 export interface McpOperations {

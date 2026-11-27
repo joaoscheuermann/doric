@@ -161,6 +161,8 @@ export interface RouterWorld {
     type: string,
     event?: JsonObject,
   ): void;
+  /** Removes every row of `threadId` from the first row of `promptId` on, as the runtime's rewind does. */
+  rewind(threadId: string, promptId: string): void;
   /** Activates the part as `main.ts` does; rejects with what `activate` threw. */
   activate(): Promise<void>;
   /** Serves the part's services without running its `activate`. */
@@ -455,6 +457,17 @@ export const routerWorld = (options: WorldOptions = {}): RouterWorld => {
       });
     },
     row,
+    rewind: (rewoundThreadId, promptId) => {
+      const first = log.findIndex(
+        (entry) =>
+          entry.threadId === rewoundThreadId && entry.promptId === promptId,
+      );
+      if (first < 0) return;
+      const kept = log.filter(
+        (entry, index) => index < first || entry.threadId !== rewoundThreadId,
+      );
+      log.splice(0, log.length, ...kept);
+    },
     activate: async () => {
       await router.activate({
         services: services(),

@@ -626,9 +626,9 @@ From S43 the host parts serve their contracts beside their kernel entries (see
 no kernel entry and serve only through their process entries, and since S68a
 `claude`, `codex`, `openai`, `openrouter`, `docker`, `firecracker`,
 `host-config`, `claude-login`, `resources`, `usage`, `web`, `screen`,
-`comments` and `threads` have none either, and since S68b neither have
-`files`, `git` and `terminal`. The parts the executor path uses
-work as follows. A thrown llms provider error crosses the router as
+`comments` and `threads` have none either, since S68b neither have
+`files`, `git` and `terminal`, and since S68c neither have `mcp`, `openui`
+and `papercraft`. The parts the executor path uses work as follows. A thrown llms provider error crosses the router as
 `provider_error` and a thrown tool error as `tool_error`, both
 `FAILED_PRECONDITION` with every field of the error's data in
 `details.providerError` or `details.toolError`, and the caller rebuilds them.
@@ -645,8 +645,8 @@ is not aborted: `runtime` signals it through
 after a 5 s grace; a failure after the cancel answers `run_cancelled` or
 `compaction_cancelled`. The kernel entries stayed in use until S62; S67 deletes
 the kernel, the in-process host and the kernel entries of `core` and `postgres`,
-S68a those of the fourteen bundles above, and S68b those of `files`, `git`
-and `terminal`.
+S68a those of the fourteen bundles above, S68b those of `files`, `git` and
+`terminal`, and S68c those of `mcp`, `openui` and `papercraft`.
 
 Since S62a the build also counts what a host part serves without recording it
 (`hostProvides`, `packages/bundle/src/build/host-provides.ts`): the `HOST` or
@@ -1849,3 +1849,33 @@ sandbox pool` then `Sandbox pool configured` with the `logSandboxPool`
   `terminal` (`tests/support/services.ts`); `git` →
   `@bufbuild/protovalidate` (`tests/support/parity.ts`). `terminal`'s `./host` package export dangles until
   S70.
+- 2026-11-27: phase 3, slice S68c, of
+  [the spec](../designs/grpc-processes.md) (version 6.50): the kernel entries
+  `src/host/index.ts` of `mcp`, `openui` and `papercraft` are deleted, with the
+  kernel symbols only they used: `mcp`'s `kernelMcpPorts`, `TOOL_ORDER` and
+  `toDoricTool`; `openui`'s `kernelOpenuiPorts`, `questionsService`,
+  `createValidation`'s service and `readSkillBesideModule`; `papercraft`'s
+  `kernelPapercraftPorts`, `createPrograms` (with `ProgramsHost`),
+  `createLibraryHooks`/`LibraryHooks`, `sandboxJobRunner`, `sandboxBundler`,
+  `readRunnerBesideModule`, the probe wrappers (`probeSource`, `probeBytes`,
+  `probeRepositoryRoot`, `kernelReaders`) and `readSkillBesideModule`; and the
+  dead copy-md steps of `openui`'s and `papercraft`'s `project.json`. The
+  skills and the runner are staged only through `host.assets`
+  (`dist/host/skills/*.md`, `dist/sandbox/runner.mjs`) and read through
+  `context.assets`; the host contracts in `contracts.json` are `local: false`,
+  `mcp` and `openui` build no `schemas/`, and `papercraft`'s `dist/schemas`
+  keeps only its desktop and client contracts. Each bundle's
+  `host-build.test.ts` asserts that `dist/host/index.js` is absent, and the
+  kernel suites are ported onto the router or deleted. Decisions: the three
+  `ports.ts` stay for their live port types; seven `papercraft` exports whose
+  only importer was the index re-export (`pickExport`, `pickStory`,
+  `CompiledComponent`, `CompiledStyles`, `HARNESS_DIRS`, `harnessCandidates`,
+  `SandboxBundle`) are no longer exported, their code kept; `moduleNative`,
+  `bundleInSandbox` and `SandboxBundler` stay, live. The public contract
+  exports `mcpMethods` (with `readSkill`), `OpenuiQuestionsV1`,
+  `openuiQuestionsMethods`, `OpenuiProgramsV1`, `openuiProgramsMethods` and
+  `PapercraftProgramsV1` have no importer left and stay, pending. A
+  finished instance's skill registration is dropped by the platform, so the
+  bundles' "cleanup disposes the skill" cases are deleted; `papercraft`'s
+  `programs.test.ts` runs over `createProgramOperations`, since its 64 MiB
+  memo exceeds the router's 4 MiB messages. No boundary exception is added.

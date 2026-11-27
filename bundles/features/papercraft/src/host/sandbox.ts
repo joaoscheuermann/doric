@@ -14,10 +14,9 @@
 // not bundle is a failure: the same `invalid_input` the host would throw.
 
 import { createHash, randomUUID } from 'node:crypto';
-import { readFile } from 'node:fs/promises';
 
-import { type Call, ContractError, type Services } from 'bundle/contracts';
-import { type LeaseTask, RuntimeLeaseV1 } from 'runtime/contracts';
+import { ContractError } from 'bundle/contracts';
+import type { LeaseTask } from 'runtime/contracts';
 import type { z } from 'zod';
 
 import {
@@ -32,8 +31,8 @@ import {
 } from '../sandbox/protocol.js';
 import type { BundledComponent } from './bundle.js';
 import { ensureIgnoreFiles } from './ignore.js';
-import { moduleNative, type NativePackages } from './native.js';
-import { kernelPapercraftPorts, type PapercraftLease } from './ports.js';
+import type { NativePackages } from './native.js';
+import type { PapercraftLease } from './ports.js';
 
 /** The runner file relative to the bundle directory; what `host.assets` must match (S62). */
 export const PAPERCRAFT_RUNNER_PATH = 'dist/sandbox/runner.mjs';
@@ -55,7 +54,7 @@ export interface RunnerScript {
 export type SandboxBundleRequest = Omit<RunnerInput, 'esbuild'>;
 
 /** What the sandbox answered. */
-export type SandboxBundle =
+type SandboxBundle =
   | {
       readonly status: 'built';
       readonly bundled: BundledComponent;
@@ -282,52 +281,6 @@ export const runnerScriptOf = (bytes: Uint8Array): RunnerScript => ({
   hash: createHash('sha256').update(bytes).digest('hex').slice(0, 16),
 });
 
-let defaultRunner: Promise<RunnerScript | undefined> | undefined;
-
-/**
- * Kernel: `../sandbox/runner.mjs` read beside this module (`dist/sandbox/runner.mjs` in a built or staged bundle), once
- * per process at the first call; a failed read answers `undefined` on this and every later call. Reads nothing at import.
- */
-export const readRunnerBesideModule = (): Promise<RunnerScript | undefined> => {
-  defaultRunner ??= readFile(new URL('../sandbox/runner.mjs', import.meta.url))
-    .then(runnerScriptOf)
-    .catch(() => undefined);
-
-  return defaultRunner;
-};
-
-/**
- * The bundler of the Project `call` is scoped to, over its current lease
- * (`runtime.lease/v1.withLease`, which never acquires one).
- */
-export const sandboxBundler =
-  (
-    services: Services,
-    call: Call,
-    runner: () => Promise<RunnerScript | undefined> = readRunnerBesideModule,
-  ): SandboxBundler =>
-  async (request) => {
-    const script = await runner();
-
-    if (script === undefined) {
-      return {
-        status: 'unavailable',
-        reason: 'this host was built without the sandbox runner',
-      };
-    }
-
-    const outcome = await services
-      .use(RuntimeLeaseV1, call.scope)
-      .withLease((sandbox) => bundleInSandbox(sandbox, request, script), call);
-
-    return outcome.status === 'ready'
-      ? outcome.value
-      : {
-          status: 'unavailable',
-          reason: `the Project has no sandbox lease (${outcome.status})`,
-        };
-  };
-
 /** One job as `papercraft.programs/v1` asks it: the runner's input without its esbuild fields. */
 export type SandboxJob =
   | Omit<LibraryRunnerInput, 'esbuild' | 'version'>
@@ -385,17 +338,3 @@ export const jobRunnerOver =
           reason: `the Project has no sandbox lease (${outcome.status})`,
         };
   };
-
-/**
- * Runs jobs in the sandbox of a Project, over its current lease
- * (`runtime.lease/v1.withLease`, which never acquires one): `ProgramsDeps.runJob`.
- * No lease answers `unavailable` with "the Project has no sandbox lease".
- */
-export const sandboxJobRunner = (
-  services: Services,
-  runner: () => Promise<RunnerScript | undefined> = readRunnerBesideModule,
-): ((
-  projectId: string,
-  job: SandboxJob,
-) => Promise<LibraryOutput | RunnerOutput>) =>
-  jobRunnerOver(kernelPapercraftPorts(services).lease, runner, moduleNative);

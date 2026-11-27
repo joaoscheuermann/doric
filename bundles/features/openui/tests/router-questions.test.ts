@@ -15,7 +15,7 @@ import {
   type JsonValue,
   toJson,
 } from '@bufbuild/protobuf';
-import { ContractError } from 'bundle/contracts';
+import { type CallScope, ContractError } from 'bundle/contracts';
 import { ThreadEventSchema } from 'runtime/contracts/gen/doric/runtime/v2/runtime_pb.js';
 
 import {
@@ -381,4 +381,304 @@ void test('R14: an Append failing invalid_scope fails Answer with invalid_scope 
     world.log.filter(({ type }) => type === 'openui.answered/v1'),
     [],
   );
+});
+
+// The kernel suite `questions.test.ts` (C5, C6), moved to the router world in
+// S68c (X3): the cases R6–R14 do not already cover.
+
+/** The question's prompt wrote its fence. */
+const asked = (world: RouterWorld): void => {
+  world.row(threadId, 'q1', 'text.delta', { text: '```openui-lang\n' });
+};
+
+const answeredBy =
+  (promptId: string) =>
+  (world: RouterWorld): void => {
+    world.threadsAnswers.prompt = () => ({
+      promptResult: { status: 'accepted', promptId },
+    });
+  };
+
+const status = async (world: RouterWorld, promptId = 'q1') =>
+  toJson(
+    StatusResponseSchema,
+    await world.questions().status({ promptId, questions }),
+  );
+
+const ANSWERED = {
+  questionState: {
+    answered: { answers: [{ id: 'db', options: ['Postgres'] }] },
+  },
+};
+const PENDING = { questionState: { pending: {} } };
+
+void test('C5: a scope without a Project or a Thread is invalid_scope for both methods, before any read', async (t) => {
+  const world = await activated(t, asked);
+
+  for (const scope of [{ threadId }, { projectId }] as CallScope[]) {
+    const statusError = await failureOf(() =>
+      world.questions(scope).status({ promptId: 'q1', questions }),
+    );
+    const answerError = await failureOf(() =>
+      world
+        .questions(scope)
+        .answer({ promptId: 'q1', questions, answers: postgres }),
+    );
+
+    assert.equal(statusError.code, 'invalid_scope');
+    assert.equal(answerError.code, 'invalid_scope');
+  }
+  assert.deepEqual(world.calls, []);
+});
+
+void test('C5: invalid questions are invalid_input for both methods', async (t) => {
+  const world = await activated(t, asked);
+  const oneOption = {
+    questions: [{ id: 'db', question: 'Which?', options: [{ label: 'Only' }] }],
+  } as unknown as AskInput;
+
+  const statusError = await failureOf(() =>
+    world.questions().status({ promptId: 'q1', questions: oneOption }),
+  );
+  const answerError = await failureOf(() =>
+    world
+      .questions()
+      .answer({ promptId: 'q1', questions: oneOption, answers: [] }),
+  );
+
+  assert.equal(statusError.code, 'invalid_input');
+  assert.equal(answerError.code, 'invalid_input');
+  assert.deepEqual(world.calls, []);
+});
+
+void test("C5: answers that fail ask's checks are invalid_input", async (t) => {
+  const world = await activated(t, asked);
+  const failing: AskAnswer[][] = [
+    [{ id: 'nope', options: ['Postgres'] }],
+    [{ id: 'db', options: ['MySQL'] }],
+    [{ id: 'db', options: ['Postgres', 'SQLite'] }],
+    [],
+  ];
+
+  for (const answers of failing) {
+    const error = await failureOf(() => answer(world, answers));
+    assert.equal(error.code, 'invalid_input');
+  }
+  assert.deepEqual(sent(world), []);
+});
+
+void test('C5: a paused queue holding a resumable prompt is not resumed; the answer is prompted', async (t) => {
+  const world = await activated(t, (w) => {
+    asked(w);
+    w.threadsAnswers.queue = () => ({
+      threadQueue: {
+        revision: 1,
+        paused: true,
+        stopping: false,
+        items: [],
+        resumable: {
+          promptId: 'resumable-1',
+          source: { kind: { case: 'user', value: {} } },
+          label: 'You',
+          preview: 'queued',
+          acceptedAt: '2026-01-01T00:00:00.000Z',
+          editable: true,
+          revision: 1,
+        },
+      },
+    });
+  });
+
+  await answer(world);
+
+  assert.deepEqual(sent(world), ['threads.prompt', 'events.append']);
+});
+
+void test("C5: a refused prompt, a missing queue and a busy resume are unavailable with the runtime's status and write nothing", async (t) => {
+  const cases: [string, (world: RouterWorld) => void][] = [
+    [
+      'inactive',
+      (w) => {
+        w.threadsAnswers.prompt = () => ({
+          promptResult: { status: 'inactive' },
+        });
+      },
+    ],
+    [
+      'missing',
+      (w) => {
+        w.threadsAnswers.queue = () => ({});
+      },
+    ],
+    [
+      'busy',
+      (w) => {
+        w.paused.set(threadId, true);
+        w.threadsAnswers.resumeQueue = () => ({
+          resumeResult: { status: 'busy' },
+        });
+      },
+    ],
+  ];
+
+  for (const [expected, setup] of cases) {
+    const world = await activated(t, (w) => {
+      asked(w);
+      setup(w);
+    });
+
+    const error = await failureOf(() => answer(world));
+
+    assert.equal(error.code, 'unavailable', expected);
+    assert.deepEqual(error.details, { status: expected });
+    assert.deepEqual(world.callsOf('events.append'), []);
+  }
+});
+
+void test('C5: a steer or a Thread read that rejects is unavailable with the reason', async (t) => {
+  const cases: [RegExp, (world: RouterWorld) => void][] = [
+    [
+      /steer broke/,
+      (w) => {
+        running(w);
+        w.threadsAnswers.steer = () => {
+          throw new ContractError('unavailable', 'steer broke');
+        };
+      },
+    ],
+    [
+      /thread broke/,
+      (w) => {
+        w.threadsAnswers.thread = () => {
+          throw new ContractError('unavailable', 'thread broke');
+        };
+      },
+    ],
+  ];
+
+  for (const [reason, setup] of cases) {
+    const world = await activated(t, (w) => {
+      asked(w);
+      setup(w);
+    });
+
+    const error = await failureOf(() => answer(world));
+
+    assert.equal(error.code, 'unavailable');
+    assert.match(
+      String((error.details as { reason?: unknown } | undefined)?.reason),
+      reason,
+    );
+    assert.deepEqual(world.callsOf('events.append'), []);
+  }
+});
+
+void test('C5: a rejected log read or append rejects with that error', async (t) => {
+  const read = await activated(t, (w) => {
+    asked(w);
+    w.threadsAnswers.threadEvents = () => {
+      throw new ContractError('unavailable', 'log unreadable');
+    };
+  });
+  for (const call of [
+    () => read.questions().status({ promptId: 'q1', questions }),
+    () => answer(read),
+  ]) {
+    const error = await failureOf(call);
+    assert.equal(error.code, 'unavailable');
+    assert.match(error.message, /log unreadable/);
+  }
+
+  const append = await activated(t, (w) => {
+    asked(w);
+    running(w);
+    w.failures.append = new ContractError('unavailable', 'log full');
+  });
+  const error = await failureOf(() => answer(append));
+  assert.equal(error.code, 'unavailable');
+  assert.match(error.message, /log full/);
+});
+
+void test("C5: each runtime and events call carries the method's call scope", async (t) => {
+  const world = await activated(t, (w) => {
+    asked(w);
+    running(w);
+  });
+
+  await world.questions().status({ promptId: 'q1', questions });
+  await answer(world);
+
+  assert.ok(world.calls.length >= 4);
+  for (const call of world.calls) {
+    assert.deepEqual(
+      call.scope,
+      call.method === 'events.append'
+        ? { projectId, threadId, promptId: 'p-run' }
+        : { projectId, threadId },
+      call.method,
+    );
+  }
+});
+
+void test('C6: status is answered after a replay of the same log', async (t) => {
+  const writer = await activated(t, asked);
+  await answer(writer);
+
+  const replay = await activated(t);
+  replay.log.push(...writer.log);
+
+  assert.deepEqual(await status(replay), ANSWERED);
+});
+
+void test("C6: a rewind of the answer's prompt, of a prompt between, or of the question's prompt gives pending", async (t) => {
+  for (const rewound of ['a1', 'm1', 'q1']) {
+    const world = await activated(t, (w) => {
+      asked(w);
+      w.row(threadId, 'm1', 'text.delta', { text: 'between' });
+      answeredBy('a1')(w);
+    });
+    await answer(world);
+
+    world.rewind(threadId, rewound);
+
+    assert.deepEqual(await status(world), PENDING, rewound);
+  }
+});
+
+void test('C6: a rewind of a prompt whose first row comes after the answered row leaves it answered', async (t) => {
+  const world = await activated(t, (w) => {
+    asked(w);
+    answeredBy('a1')(w);
+  });
+  await answer(world);
+  world.row(threadId, 'l1', 'text.delta', { text: 'later' });
+
+  world.rewind(threadId, 'l1');
+
+  assert.deepEqual(await status(world), ANSWERED);
+});
+
+void test('C6: the same questions of two prompts are two questions; two fences of one prompt share the answer', async (t) => {
+  const world = await activated(t, (w) => {
+    asked(w);
+    w.row(threadId, 'q2', 'text.delta', { text: '```openui-lang\n' });
+  });
+
+  await answer(world);
+
+  assert.deepEqual(await status(world, 'q2'), PENDING);
+  assert.deepEqual(await status(world, 'q1'), ANSWERED);
+});
+
+void test('C6: a row that fails the event schema is skipped', async (t) => {
+  const world = await activated(t, (w) => {
+    asked(w);
+    w.row(threadId, 'a0', 'openui.answered/v1', {
+      questionPromptId: 'q1',
+      digest: 'not-a-digest',
+      answers: [{ id: 'db', options: ['Postgres'] }],
+    });
+  });
+
+  assert.deepEqual(await status(world), PENDING);
 });

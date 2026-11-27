@@ -3,7 +3,7 @@
 // `runBundle` from `bundle/host` and lists `McpService`,
 // `SkillSourcesService`, `ToolHandlerService` and `HookHandlerService` as the
 // static `[Service, implementation]` literals the build reads (S29). The
-// kernel entry, the client and the manifest stay as they were until S62. The
+// client and the manifest stay as they were; the kernel entry is gone (S68c). The
 // host part reads no asset, and imports only what the boundary rules allow.
 //
 // `buildBundle` rewrites `dist/`, which other test files read while they
@@ -152,7 +152,7 @@ const hostSources = async (): Promise<
   );
 };
 
-void test('B1: the build bundles mcp’s host part into a main.mjs that exits 70 without the spawn variables, and keeps the kernel entry, the client and the manifest', async (t) => {
+void test('B1: the build bundles mcp’s host part into a main.mjs that exits 70 without the spawn variables, and keeps the client and the manifest', async (t) => {
   const copy = await copyBundle();
 
   t.after(() => rm(copy, { recursive: true, force: true }));
@@ -163,10 +163,12 @@ void test('B1: the build bundles mcp’s host part into a main.mjs that exits 70
   const main = join(dist, 'host', 'main.mjs');
 
   assert.ok(await nonEmpty(main), 'dist/host/main.mjs is empty');
-  for (const kept of [
-    ['host', 'index.js'],
-    ['client', 'index.js'],
-  ]) {
+  await assert.rejects(
+    stat(join(dist, 'host', 'index.js')),
+    { code: 'ENOENT' },
+    'the kernel entry dist/host/index.js still exists',
+  );
+  for (const kept of [['client', 'index.js']]) {
     assert.ok(await nonEmpty(join(dist, ...kept)), `dist/${kept.join('/')}`);
   }
   assert.ok(

@@ -6,19 +6,12 @@
 // one the budget or a queued instruct holds, waits for the Thread's next prompt
 // start, which gives every waiting line in one instruct.
 
-import {
-  type Call,
-  ContractError,
-  defineMethod,
-  defineService,
-} from 'bundle/contracts';
+import { type Call, ContractError } from 'bundle/contracts';
 import type { InputSource } from 'runtime/contracts';
 
-import {
-  type OpenUIErrorCodeName,
-  OpenuiProgramsV1,
-  openuiProgramsMethods,
-  type ProgramErrorsInput,
+import type {
+  OpenUIErrorCodeName,
+  ProgramErrorsInput,
 } from '../contracts/index.js';
 import type { OpenuiThreads } from './ports.js';
 
@@ -128,9 +121,7 @@ const isValidationStart = (source: InputSource | undefined): boolean =>
  * new prompt and gives every waiting line in one instruct made **with** the
  * hook's call, and rejects when that instruct rejects; a failed timer
  * instruct gives its lines back. `report` never fails. `dispose` stops every
- * timer; no instruct starts after it. `service` (kernel) is
- * `openui.programs/v1` with `reportErrors` = `invalid_scope` unless the call
- * scope has a Project and a Thread, then `report`.
+ * timer; no instruct starts after it.
  */
 export const createValidation = (threads: Pick<OpenuiThreads, 'instruct'>) => {
   // Insertion order is prompt start order: the first entry started longest ago.
@@ -300,22 +291,11 @@ export const createValidation = (threads: Pick<OpenuiThreads, 'instruct'>) => {
     );
   };
 
-  const service = () =>
-    defineService(OpenuiProgramsV1, {
-      reportErrors: defineMethod({
-        ...openuiProgramsMethods.reportErrors,
-        execute: (input: ProgramErrorsInput, call: Call): Promise<void> =>
-          Promise.resolve().then(() => {
-            report(scopeOf(call).threadId, input);
-          }),
-      }),
-    });
-
   /** Stops every pending timer; no instruct starts after. */
   const dispose = (): void => {
     disposed = true;
     for (const entry of entries.values()) clearTimer(entry);
   };
 
-  return { report, promptStarted, service, dispose };
+  return { report, promptStarted, dispose };
 };

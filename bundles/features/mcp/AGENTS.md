@@ -26,8 +26,8 @@ that reads the skill source.
   without a Project is refused and another Project's server answers
   `mcp_server_missing`.
 - Never start a `stdio` server on the host: start it only in
-  `src/host/open.ts`, through the `McpLease` port (`runtime.lease/v1.withLease`
-  in the kernel) and the sandbox's `start`, and pass it only its own resolved entries.
+  `src/host/open.ts`, through the `McpLease` port (`routedMcpLease`, over
+  `runtime.lease/v1`) and the sandbox's `start`, and pass it only its own resolved entries.
 - Never put a secret in an `mcp.server/v1` document: store a token or a
   client secret only as an `MCP_TOKEN` credential through the vault of
   `src/host/credentials.ts`, and write OAuth state only through that vault
@@ -87,14 +87,17 @@ that reads the skill source.
   [`tests/styles-cascade.test.ts`](tests/styles-cascade.test.ts) in the same
   order; never let the sheet scan source files, and keep the built sheet
   under 8192 bytes.
-- Test host behavior in `tests/*.test.ts` through the activated host part of
-  [`tests/support/world.ts`](tests/support/world.ts), against the real SDK
+- Test host behavior in `tests/*.test.ts` through the host part activated on
+  the test router of [`tests/support/router.ts`](tests/support/router.ts)
+  (`tests/support/world.ts` holds the `httpServer` and `stdioServer`
+  fixtures), against the real SDK
   servers of `tests/support/mcp-server.ts`, the authorization server of
   `tests/support/oauth-server.ts` and the sandbox of
   `tests/support/sandbox.ts`; extend those fakes instead of replacing a host
   module. Put each test in the file of its area: `tools.test.ts`,
-  `oauth.test.ts`, `skills.test.ts`, `http.test.ts`, `stdio.test.ts` and
-  `stdio-transport.test.ts`, `configuration.test.ts`, `credentials.test.ts`.
+  `router-oauth.test.ts`, `router-skills.test.ts`, `router-http.test.ts`,
+  `router-stdio-lifecycle.test.ts` and `stdio-transport.test.ts`,
+  `router-configuration.test.ts`, `credentials.test.ts`.
 - Test the client part in `tests/client/sidebar.test.ts` only through
   `activate` and the elements it defines, and the command line and draft
   checks in `tests/client/draft.test.ts`.

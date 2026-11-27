@@ -1,5 +1,5 @@
-// Per-test setup that cleans up after itself, so no server, connection or
-// activation outlives the test that opened it.
+// Per-test setup that cleans up after itself, so no server or connection
+// outlives the test that opened it.
 
 import type { TestContext } from 'node:test';
 
@@ -13,18 +13,6 @@ import {
   authorizationServer,
   type FakeAuthorizationServer,
 } from './oauth-server.js';
-import { activateWorld, type Environment, type World } from './world.js';
-
-/** Activates the bundle for the test; deactivated when the test ends. */
-export const opened = async (
-  t: TestContext,
-  env?: Environment,
-): Promise<World> => {
-  const world = await activateWorld(env);
-  t.after(() => world.deactivate());
-
-  return world;
-};
 
 /** An MCP server for the test; closed when the test ends. */
 export const served = async (

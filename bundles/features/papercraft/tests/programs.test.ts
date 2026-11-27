@@ -24,27 +24,24 @@
 
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { afterEach, describe, test } from 'node:test';
+import { describe, test } from 'node:test';
 
+import type { Call } from 'bundle/contracts';
 import { ContractError } from 'bundle/contracts';
 
-import {
-  type LibraryAnswer,
-  type ModuleRef,
-  PapercraftProgramsV1,
+import type {
+  FilesContentRead,
+  LeaseOutcome,
+  LibraryAnswer,
+  ModuleRef,
 } from '../src/contracts/index.js';
+import type { PapercraftFiles, ReadAt } from '../src/host/ports.js';
 import {
-  createPrograms,
+  createProgramOperations,
   type JobRequest,
-  type ProgramsHost,
+  type ProgramOperations,
 } from '../src/host/programs.js';
 import type { LibraryOutput, RunnerOutput } from '../src/sandbox/protocol.js';
-import {
-  eventually,
-  type World,
-  type WorldOptions,
-  world,
-} from './support/host.js';
 
 const P1 = 'project-1';
 const P2 = 'project-2';
@@ -107,9 +104,82 @@ interface Job {
   readonly job: JobRequest;
 }
 
+/** The Project files `files/v1` reads, by Project path; none: no read answers (`unavailable`). */
+interface WorldOptions {
+  readonly files?: Readonly<Record<string, string>>;
+  /** Directories `files/v1.content` answers `not_file` for. */
+  readonly directories?: readonly string[];
+}
+
+/** One `files/v1` read the operations made. */
+interface FilesCall {
+  readonly method: 'files.content';
+  readonly input: { readonly path: string; readonly encoding?: 'base64' };
+  readonly at: ReadAt;
+}
+
+/** `files/v1` as `PapercraftFiles` over `options`' map, recording each read. */
+const filesOf = (
+  options: WorldOptions,
+): PapercraftFiles & { readonly calls: FilesCall[] } => {
+  const calls: FilesCall[] = [];
+  const read = (
+    path: string,
+    at: ReadAt,
+    encoding?: 'base64',
+  ): LeaseOutcome<FilesContentRead> => {
+    calls.push({
+      method: 'files.content',
+      input: { path, ...(encoding === undefined ? {} : { encoding }) },
+      at,
+    });
+    if (options.files === undefined) return { status: 'unavailable' };
+    const relative = path.replace(/^\/+/u, '');
+    if (options.directories?.includes(relative)) {
+      return { status: 'ready', value: { status: 'not_file' } };
+    }
+    const content = options.files[relative];
+    if (content === undefined) {
+      return { status: 'ready', value: { status: 'not_found' } };
+    }
+    return {
+      status: 'ready',
+      value: {
+        status: 'read',
+        path: relative,
+        content,
+        truncated: false,
+        binary: false,
+      },
+    };
+  };
+
+  return {
+    calls,
+    content: (path, at) => Promise.resolve(read(path, at)),
+    readBytes: (path, at) => {
+      const outcome = read(path, at, 'base64');
+      if (outcome.status !== 'ready') return Promise.resolve(outcome);
+      const value = outcome.value;
+      return Promise.resolve(
+        value.status === 'read'
+          ? {
+              status: 'ready',
+              value: {
+                status: 'read',
+                bytes: Buffer.from(value.content),
+                truncated: value.truncated,
+              },
+            }
+          : { status: 'ready', value },
+      );
+    },
+  };
+};
+
 interface Setup {
-  readonly world: World;
-  readonly programs: ProgramsHost;
+  readonly world: { readonly calls: FilesCall[] };
+  readonly programs: ProgramOperations;
   readonly jobs: Job[];
   /** Answers each job; the default answers `none` / `unavailable`. */
   answer: (job: Job) => Answer | Promise<Answer>;
@@ -117,15 +187,13 @@ interface Setup {
   time: number;
 }
 
-const worlds: World[] = [];
-
-afterEach(async () => {
-  await Promise.all(worlds.splice(0).map((entry) => entry.dispose()));
-});
-
+/**
+ * The programs host the router serves (`createProgramOperations`, S57 D1)
+ * over a `files/v1` map, a scripted job runner (the sandbox is the boundary)
+ * and a clock. Moved off the kernel's `createPrograms(services)` (S68c).
+ */
 const setup = (options: WorldOptions = {}): Setup => {
-  const host = world(options);
-  worlds.push(host);
+  const files = filesOf(options);
   const jobs: Job[] = [];
   const state: Pick<Setup, 'answer' | 'time'> = {
     answer: ({ job }) =>
@@ -134,7 +202,7 @@ const setup = (options: WorldOptions = {}): Setup => {
         : { status: 'unavailable', reason: 'the sandbox has no `node`' },
     time: 1_000_000,
   };
-  const programs = createPrograms(host.test.services, {
+  const programs = createProgramOperations(files, {
     runJob: async (projectId, job) => {
       const entry = { projectId, job };
       jobs.push(entry);
@@ -143,10 +211,9 @@ const setup = (options: WorldOptions = {}): Setup => {
     cwdAt: async () => undefined,
     now: () => state.time,
   });
-  host.test.services.provide(programs.service);
 
   return {
-    world: host,
+    world: files,
     programs,
     jobs,
     get answer() {
@@ -167,11 +234,27 @@ const setup = (options: WorldOptions = {}): Setup => {
 const libraryJobs = (s: Setup) =>
   s.jobs.filter(({ job }) => 'kind' in job && job.kind === 'library');
 
-const service = (s: Setup, projectId = P1) =>
-  s.world.test.services.use(PapercraftProgramsV1, {
-    projectId,
-    threadId: 'thread-1',
-  });
+/** The call a window of `thread-1` in `projectId` makes. */
+const callIn = (projectId: string): Call =>
+  ({ scope: { projectId, threadId: 'thread-1' } }) as unknown as Call;
+
+/** `Export` and `Read` as `papercraft.programs/v1` answers them, in `projectId`. */
+const service = (s: Setup, projectId = P1) => ({
+  export: (input: { readonly path: string; readonly name?: string }) =>
+    s.programs.export(input, callIn(projectId)),
+  read: async (input: { readonly dir: string }) => {
+    await Promise.resolve();
+    return {
+      entries: s.programs
+        .moduleFiles(input.dir, callIn(projectId))
+        .map((file) => ({
+          path: file.path,
+          sha256: file.sha256,
+          base64: Buffer.from(file.bytes).toString('base64'),
+        })),
+    };
+  },
+});
 
 const ready = (answer: LibraryAnswer): ModuleRef => {
   assert.equal(answer.status, 'ready', JSON.stringify(answer));
@@ -187,6 +270,15 @@ const deferred = <T>() => {
 };
 
 const decode = (base64: string) => Buffer.from(base64, 'base64');
+
+/** Waits until `check` holds, or fails after `ms`. */
+const eventually = async (check: () => boolean, ms = 5_000): Promise<void> => {
+  const end = Date.now() + ms;
+  while (!check()) {
+    if (Date.now() > end) throw new Error('The condition never held.');
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+};
 
 describe('PC9: the memo', () => {
   test('an unchanged manifest answers from the memo; a changed library gives a new module', async () => {

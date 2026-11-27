@@ -2,13 +2,9 @@
 // component, its sheet's bytes, and whether a directory is a repository root.
 // The compiler and the harness search read through these.
 
-import { type Call, ContractError, type Services } from 'bundle/contracts';
+import { ContractError } from 'bundle/contracts';
 
-import {
-  kernelPapercraftPorts,
-  type PapercraftFiles,
-  type ReadAt,
-} from './ports.js';
+import type { PapercraftFiles, ReadAt } from './ports.js';
 
 /** The reads the compiler and the harness search make, bound to one Project and call. */
 export interface ProjectReaders {
@@ -88,46 +84,3 @@ export const projectReaders = (
     );
   },
 });
-
-/** The kernel's readers for the Project `call` is scoped to. */
-const kernelReaders = (services: Services, call: Call): ProjectReaders =>
-  projectReaders(kernelPapercraftPorts(services).files, {
-    projectId: call.scope?.projectId ?? '',
-    call,
-  });
-
-/**
- * Reads one Project file as text through `files/v1`, refusing an unreadable
- * sandbox or a non-plain-text source. A file that is not there answers
- * `undefined` unless `strict`: the compiler probes the candidates of an
- * import this way.
- */
-export const probeSource = (
-  services: Services,
-  call: Call,
-  path: string,
-  strict = false,
-): Promise<string | undefined> =>
-  kernelReaders(services, call).source(path, strict);
-
-/**
- * Reads one Project file's bytes through `files/v1` (base64, files/v1 1.1.0):
- * what a preview's sheet names, a font or an image. Anything short of the
- * whole file answers `undefined`, and the sheet goes without it.
- */
-export const probeBytes = (
-  services: Services,
-  call: Call,
-  path: string,
-): Promise<Uint8Array | undefined> => kernelReaders(services, call).bytes(path);
-
-/**
- * Whether a Project directory is a repository root, through `files/v1`: its
- * `.git` reads as a file (a worktree's) or is a directory (D15). The harness
- * search stops after such a directory. A failed read answers `false`.
- */
-export const probeRepositoryRoot = (
-  services: Services,
-  call: Call,
-  dir: string,
-): Promise<boolean> => kernelReaders(services, call).isRepositoryRoot(dir);

@@ -6,26 +6,18 @@
 
 import { createHash } from 'node:crypto';
 
-import {
-  type Call,
-  ContractError,
-  defineMethod,
-  defineService,
-  type Services,
-} from 'bundle/contracts';
+import { type Call, ContractError } from 'bundle/contracts';
 
 import {
   type AskAnswer,
   type AskInput,
   type AskQuestion,
   answeredEvent,
-  OpenuiQuestionsV1,
-  openuiQuestionsMethods,
   type QuestionAnswerInput,
   type QuestionRef,
   type QuestionState,
 } from '../contracts/index.js';
-import { kernelOpenuiPorts, type OpenuiPorts } from './ports.js';
+import type { OpenuiPorts } from './ports.js';
 
 /** The Project and the Thread whose log a call folds. */
 interface ThreadScope {
@@ -360,30 +352,4 @@ export const createQuestions = (): QuestionOperations => {
       });
     },
   };
-};
-
-/** Kernel: provides `openui.questions/v1` over `createQuestions()` with `kernelOpenuiPorts(services)` per call; both methods are exposed to the desktop. */
-export const questionsService = () => {
-  const questions = createQuestions();
-
-  return defineService(OpenuiQuestionsV1, {
-    status: defineMethod({
-      ...openuiQuestionsMethods.status,
-      execute: (
-        input: QuestionRef,
-        call: Call,
-        services: Services,
-      ): Promise<QuestionState> =>
-        questions.status(kernelOpenuiPorts(services), input, call),
-    }),
-    answer: defineMethod({
-      ...openuiQuestionsMethods.answer,
-      execute: (
-        input: QuestionAnswerInput,
-        call: Call,
-        services: Services,
-      ): Promise<QuestionState> =>
-        questions.answer(kernelOpenuiPorts(services), input, call),
-    }),
-  });
 };

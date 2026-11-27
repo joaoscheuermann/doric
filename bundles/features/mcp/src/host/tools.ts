@@ -11,18 +11,12 @@ import type {
   CallToolResult,
   Tool as McpTool,
 } from '@modelcontextprotocol/sdk/types.js';
-import {
-  type Call,
-  ContractError,
-  isContractError,
-  type Services,
-} from 'bundle/contracts';
+import { type Call, ContractError, isContractError } from 'bundle/contracts';
 import {
   type AttachInput,
   type Attachment,
   attachmentMediaTypes,
   attachmentReference,
-  RuntimeAttachmentsV1,
 } from 'runtime/contracts';
 import {
   asJsonObject,
@@ -184,25 +178,7 @@ export type CallMcpTool = (
 ) => Promise<CallToolResult>;
 
 /**
- * The Doric tool of one MCP tool: the server's input schema verbatim as the
- * definition's `inputSchema`, a permissive `input` (the server validates),
- * `strict: false`, and the server's description (else its title). Executing
- * calls the tool and answers `formatResult`; a result flagged `isError`
- * rejects with ContractError('mcp_tool_failed') carrying that text. Throws a
- * ToolErrorObject('invalid_schema') when the server's input schema is not an
- * object JSON Schema.
- */
-export const toDoricTool = (
-  source: McpToolSource,
-): ToolDefinitionObject<z.ZodObject, z.ZodString> =>
-  defineMcpTool<Services>(
-    source,
-    (services) => (attachment, call) =>
-      services.use(RuntimeAttachmentsV1, call.scope).attach(attachment, call),
-  );
-
-/**
- * The definition both flavours share; `attachOf` reads the `attach` port from
+ * The Doric tool of one MCP tool; `attachOf` reads the `attach` port from
  * what the definition is bound to.
  */
 const defineMcpTool = <Deps>(
@@ -273,7 +249,7 @@ export const executeMcpTool = async (
 /**
  * The same tool over `McpToolDeps` for the process: same name, description, `input` (`looseObject`), `output`,
  * verbatim `inputSchema`, `strict: false`; executes through `executeMcpTool` with `deps.attach`. Throws
- * `ToolErrorObject('invalid_schema')` as `toDoricTool` does. Never registrable with the kernel's `tools/v1`.
+ * `ToolErrorObject('invalid_schema')` when the server's input schema is not an object JSON Schema.
  */
 export const mcpToolDefinition = (
   source: McpToolSource,

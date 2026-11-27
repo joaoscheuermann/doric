@@ -1,29 +1,21 @@
 // The pure pieces that turn MCP tools into Doric tools: server slugs, tool
-// names, result formatting and the tool definition itself.
+// names and result formatting. The tool definition is `mcpToolDefinition`'s
+// (`tool-execution.test.ts`); the kernel's `toDoricTool` left with the kernel
+// entry (S68c).
 
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import test from 'node:test';
 
-import type { CallToolResult, Tool } from '@modelcontextprotocol/sdk/types.js';
-import { createTestServices } from 'bundle/testing';
+import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import {
   type AttachInput,
   type Attachment,
   attachmentReference,
 } from 'runtime/contracts';
-import { ToolErrorObject } from 'tool';
 
 import { serverSlug } from '../src/contracts/index.js';
-import {
-  type CallMcpTool,
-  formatResult,
-  toDoricTool,
-  toolName,
-  toolNamePattern,
-} from '../src/host/tools.js';
-import { codeOf } from './support/wait.js';
-import { P1 } from './support/world.js';
+import { formatResult, toolName, toolNamePattern } from '../src/host/tools.js';
 
 const sha8 = (text: string): string =>
   createHash('sha256').update(text).digest('hex').slice(0, 8);
@@ -233,118 +225,4 @@ void test('formatResult answers structured content as JSON when there is no cont
   );
 
   assert.deepEqual(JSON.parse(text), structuredContent);
-});
-
-const weather: Tool = {
-  name: 'get.weather/now',
-  title: 'Current weather',
-  description: 'Reads the weather now.',
-  inputSchema: {
-    type: 'object',
-    properties: { city: { type: 'string' } },
-    required: ['city'],
-  },
-};
-
-const bound = (
-  tool: Tool,
-  callTool: CallMcpTool,
-  name = 'mcp__docs__get_weather_now',
-) => {
-  const world = createTestServices({ bundle: { id: 'mcp' } });
-  const definition = toDoricTool({ name, tool, callTool });
-
-  return { definition, world, tool: definition.bind(world.services) };
-};
-
-void test('toDoricTool keeps the input schema verbatim, is not strict, and describes the tool', () => {
-  const { definition, world } = bound(weather, async () => ({ content: [] }));
-
-  assert.equal(definition.name, 'mcp__docs__get_weather_now');
-
-  assert.deepEqual(definition.definition.inputSchema, weather.inputSchema);
-
-  assert.equal(definition.definition.strict, false);
-
-  assert.equal(definition.description, 'Reads the weather now.');
-
-  const { description: _description, ...untitled } = weather;
-
-  assert.equal(
-    toDoricTool({
-      name: 'mcp__docs__untitled',
-      tool: untitled,
-      callTool: async () => ({ content: [] }),
-    }).description,
-    'Current weather',
-  );
-
-  void world.dispose();
-});
-
-void test('toDoricTool executes through callTool with the MCP name, the arguments and the call signal', async () => {
-  const requests: Parameters<CallMcpTool>[] = [];
-  const { tool, world } = bound(weather, async (request, signal) => {
-    requests.push([request, signal]);
-    return { content: [{ type: 'text', text: 'Sunny.' }] };
-  });
-  const controller = new AbortController();
-
-  const result = await tool.execute(
-    { city: 'Lisbon' },
-    world.call(
-      { projectId: P1, threadId: 'thread-1', promptId: 'prompt-1' },
-      controller.signal,
-    ),
-  );
-
-  assert.equal(result, 'Sunny.');
-
-  assert.deepEqual(requests[0]?.[0], {
-    name: 'get.weather/now',
-    arguments: { city: 'Lisbon' },
-  });
-
-  controller.abort();
-
-  assert.equal(requests[0]?.[1].aborted, true);
-
-  await world.dispose();
-});
-
-void test('toDoricTool rejects a result flagged isError with mcp_tool_failed and its text', async () => {
-  const { tool, world } = bound(weather, async () => ({
-    content: [{ type: 'text', text: 'City not found.' }],
-    isError: true,
-  }));
-
-  await assert.rejects(
-    tool.execute(
-      { city: 'Atlantis' },
-      world.call({ projectId: P1, threadId: 'thread-1', promptId: 'prompt-1' }),
-    ),
-    (error: unknown) => {
-      assert.equal(codeOf(error), 'mcp_tool_failed');
-      assert.match((error as Error).message, /City not found\./u);
-      return true;
-    },
-  );
-
-  await world.dispose();
-});
-
-void test('toDoricTool refuses an input schema that is not an object schema', () => {
-  assert.throws(
-    () =>
-      toDoricTool({
-        name: 'mcp__docs__broken',
-        tool: {
-          name: 'broken',
-          inputSchema: { type: 'string' } as unknown as Tool['inputSchema'],
-        },
-        callTool: async () => ({ content: [] }),
-      }),
-    (error: unknown) =>
-      error instanceof ToolErrorObject && error.data.code === 'invalid_schema',
-  );
 });

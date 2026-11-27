@@ -12,8 +12,8 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 // and the `HookHandlerService` as the static `[Service, implementation]`
 // literals the build reads (S29). esbuild's JavaScript API is not bundled and
 // no `.node` file is reached: the process loads its native packages through
-// `context.assets.require` (D4). The kernel entry, the skill text beside the
-// host, the sandbox runner and the client stay as they were until S62.
+// `context.assets.require` (D4). The skill text beside the host, the sandbox
+// runner and the client stay as they were; the kernel entry is gone (S68c).
 //
 // The build's own `dist/` is only read here, never rewritten.
 
@@ -88,7 +88,7 @@ const runWithoutSpawnEnvironment = (
 const nonEmpty = async (path: string): Promise<boolean> =>
   (await stat(path)).size > 0;
 
-void test('B1: the build bundles papercraft’s host part into a runnable main.mjs without esbuild’s API and keeps the kernel entry, the skill text, the runner and the client', async () => {
+void test('B1: the build bundles papercraft’s host part into a runnable main.mjs without esbuild’s API and keeps the skill text, the runner and the client', async () => {
   const main = join(dist, 'host', 'main.mjs');
 
   assert.ok(await nonEmpty(main), 'dist/host/main.mjs is empty');
@@ -97,8 +97,12 @@ void test('B1: the build bundles papercraft’s host part into a runnable main.m
     /esbuild JavaScript API cannot be bundled/u,
     'main.mjs bundles esbuild’s JavaScript API',
   );
+  await assert.rejects(
+    stat(join(dist, 'host', 'index.js')),
+    { code: 'ENOENT' },
+    'the kernel entry dist/host/index.js still exists',
+  );
   for (const kept of [
-    ['host', 'index.js'],
     ['host', 'skills', 'papercraft.md'],
     ['sandbox', 'runner.mjs'],
     ['client', 'index.js'],

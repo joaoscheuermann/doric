@@ -28,7 +28,7 @@
 import { posix } from 'node:path';
 
 /** The directories a harness lives in, in the order they are preferred. */
-export const HARNESS_DIRS: readonly string[] = ['.storybook', '.papercraft'];
+const HARNESS_DIRS: readonly string[] = ['.storybook', '.papercraft'];
 
 const HARNESS_EXTENSIONS: readonly string[] = ['.tsx', '.ts', '.jsx', '.js'];
 
@@ -36,7 +36,7 @@ const skipped = (dir: string): boolean =>
   dir.split('/').some((part) => part === '.doric' || part === 'node_modules');
 
 /** The candidate harness files of one preview, nearest first. */
-export const harnessCandidates = (sourcePath: string): readonly string[] => {
+const harnessCandidates = (sourcePath: string): readonly string[] => {
   const candidates: string[] = [];
   let dir = posix.dirname(sourcePath);
 

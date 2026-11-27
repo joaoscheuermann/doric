@@ -1,30 +1,12 @@
 // What `mcp`'s host logic calls outside itself (S59 D1): storage, secrets,
-// the tool registry, the Project's sandbox lease and the log. The kernel binds
-// them to `services.use(...)` (`kernelMcpPorts`); the process binds them to
-// its router clients.
+// the tool registry, the Project's sandbox lease and the log. The process
+// binds them to its router clients.
 
-import {
-  type Call,
-  type CallArg,
-  type Disposable,
-  type Log,
-  LogV1,
-  type Secrets,
-  SecretsV1,
-  type Services,
-  type Storage,
-  StorageV1,
-  ToolsV1,
-} from 'bundle/contracts';
-import {
-  type AttachInput,
-  type Attachment,
-  type LeaseOutcome,
-  RuntimeLeaseV1,
-} from 'runtime/contracts';
+import type { Call, Disposable, Log, Secrets, Storage } from 'bundle/contracts';
+import type { AttachInput, Attachment, LeaseOutcome } from 'runtime/contracts';
 import type { SandboxProcess, SandboxProcessInput } from 'sandbox';
 
-import { type CallMcpTool, type McpTool, toDoricTool } from './tools.js';
+import type { CallMcpTool, McpTool } from './tools.js';
 
 /** The `storage/v1` operations `ServerStore` uses. */
 export type McpStorage = Pick<Storage, 'get' | 'query' | 'commit'>;
@@ -98,55 +80,3 @@ export interface McpPorts {
   readonly lease: McpLease;
   readonly log: () => Log;
 }
-
-/**
- * The kernel's ports, each today's `services.use(...)` call made when it runs: `storage` = `use(StorageV1)`,
- * `secrets` = `use(SecretsV1)`, `tools.register` = `use(ToolsV1).register(toDoricTool(source), {alwaysAvailable:
- * false, order: 1000, projectId})` (its synchronous throw as the rejection), `tools.listed` = `use(ToolsV1,
- * {projectId}).catalog()` names, `lease.run` = `use(RuntimeLeaseV1, {projectId}).withLease`, `log` = `use(LogV1)`.
- * Kernel only; leaves in group F.
- */
-export const kernelMcpPorts = (services: Services): McpPorts => {
-  const storage = () => services.use(StorageV1);
-  const secrets = () => services.use(SecretsV1);
-
-  return {
-    storage: {
-      get: (...args) => storage().get(...args),
-      query: (...args) => storage().query(...args),
-      commit: (...args) => storage().commit(...args),
-    },
-    secrets: {
-      describe: (...args) => secrets().describe(...args),
-      resolve: (...args) => secrets().resolve(...args),
-      create: (...args) => secrets().create(...args),
-      update: (...args) => secrets().update(...args),
-      delete: (...args) => secrets().delete(...args),
-      list: (...args) => secrets().list(...args),
-    },
-    tools: {
-      register: async (source, projectId) =>
-        services.use(ToolsV1).register(toDoricTool(source), {
-          alwaysAvailable: false,
-          order: TOOL_ORDER,
-          projectId,
-        }),
-      listed: async (projectId) => {
-        const entries = await services.use(ToolsV1, { projectId }).catalog();
-
-        return new Set(entries.map(({ name }) => name));
-      },
-    },
-    lease: {
-      run: async (projectId, task) =>
-        services.use(RuntimeLeaseV1, { projectId }).withLease(task),
-    },
-    log: () => services.use(LogV1),
-  };
-};
-
-/** After every built-in tool (the last one is `git`, at 900). */
-const TOOL_ORDER = 1000;
-
-/** `CallArg` re-exported for the ports' callers. */
-export type { CallArg };

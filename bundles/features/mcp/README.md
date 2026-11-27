@@ -4,7 +4,7 @@
 their tools and skills to that Project's prompts. A server belongs to the
 Project it is created in: its tools are registered only under that Project,
 and every method of its contract works on the Project of the call's scope
-([src/host/index.ts](src/host/index.ts),
+([src/host/operations.ts](src/host/operations.ts),
 [src/host/manager.ts](src/host/manager.ts)).
 
 The feature across bundles is described in
@@ -49,21 +49,16 @@ The package ([`package.json`](package.json)) exports `./contracts`
 | Part      | Entry                                            | What it does                                                                                                                                                     |
 | --------- | ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | contracts | [src/contracts/index.ts](src/contracts/index.ts) | The `mcp/v1` types, schemas, constants and wire shapes, and `serverSlug`. Shared by the host and the window: it imports neither the MCP SDK nor any Node module. |
-| host      | [src/host/index.ts](src/host/index.ts)           | Stores the servers, connects them, registers their tools, serves their skills, runs the OAuth sign-in, and provides `mcp/v1` and `default.skill-sources/v1`.     |
+| host      | [src/host/main.ts](src/host/main.ts)             | Stores the servers, connects them, registers their tools, serves their skills, runs the OAuth sign-in, and provides `mcp/v1` and `default.skill-sources/v1`.     |
 | client    | [src/client/index.ts](src/client/index.ts)       | Draws the sidebar's MCP pane, the dialogs that add, edit and remove a server, and its browser sign-in.                                                           |
 
 The bundle has no desktop part.
 
 Host modules:
 
-- [src/host/index.ts](src/host/index.ts): wires the kernel only — builds
-  `kernelMcpPorts`, the store, the vault and the manager, registers the
-  runtime hooks (including the `onProjectReadyHook` handler) and provides the
-  contracts from `createMcpOperations`.
 - [src/host/ports.ts](src/host/ports.ts): `McpPorts` (`storage`, `secrets`,
-  `tools`, `lease`, `log`), everything the host part uses from Doric, and
-  `kernelMcpPorts`, which builds them from the kernel's services; `storage`
-  and `secrets` forward exactly the caller's arguments.
+  `tools`, `lease`, `log`), everything the host part uses from Doric; the
+  process binds them to its router clients (`routedMcpPorts`).
 - [src/host/operations.ts](src/host/operations.ts): `createMcpOperations`,
   the bodies of the `mcp/v1` and `default.skill-sources/v1` methods, with
   `projectOf` and `serverOf`.
@@ -93,7 +88,8 @@ Host modules:
   `unsupported_operation` refuses the start, so `open.ts` gives today's text.
 - [src/host/main.ts](src/host/main.ts): the bundle's process (`runBundle`),
   serving `McpService`, `SkillSourcesService`, `ToolHandlerService` and
-  `HookHandlerService`. The kernel entry (`index.ts`) stays until S62.
+  `HookHandlerService`. It is the host part's only entry; the kernel entry
+  `index.ts` was deleted in S68c.
 - [src/host/service.ts](src/host/service.ts): `createMcpHost`, the process's
   services over `createMcpOperations` and the routed ports. Every method
   answers `unavailable` "mcp is not active." before `activate` resolves, when
@@ -116,8 +112,8 @@ Host modules:
 - [src/host/stream.ts](src/host/stream.ts): `streamOf`, `mcp`'s own copy of
   `chat`'s.
 - [src/host/tools.ts](src/host/tools.ts): tool names, result text and
-  `executeMcpTool`, the one tool call shared by `toDoricTool` (the kernel's
-  tool definition) and `mcpToolDefinition` (for the bundle's future process).
+  `executeMcpTool`, the tool call `mcpToolDefinition` executes (the tool the
+  process registers through `routedMcpPorts`).
 - [src/host/skills.ts](src/host/skills.ts): the Skills extension and the skill
   source entries.
 - [src/host/oauth.ts](src/host/oauth.ts): the OAuth provider and the browser
@@ -144,7 +140,7 @@ sign-in), [src/client/peers.ts](src/client/peers.ts) (structural copies of
 Declared in [src/contracts/index.ts](src/contracts/index.ts) as
 `McpV1 = ref<Mcp>('mcp/v1')`, with its wire shapes in `mcpMethods`, and
 provided by the host part
-([src/host/index.ts](src/host/index.ts)). Every method reads
+([src/host/operations.ts](src/host/operations.ts)). Every method reads
 `call.scope.projectId`; a call without it, or with an empty one, is refused
 with `invalid_input` and the message `mcp/v1 needs a Project scope.`
 (`mcpScopeMessage`). Every method except `readSkill` is reachable from a
@@ -278,7 +274,7 @@ A server's `status.state`, set by the host part
 | `finishSignIn`                 | `{ id }`                                   | `McpServerView`   | `mcp_server_missing`, `mcp_signin_not_started`, `mcp_signin_busy`, `mcp_signin_aborted`, `mcp_signin_failed` |
 | `readSkill` (1.1.0, host only) | `McpSkillRef`                              | `McpSkillText`    | `mcp_server_missing`, `mcp_skill_unavailable`                                                                |
 
-Each method's behavior ([src/host/index.ts](src/host/index.ts),
+Each method's behavior ([src/host/operations.ts](src/host/operations.ts),
 [src/host/manager.ts](src/host/manager.ts),
 [src/host/oauth.ts](src/host/oauth.ts)):
 
@@ -311,7 +307,7 @@ Each method's behavior ([src/host/index.ts](src/host/index.ts),
 
 A server of another Project reads as missing: every method that names a
 server answers `mcp_server_missing` for it
-([src/host/index.ts](src/host/index.ts)).
+([src/host/operations.ts](src/host/operations.ts)).
 
 #### Error codes
 
@@ -320,10 +316,10 @@ server answers `mcp_server_missing` for it
 
 - `mcp_server_missing`: the Project holds no server with that id;
   `The Project holds no MCP server <id>.`
-  ([src/host/index.ts](src/host/index.ts)).
+  ([src/host/operations.ts](src/host/operations.ts)).
 - `mcp_server_name_taken`: another server of the Project has a name with the
   same slug; `Another MCP server of the Project is named like <name>.`
-  ([src/host/index.ts](src/host/index.ts)).
+  ([src/host/operations.ts](src/host/operations.ts)).
 - `mcp_signin_unsupported`: `signIn` of a `stdio` server;
   `A stdio MCP server has no sign-in.`
   ([src/host/oauth.ts](src/host/oauth.ts)).
@@ -363,7 +359,7 @@ message as it is in a toast ([src/client/api.ts](src/client/api.ts)).
 
 The contract is `default`'s ([`default`](../../runtime/default/README.md)),
 imported from `default/contracts`; this bundle is one of its providers
-(cardinality `many`) ([src/host/index.ts](src/host/index.ts),
+(cardinality `many`) ([src/host/operations.ts](src/host/operations.ts),
 [src/host/skills.ts](src/host/skills.ts)).
 
 - `list({ cwd }, call)` answers `{ skills }`: the skills of the call's
@@ -406,10 +402,10 @@ OAuth sign-in stored ([src/host/credentials.ts](src/host/credentials.ts)).
 | `storage/v1`                              | host         | Defines `mcp.server/v1`; `get`, `query`, `commit` of the documents ([src/host/store.ts](src/host/store.ts)). The process defines the type in `activate` and waits for `settled()` ([src/host/service.ts](src/host/service.ts)).                                                                                                                                                                                                                                                                                                           |
 | `secrets/v1`                              | host, client | Registers `MCP_TOKEN`; resolves entry credentials and checks their kind (`resolve`, `describe`); creates, updates, deletes and lists the OAuth credentials ([src/host/credentials.ts](src/host/credentials.ts)). The window lists credentials and creates `API_TOKEN` ones ([src/client/api.ts](src/client/api.ts)). The process registers `MCP_TOKEN` through `context.registrations` in `activate` and reaches the rest through `routedSecrets` ([src/host/service.ts](src/host/service.ts), [src/host/routed.ts](src/host/routed.ts)). |
 | `tools/v1`                                | host         | Registers and unregisters each server tool; reads `catalog()` to wait for a released name ([src/host/manager.ts](src/host/manager.ts)). The process goes through `routedTools` and answers calls as `ToolHandlerService` ([src/host/routed.ts](src/host/routed.ts), [src/host/main.ts](src/host/main.ts)).                                                                                                                                                                                                                                |
-| `hooks/v1`                                | host         | `whenAvailable(runtime.hooks/v1)` to register the runtime hooks ([src/host/index.ts](src/host/index.ts), [src/host/manager.ts](src/host/manager.ts)).                                                                                                                                                                                                                                                                                                                                                                                     |
-| `runtime.hooks/v1`                        | host         | `onPromptStartedHook`, `onProjectClosingHook`, `onProjectReadyHook` ([src/host/index.ts](src/host/index.ts)). The process registers the three in one hook table served as `HookHandlerService` ([src/host/service.ts](src/host/service.ts)).                                                                                                                                                                                                                                                                                              |
-| `runtime/v2`                              | host         | `watch` for `projectDeleted` notices ([src/host/index.ts](src/host/index.ts)); the process uses `watchProjectDeletions` ([src/host/routed.ts](src/host/routed.ts)). The function `createdKey` of `runtime/contracts` gives the documents' order ([src/host/store.ts](src/host/store.ts)).                                                                                                                                                                                                                                                 |
-| `runtime.lease/v1`                        | host         | `withLease` on the Project's sandbox to start a `stdio` process ([src/host/open.ts](src/host/open.ts)); the process uses `routedMcpLease` ([src/host/lease.ts](src/host/lease.ts)).                                                                                                                                                                                                                                                                                                                                                       |
+| `hooks/v1`                                | host         | `hooks.register` of the runtime hooks in `activate` ([src/host/service.ts](src/host/service.ts)).                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| `runtime.hooks/v1`                        | host         | `onPromptStartedHook`, `onProjectClosingHook`, `onProjectReadyHook` ([src/host/operations.ts](src/host/operations.ts)). The process registers the three in one hook table served as `HookHandlerService` ([src/host/service.ts](src/host/service.ts)).                                                                                                                                                                                                                                                                                    |
+| `runtime/v2`                              | host         | `watchProjectDeletions` for `projectDeleted` notices ([src/host/routed.ts](src/host/routed.ts)). The function `createdKey` of `runtime/contracts` gives the documents' order ([src/host/store.ts](src/host/store.ts)).                                                                                                                                                                                                                                                                                                                    |
+| `runtime.lease/v1`                        | host         | `routedMcpLease` runs `runOnProjectLease` on the Project's current sandbox to start a `stdio` process ([src/host/lease.ts](src/host/lease.ts), [src/host/open.ts](src/host/open.ts)).                                                                                                                                                                                                                                                                                                                                                     |
 | `runtime.attachments/v1`                  | host         | `attach` an image a tool result carries ([src/host/tools.ts](src/host/tools.ts)); the process uses `routedAttach` ([src/host/routed.ts](src/host/routed.ts)).                                                                                                                                                                                                                                                                                                                                                                             |
 | `log/v1`                                  | host         | Warnings and errors listed in [Errors and failure behavior](#errors-and-failure-behavior).                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | `ui/v1`                                   | client       | Defines the two custom elements ([src/client/index.ts](src/client/index.ts)).                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
@@ -497,15 +493,15 @@ restart every enabled server reads as `idle` until something connects it
 ### When servers connect and stop
 
 - `watch` connects the Project's enabled servers
-  ([src/host/index.ts](src/host/index.ts)).
+  ([src/host/operations.ts](src/host/operations.ts)).
 - A starting prompt (`onPromptStartedHook`) connects its Project's servers
   and waits at most 10 seconds for them; a failure is logged and never fails
-  the prompt ([src/host/index.ts](src/host/index.ts)).
+  the prompt ([src/host/operations.ts](src/host/operations.ts)).
 - A ready Project (`onProjectReadyHook`) connects its servers that are
   `waiting-for-sandbox`, once any attempt in progress ends
   ([src/host/manager.ts](src/host/manager.ts)).
 - `create`, `update` and `finishSignIn` connect the server as
-  [Methods](#methods) states ([src/host/index.ts](src/host/index.ts),
+  [Methods](#methods) states ([src/host/operations.ts](src/host/operations.ts),
   [src/host/manager.ts](src/host/manager.ts)).
 - A closing Project (`onProjectClosingHook`) stops its servers, which read as
   `idle` again; a connection that its listing began before the close starts
@@ -513,15 +509,17 @@ restart every enabled server reads as `idle` until something connects it
 - A deleted Project (`runtime/v2` notice `projectDeleted`) loses its servers:
   their credentials and documents are deleted, they stop, their waiting
   sign-ins are cancelled; a failure is logged as an error
-  ([src/host/index.ts](src/host/index.ts)).
+  ([src/host/operations.ts](src/host/operations.ts)).
 - A server removed or disabled while a `watch` or a prompt start listed it does not start; one removed or disabled while it
   connected is stopped once its attempt ends
   ([src/host/manager.ts](src/host/manager.ts)).
 - At most one connection per server exists: a new start ends the previous
   attempt and connection first ([src/host/manager.ts](src/host/manager.ts)).
-- Deactivation stops every connection and process, unregisters every tool,
-  cancels every waiting sign-in and unregisters the storage type and the
-  credential kind ([src/host/index.ts](src/host/index.ts)).
+- Deactivation stops watching Project deletions, cancels every waiting
+  sign-in, stops every connection and process and unregisters every tool; it
+  does not unregister the storage type or the credential kind
+  ([src/host/service.ts](src/host/service.ts),
+  [src/host/operations.ts](src/host/operations.ts)).
 
 ### A connection attempt
 
@@ -559,7 +557,7 @@ new client; when both fail, the message is
 ### `stdio`
 
 The server runs only in the Project's sandbox, never on the host: inside
-`runtime.lease/v1.withLease`, the sandbox's `start` runs
+`runOnProjectLease` over `runtime.lease/v1`, the sandbox's `start` runs
 `[command, ...args]` with `cwd` when set, `env` as `NAME=value` of the
 resolved entries, and `tty: false` ([src/host/open.ts](src/host/open.ts)).
 
@@ -603,7 +601,7 @@ resolved entries, and `tty: false` ([src/host/open.ts](src/host/open.ts)).
   credential that is not stored passes) and when the server connects. A
   credential that holds no secret, or that cannot be resolved, fails the
   connection ([src/host/credentials.ts](src/host/credentials.ts),
-  [src/host/index.ts](src/host/index.ts)).
+  [src/host/operations.ts](src/host/operations.ts)).
 - A server's status message, its skill-read failures, its stderr lines and
   the connection log fields named in
   [Errors and failure behavior](#errors-and-failure-behavior) show each
@@ -807,7 +805,7 @@ The fixed limits are the timeouts and sizes listed in [Limits](#limits).
   at most 300 seconds; a connection check pings for at most 10 seconds; a
   skill read takes at most 30 seconds; a waiting sign-in lasts at most ten
   minutes; a released tool name is waited for at most 5 seconds
-  ([src/host/index.ts](src/host/index.ts),
+  ([src/host/operations.ts](src/host/operations.ts),
   [src/host/manager.ts](src/host/manager.ts),
   [src/host/skills.ts](src/host/skills.ts),
   [src/host/oauth.ts](src/host/oauth.ts)).
@@ -829,7 +827,7 @@ The fixed limits are the timeouts and sizes listed in [Limits](#limits).
 
 - Contract errors are listed under [Error codes](#error-codes).
 - A failure that has no caller is logged through `log/v1` and never thrown
-  ([src/host/index.ts](src/host/index.ts),
+  ([src/host/operations.ts](src/host/operations.ts),
   [src/host/manager.ts](src/host/manager.ts),
   [src/host/oauth.ts](src/host/oauth.ts)):
   - warn `An MCP server could not apply its configuration` (`serverId`);
@@ -864,8 +862,8 @@ npx nx run bundle-mcp:test
 
 `test` builds the bundle first, then compiles and runs with `node --test`:
 
-- [tests/](tests/): the host part, activated by
-  [tests/support/world.ts](tests/support/world.ts) beside fakes of every
+- [tests/](tests/): the host part, activated in the router world of
+  [tests/support/router.ts](tests/support/router.ts) beside fakes of every
   contract it requires, against real SDK MCP servers
   ([tests/support/mcp-server.ts](tests/support/mcp-server.ts)), a fake OAuth
   authorization server ([tests/support/oauth-server.ts](tests/support/oauth-server.ts))

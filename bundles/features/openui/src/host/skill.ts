@@ -1,7 +1,5 @@
-// The `openui` skill (openui.md D17; phase 3, S56, D4): its constants and the
-// two readers of its text, both called from `activate`, never at import.
-
-import { readFileSync } from 'node:fs';
+// The `openui` skill (openui.md D17; phase 3, S56, D4): its constants and
+// the skill built from its text.
 
 /** The skill's text, relative to the bundle directory; what `host.assets` must match (S62: `["src/host/skills/*.md"]`). */
 export const OPENUI_SKILL_PATH = 'src/host/skills/openui.md';
@@ -28,13 +26,3 @@ export const openuiSkillOf = (text: string): OpenuiSkill => ({
   allowedTools: [],
   body: text.trim(),
 });
-
-/**
- * The skill file's text read beside this module (`./skills/openui.md`
- * resolved against `skill.ts`'s URL: `dist/host` in a built or staged bundle,
- * `dist-tests/src/host` in tests). Synchronous; throws the read error
- * (`ENOENT`) when the file is missing. Reads nothing at import; the kernel
- * calls it from `activate`.
- */
-export const readSkillBesideModule = (): string =>
-  readFileSync(new URL('./skills/openui.md', import.meta.url), 'utf8');

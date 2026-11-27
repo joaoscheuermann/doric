@@ -1,18 +1,16 @@
 // What `openui`'s host logic calls outside itself (phase 3, S56, D1): the
 // `runtime.threads/v1` operations it uses and the `openui.answered/v1` append.
-// The kernel entry binds them to `services.use`; the process binds them to the
-// router (`./routed.ts`).
+// The process binds them to the router (`./routed.ts`).
 
-import { type Call, EventsV1, type Services } from 'bundle/contracts';
-import {
-  type PromptResult,
-  type ResumeResult,
-  RuntimeThreadsV1,
-  type SteerResult,
-  type ThreadEvent,
+import type { Call } from 'bundle/contracts';
+import type {
+  PromptResult,
+  ResumeResult,
+  SteerResult,
+  ThreadEvent,
 } from 'runtime/contracts';
 
-import { type AskAnswer, answeredEvent } from '../contracts/index.js';
+import type { AskAnswer } from '../contracts/index.js';
 
 /** What `openui` reads of a Thread: its Project, whether an agent owns it, and the prompt running now. */
 export interface OpenuiThread {
@@ -104,41 +102,3 @@ export interface OpenuiPorts {
     call: Call,
   ): Promise<void>;
 }
-
-/**
- * The kernel's ports: each method is today's `services.use(RuntimeThreadsV1)`
- * / `services.use(EventsV1, scope)` call, made when the method runs (no call
- * at creation). `rows` answers `log?.events ?? []`. Kernel only; leaves with
- * the kernel (group F).
- */
-export const kernelOpenuiPorts = (services: Services): OpenuiPorts => {
-  const threads = () => services.use(RuntimeThreadsV1);
-
-  return {
-    threads: {
-      rows: async (threadId, call) =>
-        (await threads().threadEvents({ id: threadId, afterSequence: 0 }, call))
-          ?.events ?? [],
-      thread: (id, call) => threads().thread(id, call),
-      steer: (input, call) => threads().steer(input, call),
-      queue: (id, call) => threads().queue(id, call),
-      resumeQueue: (id, call) => threads().resumeQueue(id, call),
-      prompt: (input, call) => threads().prompt(input, call),
-      instruct: (input, call) =>
-        call === undefined
-          ? threads().instruct(input)
-          : threads().instruct(input, call),
-    },
-    appendAnswered: async (scope, payload, call) => {
-      await services.use(EventsV1, { ...scope }).append(
-        answeredEvent,
-        {
-          questionPromptId: payload.questionPromptId,
-          digest: payload.digest,
-          answers: [...payload.answers],
-        },
-        call,
-      );
-    },
-  };
-};

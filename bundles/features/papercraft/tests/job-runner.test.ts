@@ -3,8 +3,6 @@
 // Contract matrix:
 // - `runnerScriptOf(bytes)`: the bytes and the first 16 hex characters of
 //   their SHA-256;
-// - `readRunnerBesideModule()`: with no `../sandbox/runner.mjs` beside the
-//   compiled host (as under `dist-tests`), `undefined`, on every call;
 // - `jobRunnerOver(lease, runner, native)`: no runner → `unavailable` "this
 //   host was built without the sandbox runner" without touching the lease; a
 //   lease state other than `ready` → `unavailable` "the Project has no
@@ -24,7 +22,6 @@ import {
   jobRunnerOver,
   type RunnerSandbox,
   type RunnerScript,
-  readRunnerBesideModule,
   runnerScriptOf,
   type SandboxJob,
 } from '../src/host/sandbox.js';
@@ -76,13 +73,6 @@ describe('runnerScriptOf', () => {
       script.hash,
       createHash('sha256').update(bytes).digest('hex').slice(0, 16),
     );
-  });
-});
-
-describe('readRunnerBesideModule', () => {
-  test('answers undefined on every call when no runner lies beside the host', async () => {
-    assert.equal(await readRunnerBesideModule(), undefined);
-    assert.equal(await readRunnerBesideModule(), undefined);
   });
 });
 

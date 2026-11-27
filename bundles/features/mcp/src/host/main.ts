@@ -1,4 +1,4 @@
-// `mcp`'s host part as a process (phase 3, S59); the running host keeps `./index.ts` until S62.
+// `mcp`'s host part as a process (phase 3, S59).
 import { HookHandlerService } from 'bundle/contracts/gen/doric/hooks/v1/hooks_pb.js';
 import { ToolHandlerService } from 'bundle/contracts/gen/doric/tools/v1/tools_pb.js';
 import { runBundle } from 'bundle/host';

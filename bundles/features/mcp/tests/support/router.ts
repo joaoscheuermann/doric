@@ -91,7 +91,11 @@ import {
   RuntimeService,
   type WatchResponseSchema,
 } from 'runtime/contracts/gen/doric/runtime/v2/runtime_pb.js';
-import { createMemoryStore, memoryStorageBackend } from 'storage/memory';
+import {
+  createMemoryStore,
+  type MemoryStore,
+  memoryStorageBackend,
+} from 'storage/memory';
 import { serveStorage } from 'storage/rpc';
 
 import {
@@ -111,7 +115,7 @@ import {
   fakeSandbox,
   type StartedProcess,
 } from './sandbox.js';
-import { WAIT_MS } from './wait.js';
+import { eventually, WAIT_MS } from './wait.js';
 
 /** Two Projects, by the UUIDs the runtime gives Projects (as `world.ts`). */
 export const P1 = '11111111-1111-4111-8111-111111111111';
@@ -237,6 +241,18 @@ export interface View {
 
 export interface RouterWorldOptions {
   readonly sandbox?: FakeSandboxOptions;
+  /**
+   * A world whose storage and credentials this one keeps: a later activation
+   * of the bundle over what an earlier one stored.
+   */
+  readonly from?: RouterWorld;
+}
+
+/** Holds `storage/v1` queries: each one answers what it read only once `open` resolves. */
+export interface QueryGate {
+  readonly open: Promise<void>;
+  /** How many queries read and are held. */
+  held: number;
 }
 
 export interface RouterWorld {
@@ -257,6 +273,12 @@ export interface RouterWorld {
   /** Each `hooks/v1.Register` as `{contract, hook}`. */
   readonly hookRegisters: readonly { contract: string; hook: string }[];
   readonly credentials: Map<string, StoredCredential>;
+  /** The memory store behind `storage/v1`. */
+  readonly store: MemoryStore;
+  /** When set, `storage/v1` queries are held by it. */
+  queryGate: QueryGate | undefined;
+  /** Tool names `tools/v1.Register` refuses `duplicate_tool`, as names another bundle holds. */
+  readonly takenNames: Set<string>;
   readonly registrations: readonly ToolRegistration[];
   /** The registered, not unregistered, tool names of the Project, sorted. */
   liveNames(projectId: string): readonly string[];
@@ -462,6 +484,43 @@ export const inState =
   (servers: readonly View[]): boolean =>
     serverOf(servers, id)?.status.state === state;
 
+/** Polls `List` (which never connects) until it satisfies `predicate`; answers that list. */
+export const listUntil = async (
+  world: RouterWorld,
+  projectId: string,
+  predicate: (servers: readonly View[]) => boolean,
+  label: string,
+): Promise<readonly View[]> => {
+  let last: readonly View[] = [];
+  await eventually(
+    async () => {
+      last = await world.list(projectId);
+      return predicate(last);
+    },
+    label,
+    () => last,
+  );
+
+  return last;
+};
+
+/** The MCP_TOKEN credentials the fake `secrets/v1` holds for a server. */
+export const tokenCredentials = (
+  world: RouterWorld,
+  id: string,
+): readonly StoredCredential[] =>
+  [...world.credentials.values()].filter(
+    (entry) =>
+      entry.kind === 'MCP_TOKEN' && entry.name.startsWith(`mcp:${id}:`),
+  );
+
+/** A routed world activated for the test over what `previous` stored: the bundle's next activation. */
+export const reactivated = (
+  t: TestContext,
+  previous: RouterWorld,
+  options: Omit<RouterWorldOptions, 'from'> = {},
+): Promise<RouterWorld> => activated(t, { ...options, from: previous });
+
 const entryMessage = (entry: McpEntry) =>
   'credentialId' in entry
     ? {
@@ -638,14 +697,17 @@ export const routerWorld = (options: RouterWorldOptions = {}): RouterWorld => {
   const defineTypes: JsonValue[] = [];
   const kindRegisters: JsonValue[] = [];
   const hookRegisters: { contract: string; hook: string }[] = [];
-  const credentials = new Map<string, StoredCredential>();
+  const credentials =
+    options.from?.credentials ?? new Map<string, StoredCredential>();
+  const takenNames = new Set<string>();
+  let queryGate: QueryGate | undefined;
   const registrations: ToolRegistration[] = [];
   const starts: FakeStart[] = [];
   const watches: FakeWatch[] = [];
   const attaches: FakeAttach[] = [];
   const failures = new Map<string, ContractError>();
   const sandbox = fakeSandbox(options.sandbox);
-  const store = createMemoryStore();
+  const store = options.from?.store ?? createMemoryStore();
   const backendServices = createTestServices({
     bundle: { id: 'mcp-storage' },
     provide: [memoryStorageBackend(store)],
@@ -655,6 +717,14 @@ export const routerWorld = (options: RouterWorldOptions = {}): RouterWorld => {
     { validators: ajvValidators() },
   );
   let ids = 0;
+  /** A credential id no credential of the (possibly shared) map holds. */
+  const nextCredentialId = (): string => {
+    do {
+      ids += 1;
+    } while (credentials.has(`credential-${ids}`));
+
+    return `credential-${ids}`;
+  };
   let host: McpHost | undefined;
   const hostOf = (): McpHost => {
     host ??= createMcpHost();
@@ -723,7 +793,16 @@ export const routerWorld = (options: RouterWorldOptions = {}): RouterWorld => {
         context,
       );
 
-      yield* storage.query(request, context);
+      const gate = queryGate;
+      if (gate === undefined) {
+        yield* storage.query(request, context);
+        return;
+      }
+      const read = [];
+      for await (const item of storage.query(request, context)) read.push(item);
+      gate.held += 1;
+      await gate.open;
+      yield* read;
     },
   });
 
@@ -773,9 +852,8 @@ export const routerWorld = (options: RouterWorldOptions = {}): RouterWorld => {
           `A ${request.kind} credential named ${request.name} is stored.`,
         );
       }
-      ids += 1;
       const credential: StoredCredential = {
-        id: `credential-${ids}`,
+        id: nextCredentialId(),
         kind: request.kind,
         name: request.name,
         ...(request.secret === undefined ? {} : { secret: request.secret }),
@@ -828,6 +906,12 @@ export const routerWorld = (options: RouterWorldOptions = {}): RouterWorld => {
         },
         context,
       );
+      if (takenNames.has(tool?.name ?? '')) {
+        throw new ContractError(
+          'duplicate_tool',
+          `A tool named ${tool?.name ?? ''} is registered.`,
+        );
+      }
       ids += 1;
       const registrationId = `tool-${ids}`;
       const schema = tool?.definition?.inputSchema;
@@ -1119,6 +1203,14 @@ export const routerWorld = (options: RouterWorldOptions = {}): RouterWorld => {
     kindRegisters,
     hookRegisters,
     credentials,
+    store,
+    get queryGate() {
+      return queryGate;
+    },
+    set queryGate(gate) {
+      queryGate = gate;
+    },
+    takenNames,
     registrations,
     liveNames: (projectId) =>
       registrations
@@ -1156,8 +1248,7 @@ export const routerWorld = (options: RouterWorldOptions = {}): RouterWorld => {
       return router.logs;
     },
     addCredential: (name, secret, kind = 'API_TOKEN') => {
-      ids += 1;
-      const id = `credential-${ids}`;
+      const id = nextCredentialId();
       credentials.set(id, {
         id,
         kind,

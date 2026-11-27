@@ -2533,7 +2533,7 @@ removes it.
   ([`store/attachments.ts`](../../../bundles/runtime/runtime/src/host/store/attachments.ts)).
 - Deleting an MCP server, or its Project, deletes its `mcp.server/v1`
   document and its `MCP_TOKEN` credentials
-  ([`mcp/src/host/index.ts`](../../../bundles/features/mcp/src/host/index.ts)).
+  ([`mcp/src/host/operations.ts`](../../../bundles/features/mcp/src/host/operations.ts)).
 - `storage_commit` (the commit feed) and `storage_type` are never pruned;
   every other credential stays until `DELETE /credentials/:id`.
 
@@ -2706,7 +2706,7 @@ The host keeps every secret it holds in one credential store, one
 
 An `MCP_TOKEN` credential holds one OAuth access token, refresh token or
 client secret and is named `mcp:<serverId>:<part>`; the kind is registered by
-[`mcp/src/host/index.ts`](../../../bundles/features/mcp/src/host/index.ts) and
+[`mcp/src/host/service.ts`](../../../bundles/features/mcp/src/host/service.ts) and
 defined in
 [`mcp/src/host/credentials.ts`](../../../bundles/features/mcp/src/host/credentials.ts).
 The REST API's [Credentials](#credentials) routes manage them, and

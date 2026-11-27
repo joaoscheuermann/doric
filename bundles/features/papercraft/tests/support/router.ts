@@ -204,8 +204,13 @@ export interface RouterWorld {
   promptStarted(promptId: string, cwd: string): Promise<void>;
   /** `core` relays `onThreadCwdChangedHook` for `thread-1`. */
   cwdChanged(cwd: string, previous: string, promptId?: string): Promise<void>;
-  /** Appends a row, as a prompt's own events would. */
-  row(promptId: string, type: string, event?: JsonObject): void;
+  /** Appends a row, as a prompt's own events would, and answers it. */
+  row(promptId: string, type: string, event?: JsonObject): StoredRow;
+  /**
+   * The runtime's rewind of `promptId`: every row from its first row on goes,
+   * and a `history.truncated` marker after the last kept row is appended.
+   */
+  rewind(promptId: string): void;
   /** `load_skill` with `{ name }`, started and finished, in `promptId`. */
   loadSkill(promptId: string, name?: string): void;
   /** The `papercraft.cwd/v1` rows' `cwd`s, in order. */
@@ -317,20 +322,26 @@ export const routerWorld = (options: WorldOptions = {}): RouterWorld => {
     timeline.push(method);
   };
 
+  /** The last sequence the log gave; it never goes back, also after a rewind. */
+  let sequence = 0;
+
   const row = (
     promptId: string,
     type: string,
     event: JsonObject = {},
-  ): void => {
-    log.push({
+  ): StoredRow => {
+    sequence += 1;
+    const stored: StoredRow = {
       projectId,
       threadId,
       promptId,
-      sequence: log.length + 1,
+      sequence,
       type,
       event: { type, ...event },
       createdAt: timestamp,
-    });
+    };
+    log.push(stored);
+    return stored;
   };
 
   /** A Project file by its path, leading `/`s dropped, as the kernel's fake reads it. */
@@ -569,7 +580,7 @@ export const routerWorld = (options: WorldOptions = {}): RouterWorld => {
             .map((entry) =>
               fromJson(ThreadEventSchema, entry as unknown as JsonValue),
             ),
-          lastSequence: log.length,
+          lastSequence: sequence,
         }),
       };
     }),
@@ -724,9 +735,17 @@ export const routerWorld = (options: WorldOptions = {}): RouterWorld => {
       });
     },
     row,
+    rewind: (promptId) => {
+      const first = log.findIndex((entry) => entry.promptId === promptId);
+      if (first < 0) return;
+      log.splice(first);
+      row(promptId, 'history.truncated', {
+        afterSequence: log.at(-1)?.sequence ?? 0,
+      });
+    },
     loadSkill: (promptId, name = 'papercraft') => {
       const call = {
-        id: `call-${String(log.length + 1)}`,
+        id: `call-${String(sequence + 1)}`,
         name: 'load_skill',
         payload: { name },
       };

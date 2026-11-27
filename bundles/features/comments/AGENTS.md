@@ -50,7 +50,7 @@ bundle that owns the target's `kind`.
   the copies against this bundle (for example
   [`comment-threads.ts`](../../desktop/chat/src/client/domain/comment-threads.ts),
   [`preview-state.ts`](../papercraft/src/client/domain/preview-state.ts) and
-  [`papercraft/src/host/index.ts`](../papercraft/src/host/index.ts)).
+  [`papercraft/src/host/skill.ts`](../papercraft/src/host/skill.ts)).
 - Before adding an exception for this bundle, open
   [`tests/boundary-exceptions.json`](../../../tests/boundary-exceptions.json)
   and search it for `"bundle": "comments"`.

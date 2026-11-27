@@ -58,7 +58,7 @@ The principal of the platform, `doric`, passes the namespace and `provides` chec
 
 ## Declaring an event type
 
-`defineEvent({ type, payload })` returns an `EventDefinition`: `type` is a contract id, `<owner>.<name>/v<major>`, and `payload` a zod object schema. An id that starts with `doric.` is refused, because those ids belong to the platform ([`define.ts`](../../../packages/bundle/src/contracts/define.ts)). The owner exports the definition from its `contracts` entry point, lists the type with its full version under `provides`, and registers it in the `activate` of its host part. `papercraft` does all three ([`papercraft/src/contracts/cwd.ts`](../../../bundles/features/papercraft/src/contracts/cwd.ts), [`papercraft/src/host/index.ts`](../../../bundles/features/papercraft/src/host/index.ts), [`papercraft/manifest.json`](../../../bundles/features/papercraft/manifest.json)):
+`defineEvent({ type, payload })` returns an `EventDefinition`: `type` is a contract id, `<owner>.<name>/v<major>`, and `payload` a zod object schema. An id that starts with `doric.` is refused, because those ids belong to the platform ([`define.ts`](../../../packages/bundle/src/contracts/define.ts)). The owner exports the definition from its `contracts` entry point, lists the type with its full version under `provides`, and registers it in the `activate` of its host part. `papercraft` does all three ([`papercraft/src/contracts/cwd.ts`](../../../bundles/features/papercraft/src/contracts/cwd.ts), [`papercraft/src/host/service.ts`](../../../bundles/features/papercraft/src/host/service.ts), [`papercraft/manifest.json`](../../../bundles/features/papercraft/manifest.json)):
 
 ```ts
 // papercraft, src/contracts/cwd.ts

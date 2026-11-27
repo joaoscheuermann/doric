@@ -1,6 +1,6 @@
 // Wire ↔ domain for `openui`'s host part as a process (phase 3, S56, D2):
 // each routed request is decoded to JSON and parsed again with today's zod
-// schema, so the kernel's limits and the questions' digest stay the same.
+// schema, so the limits and the questions' digest are the schema's.
 
 import { type MessageInitShape, toJson } from '@bufbuild/protobuf';
 import { ContractError } from 'bundle/contracts';
@@ -50,8 +50,8 @@ const parsed = <T>(schema: z.ZodType<T>, json: unknown, method: string): T => {
  * Throw `ContractError('invalid_input', 'Invalid input for openui.<contract>
  * <method>.', {issues})` when the schema refuses it (a blank-by-`trim` text, a
  * length over the UTF-16 limit, …). The answer is today's domain value, keys
- * in schema order, unset optional fields absent (so `digestOf` equals the
- * kernel's).
+ * in schema order, unset optional fields absent (so `digestOf` is stable
+ * across encodings).
  */
 export const programErrorsInputOf = (
   request: ReportErrorsRequest,

@@ -69,7 +69,7 @@ export interface StyleAsset {
 }
 
 /** The compiled sheet and what the compile skipped. */
-export interface CompiledStyles {
+interface CompiledStyles {
   readonly css: string;
   /** The files the sheet's `url()`s name, stored beside it. */
   readonly assets: readonly StyleAsset[];

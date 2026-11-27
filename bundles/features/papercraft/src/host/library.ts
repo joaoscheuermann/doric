@@ -5,22 +5,13 @@
 
 import { createHash } from 'node:crypto';
 
-import { type Call, ContractError, type Services } from 'bundle/contracts';
+import type { Call } from 'bundle/contracts';
 import type { CwdChanged, PromptStarted } from 'runtime/contracts';
 
 import { cwdEvent } from '../contracts/index.js';
 import type { LibraryComponent } from '../sandbox/protocol.js';
-import {
-  kernelPapercraftPorts,
-  type PapercraftPorts,
-  type PapercraftRow,
-} from './ports.js';
-import type {
-  LastAnswer,
-  MemoEntry,
-  ProgramOperations,
-  ProgramsHost,
-} from './programs.js';
+import type { PapercraftPorts, PapercraftRow } from './ports.js';
+import type { LastAnswer, MemoEntry, ProgramOperations } from './programs.js';
 
 /** The hook fields the library entry reads. */
 export type PromptStartedFields = Pick<
@@ -56,37 +47,6 @@ export const LIBRARY_REASON = 'library';
 
 /** The longest library instruct text (D28), in UTF-16 code units. */
 export const MAX_INSTRUCT_CHARS = 16_000;
-
-export interface LibraryHooks {
-  /**
-   * `onPromptStartedHook` (D10, D28): reads the Thread's new events, appends
-   * `papercraft.cwd/v1` when `cwd` differs from the last bound one, and, once
-   * the Thread has loaded the papercraft skill, runs one library job and gives
-   * the retained instruct. Never
-   * rejects: a failed step ends or skips as D10 says.
-   */
-  promptStarted(input: PromptStarted): Promise<void>;
-  /**
-   * `onThreadCwdChangedHook`: as `promptStarted`, only when the input carries
-   * a `promptId`, and without a library job of its own.
-   */
-  cwdChanged(input: CwdChanged): Promise<void>;
-  /**
-   * The `cwd` of the Thread's last `papercraft.cwd/v1` event whose sequence
-   * is below `turnSequence`, after rewinds; `undefined` when none.
-   */
-  bindingAt(threadId: string, turnSequence: number): string | undefined;
-  /**
-   * `bindingAt`, after reading the Thread's events past the entry's cursor
-   * when `turnSequence` is above it (D10): `ProgramsDeps.cwdAt` of a
-   * `library` call, which may come before any hook of this host session.
-   * Never rejects: a failed read answers from the bindings read so far.
-   */
-  cwdAt(
-    scope: { readonly projectId: string; readonly threadId: string },
-    turnSequence: number,
-  ): Promise<string | undefined>;
-}
 
 /** D28's per-Thread entry, with D10's bindings. */
 interface ThreadEntry {
@@ -274,31 +234,6 @@ export const createLibraryOperations = (
       return bindingAt(threadId, turnSequence);
     },
   };
-};
-
-/**
- * Creates the hooks over one programs host and provides its
- * `papercraft.programs/v1`, whose `library` binds through them; each call
- * holds its own entries.
- */
-export const createLibraryHooks = (
-  services: Services,
-  programs: ProgramsHost,
-): LibraryHooks => {
-  // The hooks hold the bindings `papercraft.programs/v1.library` reads, so
-  // they serve it. A second set of hooks over the same services (a host
-  // restarted over a live log) leaves the first provider in place.
-  try {
-    services.provide(programs.service);
-  } catch (error) {
-    if (
-      !(error instanceof ContractError && error.code === 'provider_conflict')
-    ) {
-      throw error;
-    }
-  }
-
-  return createLibraryOperations(kernelPapercraftPorts(services), programs);
 };
 
 /** D8's line for a schema folder a repository rule hides (D28). */
