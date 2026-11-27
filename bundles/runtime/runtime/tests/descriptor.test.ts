@@ -2,7 +2,6 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
-import { checkRecording, recordActivation } from 'bundle';
 import {
   type CatalogCandidate,
   descriptorSchema,
@@ -12,13 +11,13 @@ import {
   resolveEnvironment,
 } from 'bundle/runtime';
 
-import { activate } from '../src/host/index.js';
-
 /*
- * The runtime's activation (design 57 §13.1, stage 5 "Activation"): the
- * manifest and built descriptor are valid, activation provides and defines
- * exactly what the manifest declares, the host activation order of §1.2 has
- * no cycle, and a second `runtime/v2` provider is quarantined.
+ * The runtime's place in the catalog (design 57 §13.1, stage 5 "Activation"):
+ * the built descriptor is valid, the host activation order of §1.2 has no
+ * cycle, and a second `runtime/v2` provider is quarantined. These cases came
+ * from `activation.test.ts` when the kernel entry went (S68d, X3); its
+ * recorded-activation case is covered by `host-build.test.ts` 29 and 30 and
+ * `runtime-contracts.test.ts`' manifest case.
  */
 
 const manifestOf = async (dir: string): Promise<ManifestV1> =>
@@ -64,34 +63,6 @@ const provider = (id: string, provides: readonly string[]) =>
     provides,
     requires: [],
   });
-
-void test('activation provides and defines exactly what the manifest declares', async () => {
-  const manifest = await manifestOf('runtime');
-  const recorded = await recordActivation({
-    manifest,
-    environment: 'host',
-    activate,
-  });
-
-  // runtime.records/v1 is the client part's (bundle isolation phase 3) and
-  // executor.session/v1 is served by the host part's process, not recorded
-  // (grpc-processes S62c): the host part records every other provided
-  // contract.
-  const hostProvides = manifest.provides.filter(
-    (entry) =>
-      idOf(entry) !== 'runtime.records/v1' &&
-      idOf(entry) !== 'executor.session/v1',
-  );
-
-  assert.deepEqual(
-    checkRecording({ ...manifest, provides: hostProvides }, recorded),
-    [],
-  );
-  assert.deepEqual(
-    [...new Set(recorded.map(({ id }) => id))].sort(),
-    hostProvides.map(idOf).sort(),
-  );
-});
 
 void test('the built descriptor lists runtime.records/v1 on the client and every other provided contract on the host', async () => {
   const manifest = await manifestOf('runtime');

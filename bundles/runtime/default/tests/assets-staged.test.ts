@@ -1,17 +1,18 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 /*
- * The kernel host stages only a bundle's built `dist` (`stageBundles`, the
- * bundle build CLI): `<dest>/<id>` holds `host/assets.js`, `host/prompts/*.md`
- * and `host/agents/*.md`, with no `src/` anywhere. Without installed texts,
- * `assetText` reads each `defaultAssetPaths` entry from the copies the build
- * puts beside the module, so every entry reads from the staged bundle, and
- * `builtInAgentFiles()` answers the ten built-in agents.
+ * `stageBundles` (the bundle build CLI) stages only a bundle's built `dist`:
+ * `<dest>/<id>` holds `host/assets.js`, `host/prompts/*.md` and
+ * `host/agents/*.md`, with no `src/` anywhere. Since S68d `assetText` has no
+ * disk fallback: without installed texts it reads none of the copies beside
+ * the module, and every `defaultAssetPaths` entry, like `builtInAgentFiles()`,
+ * throws an Error naming the asset (the host part installs the texts from
+ * `host.assets` at `activate`).
  */
 
 /** The compiled tests' folder: bundles/runtime/default/dist-tests. */
@@ -60,63 +61,46 @@ const run = (host: string, script: string) => {
   return { status, stdout: stdout.trim(), stderr };
 };
 
-/** The source text of a bundle-relative asset path. */
-const sourceText = (path: string): string =>
-  readFileSync(join(bundleRoot, path), 'utf8');
-
-void test('a staged bundle (dist only, no src) reads every default asset and the built-in agents without installed texts', async (t) => {
+void test('a staged bundle (dist only, no src) reads no default asset and no built-in agent from disk without installed texts', async (t) => {
   const host = await stagedHost(t);
 
   const { status, stdout, stderr } = run(
     host,
     `const assets = await import(new URL('assets.js', process.argv[1]).href);
 const builtIn = await import(new URL('agents/built-in.js', process.argv[1]).href);
-try {
-  const texts = assets.defaultAssetPaths.map((path) => [path, assets.assetText(path)]);
-  const agents = builtIn.builtInAgentFiles();
-  console.log(JSON.stringify({ threw: false, texts, agents }));
-} catch (error) {
-  console.log(JSON.stringify({ threw: true, code: error.code, message: error.message }));
-}`,
+const outcome = (read) => {
+  try {
+    read();
+    return { threw: false };
+  } catch (error) {
+    return { threw: true, code: error.code, message: error.message };
+  }
+};
+console.log(JSON.stringify({
+  texts: assets.defaultAssetPaths.map((path) => [path, outcome(() => assets.assetText(path))]),
+  agents: outcome(() => builtIn.builtInAgentFiles()),
+}));`,
   );
 
   assert.notEqual(stdout, '', stderr);
   assert.equal(status, 0, stderr);
+  interface Outcome {
+    readonly threw: boolean;
+    readonly code?: string;
+    readonly message?: string;
+  }
   const answer = JSON.parse(stdout) as {
-    threw: boolean;
-    code?: string;
-    message?: string;
-    texts?: [string, string][];
-    agents?: { path: string; text: string }[];
+    texts: [string, Outcome][];
+    agents: Outcome;
   };
-  assert.equal(
-    answer.threw,
-    false,
-    `${answer.code ?? ''}: ${answer.message ?? ''}`,
-  );
 
-  const texts = answer.texts ?? [];
-  assert.equal(texts.length, 17);
-  for (const [path, text] of texts) {
-    assert.equal(text, sourceText(path), path);
+  assert.equal(answer.texts.length, 17);
+  for (const [path, outcome] of answer.texts) {
+    assert.equal(outcome.threw, true, path);
+    assert.equal(outcome.code, undefined, path);
+    assert.ok(outcome.message?.includes(path), path);
   }
-
-  assert.deepEqual(
-    (answer.agents ?? []).map(({ path }) => path),
-    [
-      'triage',
-      'search',
-      'spec',
-      'review',
-      'plan',
-      'contracts',
-      'tests',
-      'implementation',
-      'cleanup',
-      'docs',
-    ].map((name) => `src/host/agents/${name}.md`),
-  );
-  for (const { path, text } of answer.agents ?? []) {
-    assert.equal(text, sourceText(path), path);
-  }
+  assert.equal(answer.agents.threw, true);
+  assert.equal(answer.agents.code, undefined);
+  assert.ok(answer.agents.message?.includes('src/host/agents/triage.md'));
 });

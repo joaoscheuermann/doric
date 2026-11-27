@@ -17,7 +17,7 @@ import {
   ReadResponseSchema,
 } from '../../contracts/gen/doric/runtime/attachments/v1/attachments_pb.js';
 import { readRuntimeScope } from '../../contracts/scope.js';
-import type { RuntimeCore } from '../index.js';
+import type { RuntimeCore } from '../core.js';
 import type { AttachmentStore } from '../store/attachments.js';
 import { encode } from './codec.js';
 import { detached, parseInput, routed } from './errors.js';

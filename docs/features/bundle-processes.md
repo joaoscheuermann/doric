@@ -627,8 +627,9 @@ no kernel entry and serve only through their process entries, and since S68a
 `claude`, `codex`, `openai`, `openrouter`, `docker`, `firecracker`,
 `host-config`, `claude-login`, `resources`, `usage`, `web`, `screen`,
 `comments` and `threads` have none either, since S68b neither have
-`files`, `git` and `terminal`, and since S68c neither have `mcp`, `openui`
-and `papercraft`. The parts the executor path uses work as follows. A thrown llms provider error crosses the router as
+`files`, `git` and `terminal`, since S68c neither have `mcp`, `openui`
+and `papercraft`, and since S68d neither have `runtime` and `default`. The
+parts the executor path uses work as follows. A thrown llms provider error crosses the router as
 `provider_error` and a thrown tool error as `tool_error`, both
 `FAILED_PRECONDITION` with every field of the error's data in
 `details.providerError` or `details.toolError`, and the caller rebuilds them.
@@ -646,7 +647,9 @@ after a 5 s grace; a failure after the cancel answers `run_cancelled` or
 `compaction_cancelled`. The kernel entries stayed in use until S62; S67 deletes
 the kernel, the in-process host and the kernel entries of `core` and `postgres`,
 S68a those of the fourteen bundles above, S68b those of `files`, `git` and
-`terminal`, and S68c those of `mcp`, `openui` and `papercraft`.
+`terminal`, S68c those of `mcp`, `openui` and `papercraft`, and S68d those of
+`runtime` and `default`. `default`'s `assetText` answers only the texts its
+host part installed at `activate` and reads no file.
 
 Since S62a the build also counts what a host part serves without recording it
 (`hostProvides`, `packages/bundle/src/build/host-provides.ts`): the `HOST` or
@@ -1879,3 +1882,40 @@ sandbox pool` then `Sandbox pool configured` with the `logSandboxPool`
   bundles' "cleanup disposes the skill" cases are deleted; `papercraft`'s
   `programs.test.ts` runs over `createProgramOperations`, since its 64 MiB
   memo exceeds the router's 4 MiB messages. No boundary exception is added.
+- 2026-11-27: phase 3, slice S68d, of
+  [the spec](../designs/grpc-processes.md) (version 6.51): the kernel entries
+  of `runtime` and `default` are deleted. `runtime` loses `src/host/index.ts`
+  (`activate`, `provideRuntime`, `RuntimeProvision`) and `src/host/peers.ts`
+  (`CoreEventHooksV1`, imported only by the index); `RuntimeCore`,
+  `createRuntimeCore` and `runtimeStores` move unchanged to `src/host/core.ts`,
+  which `service.ts` and the `rpc/` files import. `default` loses
+  `src/host/index.ts` (`activate`, `createExecutor`, `ActivateOptions`),
+  `agentsService`, the disk fallback of `assetText` and the dead copy-md step
+  of its `project.json`; `assetText` throws an `Error` naming the path, with no
+  code, when nothing is installed or the installed texts lack the path.
+  `src/host/ports.ts` keeps its type exports. The host contracts in
+  `contracts.json` are `local: false`; `runtime`'s `dist/schemas` keeps only
+  `runtime.records/v1.json`, and `default` builds no `schemas/`. Decisions:
+  `provideRuntime` moves to the test support
+  `tests/domain/support/provide-runtime.ts`, and `usageService` stays since it
+  uses it; `kernelPorts` and `kernelBeforeModelRequest` move to
+  `default/tests/support/envelope-ports.ts`, and the asset tests install the
+  bundle's texts (`tests/support/assets.ts`). The kernel pause path of
+  `default`'s executor and `generationLost` stay, against the plan: the router
+  fails in-flight calls with `generation_lost`, which reaches the executor
+  wrapped in `handler_failed`, and the run pauses only when its signal is
+  aborted too: the `Run` call's signal, which aborts when its caller cancels
+  the call or the router cuts it at a drain deadline
+  (`packages/bundle/src/platform/router/drain.ts:81-85`,
+  `flights.ts:227-240`); no router-world test covers it yet. Also kept,
+  against the plan: `runtime`'s envelope services
+  `src/host/services/{runtime,threads,workspace,lease,attachments}.ts`,
+  `handover.ts`' `installHandover`, `lifecycle.ts`' `installStartStop` and
+  `ports.ts`' `createPorts` have only test importers (`provide-runtime.ts`,
+  the domain harness and the `handover-hooks`, `watches` and `attachments`
+  tests) and stay as the envelope provision of the domain harness until
+  phase 6 deletes the envelope (Q-F1).
+  `DefaultAgentsV1`, `defaultAgentsMethods` and `SkillSourcesV1` have only test
+  importers and stay. `runtime/tests/activation.test.ts` is deleted (its
+  descriptor cases move to `descriptor.test.ts`), as is `event-sink.test.ts`'
+  kernel sink case. No boundary exception is added.

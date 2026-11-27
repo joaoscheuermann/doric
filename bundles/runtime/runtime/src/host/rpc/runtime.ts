@@ -32,7 +32,7 @@ import {
   WatchResponseSchema,
 } from '../../contracts/gen/doric/runtime/v2/runtime_pb.js';
 import { runtimeMethods as methods } from '../../contracts/runtime.js';
-import type { RuntimeCore } from '../index.js';
+import type { RuntimeCore } from '../core.js';
 import { decode, encode, runtimeOneofs } from './codec.js';
 import { detached, parseInput, routed } from './errors.js';
 import { detachedItems } from './streams.js';

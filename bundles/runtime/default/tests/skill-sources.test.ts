@@ -4,10 +4,11 @@ import test from 'node:test';
 import type { Call } from 'bundle/contracts';
 import { createTestServices } from 'bundle/testing';
 
-import { kernelPorts } from '../src/host/ports.js';
 import { skillCatalog } from '../src/host/skills/catalog.js';
 import { loadSkillTool } from '../src/host/skills/load-skill.js';
 import { readRunSkills, readSourceSkills } from '../src/host/skills/sources.js';
+import { installBundleAssets } from './support/assets.js';
+import { kernelPorts } from './support/envelope-ports.js';
 import {
   type FakeSkillSource,
   type LoggedEntry,
@@ -20,6 +21,10 @@ import {
   sourceEntry,
   threadId,
 } from './support/harness.js';
+
+// The host part installs its texts at `activate`; these cases read templates
+// without one, so the file installs them once (S68d: no disk fallback).
+installBundleAssets();
 
 /*
  * `default.skill-sources/v1` as an extension point (bundle isolation T8.1):

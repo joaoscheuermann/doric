@@ -10,9 +10,9 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
  * file) when it is imported: the bundled `main.mjs` has no file beside it, and
  * a read at import kills the process before it can install the texts. Each
  * module is imported in a fresh process from a copy of the compiled `src`
- * without its `*.md` files; reading an asset there fails with ENOENT, so an
- * import that succeeds read none, and a call that fails with ENOENT read on
- * first use.
+ * without its `*.md` files, so an import that succeeds read none. Since S68d
+ * no call reads a file either: with no texts installed, the first use throws
+ * an Error naming the asset, not a file read's ENOENT.
  */
 
 /** The compiled tests' folder: bundles/runtime/default/dist-tests. */
@@ -42,9 +42,8 @@ const run = (host: string, script: string) => {
   return { status, stdout: stdout.trim(), stderr };
 };
 
-/** The host part's modules, relative to `src/host`: the kernel entry and every module that reads an asset. */
+/** The host part's modules, relative to `src/host`: every module that reads an asset. */
 const modules = [
-  'index.js',
   'executor.js',
   'compact.js',
   'agents/built-in.js',
@@ -84,7 +83,7 @@ try {
   console.log(JSON.stringify({ threw: true, code: error.code, message: error.message }));
 }`;
 
-void test('builtInAgentFiles() reads the agent files on its call, not at import', (t) => {
+void test('builtInAgentFiles() with no texts installed throws on its call, not at import, and reads no file', (t) => {
   const host = withoutAssets(t);
 
   const { stdout, stderr } = run(
@@ -99,11 +98,11 @@ void test('builtInAgentFiles() reads the agent files on its call, not at import'
     message?: string;
   };
   assert.equal(answer.threw, true);
-  assert.equal(answer.code, 'ENOENT');
+  assert.equal(answer.code, undefined);
   assert.match(answer.message ?? '', /triage\.md/u);
 });
 
-void test('systemPromptWith reads system.md on its first call, not at import', (t) => {
+void test('systemPromptWith with no texts installed throws on its first call, not at import, and reads no file', (t) => {
   const host = withoutAssets(t);
 
   const { stdout, stderr } = run(
@@ -121,6 +120,6 @@ void test('systemPromptWith reads system.md on its first call, not at import', (
     message?: string;
   };
   assert.equal(answer.threw, true);
-  assert.equal(answer.code, 'ENOENT');
+  assert.equal(answer.code, undefined);
   assert.match(answer.message ?? '', /system\.md/u);
 });

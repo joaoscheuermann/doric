@@ -3,13 +3,15 @@ import test from 'node:test';
 
 import { createTestServices } from 'bundle/testing';
 
-import { kernelPorts } from '../src/host/ports.js';
+import { kernelPorts } from './support/envelope-ports.js';
 import { fakeThreadState, promptId } from './support/harness.js';
 
 /*
- * The kernel ports read today's kernel contracts; these tests cover what they
- * add over them: the image reader a run gets from its session. Everything else
- * the ports answer is covered through the runs of the kernel entry.
+ * The envelope ports (`tests/support/envelope-ports.ts`, moved from
+ * `src/host/ports.ts` with the kernel entry in S68d) read the envelope
+ * contracts; these tests cover what they add over them: the image reader a run
+ * of the envelope harness gets from its session. Everything else the ports
+ * answer is covered through the harness' runs.
  */
 
 const catId = `sha256-${'a'.repeat(64)}`;

@@ -1,5 +1,3 @@
-import { readFileSync } from 'node:fs';
-
 /** The built-in agents, in workflow order: `src/host/agents/<name>.md` each. */
 const BUILT_IN_AGENT_NAMES: readonly string[] = [
   'triage',
@@ -40,14 +38,8 @@ export const defaultAssetPaths: readonly string[] = [
   ...builtInAgentPaths,
 ];
 
-/** The bundle-relative folder of this module's sources; asset paths start with it. */
-const HOST_PREFIX = 'src/host/';
-
-/** The texts `useAssetTexts` installed; undefined while the files beside the module are the source. */
+/** The texts `useAssetTexts` installed; undefined until the host part installs them. */
 let installed: ReadonlyMap<string, string> | undefined;
-
-/** The files read from disk so far, by path (read once each). */
-const fromDisk = new Map<string, string>();
 
 /**
  * Makes `texts` (path → UTF-8 text) the source of every later `assetText`, for the whole process; a later call
@@ -58,28 +50,17 @@ export const useAssetTexts = (texts: ReadonlyMap<string, string>): void => {
 };
 
 /**
- * The text of asset `path` (one of `defaultAssetPaths`): from the installed texts when `useAssetTexts` was called,
- * else read from disk beside this module: the part of `path` after `src/host/` resolved against this module's
- * directory (`dist/host` in a built or staged bundle, which has no `src`). Throws an `Error` naming `path` when the
- * installed texts lack it, or the file's read error (`ENOENT`) when nothing was installed and the file is missing.
- * Never reads at import.
+ * The text of asset `path` (one of `defaultAssetPaths`), from the texts `useAssetTexts` installed. Throws an `Error`
+ * naming `path` when nothing was installed or the installed texts lack it. Reads no file.
  */
 export const assetText = (path: string): string => {
-  if (installed !== undefined) {
-    const text = installed.get(path);
-    if (text === undefined)
-      throw new Error(`Asset "${path}" is not among the installed texts.`);
-    return text;
-  }
-  let text = fromDisk.get(path);
-  if (text === undefined) {
-    // The assets are copied beside this module, so a staged bundle with only its build output still reads them.
-    const relative = path.startsWith(HOST_PREFIX)
-      ? path.slice(HOST_PREFIX.length)
-      : path;
-    text = readFileSync(new URL(relative, import.meta.url), 'utf8');
-    fromDisk.set(path, text);
-  }
+  const text = installed?.get(path);
+  if (text === undefined)
+    throw new Error(
+      installed === undefined
+        ? `Asset "${path}" was read before any texts were installed.`
+        : `Asset "${path}" is not among the installed texts.`,
+    );
   return text;
 };
 

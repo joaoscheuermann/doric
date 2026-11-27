@@ -1,7 +1,6 @@
 // `runtime`'s host part as a process (spec `docs/designs/grpc-processes.md`,
 // "Files, phase 3"; slices S46–S48): every runtime service through the
-// router. Built into `dist/host/main.mjs`; the running host keeps the kernel
-// entry (`./index.ts`) until the switch, slice S62.
+// router. Built into `dist/host/main.mjs`.
 
 import { HookHandlerService } from 'bundle/contracts/gen/doric/hooks/v1/hooks_pb.js';
 import { createHookHandlers, runBundle } from 'bundle/host';

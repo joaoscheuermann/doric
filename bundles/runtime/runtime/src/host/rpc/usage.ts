@@ -7,7 +7,7 @@ import {
   type UsageService,
 } from '../../contracts/gen/doric/runtime/usage/v1/usage_pb.js';
 import { runtimeUsageMethods as methods } from '../../contracts/usage.js';
-import type { RuntimeCore } from '../index.js';
+import type { RuntimeCore } from '../core.js';
 import { encode } from './codec.js';
 import { detached, parseInput, routed } from './errors.js';
 
@@ -21,7 +21,11 @@ export const routedUsageService = (
   read: ({ threadId }) =>
     routed(async () => {
       const { service } = core();
-      const id = parseInput('runtime.usage/v1 read', methods.read.input, threadId);
+      const id = parseInput(
+        'runtime.usage/v1 read',
+        methods.read.input,
+        threadId,
+      );
       return encode(ReadResponseSchema, {
         threadUsage: await detached(() => service.threads.storedUsage(id)),
       });

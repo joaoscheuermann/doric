@@ -15,7 +15,7 @@ import type {
 } from '../../contracts/gen/doric/runtime/lease/v1/lease_pb.js';
 import { type LeaseOutcome, leaseScopeMessage } from '../../contracts/lease.js';
 import { readRuntimeScope } from '../../contracts/scope.js';
-import type { RuntimeCore } from '../index.js';
+import type { RuntimeCore } from '../core.js';
 import { callerInstanceOf, type ThreadSessions } from '../sessions.js';
 import { routed, routedError } from './errors.js';
 import {

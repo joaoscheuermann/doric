@@ -21,9 +21,10 @@ registers it through `tools/v1`, a skill source to the bundle that provides
   and [docs/features/default-agent.md](../../../docs/features/default-agent.md)
   for the decisions it keeps.
 - Put a feature in the file of its concern under `src/host/`: activation and
-  every `services.provide` in `activate` of
-  [`index.ts`](src/host/index.ts), and a new `executor/v1` method in its
-  `createExecutor`; the run in [`executor.ts`](src/host/executor.ts); the
+  every served service in `createDefaultHost` of
+  [`service.ts`](src/host/service.ts), served by
+  [`main.ts`](src/host/main.ts), and a new `executor/v1` method in its
+  `executor` implementation; the run in [`executor.ts`](src/host/executor.ts); the
   history in [`history.ts`](src/host/history.ts); the input envelopes and
   `bundleInstruction` in [`envelope.ts`](src/host/envelope.ts); the images of
   attachments in [`attachments.ts`](src/host/attachments.ts); the coalescing
@@ -96,7 +97,7 @@ registers it through `tools/v1`, a skill source to the bundle that provides
   timeout, and the runtime passes no signal to the sandbox for it: use it only
   for one file at a known path, under the run's `call`, which carries its
   Project scope ([`lease.ts`](../runtime/src/contracts/lease.ts),
-  [`services/lease.ts`](../runtime/src/host/services/lease.ts)). Take the
+  [`rpc/lease.ts`](../runtime/src/host/rpc/lease.ts)). Take the
   run's starting working directory from `thread.cwd`, and read a later one
   only through `currentCwd` of [`sources.ts`](src/host/skills/sources.ts),
   which asks `runtime.workspace/v1`. Never let a sandbox, a workspace or a

@@ -1,7 +1,6 @@
 // `default`'s host part as a process (phase 3, slice S51): `executor/v1` and
 // `default.agents/v1` through the router; defines `default.hooks/v1`. Built
-// into `dist/host/main.mjs`; the running host keeps the kernel entry
-// (`./index.ts`) until S62.
+// into `dist/host/main.mjs`.
 
 import { runBundle } from 'bundle/host';
 import { ExecutorService } from 'runtime/contracts/gen/doric/executor/v1/executor_pb.js';

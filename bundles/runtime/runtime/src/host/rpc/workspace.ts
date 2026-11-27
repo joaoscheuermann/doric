@@ -16,7 +16,7 @@ import {
   type WorkspaceService,
 } from '../../contracts/gen/doric/runtime/workspace/v1/workspace_pb.js';
 import { runtimeWorkspaceMethods as methods } from '../../contracts/workspace.js';
-import type { RuntimeCore } from '../index.js';
+import type { RuntimeCore } from '../core.js';
 import {
   callerInstanceOf,
   type OpenedSession,

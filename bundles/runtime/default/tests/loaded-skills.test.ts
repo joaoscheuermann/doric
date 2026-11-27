@@ -13,6 +13,7 @@ import {
   loadedSkillsMaxChars,
   loadedSkillsReplacement,
 } from '../src/host/skills/loaded.js';
+import { installBundleAssets } from './support/assets.js';
 import {
   defaultInstruction,
   loadCall,
@@ -27,6 +28,10 @@ import {
   loadedSkillsOmittedPrompt,
   loadedSkillsPrompt,
 } from './support/prompts.js';
+
+// The host part installs its texts at `activate`; these cases read templates
+// without one, so the file installs them once (S68d: no disk fallback).
+installBundleAssets();
 
 /*
  * The skills a conversation loaded, read back from its history, and the one

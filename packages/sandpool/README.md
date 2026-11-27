@@ -23,7 +23,7 @@ Part of [Doric](../../README.md). The feature it serves is described in
 - The [`runtime`](../../bundles/runtime/runtime/README.md) bundle uses the
   `SandboxLease` type in its sandbox contract, its ports and its domain
   ([bundles/runtime/runtime/src/contracts/sandbox.ts](../../bundles/runtime/runtime/src/contracts/sandbox.ts),
-  [bundles/runtime/runtime/src/host/ports.ts](../../bundles/runtime/runtime/src/host/ports.ts),
+  [bundles/runtime/runtime/src/host/routed.ts](../../bundles/runtime/runtime/src/host/routed.ts),
   [bundles/runtime/runtime/src/host/domain/runtime.ts](../../bundles/runtime/runtime/src/host/domain/runtime.ts)).
 - The tests of [`docker-sandbox`](../docker-sandbox/README.md) and
   [`firecracker-sandbox`](../firecracker-sandbox/README.md) build pools over

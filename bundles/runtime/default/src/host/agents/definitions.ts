@@ -1,11 +1,6 @@
 import { basename, posix } from 'node:path';
 
-import {
-  type Call,
-  ContractError,
-  defineMethod,
-  defineService,
-} from 'bundle/contracts';
+import { type Call, ContractError } from 'bundle/contracts';
 import {
   reasoningEfforts,
   spawnInstructionsMaxLength,
@@ -16,10 +11,8 @@ import {
   type AgentDefinition,
   type AgentSummary,
   agentNamePattern,
-  DefaultAgentsV1,
-  defaultAgentsMethods,
 } from '../../contracts/index.js';
-import { type AgentPorts, kernelPorts } from '../ports.js';
+import type { AgentPorts } from '../ports.js';
 import { checkTemplate } from '../prompts/templates.js';
 import { promptVariableNames } from '../prompts/variables.js';
 import { currentCwd, frontmatterField, skillBody } from '../skills/sources.js';
@@ -322,21 +315,4 @@ export const agentsMethods = (builtIn: readonly AgentDefinition[]) => {
       );
     },
   };
-};
-
-/** The `default.agents/v1` service over the loaded built-ins (the kernel entry): {@link agentsMethods} over `kernelPorts`. No method is exposed. */
-export const agentsService = (builtIn: readonly AgentDefinition[]) => {
-  const methods = agentsMethods(builtIn);
-  return defineService(DefaultAgentsV1, {
-    list: defineMethod({
-      ...defaultAgentsMethods.list,
-      execute: (_input, call, services) =>
-        methods.list(call, kernelPorts(services)),
-    }),
-    resolve: defineMethod({
-      ...defaultAgentsMethods.resolve,
-      execute: ({ name }, call, services) =>
-        methods.resolve(name, call, kernelPorts(services)),
-    }),
-  });
 };

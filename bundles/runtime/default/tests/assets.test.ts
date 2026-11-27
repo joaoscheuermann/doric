@@ -18,9 +18,10 @@ import { harnessVariables } from './support/harness.js';
 /*
  * The texts the host part reads (templates and built-in agents) come from one
  * process-wide source, read on first use: the texts installed with
- * `useAssetTexts` (the host part, from `host.assets`), else the file beside the
- * module. The tests below that fall back to disk run first; later ones install
- * texts and put the full set back when they end.
+ * `useAssetTexts` (the host part, from `host.assets`). Since S68d there is no
+ * disk fallback: before any install, every read throws. The tests below that
+ * read with nothing installed run first; later ones install texts and put the
+ * full set back when they end.
  */
 
 /**
@@ -86,7 +87,44 @@ void test('C3 every asset path matches one of the host.assets globs src/host/pro
   }
 });
 
+/** An `Error` naming `path` that is no file read's failure (no `code`, such as `ENOENT`). */
+const notInstalled =
+  (path: string) =>
+  (error: unknown): boolean =>
+    error instanceof Error &&
+    error.message.includes(path) &&
+    (error as { code?: unknown }).code === undefined;
+
+void test('assetText of a path no useAssetTexts installed throws an Error naming the path, and reads no file', () => {
+  assert.throws(
+    () => assetText('src/host/prompts/system.md'),
+    notInstalled('src/host/prompts/system.md'),
+  );
+  assert.throws(
+    () => assetText('src/host/agents/triage.md'),
+    notInstalled('src/host/agents/triage.md'),
+  );
+});
+
+void test('builtInAgentFiles() with no texts installed throws an Error naming the first agent file, and reads no file', () => {
+  assert.throws(
+    () => builtInAgentFiles(),
+    notInstalled('src/host/agents/triage.md'),
+  );
+});
+
+void test('a lazyTemplate with no texts installed throws at its call an Error naming its path', () => {
+  const template = lazyTemplate('src/host/prompts/agent.md', [
+    'name',
+    'instructions',
+  ]);
+
+  assert.throws(template, notInstalled('src/host/prompts/agent.md'));
+});
+
 void test('C7 builtInAgentFiles() answers the ten shipped agent files in workflow order, each with its text', () => {
+  useAssetTexts(diskTexts());
+
   const files = builtInAgentFiles();
 
   assert.deepEqual(
@@ -99,27 +137,18 @@ void test('C7 builtInAgentFiles() answers the ten shipped agent files in workflo
   );
 });
 
-void test('assetText reads an asset from the file beside the module when no texts are installed', () => {
-  assert.equal(
-    assetText('src/host/prompts/system.md'),
-    onDisk('src/host/prompts/system.md'),
-  );
-  assert.equal(
-    assetText('src/host/agents/triage.md'),
-    onDisk('src/host/agents/triage.md'),
-  );
-});
-
-void test('lazyTemplate reads nothing when made, then answers the checked template on its first call', () => {
+void test('lazyTemplate reads nothing when made, then answers the checked installed template on its first call', () => {
   const path = 'src/host/prompts/agent.md';
   const names = ['name', 'instructions'];
 
   const template = lazyTemplate(path, names);
+  useAssetTexts(diskTexts());
 
   assert.equal(template(), checkTemplate(onDisk(path), names, path));
 });
 
-void test('lazyTemplate of a missing file throws at the call, never when made', () => {
+void test('lazyTemplate of a path the installed texts lack throws at the call, never when made', () => {
+  useAssetTexts(diskTexts());
   const template = lazyTemplate('src/host/prompts/missing.md', []);
 
   assert.throws(template, /missing\.md/u);

@@ -556,7 +556,7 @@ Runtime:
   run has settled, or whose scope names another Project or Thread, fails with
   `Thread control is no longer active.`
   ([`domain/bindings.ts`](../../../bundles/runtime/runtime/src/host/domain/bindings.ts),
-  [`services/workspace.ts`](../../../bundles/runtime/runtime/src/host/services/workspace.ts)).
+  [`rpc/workspace.ts`](../../../bundles/runtime/runtime/src/host/rpc/workspace.ts)).
 - [`default`](../../../bundles/runtime/default/README.md) provides
   `executor/v1`, the default agent: system prompt, skills, tools, model
   resolution and provider history.
@@ -2112,7 +2112,7 @@ A bundle that appends to a Thread's log through `events/v1` writes under a
 versioned type `<bundle>.<name>/v<N>`, such as `comments.added/v1`, with its
 payload alone as `event`; the runtime publishes it as `agent:event` as soon as
 it is committed
-([`runtime/src/host/index.ts`](../../../bundles/runtime/runtime/src/host/index.ts),
+([`runtime/src/host/service.ts`](../../../bundles/runtime/runtime/src/host/service.ts),
 [`runtime/src/host/appends.ts`](../../../bundles/runtime/runtime/src/host/appends.ts),
 [`comments/src/host/comments.ts`](../../../bundles/features/comments/src/host/comments.ts)).
 

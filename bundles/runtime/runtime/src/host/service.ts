@@ -16,11 +16,11 @@ import type { UsageService } from '../contracts/gen/doric/runtime/usage/v1/usage
 import type { RuntimeService } from '../contracts/gen/doric/runtime/v2/runtime_pb.js';
 import type { WorkspaceService } from '../contracts/gen/doric/runtime/workspace/v1/workspace_pb.js';
 import { onEventAppended } from './appends.js';
+import { createRuntimeCore, type RuntimeCore, runtimeStores } from './core.js';
 import type { ArchiveSchedule } from './domain/archiver.js';
 import type { Bindings } from './domain/bindings.js';
 import { createNotices } from './domain/notices.js';
 import { createExecutorSessions } from './executor-sessions.js';
-import { createRuntimeCore, type RuntimeCore, runtimeStores } from './index.js';
 import {
   routedPorts,
   routedRegistrations,
@@ -57,7 +57,7 @@ export interface RuntimeImplementations {
 }
 
 export interface RuntimeServicesOptions {
-  /** Test hooks, as `provideRuntime` takes them. */
+  /** Test hooks, as `createRuntimeCore` takes them. */
   readonly bindings?: Bindings;
   readonly archiveSchedule?: ArchiveSchedule;
   /** Tests only: `routedExecutor`'s `cancelGraceMs`. */

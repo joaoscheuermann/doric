@@ -21,8 +21,8 @@ import { buildBundle } from 'bundle';
 // `ExecutorService` (from runtime's generated code) and `default.agents/v1`'s
 // `AgentsService` as the static `[Service, implementation]` literals the build
 // reads (S29). No module reads an asset at import (D8), so the process reaches
-// `runBundle` without `host.assets`, which stays for S62. The kernel entry and
-// the manifest stay as they were until S62.
+// `runBundle` without `host.assets`, which stays for S62. The manifest stays as
+// it was; the kernel entry `dist/host/index.js` is gone since S68d.
 //
 // `buildBundle` rewrites `dist/`, which other test files read while they
 // run, so this file builds a copy of the bundle inside the package, where
@@ -118,7 +118,7 @@ const runWithoutSpawnEnvironment = (
     );
   });
 
-void test('D31a the build bundles default’s host part into a main.mjs that reaches runBundle, and keeps the kernel entry and the manifest', async (t) => {
+void test('D31a the build bundles default’s host part into a main.mjs that reaches runBundle, and the manifest', async (t) => {
   const copy = await copyBundle();
 
   t.after(() => rm(copy, { recursive: true, force: true }));
@@ -128,9 +128,10 @@ void test('D31a the build bundles default’s host part into a main.mjs that rea
   const main = join(copy, 'dist', 'host', 'main.mjs');
 
   assert.ok((await stat(main)).size > 0, 'dist/host/main.mjs is empty');
-  assert.ok(
-    (await stat(join(copy, 'dist', 'host', 'index.js'))).size > 0,
-    'the kernel entry dist/host/index.js is gone',
+  await assert.rejects(
+    stat(join(copy, 'dist', 'host', 'index.js')),
+    { code: 'ENOENT' },
+    'the kernel entry dist/host/index.js still exists',
   );
   assert.ok(
     (await readFile(join(copy, 'dist', 'manifest.json'))).equals(

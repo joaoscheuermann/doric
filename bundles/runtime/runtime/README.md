@@ -65,12 +65,12 @@ Not every `provides` entry is a callable contract. `runtime.project/v1`,
 `runtime.prompt-finished/v1` is an event it registers on `events/v1`
 ([`runtime.prompt-finished/v1`](#runtimeprompt-finishedv1)). `runtime.hooks/v1`
 is a hook set it defines through `hooks/v1` (`define`) and fires
-([`runtime.hooks/v1`](#runtimehooksv1), [`ports.ts`](src/host/ports.ts)).
+([`runtime.hooks/v1`](#runtimehooksv1), [`routed.ts`](src/host/routed.ts)).
 
 `desktopScope` names the scope keys a window may send for each contract
 ([contexts](../../../docs/architecture/bundles/contexts.md)). No method of
 `runtime.lease/v1` is exposed to the desktop, so its `desktopScope` entry is
-never used ([`services/lease.ts`](src/host/services/lease.ts)).
+never used ([`rpc/lease.ts`](src/host/rpc/lease.ts)).
 
 The package is `runtime` ([`package.json`](package.json)). It exports
 `runtime/contracts` ([`src/contracts/index.ts`](src/contracts/index.ts)) and
@@ -98,29 +98,34 @@ configuration value types are re-exported from `host-config/contracts`,
 
 ## Parts and entry points
 
-| Part      | Entry                                              | What it does                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| --------- | -------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Host      | [`src/host/index.ts`](src/host/index.ts)           | Defines the storage types, registers the `runtime.prompt-finished/v1` event and the Thread event sink, builds the stores and the service, provides `runtime/v2`, `runtime.threads/v1`, `runtime.workspace/v1`, `runtime.usage/v1`, `runtime.lease/v1` and `runtime.attachments/v1`, defines `runtime.hooks/v1` through `hooks/v1` (`define`), observes `core.event-hooks/v1` through `hooks/v1` (`whenAvailable`) to fold the events other bundles append, and installs the start, stop and generation-handover hooks. Activation reads and writes no data. |
-| Client    | [`src/client/index.ts`](src/client/index.ts)       | Provides `runtime.records/v1` in each desktop window over `runtime/v2`, `runtime.threads/v1` and `doric.connection/v1`. Activation calls no host method.                                                                                                                                                                                                                                                                                                                                                                                                    |
-| Contracts | [`src/contracts/index.ts`](src/contracts/index.ts) | The contract refs, their zod schemas, the record types, and the pure rules shared with other bundles.                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| Testing   | [`src/testing.ts`](src/testing.ts)                 | `createRecordsApi` and `createRecordsFake`, an in-memory `runtime.records/v1` for other bundles' tests.                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| Part      | Entry                                              | What it does                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| --------- | -------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Host      | [`src/host/main.ts`](src/host/main.ts)             | The process entry: serves `runtime/v2`, `runtime.threads/v1`, `runtime.attachments/v1`, `runtime.usage/v1`, `runtime.lease/v1`, `runtime.workspace/v1` and `executor.session/v1` over the router ([`service.ts`](src/host/service.ts)). Activation defines the storage types, registers the `runtime.prompt-finished/v1` event and the Thread event sink ([`routed.ts`](src/host/routed.ts)), builds the stores and the domain ([`core.ts`](src/host/core.ts)), defines `runtime.hooks/v1`, registers its `core.event-hooks/v1` handler to fold the events other bundles append, and installs the start, stop and generation-handover hooks. |
+| Client    | [`src/client/index.ts`](src/client/index.ts)       | Provides `runtime.records/v1` in each desktop window over `runtime/v2`, `runtime.threads/v1` and `doric.connection/v1`. Activation calls no host method.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| Contracts | [`src/contracts/index.ts`](src/contracts/index.ts) | The contract refs, their zod schemas, the record types, and the pure rules shared with other bundles.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| Testing   | [`src/testing.ts`](src/testing.ts)                 | `createRecordsApi` and `createRecordsFake`, an in-memory `runtime.records/v1` for other bundles' tests.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 
-The host part is layered: `services/` maps each contract method to the domain
-([`src/host/services/`](src/host/services/)); `domain/` holds the service, the
-runner, the archiver, the lifecycle rules and the ports
+The host part is layered: [`service.ts`](src/host/service.ts) serves each
+contract over the router, one handler file per service under
+[`src/host/rpc/`](src/host/rpc/); `domain/` holds the service, the runner, the
+archiver, the lifecycle rules and the port types
 ([`src/host/domain/`](src/host/domain/)); `store/` holds the documents and
 streams on `storage/v1` ([`src/host/store/`](src/host/store/));
-[`ports.ts`](src/host/ports.ts) is the only file that reads `services` for the
-domain. [`lifecycle.ts`](src/host/lifecycle.ts) and
-[`handover.ts`](src/host/handover.ts) install the start, stop and generation
-hooks; [`peers.ts`](src/host/peers.ts) declares the `core.event-hooks/v1` ref
-and [`appends.ts`](src/host/appends.ts) folds each appended event into its
-Thread.
+[`routed.ts`](src/host/routed.ts) (`routedPorts`, `routedRuntimeHooks`) is the
+only file that reads `context.services` for the domain;
+[`core.ts`](src/host/core.ts) wires the stores and the domain;
+[`rpc/handover.ts`](src/host/rpc/handover.ts) runs the start, stop and
+generation hooks; [`appends.ts`](src/host/appends.ts) folds each appended event
+into its Thread. The envelope services `services/{runtime,threads,workspace,lease,attachments}.ts`,
+`handover.ts`' `installHandover`, `lifecycle.ts`' `installStartStop` and
+`ports.ts`' `createPorts` have only test importers: they stay as the envelope
+provision of the domain harness (`tests/domain/support/provide-runtime.ts`)
+until phase 6 deletes the envelope.
 
 The process entry (phase 3 of
 [`docs/designs/grpc-processes.md`](../../../docs/designs/grpc-processes.md))
 is described under Process entry below.
-`createRuntimeCore` holds the domain wiring the kernel entry uses.
+`createRuntimeCore` ([`core.ts`](src/host/core.ts)) holds the domain wiring.
 `createRuntimeServices` ([`service.ts`](src/host/service.ts)) serves
 `runtime/v2`, `runtime.threads/v1`, `runtime.attachments/v1` and
 `runtime.usage/v1` over the router; every RPC answers `unavailable`
@@ -232,7 +237,8 @@ to `dist/host/main.mjs` (about 2.1 MB), for the bundle-process runtime
 (`executor.session/v1`) and `HookHandlerService` (`createHookHandlers`).
 Activate calls `runtime.activate(context, hooks)`, which registers `onGone`;
 deactivate calls `runtime.deactivate()`. This completes runtime's host part
-(S46a–S48c). The kernel entry stays until S62. Since S62c1 the manifest
+(S46a–S48c). The process entry is the only host entry: the kernel entry
+(`src/host/index.ts`) is deleted (S68d). Since S62c1 the manifest
 provides `executor.session/v1@1.0.0` and lists `executor/v1` under
 `optional`.
 
@@ -565,8 +571,8 @@ The result unions of the Thread operations are listed with
 Every host method takes an optional last argument `call` (`CallArg` of
 `bundle/contracts`). Prompt-scoped, lease and attachment methods read
 `call.scope` through `readRuntimeScope` ([`scope.ts`](src/contracts/scope.ts),
-[`services/lease.ts`](src/host/services/lease.ts),
-[`services/attachments.ts`](src/host/services/attachments.ts)); `instruct`
+[`rpc/lease.ts`](src/host/rpc/lease.ts),
+[`rpc/attachments.ts`](src/host/rpc/attachments.ts)); `instruct`
 reads `call.caller`; the others ignore `call`. A method marked _desktop_ is exposed to desktop windows
 (`expose: 'desktop'`); every other method is callable by bundles only.
 
@@ -594,7 +600,7 @@ and [Process isolation: the envelope](../../../docs/architecture/bundles/process
 
 Projects, recovery, host stop and the runtime's notices
 ([`runtime.ts`](src/contracts/runtime.ts),
-[`services/runtime.ts`](src/host/services/runtime.ts)).
+[`rpc/runtime.ts`](src/host/rpc/runtime.ts)).
 
 | Method                       | Input                                                     | Output                                              | Notes                                                                                            |
 | ---------------------------- | --------------------------------------------------------- | --------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
@@ -683,7 +689,7 @@ closing holds a lease on that VM, or when that Project's `ssh` is not `ready`
 
 The Thread model, its queue, its watches, and the controls a running prompt has
 over its direct children ([`threads.ts`](src/contracts/threads.ts),
-[`services/threads.ts`](src/host/services/threads.ts)).
+[`rpc/threads.ts`](src/host/rpc/threads.ts)).
 
 **Prompt-scoped controls** (`RuntimeThreadControls`; bundles only). Each is
 bound to the prompt that `call.scope` names (`projectId`, `threadId`,
@@ -961,7 +967,7 @@ source is `{ kind: 'bundle', bundleId, reason, retain? }`, where `bundleId` is
 the caller's own bundle id (`call.caller.bundleId`), never a value the caller
 supplies. It reaches agent Threads too. `retain: true` marks a standing
 instruction, which the executor keeps through compaction, one per bundle and
-reason ([`services/threads.ts`](src/host/services/threads.ts),
+reason ([`rpc/threads.ts`](src/host/rpc/threads.ts),
 [`service.ts`](src/host/domain/service.ts)).
 
 `viewThread` holds a view of the Thread while its stream is open; a viewed
@@ -1028,7 +1034,7 @@ lifecycle notices. The Project snapshot carries every Thread of the Project
 
 The working directory of the calling prompt's own Thread, and tasks on a live
 Thread ([`workspace.ts`](src/contracts/workspace.ts),
-[`services/workspace.ts`](src/host/services/workspace.ts)). Bundles only.
+[`rpc/workspace.ts`](src/host/rpc/workspace.ts)). Bundles only.
 
 | Method               | Input                                          | Output                                      |
 | -------------------- | ---------------------------------------------- | ------------------------------------------- |
@@ -1075,7 +1081,7 @@ call's scope: `exclusive` runs it under the Project lock, `resume` brings the
 Project back from durable state first, `refreshHint` re-reads the hint after the
 task. It answers `missing` (no record), `inactive` (no runtime, closing or
 terminal) or `pending` (no lease); the task's own rejection propagates (this
-local shape is the kernel entry's; the routed `runtime.workspace/v1` of S47b
+local shape is the envelope's, test-only until phase 6; the routed `runtime.workspace/v1` of S47b
 runs it as an `OpenThread` session and answers `thread_control_inactive` once
 the prompt ends)
 ([`service.ts`](src/host/domain/service.ts),
@@ -1085,7 +1091,7 @@ the prompt ends)
 
 Operations on the sandbox leased to the calling Project
 ([`lease.ts`](src/contracts/lease.ts),
-[`services/lease.ts`](src/host/services/lease.ts)). Bundles only.
+[`rpc/lease.ts`](src/host/rpc/lease.ts)). Bundles only.
 
 | Method              | Input                                                              | Output                                                         |
 | ------------------- | ------------------------------------------------------------------ | -------------------------------------------------------------- |
@@ -1106,8 +1112,8 @@ type LeaseOutcome<T> =
 - `describe`, `exec`, `readFile`, `readFileBytes` and `writeFile` resolve the
   sandbox from the scope: with a `promptId`, the prompt's bound sandbox; else
   the Project of `projectId`, or of `threadId`'s Thread; with neither, or with
-  a `threadId` that names no Thread, the Project with the latest activity (kernel
-  entry only; the routed `runtime.lease/v1` of S47a answers `unavailable` with
+  a `threadId` that names no Thread, the Project with the latest activity (the
+  test-only envelope only; the routed `runtime.lease/v1` of S47a answers `unavailable` with
   `leaseStatus` `missing` instead). A Project whose lease is not ready rejects
   with `ContractError('unavailable', 'Project lease is not ready (<status>).')`;
   no Project rejects with `ContractError('invalid_input', 'runtime.lease/v1 needs a Project or Thread scope.')`.
@@ -1139,7 +1145,7 @@ type LeaseOutcome<T> =
 ### `runtime.attachments/v1`
 
 Images a Thread attached ([`attachments.ts`](src/contracts/attachments.ts),
-[`services/attachments.ts`](src/host/services/attachments.ts),
+[`rpc/attachments.ts`](src/host/rpc/attachments.ts),
 [`store/attachments.ts`](src/host/store/attachments.ts)).
 
 | Method             | Input                                          | Output                           |
@@ -1174,7 +1180,7 @@ interface AttachmentContent extends Attachment {
   `call.scope.projectId` (else `ContractError('invalid_input', 'runtime.attachments/v1 needs a Project or Thread scope.')`).
   A `threadId` that names no Thread rejects with
   `ContractError('not_found', 'Thread <id> does not exist.')` and does not fall
-  back to `projectId` ([`services/attachments.ts`](src/host/services/attachments.ts)).
+  back to `projectId` ([`rpc/attachments.ts`](src/host/rpc/attachments.ts)).
   Every Thread of a Project reads its images. A malformed id, an id the Project
   holds no record of, or a missing blob answers `undefined`
   ([`store/attachments.ts`](src/host/store/attachments.ts)).
@@ -1187,7 +1193,7 @@ for an attachment the Project holds.
 ### `runtime.hooks/v1`
 
 Hooks the runtime fires ([`hooks.ts`](src/contracts/hooks.ts),
-[`ports.ts`](src/host/ports.ts)). All are `observe` hooks; a failing handler
+[`routed.ts`](src/host/routed.ts)). All are `observe` hooks; a failing handler
 never fails the runtime's work. See
 [hooks](../../../docs/architecture/bundles/hooks.md) for how hooks work.
 
@@ -1307,7 +1313,7 @@ bundles provide.
 
 ### `executor/v1`
 
-The in-process shape below is the kernel entry's; the bundle process calls
+The shape below is the domain's executor port, which `routedExecutor` implements; the bundle process calls
 `executor/v1` through the router with `executor.session/v1` (S48b, see Parts
 and entry points).
 
@@ -1551,18 +1557,18 @@ reason)` (409 `<kind>_<reason>`, "The <kind> cannot perform this
 
 ## Contracts it uses
 
-| Contract              | What the runtime uses it for                                                                                                                                                                                                                         |
-| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `storage/v1`          | Its documents, the Thread event streams and the attachment blobs; `health()` for the storage-pressure rule ([`src/host/store/`](src/host/store/), [`storage-pressure.ts`](src/host/domain/storage-pressure.ts)).                                     |
-| `events/v1`           | Registers `runtime.prompt-finished/v1` and the event sink that routes every event scoped to a Thread into that Thread's stream ([`index.ts`](src/host/index.ts)).                                                                                    |
-| `hooks/v1`            | Defines `runtime.hooks/v1`, and uses `doric.app.hooks/v1` (start, stop, generation change, peer signal) and `core.event-hooks/v1` ([`ports.ts`](src/host/ports.ts), [`lifecycle.ts`](src/host/lifecycle.ts), [`handover.ts`](src/host/handover.ts)). |
-| `core.event-hooks/v1` | `onEventAppendedHook({ stream, type })`: folds an event another bundle appended into its Thread ([`appends.ts`](src/host/appends.ts), [`peers.ts`](src/host/peers.ts)).                                                                              |
-| `log/v1`              | Every log line of the host part ([`ports.ts`](src/host/ports.ts)).                                                                                                                                                                                   |
-| `secrets/v1`          | `resolve`, `resolveByKind` and `redactions`: the Git identity and GitHub token, and the redaction list ([`ports.ts`](src/host/ports.ts)).                                                                                                            |
-| `models/v1`           | `resolve` validates an execution and reads the catalog's context window; `kind` names the secret fields of each provider kind ([`ports.ts`](src/host/ports.ts)).                                                                                     |
-| `host-config/v1`      | `current()`: the configuration in force ([`ports.ts`](src/host/ports.ts)).                                                                                                                                                                           |
-| `executor/v1`         | Runs, checkpoints, rewinds and compacts each prompt, bound to the prompt's scope ([`runner.ts`](src/host/domain/runner.ts)).                                                                                                                         |
-| `sandbox/v1`          | `acquire` and `discard` of each Project's sandbox ([`service.ts`](src/host/domain/service.ts)).                                                                                                                                                      |
+| Contract              | What the runtime uses it for                                                                                                                                                                                                                                   |
+| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `storage/v1`          | Its documents, the Thread event streams and the attachment blobs; `health()` for the storage-pressure rule ([`src/host/store/`](src/host/store/), [`storage-pressure.ts`](src/host/domain/storage-pressure.ts)).                                               |
+| `events/v1`           | Registers `runtime.prompt-finished/v1` and the event sink that routes every event scoped to a Thread into that Thread's stream ([`routed.ts`](src/host/routed.ts)).                                                                                            |
+| `hooks/v1`            | Defines `runtime.hooks/v1`, and uses `doric.app.hooks/v1` (start, stop, generation change, peer signal) and `core.event-hooks/v1` ([`routed.ts`](src/host/routed.ts), [`lifecycle.ts`](src/host/lifecycle.ts), [`rpc/handover.ts`](src/host/rpc/handover.ts)). |
+| `core.event-hooks/v1` | `onEventAppendedHook({ stream, type })`: folds an event another bundle appended into its Thread ([`appends.ts`](src/host/appends.ts), [`service.ts`](src/host/service.ts)).                                                                                    |
+| `log/v1`              | Every log line of the host part ([`routed.ts`](src/host/routed.ts)).                                                                                                                                                                                           |
+| `secrets/v1`          | `resolve`, `resolveByKind` and `redactions`: the Git identity and GitHub token, and the redaction list ([`routed.ts`](src/host/routed.ts)).                                                                                                                    |
+| `models/v1`           | `resolve` validates an execution and reads the catalog's context window; `kind` names the secret fields of each provider kind ([`routed.ts`](src/host/routed.ts)).                                                                                             |
+| `host-config/v1`      | `current()`: the configuration in force ([`routed.ts`](src/host/routed.ts)).                                                                                                                                                                                   |
+| `executor/v1`         | Runs, checkpoints, rewinds and compacts each prompt, bound to the prompt's scope ([`runner.ts`](src/host/domain/runner.ts)).                                                                                                                                   |
+| `sandbox/v1`          | `acquire` and `discard` of each Project's sandbox ([`service.ts`](src/host/domain/service.ts)).                                                                                                                                                                |
 
 Platform contracts, which need no declaration: `doric.generation/v1`
 (`describe`, `hold`, `signal`), `doric.startup/v1` (`stage`, `log`) and, in the
@@ -2093,7 +2099,7 @@ occurrence becomes `[REDACTED]`; values become cycle-safe JSON
 ### Recovery, host stop and handover
 
 ([`lifecycle.ts`](src/host/lifecycle.ts),
-[`handover.ts`](src/host/handover.ts),
+[`rpc/handover.ts`](src/host/rpc/handover.ts),
 [`service.ts`](src/host/domain/service.ts),
 [`store/threads.ts`](src/host/store/threads.ts),
 [`store/projects.ts`](src/host/store/projects.ts),
@@ -2209,7 +2215,7 @@ host is unreachable."); a write changes the records and calls the subscribers.
 ## Configuration
 
 The runtime reads the configuration in force from `host-config/v1` at each use
-([`ports.ts`](src/host/ports.ts)):
+([`routed.ts`](src/host/routed.ts)):
 
 | Key                                                                                                             | Use                                                                                         | Default                               |
 | --------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- | ------------------------------------- |
@@ -2267,7 +2273,7 @@ The runtime reads no environment variable of its own.
 - Failures that never fail the operation that caused them: hook handlers,
   credential application, sandbox discard, notice listeners, the post-run
   repository-hint re-read, view writes and archive sweeps; each is logged
-  ([`ports.ts`](src/host/ports.ts),
+  ([`routed.ts`](src/host/routed.ts),
   [`git-credentials.ts`](src/host/domain/git-credentials.ts),
   [`notices.ts`](src/host/domain/notices.ts),
   [`runner.ts`](src/host/domain/runner.ts),

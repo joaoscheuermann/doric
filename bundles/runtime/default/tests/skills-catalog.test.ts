@@ -4,7 +4,6 @@ import test from 'node:test';
 import { createTestServices } from 'bundle/testing';
 
 import { systemPromptWith } from '../src/host/executor.js';
-import { kernelPorts } from '../src/host/ports.js';
 import {
   type CatalogState,
   skillCatalog,
@@ -15,6 +14,8 @@ import {
   type RunSkills,
   readRunSkills,
 } from '../src/host/skills/sources.js';
+import { installBundleAssets } from './support/assets.js';
+import { kernelPorts } from './support/envelope-ports.js';
 import {
   harnessVariables,
   leaseService,
@@ -41,6 +42,10 @@ import {
   systemPrompt,
   workspaceSkillsPrompt,
 } from './support/prompts.js';
+
+// The host part installs its texts at `activate`; these cases read templates
+// without one, so the file installs them once (S68d: no disk fallback).
+installBundleAssets();
 
 /*
  * The `# Skills` section of the default agent's system prompt, rendered once

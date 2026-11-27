@@ -11,6 +11,7 @@ import {
   modelsMethods,
   type RegisteredSkill,
   type RegisteredTool,
+  type Services,
   SkillsV1,
   skillsMethods,
   ToolsV1,
@@ -26,6 +27,7 @@ import {
   type CwdRepo,
   type ExecutorThread,
   ExecutorV1,
+  executorMethods,
   type HistoryPatch,
   type HistoryReader,
   type InputSource,
@@ -42,13 +44,32 @@ import {
 import { z } from 'zod';
 
 import {
+  DefaultAgentsV1,
+  DefaultHooksV1,
+  defaultAgentsMethods,
   type SkillSourceEntry,
   SkillSourcesV1,
   skillSourcesMethods,
 } from '../../src/contracts/index.js';
 import type { AgentFile } from '../../src/host/agents/built-in.js';
-import { activate } from '../../src/host/index.js';
-import type { PromptVariables } from '../../src/host/prompts/variables.js';
+import {
+  agentsMethods,
+  loadBuiltInAgents,
+} from '../../src/host/agents/definitions.js';
+import { compactThread } from '../../src/host/compact.js';
+import { runPrompt as runExecutorPrompt } from '../../src/host/executor.js';
+import {
+  checkpoint,
+  historyFormat,
+  legacyHistoryFormat,
+  rewind,
+} from '../../src/host/history.js';
+import {
+  createRunVariables,
+  type PromptVariables,
+} from '../../src/host/prompts/variables.js';
+import { installBundleAssets } from './assets.js';
+import { kernelBeforeModelRequest, kernelPorts } from './envelope-ports.js';
 
 export const projectId = '018f47d2-e3b1-7b4f-8b2c-1f5a7fdf1603';
 export const threadId = '018f47d2-e3b1-7b4f-8b2c-1f5a7fdf1601';
@@ -469,7 +490,7 @@ export interface HarnessOptions {
   readonly sources?: Readonly<Record<string, FakeSkillSource>>;
   /** The bundle's clock. Default: always `harnessNow`. */
   readonly now?: () => Date;
-  /** The built-in agent files `activate` loads. Default: none (`[]`), so tests see only the agents they inject; pass `builtInAgentFiles()` for the shipped ones. */
+  /** The built-in agent files `activate` loads (`provideEnvelope`). Default: none (`[]`), so tests see only the agents they inject; pass `builtInAgentFiles()` for the shipped ones. */
   readonly builtInAgents?: readonly AgentFile[];
   /** A `runtime.workspace/v1` provider; without it the contract is unprovided. */
   readonly workspace?: FakeWorkspace;
@@ -522,12 +543,91 @@ const transformHooks = () => {
 };
 
 /**
+ * `default`'s envelope services over its own factories, as the kernel entry
+ * provided them (S68d, Q-F1): loads the built-in agents first and throws
+ * `loadBuiltInAgents`' Error, providing nothing, when one is invalid; then
+ * defines `default.hooks/v1` and provides `default.agents/v1` and
+ * `executor/v1` over {@link kernelPorts}. Every model request of a run first
+ * passes its system prompt through `onBeforeModelRequestHook`.
+ */
+const provideEnvelope = (
+  services: Services,
+  options: {
+    readonly now: () => Date;
+    readonly builtInAgents: readonly AgentFile[];
+  },
+): void => {
+  const builtIn = loadBuiltInAgents(options.builtInAgents);
+  const hooks = services.use(HooksV1).define(DefaultHooksV1);
+  const agents = agentsMethods(builtIn);
+  const runVariables = createRunVariables(options.now);
+  const beforeModelRequest = kernelBeforeModelRequest(hooks);
+
+  services.provide(
+    defineService(DefaultAgentsV1, {
+      list: defineMethod({
+        ...defaultAgentsMethods.list,
+        execute: (_input, call, used) => agents.list(call, kernelPorts(used)),
+      }),
+      resolve: defineMethod({
+        ...defaultAgentsMethods.resolve,
+        execute: ({ name }, call, used) =>
+          agents.resolve(name, call, kernelPorts(used)),
+      }),
+    }),
+  );
+  // Defined by id: the run's loose output schema does not match the typed
+  // overload's exact result type.
+  services.provide(
+    defineService(ExecutorV1.id, {
+      run: defineMethod({
+        input: executorMethods.run.input,
+        output: executorMethods.run.output,
+        execute: (input, call, used) =>
+          runExecutorPrompt(
+            input,
+            call,
+            kernelPorts(used),
+            beforeModelRequest,
+            runVariables,
+            builtIn,
+          ),
+      }),
+      checkpoint: defineMethod({
+        input: executorMethods.checkpoint.input,
+        output: executorMethods.checkpoint.output,
+        execute: (input) => checkpoint(input),
+      }),
+      rewind: defineMethod({
+        input: executorMethods.rewind.input,
+        output: executorMethods.rewind.output,
+        execute: (input) => rewind(input),
+      }),
+      formats: defineMethod({
+        input: executorMethods.formats.input,
+        output: executorMethods.formats.output,
+        execute: () => [historyFormat, legacyHistoryFormat],
+      }),
+      compact: defineMethod({
+        input: executorMethods.compact.input,
+        output: executorMethods.compact.output,
+        execute: (input, call, used) =>
+          compactThread(input, call, kernelPorts(used)),
+      }),
+    }),
+  );
+};
+
+/**
  * The `default` bundle activated over fake `host-config/v1`, `models/v1`,
  * `tools/v1` and `skills/v1` providers (and, when given, `runtime.lease/v1`,
  * `default.skill-sources/v1` and `runtime.workspace/v1`), run through `executor/v1` the way the runtime calls it:
  * scoped to the prompt, with the prompt's abort signal.
  */
 export const bundleServices = (options: HarnessOptions) => {
+  // The host part installs its texts at `activate`; the envelope world does
+  // so before anything reads a template or a built-in agent (S68d).
+  installBundleAssets();
   const configuration = options.configuration ?? testConfiguration();
   const resolved: unknown[] = [];
   /** Every `models/v1.inputModalities` request, in order. */
@@ -665,13 +765,10 @@ export const bundleServices = (options: HarnessOptions) => {
     calls,
     logs,
     activate: () =>
-      activate(
-        { services: harness.services },
-        {
-          now: options.now ?? (() => new Date(harnessNow)),
-          builtInAgents: options.builtInAgents ?? [],
-        },
-      ),
+      provideEnvelope(harness.services, {
+        now: options.now ?? (() => new Date(harnessNow)),
+        builtInAgents: options.builtInAgents ?? [],
+      }),
     executor: (scope: CallScope) => harness.services.use(ExecutorV1, scope),
   };
 };

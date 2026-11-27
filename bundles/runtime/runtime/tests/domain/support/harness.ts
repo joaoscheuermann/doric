@@ -45,11 +45,11 @@ import {
   type RuntimeWorkspace,
   RuntimeWorkspaceV1,
 } from '../../../src/contracts/workspace.js';
+import { runtimeStores } from '../../../src/host/core.js';
 import type { ArchiveSchedule } from '../../../src/host/domain/archiver.js';
 import { createBindings } from '../../../src/host/domain/bindings.js';
 import type { WorkspaceService } from '../../../src/host/domain/types.js';
 import type { ModelCatalogSource } from '../../../src/host/domain/usage-context.js';
-import { provideRuntime, runtimeStores } from '../../../src/host/index.js';
 import { createPorts } from '../../../src/host/ports.js';
 import type {
   ProjectStore,
@@ -68,6 +68,7 @@ import {
   type SandboxRecord,
   sandboxProvider,
 } from '../../support/sandbox.js';
+import { provideRuntime } from './provide-runtime.js';
 
 /*
  * The runtime host part over the real store (memory storage by default),

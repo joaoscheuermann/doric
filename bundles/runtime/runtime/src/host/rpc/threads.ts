@@ -78,7 +78,7 @@ import {
   WatchThreadResponseSchema,
 } from '../../contracts/gen/doric/runtime/threads/v1/threads_pb.js';
 import { runtimeThreadsMethods as methods } from '../../contracts/threads.js';
-import type { RuntimeCore } from '../index.js';
+import type { RuntimeCore } from '../core.js';
 import { decode, encode, runtimeOneofs } from './codec.js';
 import { detached, parseInput, routed } from './errors.js';
 import { detachedItems, type StreamSink } from './streams.js';

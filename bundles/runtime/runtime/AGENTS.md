@@ -50,19 +50,26 @@ contracts and hooks.
   ([`src/contracts/workspace.ts`](src/contracts/workspace.ts)) for a Thread's
   working directory.
 - Declare each contract method in its file of `src/contracts/` with its input
-  and output schemas in that file's `*Methods` object, and provide it in the
-  file of [`src/host/services/`](src/host/services/) named for the contract
+  and output schemas in that file's `*Methods` object, and serve it in the
+  handler file of [`src/host/rpc/`](src/host/rpc/) named for the contract
   (`runtime.ts` for `runtime/v2`; `threads.ts`, `workspace.ts`, `lease.ts`,
-  `usage.ts` and `attachments.ts` for `runtime.<name>/v1`) by spreading that
-  entry into `defineMethod`. Pass a new service to `services.provide(...)` in
-  `provideRuntime` of [`src/host/index.ts`](src/host/index.ts).
+  `usage.ts`, `attachments.ts` and `session.ts` for the others), over the
+  domain of [`src/host/core.ts`](src/host/core.ts). Serve a new service in
+  [`src/host/main.ts`](src/host/main.ts) over its implementation in
+  [`src/host/service.ts`](src/host/service.ts). The envelope services of
+  `src/host/services/` (`runtime`, `threads`, `workspace`, `lease`,
+  `attachments`), `handover.ts`' `installHandover`, `lifecycle.ts`'
+  `installStartStop` and `ports.ts`' `createPorts` have only test importers:
+  they are the envelope provision of the domain harness
+  (`tests/domain/support/provide-runtime.ts`) until phase 6 deletes the
+  envelope; add no production behavior there.
 - Add `expose: 'desktop'` only to a method a window calls. When a window calls
   a new contract with a Project, Thread or prompt in scope, add its id with
   those keys (`projectId`, `threadId`, `promptId`) to `desktopScope` of
   [`manifest.json`](manifest.json): the platform refuses every scope key a
   contract has no `desktopScope` entry for
   ([`manifest.ts`](../../../packages/bundle/src/runtime/manifest.ts)).
-- Provide no other contract this bundle declares in `src/host/services/`:
+- Provide no other contract this bundle declares in `src/host/rpc/`:
   - `runtime.records/v1` is provided by the client part, through
     `runtimeRecordsService` of
     [`src/contracts/records.ts`](src/contracts/records.ts) over
@@ -72,8 +79,9 @@ contracts and hooks.
     [`src/contracts/executor.ts`](src/contracts/executor.ts) and
     [`src/contracts/sandbox.ts`](src/contracts/sandbox.ts) and provided by
     other bundles (the executor bundle and the sandbox bundles): change their
-    schemas there, never provide them in `src/host/services/`, call them only
-    through [`src/host/ports.ts`](src/host/ports.ts), and when you add a
+    schemas there, never provide them in `src/host/rpc/`, call them only
+    through [`src/host/routed-executor.ts`](src/host/routed-executor.ts) and
+    [`src/host/routed-sandbox.ts`](src/host/routed-sandbox.ts), and when you add a
     member, raise the minor of each provider's `provides` entry and raise this
     bundle's `requires` range to that minor.
 - Answer every expected outcome of a host method as a value of its result
@@ -84,20 +92,18 @@ contracts and hooks.
   [`src/host/domain/bindings.ts`](src/host/domain/bindings.ts), so that it acts
   only for the prompt its scope names and only while that prompt runs; never
   widen the scope from a value the model or the caller supplies.
-- Keep `src/host/services/` a mapping of contract methods to the domain, with
-  two files that hold more: put the logic of a remote watch stream (subscribe,
-  buffer, deduplicate, replay) in
-  [`src/host/services/watches.ts`](src/host/services/watches.ts), and the
-  resolution of the Project a lease call's scope names in
-  [`src/host/services/lease.ts`](src/host/services/lease.ts). Keep other
+- Keep `src/host/rpc/` a mapping of RPCs to the domain: put the logic of a
+  watch stream (subscribe, buffer, deduplicate, replay) in
+  [`src/host/services/watches.ts`](src/host/services/watches.ts), which
+  `core.ts` builds, and the resolution of the Project a lease call's scope
+  names in [`src/host/rpc/lease.ts`](src/host/rpc/lease.ts). Keep other
   behavior in `src/host/domain/`, keep every read and write of `storage/v1` in
-  `src/host/store/`, and read `services` for the domain only in
-  [`src/host/ports.ts`](src/host/ports.ts).
-- Observe a hook set of another bundle by rebuilding it in
-  [`src/host/peers.ts`](src/host/peers.ts) from its id with the shape this
-  bundle reads, as `CoreEventHooksV1` rebuilds `core.event-hooks/v1`, and
-  register its handler in `activate` of `src/host/index.ts`; take no package
-  dependency on that bundle.
+  `src/host/store/`, and read `context.services` for the domain only in
+  [`src/host/routed.ts`](src/host/routed.ts).
+- Observe a hook of another bundle by registering its handler with
+  `hooks.register` in `activate` of [`src/host/service.ts`](src/host/service.ts),
+  as the `onEventAppendedHook` handler is registered over the generated input
+  schema of `core.event-hooks/v1`.
 - Take the Project lock (`exclusive(projectId, …)`, defined in
   `createWorkspaceService` of
   [`src/host/domain/service.ts`](src/host/domain/service.ts) and passed to the
@@ -141,7 +147,7 @@ contracts and hooks.
   sandbox discard or a notice listener, as
   [`git-credentials.ts`](src/host/domain/git-credentials.ts),
   `service.ts` and [`notices.ts`](src/host/domain/notices.ts) do; fire a hook
-  of `runtime.hooks/v1` through `src/host/ports.ts`, which catches its
+  of `runtime.hooks/v1` through `routedRuntimeHooks` of `src/host/routed.ts`, which catches its
   rejection without a log. The only exception: in `setCwd`, a sandbox command
   that throws (the hint probe included) rejects the move, while a probe that
   does not finish stores no hint.
@@ -162,7 +168,7 @@ contracts and hooks.
 - Change `createRecordsApi` of [`src/testing.ts`](src/testing.ts) in the same
   change as any change to `runtime.records/v1`.
 - Put a new host feature's contract in `src/contracts/`, its methods in
-  `src/host/services/`, its Project and Thread guards in
+  `src/host/rpc/`, its Project and Thread guards in
   `src/host/domain/service.ts`, its queue and run behavior in
   `src/host/domain/runner.ts` or a new file of `src/host/domain/`, and its
   storage in `src/host/store/`. Wire a new storage type and a new store:
@@ -170,7 +176,7 @@ contracts and hooks.
     [`src/host/store/index.ts`](src/host/store/index.ts), which `activate`
     defines on `storage/v1`;
   - build the store in `createRuntimeStores` of that file and add it to
-    `RuntimeStores`, which `runtimeStores` of `src/host/index.ts` builds.
+    `RuntimeStores`, which `runtimeStores` of `src/host/core.ts` builds.
 - Let another bundle react to the runtime only through a hook of
   `runtime.hooks/v1` in [`src/contracts/hooks.ts`](src/contracts/hooks.ts) or a
   notice, and let it work on a Project's sandbox or a Thread's directory only
@@ -183,7 +189,8 @@ contracts and hooks.
   `tests/store/` over `tests/store/support.ts`, contract schemas and service
   mapping in `tests/contracts/`, host hooks in `tests/host/`, the records
   mirror in `tests/client/` over `tests/client/support/hosts.ts`, and tests of
-  the whole bundle at the top of `tests/`: activation (`activation.test.ts`),
+  the whole bundle at the top of `tests/`: the built descriptor
+  (`descriptor.test.ts`),
   call scope (`scope.test.ts`), the exported contracts
   (`runtime-contracts.test.ts`), the tool-host types against the contracts
   (`host-parity.test.ts`), Project activity (`activity.test.ts`), the adapter

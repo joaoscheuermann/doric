@@ -3,12 +3,12 @@ import test from 'node:test';
 
 import { createTestServices } from 'bundle/testing';
 
-import { kernelPorts } from '../src/host/ports.js';
 import {
   frontmatterSummary,
   readRunSkills,
   skillBody,
 } from '../src/host/skills/sources.js';
+import { kernelPorts } from './support/envelope-ports.js';
 import {
   type FakeLease,
   type FakeSkillSource,

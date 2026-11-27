@@ -7,7 +7,12 @@ import { fileURLToPath } from 'node:url';
 import { parseSkillDocument } from 'bundle';
 
 import { systemPromptWith } from '../src/host/executor.js';
+import { installBundleAssets } from './support/assets.js';
 import { harnessVariables, sandboxSection } from './support/harness.js';
+
+// The host part installs its texts at `activate`; these cases read templates
+// without one, so the file installs them once (S68d: no disk fallback).
+installBundleAssets();
 
 // Ported from agents/doric/tests/direct-prompts.test.ts.
 

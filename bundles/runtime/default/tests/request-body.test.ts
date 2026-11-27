@@ -18,6 +18,7 @@ import { z } from 'zod';
 import { systemPromptWith } from '../src/host/executor.js';
 import type { PromptVariables } from '../src/host/prompts/variables.js';
 import { skillCatalog } from '../src/host/skills/catalog.js';
+import { installBundleAssets } from './support/assets.js';
 import {
   bundleServices,
   fakeThreadState,
@@ -27,6 +28,10 @@ import {
   testConfiguration,
 } from './support/harness.js';
 import { environmentPrompt, systemPrompt } from './support/prompts.js';
+
+// The host part installs its texts at `activate`; these cases read templates
+// without one, so the file installs them once (S68d: no disk fallback).
+installBundleAssets();
 
 // The exact model request bodies of the stage-1 host for a fresh Thread:
 // `system-prompt.md` and `tools.json` are the stage-1 parity fixtures, and the

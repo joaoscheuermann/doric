@@ -49,10 +49,11 @@ The flow crosses the `files` bundle ([README](../../bundles/features/files/READM
 ### `PATCH /threads/:id`
 
 - `PATCH /threads/:id` ([bundles/foundation/transport/src/host/routes/threads.ts](../../bundles/foundation/transport/src/host/routes/threads.ts)) accepts `cwd` beside `name`, `providerId`, `model` and `effort`. A `cwd` that is blank, longer than 4096 characters or holds a NUL character answers `422 invalid_thread`; the route does not trim it.
-- A `name` in the same request is applied first and is kept when the move is then refused or rejects. The move goes through `runtime.threads/v1.setThreadCwd` ([bundles/runtime/runtime/src/host/services/threads.ts](../../bundles/runtime/runtime/src/host/services/threads.ts)), the same resolving rule the `cwd` tool reaches.
+- A `name` in the same request is applied first and is kept when the move is then refused or rejects. The move goes through `runtime.threads/v1.setThreadCwd` ([bundles/runtime/runtime/src/host/rpc/threads.ts](../../bundles/runtime/runtime/src/host/rpc/threads.ts)), the same resolving rule the `cwd` tool reaches.
 - A refused move answers `400 invalid_cwd` with `The working directory must stay inside the workspace.`, `No such directory.` or `The working directory must be a directory.`; a missing Thread answers `404 thread_not_found`; a Thread that cannot move now answers `409 thread_inactive` ([bundles/foundation/transport/src/host/routes/input.ts](../../bundles/foundation/transport/src/host/routes/input.ts)). A move that rejects, a probe timeout included, answers `500 internal_error` ([bundles/foundation/transport/src/host/errors.ts](../../bundles/foundation/transport/src/host/errors.ts)).
 - The execution fields are described in [per-thread model](per-thread-model.md).
 
 ## Evolution
 
 - 2026-11-27: slice S68b of [the spec](../designs/grpc-processes.md) (version 6.49) deletes `git`'s `src/host/service.ts`; `git.commands/v1.status` is in `src/host/commands.ts`. The link above points to the current file.
+- 2026-11-27: slice S68d of [the spec](../designs/grpc-processes.md) (version 6.51) deletes the kernel entry of `runtime`. Its envelope services (`src/host/services/{runtime,threads,workspace,lease,attachments}.ts`, `handover.ts`, `ports.ts`' `createPorts`) have only test importers until phase 6, so the links above point to the live process path (`src/host/rpc/*.ts`, `routed.ts`).

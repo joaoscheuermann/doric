@@ -11,7 +11,7 @@ import { harness } from './router/support.js';
 // `src/host/main.ts` lists every runtime service as the static
 // `[Service, implementation]` literals the build reads (S29, A61, A63), and
 // `buildHostPart` bundles it into one `dist/host/main.mjs`. The kernel entry
-// stays the running host's until the switch, S62. Tests 28–30 of S48.
+// `dist/host/index.js` is gone since S68d. Tests 28–30 of S48.
 //
 // The full `buildBundle` cannot run on a copy of runtime (§8, G2), and it
 // rewrites the `dist/` other test files read while they run, so this file
@@ -139,6 +139,12 @@ void test('28: buildHostPart bundles runtime’s host part into a non-empty main
   const main = join(copy, 'dist', 'host', 'main.mjs');
 
   assert.ok((await stat(main)).size > 0, 'dist/host/main.mjs is empty');
+  // The copy's dist/ is the bundle's tsc output (X2: built from a clean dist).
+  await assert.rejects(
+    stat(join(copy, 'dist', 'host', 'index.js')),
+    { code: 'ENOENT' },
+    'the kernel entry dist/host/index.js still exists',
+  );
 
   const { code, stderr } = await runWithoutSpawnEnvironment(main);
 

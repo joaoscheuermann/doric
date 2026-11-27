@@ -137,11 +137,11 @@ option in
   has no lease yet. A call for a Project in standby waits until this process
   adopts it
   ([`src/host/rpc/resources.ts`](src/host/rpc/resources.ts),
-  [`lease.ts`](../../runtime/runtime/src/host/services/lease.ts),
+  [`rpc/lease.ts`](../../runtime/runtime/src/host/rpc/lease.ts),
   [`service.ts`](../../runtime/runtime/src/host/domain/service.ts)).
 - A call whose scope has no `projectId` rejects with `invalid_input` and the
   message "runtime.lease/v1 needs a Project or Thread scope."
-  ([`lease.ts`](../../runtime/runtime/src/host/services/lease.ts)).
+  ([`rpc/lease.ts`](../../runtime/runtime/src/host/rpc/lease.ts)).
 - On a live lease it calls the sandbox's optional `stats()`. A reading answers
   `{ status: 'ready', value: { status: 'ready', at, …fields } }`, with each of
   `cpuPercent`, `cpuCount`, `memoryUsedBytes` and `memoryLimitBytes` copied
