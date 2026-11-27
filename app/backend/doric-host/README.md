@@ -399,7 +399,11 @@ src/
 From slice S62c3 `src/index.ts` creates no Express app, HTTP server or
 Socket.IO server and installs no bridge: the platform binds the public
 listener. Slice S63b deleted `src/lib/bridge/` and `src/lib/socket-buffer.ts`
-with their tests; the `socket.io` dependencies stay until group F. The
+with their tests, and slice S70 removed the dependencies nothing imports any
+more: `express`, `socket.io`, `cors`, `@grpc/grpc-js` and
+`@bufbuild/protobuf`, and the dev dependencies `socket.io-client`,
+`@types/express` and `@types/cors`; the tests import `@bufbuild/protobuf`
+from the root dev dependency. The
 platform serves `doric.catalog/v1` on the public listener, and
 `startHostPlatform` passes it `composition` (`overridesPath`, `read`,
 `resolve`), so `Disable` writes `composition.overrides.json`, a later boot

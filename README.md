@@ -553,16 +553,16 @@ Doric is an Nx and npm-workspaces monorepo in TypeScript and Rust
 ([`nx.json`](nx.json), [`package.json`](package.json), [`Cargo.toml`](Cargo.toml)). Its top-level folders
 are:
 
-| Folder             | What it holds                                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `app/backend/`     | The host, [`doric-host`](app/backend/doric-host/README.md), and its end-to-end suite `doric-host-e2e`                                                                                                                                                                                                                                                                                                                                                    |
-| `app/desktop/`     | The Electron app [`doric`](app/desktop/doric/README.md) (Nx project `doric-app`), the shell [`doric-renderer`](app/desktop/doric-renderer/README.md), `doric-platform`, which builds the shared platform packages, their import map, the theme stylesheet and the bundle JSON schemas into the app's `assets/` ([`build.mjs`](app/desktop/doric-platform/build.mjs)), and the end-to-end suite `doric-e2e` (Nx project `doric-app-e2e`)                  |
-| `bundles/<group>/` | The 33 bundles, each with a `manifest.json`, a README and an `AGENTS.md`; their map is [Bundles](#bundles)                                                                                                                                                                                                                                                                                                                                               |
-| `packages/`        | Libraries the host, the app and the bundles build on; see [Packages](#packages)                                                                                                                                                                                                                                                                                                                                                                          |
-| `tools/`           | [`tool-okf`](tools/okf/README.md), the `okf_search` agent tool                                                                                                                                                                                                                                                                                                                                                                                           |
-| `scripts/`         | Command-line scripts, among them the [fake host](scripts/fake-host/README.md)                                                                                                                                                                                                                                                                                                                                                                            |
-| `tests/`           | The repository checks run by `npm run lint:test` and `npm run test:fake-host`, and [`boundary-exceptions.json`](tests/boundary-exceptions.json), the list of standing boundary violations ([Boundaries](docs/architecture/bundles/boundaries.md)), and [`contract-inventory-allow.json`](tests/contract-inventory-allow.json), the contract members the inventory check allows to be typed `any` ([Bundle processes](docs/features/bundle-processes.md)) |
-| `benchmarks/`      | [`proto-codec`](benchmarks/proto-codec), the codec benchmark of phase 0 of the bundle process model ([Bundle processes](docs/features/bundle-processes.md))                                                                                                                                                                                                                                                                                              |
+| Folder             | What it holds                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `app/backend/`     | The host, [`doric-host`](app/backend/doric-host/README.md), and its end-to-end suite `doric-host-e2e`                                                                                                                                                                                                                                                                                                                                   |
+| `app/desktop/`     | The Electron app [`doric`](app/desktop/doric/README.md) (Nx project `doric-app`), the shell [`doric-renderer`](app/desktop/doric-renderer/README.md), `doric-platform`, which builds the shared platform packages, their import map, the theme stylesheet and the bundle JSON schemas into the app's `assets/` ([`build.mjs`](app/desktop/doric-platform/build.mjs)), and the end-to-end suite `doric-e2e` (Nx project `doric-app-e2e`) |
+| `bundles/<group>/` | The 33 bundles, each with a `manifest.json`, a README and an `AGENTS.md`; their map is [Bundles](#bundles)                                                                                                                                                                                                                                                                                                                              |
+| `packages/`        | Libraries the host, the app and the bundles build on; see [Packages](#packages)                                                                                                                                                                                                                                                                                                                                                         |
+| `tools/`           | [`tool-okf`](tools/okf/README.md), the `okf_search` agent tool                                                                                                                                                                                                                                                                                                                                                                          |
+| `scripts/`         | Command-line scripts: those of [Scripts of the root](#scripts-of-the-root) and the phase 0 spike [`sea-spike.mjs`](scripts/sea-spike.mjs)                                                                                                                                                                                                                                                                                               |
+| `tests/`           | The repository checks run by `npm run lint:test`, and [`boundary-exceptions.json`](tests/boundary-exceptions.json), the list of standing boundary violations ([Boundaries](docs/architecture/bundles/boundaries.md))                                                                                                                                                                                                                    |
+| `benchmarks/`      | [`proto-codec`](benchmarks/proto-codec), the codec benchmark of phase 0 of the bundle process model ([Bundle processes](docs/features/bundle-processes.md))                                                                                                                                                                                                                                                                             |
 
 Use `npx nx show projects` to list the projects and
 `npx nx show project <project>` to see a project's targets, including those
@@ -578,15 +578,13 @@ Each runs from the repository root as `npm run <script>`
 | ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `doric:dev`              | The desktop app in development, as in [step 3](#3-open-the-desktop-app)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 | `doric:docker:build`     | `docker compose -p doric --env-file app/backend/doric-host/.env -f app/backend/doric-host/compose.yaml --profile docker up -d --build`, the Compose host of [step 2](#2-start-the-host) under the project name `doric`                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| `doric:fake-host`        | The development [fake host](#develop-bundles-without-the-host)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | `doric:spawn-agent`      | `-- --prompt <text> [--url <url>] [--terminate]`: creates a Project and its root Thread on a running host (`DORIC_URL` or `http://127.0.0.1:3000`), sends the prompt and prints one JSON line of metadata per event (`projectId`, `threadId`, `promptId`, `sequence`, `type`), never its body, until the prompt finishes. It exits 1 when the prompt fails or is cancelled, when the Thread ends first, or when a request fails. `--terminate` terminates the Project at the end; without it the Project stays reserved ([`spawn-agent.mjs`](scripts/spawn-agent.mjs), [command-line client](app/backend/doric-host/README.md#command-line-client)) |
 | `okf`                    | `-- <model-id>`: writes the Open Knowledge Format bundle of this repository to `.agents/bundles/project`, with the OpenAI-compatible endpoint `OKF_BASE_URL` (default `http://localhost:1234/v1`) and the key `OKF_API_KEY`; without a model id it exits 1 ([`okf.mjs`](scripts/okf.mjs), [`generate.ts`](packages/okf/src/lib/generate.ts), [Knowledge bundles](docs/features/knowledge-bundles.md))                                                                                                                                                                                                                                               |
 | `claude:oauth`           | A Claude Code OAuth sign-in in the browser (`-- --no-browser` or `CLAUDE_OAUTH_NO_BROWSER=1` to paste the code). It writes the authorization value to the root `.env` under `CLAUDE_AUTHORIZATION`, or under the key `CLAUDE_OAUTH_OUTPUT_KEY` names. Before signing in, it reuses an existing Claude Code login (`CLAUDE_CODE_OAUTH_TOKEN`, or a `~/.claude` login) that has no expiry or stays valid for 30 more days ([`claude-oauth.mjs`](scripts/claude-oauth.mjs), [`claude-oauth.ts`](packages/oauth/src/lib/claude-oauth.ts), [Provider sign-in](docs/features/provider-sign-in.md))                                                        |
 | `codex:oauth`            | A Codex OAuth sign-in in the browser, written to the root `.env` under `CODEX_AUTHORIZATION`, or under the key `CODEX_OAUTH_OUTPUT_KEY` names. It has no paste mode and reuses no existing login ([`codex-oauth.mjs`](scripts/codex-oauth.mjs), [`codex-oauth.ts`](packages/oauth/src/lib/codex-oauth.ts))                                                                                                                                                                                                                                                                                                                                          |
 | `lint`, `lint:fix`       | Biome's linter over the repository, checking or fixing ([`biome.json`](biome.json))                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | `format`, `format:check` | Biome's formatter, then Prettier, writing or checking                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| `lint:test`              | The tests of the Biome configuration, of the bundle boundaries and of the contract inventory ([`lint.test.mjs`](tests/lint.test.mjs), [`boundaries.test.mjs`](tests/boundaries.test.mjs), [`contract-inventory.test.mjs`](tests/contract-inventory.test.mjs), [Boundaries](docs/architecture/bundles/boundaries.md))                                                                                                                                                                                                                                                                                                                                |
-| `test:fake-host`         | The test of the fake host's bundle staging; it imports the built `bundle` package, so run `npx nx run bundle:build` first ([`fake-host-bundles.test.mjs`](tests/fake-host-bundles.test.mjs), [fake host README](scripts/fake-host/README.md))                                                                                                                                                                                                                                                                                                                                                                                                       |
+| `lint:test`              | The tests of the Biome configuration, of the bundle boundaries and of the manifests' `provides` versions against their `.proto` headers ([`lint.test.mjs`](tests/lint.test.mjs), [`boundaries.test.mjs`](tests/boundaries.test.mjs), [`provide-versions.test.mjs`](tests/provide-versions.test.mjs), [Boundaries](docs/architecture/bundles/boundaries.md))                                                                                                                                                                                                                                                                                         |
 
 ### Build and test
 
@@ -666,7 +664,6 @@ DORIC_DATABASE_URL=postgresql://doric:doric@127.0.0.1:5432/doric npx nx run dori
 DORIC_TEST_DATABASE_URL=postgresql://doric:doric@127.0.0.1:5432/doric npx nx test doric-host
 DORIC_TEST_DATABASE_URL=postgresql://doric:doric@127.0.0.1:5432/doric npx nx run-many -t test --projects=tag:type:bundle
 npx nx run-many -t test -p bundle,desktop,doric-platform,doric-app
-npm run test:fake-host
 npx nx test agent
 npx nx run-many -t lint test format-check --projects=tag:type:rust
 npx nx run-many -t build typecheck
@@ -720,48 +717,6 @@ skipping without both `DORIC_TEST_DATABASE_URL` and `DORIC_TEST_SANDBOX=true`
 [host README](app/backend/doric-host/README.md#validation)). Rules for
 changing the code, and the checks to run before a change is complete, are in
 [`AGENTS.md`](AGENTS.md) and the `AGENTS.md` of each folder.
-
-### Develop bundles without the host
-
-`npm run doric:fake-host` starts a development stand-in for the host on
-`127.0.0.1:3000`, the address the desktop uses by default
-([`main.mjs`](scripts/fake-host/main.mjs)). It serves the staged bundles of
-`app/backend/doric-host/dist/bundles`, staging the built bundles itself into
-`tmp/fake-host/bundles` when that directory is absent, and answers from an
-in-memory workspace: no PostgreSQL, no sandbox and no model provider
-([`bundles.mjs`](scripts/fake-host/bundles.mjs)). A call it does not serve is
-refused with `unavailable` and logged as `?? UNKNOWN <contract> <method>`
-([`contracts.mjs`](scripts/fake-host/contracts.mjs),
-[`log.mjs`](scripts/fake-host/log.mjs)).
-
-It runs on the built `bundle` package, and its own staging fails for a bundle
-that is not built. Build the `bundle` package and the bundles first:
-`npx nx run doric-host:build-bundles` builds every project tagged
-`type:bundle`, and with them `bundle`, and stages them into
-`app/backend/doric-host/dist/bundles`
-([`project.json`](app/backend/doric-host/project.json)).
-
-```sh
-npx nx run doric-host:build-bundles
-npm run doric:fake-host   # one terminal
-npm run doric:dev         # another
-```
-
-When a real host already holds port 3000, start the fake host on another port
-with `-- --port <port>` or `DORIC_FAKE_PORT`, and start the desktop with
-`DORIC_HOST_URL` set to the URL it prints
-([`main.mjs`](scripts/fake-host/main.mjs),
-[`main.ts`](app/desktop/doric/src/main.ts)).
-
-After `npx nx run doric-host:build-bundles`,
-`curl http://127.0.0.1:3000/reload` rebuilds the catalog from the staged
-directory chosen at start and tells the desktop a new generation exists. A
-fake host that staged its own copy under `tmp/fake-host/bundles` must be
-restarted instead ([`main.mjs`](scripts/fake-host/main.mjs),
-[`server.mjs`](scripts/fake-host/server.mjs)).
-
-Its options and the contracts it answers are in the
-[fake host README](scripts/fake-host/README.md).
 
 ## Documentation
 
@@ -828,8 +783,6 @@ Its options and the contracts it answers are in the
   platform contracts and its packaging.
 - [Renderer shell](app/desktop/doric-renderer/README.md): the page every
   desktop window loads.
-- [Fake host](scripts/fake-host/README.md): the development stand-in for the
-  host.
 - [`tool-okf`](tools/okf/README.md): the `okf_search` agent tool.
 
 ### Bundles

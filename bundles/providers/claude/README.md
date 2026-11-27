@@ -39,8 +39,8 @@ part and no contracts module: it declares no contract of its own, since
 `models.provider/v1` and `log/v1` are declared in `bundle/contracts`
 ([`models.ts`](../../../packages/bundle/src/contracts/basic/models.ts),
 [`log.ts`](../../../packages/bundle/src/contracts/basic/log.ts)). Its package
-exports `./package.json` and `./host`; `./host` named the kernel entry
-`src/host/index.ts`, deleted in slice S68a, and the export is removed in S70. It depends on `bundle`, `llms`, `pino`, `runtime` and `tslib`.
+exports `./package.json` only; its export `./host` named the kernel entry
+`src/host/index.ts`, deleted in slice S68a, and slice S70 removed it. It depends on `bundle`, `llms`, `pino`, `runtime` and `tslib`.
 
 The host process entry [`src/host/main.ts`](src/host/main.ts) (built to
 `dist/host/main.mjs`) serves `doric.models.provider.v1.ProviderService` through

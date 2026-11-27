@@ -17,12 +17,6 @@
       "import": "./dist/contracts/gen/*",
       "default": "./dist/contracts/gen/*"
     },
-    "./kernel": {
-      "@org/source": "./src/kernel.ts",
-      "types": "./dist/kernel.d.ts",
-      "import": "./dist/kernel.js",
-      "default": "./dist/kernel.js"
-    },
     "./testing": {
       "@org/source": "./src/testing.ts",
       "types": "./dist/testing.d.ts",

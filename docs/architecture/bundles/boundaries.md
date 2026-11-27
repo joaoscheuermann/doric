@@ -48,7 +48,7 @@ A bundle's own dependencies follow one more rule, which the `dependencies` check
 
 ## The checks
 
-`npm run lint:test` runs `node --test --test-concurrency=1 tests/lint.test.mjs tests/boundaries.test.mjs tests/contract-inventory.test.mjs`, and CI runs it in the step "Test Biome configuration, bundle boundaries and the contract inventory" ([`package.json`](../../../package.json), [`ci.yml`](../../../.github/workflows/ci.yml)). The files run one after the other: the Biome tests of [`tests/lint.test.mjs`](../../../tests/lint.test.mjs) write fixture files into directories the boundary checks read, and remove them when each case ends.
+`npm run lint:test` runs `node --test --test-concurrency=1 tests/lint.test.mjs tests/boundaries.test.mjs tests/provide-versions.test.mjs`, and CI runs it in the step "Test Biome configuration, bundle boundaries and provided versions" ([`package.json`](../../../package.json), [`ci.yml`](../../../.github/workflows/ci.yml)). The files run one after the other: the Biome tests of [`tests/lint.test.mjs`](../../../tests/lint.test.mjs) write fixture files into directories the boundary checks read, and remove them when each case ends.
 
 The test reads the repository once into a snapshot ([`tests/boundaries.test.mjs`](../../../tests/boundaries.test.mjs), [`tests/support/workspace.mjs`](../../../tests/support/workspace.mjs)):
 
@@ -169,7 +169,7 @@ For each of the five checks other than `cycles`, the test passes `diffViolations
 
 The entries whose `check` is `cycles` go to `findCycles`, as [`cycles`](#cycles) says, and the test also fails when the `decision` of one of them is not a file ([`tests/boundaries.test.mjs`](../../../tests/boundaries.test.mjs)).
 
-The test does not validate an entry's shape beyond these comparisons. An entry whose `check` is not one of the six names is given to no check: it is never reported as stale, and its `decision` is never tested. An entry without `decision` makes the test throw, because the path it tests is `undefined`. For the six checks, the file equals the violations the checks find: adding one is a visible line in a reviewed change, with the document that keeps it, and removing a violation fails the check until its entry goes in the same change. The file holds no entry: `{ "violations": [] }`.
+The test does not validate an entry's shape beyond these comparisons. An entry whose `check` is not one of the six names is given to no check: it is never reported as stale, and its `decision` is never tested. An entry without `decision` makes the test throw, because the path it tests is `undefined`. For the six checks, the file equals the violations the checks find: adding one is a visible line in a reviewed change, with the document that keeps it, and removing a violation fails the check until its entry goes in the same change. The file holds one entry: the `core` check's finding of `app/desktop/doric`'s import of `transport/contracts/gen/doric/api/status/v1/status_pb.js`, kept with `until: "never: …"` because Electron main may import `transport`'s generated status client (the owner's decision for group E, slice S66 of [`docs/designs/grpc-processes.md`](../../designs/grpc-processes.md)).
 
 ## What a client part may import, and slot names
 

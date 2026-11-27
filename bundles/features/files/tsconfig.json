@@ -17,9 +17,6 @@
       "path": "../../../packages/tool"
     },
     {
-      "path": "../terminal"
-    },
-    {
       "path": "../../../packages/sandbox"
     },
     {
@@ -33,9 +30,6 @@
     },
     {
       "path": "../../desktop/workspace"
-    },
-    {
-      "path": "../../../packages/sandpool"
     },
     {
       "path": "../../desktop/layout"

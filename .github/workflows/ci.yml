@@ -72,7 +72,7 @@ jobs:
             echo "buf breaking skipped: the base $BASE_SHA has no .proto files"
           fi
 
-      - name: Test Biome configuration, bundle boundaries and the contract inventory
+      - name: Test Biome configuration, bundle boundaries and provided versions
         run: npm run lint:test
 
       - name: Check formatting
@@ -104,9 +104,6 @@ jobs:
       # platform package, the platform's import map and the desktop app.
       - name: Run platform tests
         run: npx nx run-many -t test -p bundle,desktop,doric-platform,doric-app
-
-      - name: Test the fake host's bundle staging
-        run: npm run test:fake-host
 
       - name: Run Agent tests
         run: npx nx test agent

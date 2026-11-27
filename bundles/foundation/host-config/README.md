@@ -79,7 +79,7 @@ depends on `@connectrpc/connect`. The kernel entry `src/host/index.ts` and
 
 [`package.json`](package.json) names the package `host-config` (version
 `0.0.1`, private, ES module) and exports `./package.json`, `./contracts`,
-`./contracts/gen/*` (the protobuf-es code `generate-proto` writes from `proto/`), `./kernel` and `./testing` ([Entry points](#entry-points)). Its dependencies
+`./contracts/gen/*` (the protobuf-es code `generate-proto` writes from `proto/`) and `./testing` ([Entry points](#entry-points)). Its dependencies
 are `bundle`, `core` (for `readModelProperties` of `core/contracts`), `llms`
 (the provider kind catalog), `tool` (bound tool factories), `tslib` and `zod`
 (`^4.4.3`).
@@ -402,9 +402,9 @@ The bundle reads no environment variable and has no configuration of its own;
   `ContextCompactionConfig`), the three Zod schemas,
   `configurationMethods`, `defaultContextCompaction` and
   `defaultMaxToolResultChars`.
-- `host-config/kernel`: the package still exports it, but its file
+- `host-config/kernel` is no longer exported: slice S68a deleted its file
   `src/kernel.ts` (`createHostConfig`, `HostConfig`, `boundTools` and its
-  re-exports) was deleted in slice S68a; the export dangles until S70.
+  re-exports), and slice S70 the export.
 - `host-config/testing` ([`src/testing.ts`](src/testing.ts)), for tests only:
   - `ConfigInputSchema`, `defaultConfig`, `providerCredentials` and the types
     `ConfigInput` and `DoricConfig` ([`schema.ts`](src/host/config/schema.ts)).

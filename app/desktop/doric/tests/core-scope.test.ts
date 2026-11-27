@@ -2,8 +2,11 @@
 // contracts take no scope keys from a window. Driven through the single IPC
 // dispatcher over the real core bundle's built manifest, descriptor and
 // schemas. The generation process is a fake (a provider record per desktopMain
-// contract); a host contract left on the envelope is refused by main itself,
-// since windows reach the host over `doric:connect`.
+// contract). The host contracts (tools/v1, models/v1, secrets/v1) have no
+// envelope route: windows reach them only over the `doric:connect` relay, so
+// their envelope call is refused as unreachable before any scope check. The
+// relay's own scope check for host contracts is RK37 and still pending; this
+// suite moves onto the relay with it.
 
 import assert from 'node:assert/strict';
 import { before, beforeEach, describe, test } from 'node:test';
@@ -19,7 +22,6 @@ import { generationView } from '../src/platform/bridge/client-routing';
 import {
   type DesktopEvent,
   Dispatcher,
-  hostUnavailable,
 } from '../src/platform/bridge/dispatcher';
 import { createSchemaValidators } from '../src/platform/bridge/validation';
 import { resolveDistribution } from '../src/platform/catalog/resolve';
@@ -91,7 +93,11 @@ before(async () => {
 });
 
 /** The contracts the host serves, rather than the generation process. */
-const HOST_CONTRACTS = new Set<ScopeFree>(['tools/v1', 'models/v1', 'secrets/v1']);
+const HOST_CONTRACTS = new Set<ScopeFree>([
+  'tools/v1',
+  'models/v1',
+  'secrets/v1',
+]);
 
 /** The core's desktopMain providers as the generation process lists them. */
 const desktopMainRecords = (): ServiceDirectory => {
@@ -225,8 +231,39 @@ const windowCall = (contract: ScopeFree, scope?: Record<string, string>) =>
     },
   });
 
+/** The refusal of a window's envelope call to a host contract. */
+const unreachable = (contract: ScopeFree) => ({
+  ok: false,
+  error: {
+    code: 'unavailable',
+    message: `No provider of ${contract} ${CALLS[contract].method} is reachable from this window.`,
+    details: { contract, method: CALLS[contract].method },
+  },
+});
+
 describe('core contracts take no scope keys from a window (T2.2)', () => {
   for (const contract of SCOPE_FREE) {
+    if (HOST_CONTRACTS.has(contract)) {
+      // A host contract has no envelope route: the call is refused as
+      // unreachable, never reaching the scope check or the host. The scope
+      // check on the `doric:connect` relay is RK37 (pending).
+      for (const [key, value] of SCOPE_KEYS) {
+        test(`refuses a window envelope call to ${contract} carrying ${key} as unavailable, before the scope check`, async () => {
+          const result = await windowCall(contract, { [key]: value });
+
+          assert.deepEqual(result, unreachable(contract));
+        });
+      }
+
+      test(`refuses a window envelope call to ${contract} with no scope as unavailable`, async () => {
+        const result = await windowCall(contract);
+
+        assert.deepEqual(result, unreachable(contract));
+      });
+
+      continue;
+    }
+
     for (const [key, value] of SCOPE_KEYS) {
       test(`refuses a window call to ${contract} carrying ${key} with invalid_input`, async () => {
         const result = await windowCall(contract, { [key]: value });
@@ -241,20 +278,6 @@ describe('core contracts take no scope keys from a window (T2.2)', () => {
 
     test(`serves a window call to ${contract} with no scope`, async () => {
       const result = await windowCall(contract);
-
-      if (HOST_CONTRACTS.has(contract)) {
-        // A host contract's envelope path is closed: the window reaches the
-        // host over `doric:connect`.
-        assert.deepEqual(result, {
-          ok: false,
-          error: {
-            code: hostUnavailable().code,
-            message: hostUnavailable().message,
-          },
-        });
-
-        return;
-      }
 
       assert.deepEqual(result, { ok: true, output: CALLS[contract].output });
     });

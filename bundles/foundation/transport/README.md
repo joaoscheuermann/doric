@@ -49,8 +49,9 @@ bundles is in the feature docs
 
 It has one part, the host part ([`src/host/`](src/host)), whose only entry
 since slice S69 is the process entry [`src/host/main.ts`](src/host/main.ts).
-`package.json` still exports `./kernel` (`src/kernel.ts`, deleted in S69); the
-export goes in slice S70.
+Slice S70 removed the export `./kernel` (`src/kernel.ts`, deleted in S69) and
+the dependencies the kernel path left: `express`, `socket.io` and `pino`, and
+the dev dependencies `@types/express` and `socket.io-client`.
 
 ## Contracts it uses
 

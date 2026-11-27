@@ -56,10 +56,10 @@ through its own contracts.
 - Import other bundles' contracts in the client part only through
   [`src/client/peers.ts`](src/client/peers.ts). Import `chat/contracts` with
   `import type` only and build `ChatViewsV1` from its id, so that a window
-  without `chat` loads this bundle. Never import `files/contracts`: `files`
-  depends on `terminal` (its `package.json` lists it and its tests import
-  `terminal/contracts`), and the import would close a cycle; keep
-  `FilesRefresh` a structural copy.
+  without `chat` loads this bundle. Never import `files/contracts`; keep
+  `FilesRefresh` a structural copy. The rule kept the import from closing a
+  cycle while `files` depended on `terminal`; the tests that imported
+  `terminal/contracts` went in slice S68b and the dependency in S70.
 - Keep `chat.views/v1` and `files.refresh/v1` under `optional` in
   [`manifest.json`](manifest.json); register each chat drawing in its own
   `services.whenAvailable`, and wrap every other use of an optional contract

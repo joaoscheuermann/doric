@@ -37,8 +37,8 @@ and has no slots. The bundle has no
 settings, routes, tools, client part or desktop part.
 
 [`package.json`](package.json) names the package `openrouter` and exports one
-entry, `./host`, whose kernel entry `src/host/index.ts`
-was deleted in slice S68a (the export is removed in S70). It depends on `bundle` (for `bundle/contracts`), `llms`
+entry, `./package.json`; slice S70 removed `./host`, whose kernel entry
+`src/host/index.ts` was deleted in slice S68a. It depends on `bundle` (for `bundle/contracts`), `llms`
 (the OpenRouter provider, the catalog parser and the model icons), `pino` (the
 logger the `llms` providers take) and `tslib`.
 

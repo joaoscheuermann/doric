@@ -1,16 +1,14 @@
 // What the Electron tests boot: the real desktop platform over the built
 // platform assets, a fake host (a Connect server over `node:http2` on this
-// process's loopback port, the real network boundary, with the envelope's
-// Socket.IO bridge beside it on the same port) and either a fixture shell
-// whose bootstrap is desktop/client's or the real built renderer shell.
+// process's loopback port, the real network boundary) and either a fixture
+// shell whose bootstrap is desktop/client's or the real built renderer shell.
 
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
-import { createServer as createHttpServer } from 'node:http';
 import {
   createServer as createHttp2Server,
   type ServerHttp2Session,
 } from 'node:http2';
-import { type AddressInfo, createServer as createNetServer } from 'node:net';
+import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
@@ -40,7 +38,6 @@ import {
   distributionMessage,
 } from 'bundle/runtime';
 import { BrowserWindow, nativeTheme, type WebContents } from 'electron';
-import { Server, type Socket } from 'socket.io';
 import {
   ReadySchema,
   StatusService,
@@ -62,9 +59,6 @@ import type { Clock } from '../../../doric/src/platform/splash/timing';
 /** The built main process directory (`nx build doric-app` + its assets). */
 export const MAIN_DIR = resolve('dist/app/desktop/doric');
 export const PRELOAD = join(MAIN_DIR, 'preload.js');
-
-/** What the fake answers an envelope call with now that the host is Connect. */
-export const UNAVAILABLE_HOST_MESSAGE = 'Doric backend is unavailable.';
 
 /** One call a served service received: its contract, method and input. */
 export interface HostCall {
@@ -263,9 +257,10 @@ export const startFakeHost = async (input: {
                   : toJson(desc.input, request as never),
             });
 
-            return (
-              method as (request: unknown, context: unknown) => unknown
-            )(request, context);
+            return (method as (request: unknown, context: unknown) => unknown)(
+              request,
+              context,
+            );
           },
         ];
       }),
@@ -288,7 +283,6 @@ export const startFakeHost = async (input: {
 
   let handle = adapter();
 
-  const http = createHttpServer();
   const http2 = createHttp2Server((request, response) => {
     handle(request, response);
   });
@@ -299,76 +293,10 @@ export const startFakeHost = async (input: {
     sessions.add(session);
     session.once('close', () => sessions.delete(session));
   });
-  const io = new Server(http);
-  const bridge = io.of('/doric/bridge');
 
-  bridge.on('connection', (socket: Socket) => {
-    socket.on('call', (message: { id: string } & HostCall) => {
-      calls.push({
-        contract: message.contract,
-        method: message.method,
-        input: message.input,
-      });
-      socket.emit('result', {
-        kind: 'result',
-        id: message.id,
-        ok: false,
-        error: { code: 'unavailable', message: UNAVAILABLE_HOST_MESSAGE },
-      });
-    });
-    socket.on('subscribe', (message: { id: string } & HostCall) => {
-      calls.push({
-        contract: message.contract,
-        method: message.method,
-        input: message.input,
-      });
-      socket.emit('end', {
-        kind: 'end',
-        id: message.id,
-        error: { code: 'unavailable', message: UNAVAILABLE_HOST_MESSAGE },
-      });
-    });
-    socket.on('unsubscribe', () => undefined);
-  });
+  await new Promise<void>((done) => http2.listen(0, '127.0.0.1', () => done()));
 
-  // One loopback port speaks both: HTTP/2 for Connect (main's forward and its
-  // own calls) and HTTP/1.1 for the envelope's Socket.IO bridge. The HTTP/2
-  // connection preface ("PRI …") tells them apart.
-  const listener = createNetServer((socket) => {
-    // Paused until the first bytes tell the protocols apart, so neither server
-    // reads (and drops) them.
-    socket.pause();
-
-    const route = (): void => {
-      const chunk = socket.read();
-
-      if (chunk === null) {
-        return;
-      }
-
-      socket.unshift(chunk);
-
-      if (chunk.length < 3) {
-        socket.once('readable', route);
-
-        return;
-      }
-
-      if (chunk.subarray(0, 3).toString('latin1') === 'PRI') {
-        http2.emit('connection', socket);
-      } else {
-        http.emit('connection', socket);
-      }
-    };
-
-    socket.once('readable', route);
-  });
-
-  await new Promise<void>((done) =>
-    listener.listen(0, '127.0.0.1', () => done()),
-  );
-
-  const { port } = listener.address() as AddressInfo;
+  const { port } = http2.address() as AddressInfo;
 
   return {
     url: `http://127.0.0.1:${port}`,
@@ -406,9 +334,6 @@ export const startFakeHost = async (input: {
       return connect;
     },
     close: async () => {
-      io.disconnectSockets(true);
-      await new Promise<void>((done) => io.close(() => done()));
-
       for (const session of sessions) {
         session.destroy();
       }
@@ -418,9 +343,6 @@ export const startFakeHost = async (input: {
           done();
         }),
       );
-      await new Promise<void>((done) => {
-        listener.close(() => done());
-      });
     },
   };
 };

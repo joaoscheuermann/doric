@@ -2,11 +2,12 @@
 // conversation of "Plan the checkout flow", the sandbox's file tree and its
 // Git state, answered over Connect for what the real chat, files and
 // git bundles call (`runtime.threads/v1.watchThread`, `files/v1`,
-// `git.commands/v1`). Shapes follow the dev fake host (`scripts/fake-host/`)
-// and the bundles' contracts. `files/v1` (slice S65d) and `git.commands/v1`
-// (S65c) are the window's `FilesService` and `CommandsService` over Connect:
-// `filesRoutes(host)` and `gitRoutes(host)` register them on the router
-// main's `doric:connect` relay forwards to.
+// `git.commands/v1`). Shapes follow the bundles' contracts: a Thread's log
+// is `ThreadEventRow`s (`watchThread`'s replay), the file tree `TreeNode`s
+// of name, path, type, size and children. `files/v1` (slice S65d) and
+// `git.commands/v1` (S65c) are the window's `FilesService` and
+// `CommandsService` over Connect: `filesRoutes(host)` and `gitRoutes(host)`
+// register them on the router main's `doric:connect` relay forwards to.
 
 import type { ConnectRouter, ServiceImpl } from '@connectrpc/connect';
 import {
@@ -165,7 +166,8 @@ export interface ThreadEventRow {
 
 /**
  * The conversation of one Thread: the prompt, a thought, a `grep` call and
- * the answer, one finished turn (`scripts/fake-host/seed.mjs`'s shape). The
+ * the answer, one finished turn of nine events from `prompt.accepted` to
+ * `prompt.finished`, numbered from sequence 1 under one prompt id. The
  * response names the model that answered (as the runtime's executor records
  * it), so the agent's mark is that model's icon (`99:8035`'s ✳︎).
  */

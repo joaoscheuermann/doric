@@ -82,6 +82,17 @@ Findings for phase 3:
   services; their RSS is that of the loaded code plus the SDK's control stream,
   a lower bound of an active bundle.
 
+Since slice S70 the spike builds only the `sqlite-node` stand-in and the
+native stub. The entries of `papercraft`, `runtime`, `mcp` and `docker`
+imported the kernel entries S68a, S68c and S68d deleted; S70 deleted them with
+their rows, the helpers that packed `papercraft`'s native assets and its
+esbuild and Tailwind check, so the spike exits 1 only when an executable fails
+to build or says no Hello in time (`scripts/sea-spike.mjs`). The table above is
+phase 0's record. A local run after S70, with `idleSeconds` 10 rather than the table's idle
+minute (`dist/sea-spike/results-x64.json`), measured `sqlite-node` at 90 ms to
+Hello, 144.0 MiB and 92.9 MiB idle RSS; the Rust stub was not built, since that
+machine had no `cargo`.
+
 ### Today's host
 
 Today's host (`app/backend/doric-host/dist/src/index.js`) with the shipped
@@ -182,13 +193,15 @@ It adds:
 - The Rust workspace (`Cargo.toml`, `Cargo.lock`, `rust-toolchain.toml`) with
   one member, the spike stub `scripts/sea-spike/stub-rs`, tagged `type:rust`.
 - `scripts/sea-spike.mjs` and `scripts/sea-spike/`, the CI job `sea-spike` and
-  the stub crate, deleted in phase 7; `benchmarks/proto-codec`, deleted in
+  the stub crate, deleted in phase 7; since S70 the spike builds the
+  `sqlite-node` stand-in and the stub only; `benchmarks/proto-codec`, deleted in
   phase 8.
-- `tests/contract-inventory.test.mjs`, run by `npm run lint:test`: every
-  contract method that is not plain data has a row in section A of the
-  inventory, and every row names one. A member typed `any` fails unless
-  `tests/contract-inventory-allow.json` (`[{contract, method, reason}]`) lists
-  it. Phase 3 deletes the check.
+- The inventory check, run by `npm run lint:test` through phase 2: every
+  contract method that is not plain data had a row in section A of the
+  inventory, and every row named one; a member typed `any` failed unless its
+  allowlist listed it. Slice S70 of phase 3 deleted the check with its
+  allowlist, support and fixtures; `inventory-targets.test.ts` still checks
+  the inventory's ids and rows.
 - Node 26 in CI and in the image (`app/backend/doric-host/.Dockerfile`).
 
 Phase 1 adds:
@@ -651,7 +664,10 @@ S68a those of the fourteen bundles above, S68b those of `files`, `git` and
 `terminal`, S68c those of `mcp`, `openui` and `papercraft`, S68d those of
 `runtime` and `default`, and S69 those of `transport` and `screen-relay`, with
 `doric.network/v1`. `default`'s `assetText` answers only the texts its
-host part installed at `activate` and reads no file.
+host part installed at `activate` and reads no file. Since S70 no package
+exports a kernel entry: `transport` and `host-config` no longer export
+`./kernel`, nor `claude`, `codex`, `openai`, `openrouter` and `terminal`
+`./host`.
 
 Since S69 the build never imports or dry-activates the host part: it
 dry-activates only the desktopMain and client parts, a stale
@@ -717,8 +733,9 @@ server or bridge; it calls `startHostPlatform` and `hostReady`
 `composition.overrides.json` (a later boot starts that bundle disabled) and
 `ResetComposition` clears it; `readHostResolution` takes a generation, and a
 private `readBootComposition` serves both readers. S63b deleted the host's
-Socket.IO bridge (`src/lib/bridge/`) and `src/lib/socket-buffer.ts`; the
-`socket.io` dependencies stay until group F. With these, every host part runs as its own
+Socket.IO bridge (`src/lib/bridge/`) and `src/lib/socket-buffer.ts`; S70
+removed the host's `express`, `socket.io`, `cors`, `@grpc/grpc-js` and
+`@bufbuild/protobuf` dependencies. With these, every host part runs as its own
 process in activation order and client-only bundles are never spawned. Each
 bundle's `descriptors.binpb` holds only its own protos, so `withBasicContracts`
 merges the generated files of the 12 basic host contracts from
@@ -1959,3 +1976,33 @@ sandbox pool` then `Sandbox pool configured` with the `logSandboxPool`
   `socket.io-client`. Tests: `bundle-transport` 279 → 163,
   `bundle-screen-relay` 25 → 16, `bundle` 1362 → 1362 (one case deleted, one
   inverted case added).
+- 2026-11-27: phase 3, slice S70, of
+  [the spec](../designs/grpc-processes.md) (version 6.53): the dev tooling, the
+  inventory check and every package file. Deleted: the fake host
+  `scripts/fake-host/` with `tests/fake-host-bundles.test.mjs` and the root
+  scripts `test:fake-host` and `doric:fake-host` (closing the spec's revision
+  6.45, deviation 1), the CI step `npm run test:fake-host`, and the inventory
+  check (`tests/contract-inventory.test.mjs`, its allowlist, support and
+  fixtures), which leaves `lint:test`. The desktop e2e harness loses its
+  Socket.IO half: the fake host listens with its HTTP/2 server directly, with
+  no protocol sniff. Package files: the root drops `socket.io-client`;
+  `doric-host` drops `express`, `socket.io`, `@grpc/grpc-js`,
+  `@bufbuild/protobuf` and `cors` and the dev `socket.io-client`,
+  `@types/express` and `@types/cors`; `transport` drops `express`, `socket.io`,
+  `pino`, the dev `@types/express` and `socket.io-client`, and the export
+  `./kernel`; `host-config` drops `./kernel`, and `claude`, `codex`, `openai`,
+  `openrouter` and `terminal` drop `./host` (D1); `files` drops `pino`,
+  `sandpool` and `terminal`, `git` `@bufbuild/protovalidate` and `core`
+  `tool`. Every boundary exception until S70 goes with them; the file keeps
+  S66's `core` entry. `package-lock.json` is regenerated with npm 11.13.0 and
+  `npm ci` accepts it. `scripts/sea-spike`'s entries of `papercraft`,
+  `runtime`, `mcp` and `docker`, broken since S68a, S68c and S68d, are deleted;
+  the CI job builds `sqlite-node` and the native stub. CI's `lint:test` step is renamed "Test Biome configuration, bundle boundaries and provided versions". Corrected: `app/desktop/doric`'s
+  `core-scope.test.ts` had failed since S67 in its 12 cases for `tools/v1`,
+  `models/v1` and `secrets/v1`, whose host contracts have no schema document,
+  so a window's envelope call to them is refused `unavailable` before any
+  scope check; the cases now assert that refusal, and the window reaches those
+  contracts over `doric:connect`, whose scope check stays RK37. Open: the
+  public contract exports without an importer stay (the spec's 6.53 entry
+  lists them). Tests: `lint:test` 53 → 48, `test:fake-host` gone, `doric-app`
+  241/241.

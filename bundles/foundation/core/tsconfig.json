@@ -19,9 +19,6 @@
       "path": "../../../packages/bundle"
     },
     {
-      "path": "../../../packages/tool"
-    },
-    {
       "path": "../../../packages/llms"
     },
     {

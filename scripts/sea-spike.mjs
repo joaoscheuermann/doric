@@ -2,8 +2,9 @@
 /**
  * Phase 0 spike (docs/designs/grpc-processes.md, AC0.3 and T0.1; deleted in
  * phase 7). Builds one single executable application (SEA) per bundle with
- * esbuild and `node --build-sea` (`sqlite-node`, a stand-in, `papercraft`,
- * `runtime`, `mcp` and `docker`) and the native stub of `sqlite`
+ * esbuild and `node --build-sea` (`sqlite-node`, a stand-in; the entries of
+ * `papercraft`, `runtime`, `mcp` and `docker` went with their kernel host
+ * entries in phase 3) and the native stub of `sqlite`
  * (`scripts/sea-spike/stub-rs`), starts each against a stub router, and
  * records its time from spawn to Hello, its size and its RSS after activation
  * and one idle minute. Then it measures today's host and generation process,
@@ -16,9 +17,8 @@
  * Today's host needs `npx nx build doric-host`, `DORIC_DATABASE_URL` and the
  * migrations applied (`npx nx run doric-host:migrate`).
  *
- * Exits 1 when an executable fails to build, does not say Hello within the
- * timeout, or `papercraft` does not complete its esbuild build and Tailwind
- * compile. RK1's rule is reported, not enforced: the owner decides on it.
+ * Exits 1 when an executable fails to build or does not say Hello within the
+ * timeout. RK1's rule is reported, not enforced: the owner decides on it.
  */
 import { spawn, spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
@@ -58,21 +58,8 @@ const HELLO_TIMEOUT_MS = 30_000;
 const HOST_LISTEN_TIMEOUT_MS = 180_000;
 const GIB = 1024 ** 3;
 
-/** The five SEAs of AC0.3, with the bundle host part each one carries. */
-const seas = [
-  { id: 'sqlite-node', entry: 'sqlite-node.ts' },
-  { id: 'papercraft', entry: 'papercraft.ts', native: true },
-  { id: 'runtime', entry: 'runtime.ts' },
-  { id: 'mcp', entry: 'mcp.ts' },
-  { id: 'docker', entry: 'docker.ts' },
-];
-
-/**
- * The packages `papercraft` loads with `require` from its extracted assets
- * instead of bundling them: a platform binary and a native addon, which
- * phase 3 loads through `context.assets.require` (spec, section 14).
- */
-const NATIVE_PACKAGES = ['esbuild', 'tailwindcss', '@tailwindcss/oxide'];
+/** The SEAs of AC0.3 that remain: the `sqlite-node` stand-in. */
+const seas = [{ id: 'sqlite-node', entry: 'sqlite-node.ts' }];
 
 const fail = (message) => {
   console.error(`sea-spike: ${message}`);
@@ -160,41 +147,7 @@ const requireBanner =
 
 // Build ----------------------------------------------------------------------
 
-/** The files of a package directory, recursively, relative to `root`. */
-const filesOf = (directory) =>
-  readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
-    const path = join(directory, entry.name);
-    if (entry.isDirectory()) return filesOf(path);
-    return entry.isFile() ? [relative(root, path)] : [];
-  });
-
-const packageDir = (name) => {
-  const directory = join(root, 'node_modules', name);
-  if (!existsSync(join(directory, 'package.json'))) {
-    fail(`${name} is not installed in node_modules`);
-  }
-  return directory;
-};
-
-/** The SEA assets of `papercraft`'s native packages, for this platform. */
-const nativeAssets = () => {
-  const arch = process.arch;
-  const names = [
-    'esbuild',
-    `@esbuild/linux-${arch}`,
-    'tailwindcss',
-    '@tailwindcss/oxide',
-    `@tailwindcss/oxide-linux-${arch}-gnu`,
-  ];
-  return names.flatMap((name) =>
-    filesOf(packageDir(name)).filter(
-      (file) =>
-        !/\.(d\.[cm]?ts|map|md)$/.test(file) && !file.endsWith('/LICENSE'),
-    ),
-  );
-};
-
-const buildSea = async ({ id, entry, native }) => {
+const buildSea = async ({ id, entry }) => {
   const directory = join(out, id);
   rmSync(directory, { recursive: true, force: true });
   mkdirSync(directory, { recursive: true });
@@ -208,7 +161,7 @@ const buildSea = async ({ id, entry, native }) => {
     platform: 'node',
     target: 'node26',
     outfile: join(directory, 'main.mjs'),
-    external: ['node:*', ...(native ? NATIVE_PACKAGES : [])],
+    external: ['node:*'],
     conditions: ['@org/source'],
     banner: { js: requireBanner },
     logLevel: 'error',
@@ -227,7 +180,6 @@ const buildSea = async ({ id, entry, native }) => {
     copied.push(`${source}: ${target}`);
   }
 
-  const assets = native ? nativeAssets() : [];
   const config = {
     main: join(directory, 'main.mjs'),
     mainFormat: 'module',
@@ -235,16 +187,7 @@ const buildSea = async ({ id, entry, native }) => {
     disableExperimentalSEAWarning: true,
     useCodeCache: false,
     useSnapshot: false,
-    assets: Object.fromEntries([
-      ...assets.map((file) => [file, join(root, file)]),
-      ...(native
-        ? [['spike-assets.json', join(directory, 'spike-assets.json')]]
-        : []),
-    ]),
   };
-  if (native) {
-    writeFileSync(join(directory, 'spike-assets.json'), JSON.stringify(assets));
-  }
   writeFileSync(
     join(directory, 'sea-config.json'),
     JSON.stringify(config, null, 2),
@@ -513,20 +456,6 @@ const instances = [];
 for (const item of built) instances.push(await startInstance(router, item));
 
 const failures = instances.filter((instance) => instance.error);
-const papercraft = instances.find((instance) => instance.id === 'papercraft');
-if (
-  papercraft &&
-  !papercraft.error &&
-  !(
-    papercraft.activation?.esbuildBytes > 0 &&
-    papercraft.activation?.tailwindHasFlex === true
-  )
-) {
-  failures.push({
-    id: 'papercraft',
-    error: `esbuild or Tailwind did not run: ${JSON.stringify(papercraft.activation)}`,
-  });
-}
 
 const running = instances.filter((instance) => !instance.error);
 if (running.length > 0) {

@@ -69,8 +69,8 @@ the decisions behind the boundary rules before changing one of them.
 - Through phase 6 the zod `define*` contracts are the runtime truth and the
   `.proto` files the target shape. When you change a zod contract, also update
   its `.proto` and its row in
-  `docs/designs/grpc-processes/contract-inventory.md`; the inventory test
-  checks only ids and rows.
+  `docs/designs/grpc-processes/contract-inventory.md`;
+  `packages/bundle/tests/inventory-targets.test.ts` checks only ids and rows.
 - Never add an entry of the exceptions file for an import of a workspace
   package's `src/` path: no entry can excuse it.
 - Apply these rules to a dynamic `import()` and to a resolve call as to a

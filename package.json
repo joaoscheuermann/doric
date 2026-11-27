@@ -5,13 +5,11 @@
   "scripts": {
     "lint": "biome check . --formatter-enabled=false",
     "lint:fix": "biome check . --formatter-enabled=false --write",
-    "lint:test": "node --test --test-concurrency=1 tests/lint.test.mjs tests/boundaries.test.mjs tests/contract-inventory.test.mjs tests/provide-versions.test.mjs",
-    "test:fake-host": "node --test tests/fake-host-bundles.test.mjs",
+    "lint:test": "node --test --test-concurrency=1 tests/lint.test.mjs tests/boundaries.test.mjs tests/provide-versions.test.mjs",
     "format": "biome format . --write && prettier . --write",
     "format:check": "biome format . && prettier . --check",
     "postinstall": "patch-package",
     "doric:spawn-agent": "node scripts/spawn-agent.mjs",
-    "doric:fake-host": "node scripts/fake-host/main.mjs",
     "codex:oauth": "node --conditions=@org/source --import @swc-node/register/esm-register scripts/codex-oauth.mjs",
     "claude:oauth": "node --conditions=@org/source --import @swc-node/register/esm-register scripts/claude-oauth.mjs",
     "okf": "node --conditions=@org/source --import @swc-node/register/esm-register scripts/okf.mjs",
@@ -25,7 +23,6 @@
     "mustache": "^4.2.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "socket.io-client": "^4.8.3",
     "zod": "^4.4.3"
   },
   "devDependencies": {

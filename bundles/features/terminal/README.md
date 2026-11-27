@@ -35,7 +35,7 @@ declared and called is in [`packages/bundle`](../../../packages/bundle/README.md
 | `optional`     | `files.refresh/v1`, `chat.views/v1`                                                                                                                                                                                                                                                                                                                                             |
 | `desktopScope` | `terminal/v1`: `projectId`, `threadId`, `promptId`                                                                                                                                                                                                                                                                                                                              |
 
-The package exports `./host`, `./contracts`, `./contracts/gen/*` (the protobuf-es code `generate-proto` writes from `proto/`) (built to `dist/`) and
+The package exports `./contracts`, `./contracts/gen/*` (the protobuf-es code `generate-proto` writes from `proto/`) (built to `dist/`) and
 `./package.json` ([`package.json`](package.json)). The client part is built by
 the bundle CLI and is not a package export.
 
