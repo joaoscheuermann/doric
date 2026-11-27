@@ -45,11 +45,12 @@ saving of configuration: each belongs to the bundle that owns that record.
   value of `discard` is the one exception). Write every schema there;
   never import a schema from `runtime/contracts` into `src/contracts/`,
   because the client part loads that module too.
-- Implement the method in `createGitService` of `src/host/service.ts` with
-  `expose: 'desktop'`. Make it a Thread method (a `threadId` input, run
-  through `workspace(services, call).withThread`, with `exclusive: true` when
-  it writes or must not race a prompt) or a Project method (the Project from
-  `call.scope.projectId`, run through `lease(services, call).withLease`), and
+- Implement the method in `createGitCommands` of `src/host/commands.ts` over
+  `GitCommandPorts`, and serve it in `src/host/part.ts` with its codec in
+  `src/host/codec.ts`. Make it a Thread method (a `threadId` input, run on a
+  Thread session, with `exclusive: true` when it writes or must not race a
+  prompt) or a Project method (the Project from `call.scope.projectId`, run
+  on the Project's current lease), and
   answer the Thread or lease state as `ThreadOutcome` or `LeaseOutcome`.
 - Call `git.commands/v1` from the client part only through
   `src/client/api/git-api.ts`, and add there the guard of each new input and
@@ -84,8 +85,8 @@ saving of configuration: each belongs to the bundle that owns that record.
   [`tests/boundary-exceptions.json`](../../../tests/boundary-exceptions.json)
   for `"bundle": "git"`.
 - Write a host test over the fakes of
-  [`tests/support/runtime.ts`](tests/support/runtime.ts) and
-  [`tests/support/services.ts`](tests/support/services.ts), which run real
+  [`tests/support/runtime.ts`](tests/support/runtime.ts), through `routedGit`
+  of [`tests/support/routed-git.ts`](tests/support/routed-git.ts), which run real
   `git` in a temporary directory. Write a render test with `render` of
   [`tests/client/support/render.ts`](tests/client/support/render.ts) over the
   fakes of `stories/support/`, and import React DOM and the client modules
@@ -119,7 +120,7 @@ saving of configuration: each belongs to the bundle that owns that record.
   bundle and compiles the tests into `dist-tests/` first.
 - `npx nx run bundle-git:build`: run it after a change to `manifest.json`,
   `package.json`, a `tsconfig*.json` file, `src/contracts/`, `src/skills/` or
-  `src/host/index.ts`: the build validates the manifest and the skills and
+  `src/host/part.ts`: the build validates the manifest and the skills and
   dry-activates the host part.
 
 ## Generated files

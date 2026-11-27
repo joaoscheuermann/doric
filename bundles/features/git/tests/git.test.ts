@@ -2,24 +2,25 @@ import assert from 'node:assert/strict';
 import { Buffer } from 'node:buffer';
 import { describe, test } from 'node:test';
 
-import type { Host } from 'runtime/contracts';
 import type { Sandbox, SandboxExecInput, SandboxExecResult } from 'sandbox';
 
 import { createTool } from '../src/host/tools/git.js';
-import { bindTool } from './support/services.js';
+import { routedTool } from './support/router.js';
 
 type FakeSandbox = Sandbox & {
   readonly execs: SandboxExecInput[];
 };
 
+// Through the router (S68b): each call is `core`'s `Execute` of the routed
+// part (`routedTool`), its `Exec` run on the fake sandbox.
 void describe('git tool', () => {
   void test('executes structured Git arguments without a shell', async () => {
     const sandbox = fakeSandbox(result({ stdout: 'main\n' }));
 
-    const output = await bindTool(
+    const output = await routedTool(
       createTool(),
       sandbox,
-      fakeHost('/workspace'),
+      threadCwd('/workspace'),
     ).execute({
       args: ['branch', '--show-current'],
       working_directory: 'repo',
@@ -54,7 +55,11 @@ void describe('git tool', () => {
   void test('runs in the working directory by default and caps the timeout', async () => {
     const sandbox = fakeSandbox(result());
 
-    await bindTool(createTool(), sandbox, fakeHost('/workspace/repo')).execute({
+    await routedTool(
+      createTool(),
+      sandbox,
+      threadCwd('/workspace/repo'),
+    ).execute({
       args: ['status', '--short'],
       timeout_ms: 999_999,
     });
@@ -66,14 +71,14 @@ void describe('git tool', () => {
 
   void test('resolves a relative working directory against the current one', async () => {
     const sandbox = fakeSandbox(result());
-    const host = fakeHost('/workspace/repo');
+    const host = threadCwd('/workspace/repo');
 
-    await bindTool(createTool(), sandbox, host).execute({
+    await routedTool(createTool(), sandbox, host).execute({
       args: ['status', '--short'],
       working_directory: 'src',
     });
 
-    await bindTool(createTool(), sandbox, host).execute({
+    await routedTool(createTool(), sandbox, host).execute({
       args: ['status', '--short'],
       working_directory: '/workspace/other',
     });
@@ -85,10 +90,10 @@ void describe('git tool', () => {
   });
 
   void test('returns execution errors as observable Git failures', async () => {
-    const output = await bindTool(
+    const output = await routedTool(
       createTool(),
       fakeSandbox(new Error('exec failed')),
-      fakeHost('/workspace'),
+      threadCwd('/workspace'),
     ).execute({ args: ['status'] });
 
     assert.equal(output.success, false);
@@ -101,10 +106,10 @@ void describe('git tool', () => {
   void test('bounds large stdout while preserving its beginning and end', async () => {
     const stdout = `${'a'.repeat(20_000)}${'z'.repeat(20_000)}`;
 
-    const output = await bindTool(
+    const output = await routedTool(
       createTool(),
       fakeSandbox(result({ stdout })),
-      fakeHost('/workspace'),
+      threadCwd('/workspace'),
     ).execute({
       args: ['log', '--oneline', '--all'],
     });
@@ -145,17 +150,8 @@ const fakeSandbox = (behavior: SandboxExecResult | Error): FakeSandbox => {
   };
 };
 
-/** Git tests only read the working directory; they never move it. */
-const fakeHost = (cwd: string): Host => ({
-  threads: {} as never,
-  workspace: {
-    cwd: () => cwd,
-    setCwd: () => {
-      throw new Error('Git tests never move the working directory');
-    },
-    location: async () => ({ cwd }),
-  },
-});
+/** The Thread's working directory `Cwd` answers; git tests never move it. */
+const threadCwd = (cwd: string) => () => cwd;
 
 const result = ({
   exitCode = 0,

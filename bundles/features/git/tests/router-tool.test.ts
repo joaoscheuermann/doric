@@ -1,10 +1,10 @@
 // `git`'s host part through the router (phase 3, slice S55b, tests T1–T5):
 // `activate` registers the `GIT` credential kind with `secrets/v1` (tracked,
-// D7) and then the `git` tool with `tools/v1` as the kernel entry did (not
-// always available, position 900), and `core`'s `ToolHandlerService` calls
-// run the tool over `runtime.workspace/v1` and `runtime.lease/v1` under the
-// relayed prompt scope. A tool's answer is compared with the kernel-bound
-// tool's answer over a twin sandbox, as parsed JSON without its duration.
+// D7) and then the `git` tool with `tools/v1` (not always available,
+// position 900), and `core`'s `ToolHandlerService` calls run the tool over
+// `runtime.workspace/v1` and `runtime.lease/v1` under the relayed prompt
+// scope. The tool's answers case by case are `git.test.ts`', which runs
+// through the router too (`routedTool`).
 
 import assert from 'node:assert/strict';
 import { Buffer } from 'node:buffer';
@@ -18,7 +18,6 @@ import {
   fromConnectError,
   isContractError,
 } from 'bundle/contracts';
-import type { Host } from 'runtime/contracts';
 import type { Sandbox, SandboxExecInput, SandboxExecResult } from 'sandbox';
 
 import { createTool } from '../src/host/tools/git.js';
@@ -28,9 +27,8 @@ import {
   harness,
   promptScope,
 } from './support/router.js';
-import { bindTool } from './support/services.js';
 
-/** The environment every `git` run gets (the kernel tool's). */
+/** The environment every `git` run gets. */
 const ENVIRONMENT = [
   'GIT_TERMINAL_PROMPT=0',
   'GIT_EDITOR=true',
@@ -77,18 +75,6 @@ const resultOf = (
   stderrBytes: Buffer.from(''),
 });
 
-/** The kernel's Thread for the tool: only its working directory is read. */
-const kernelHost = (cwd: string): Host => ({
-  threads: {} as never,
-  workspace: {
-    cwd: () => cwd,
-    setCwd: () => {
-      throw new Error('the git tool never moves the working directory');
-    },
-    location: async () => ({ cwd }),
-  },
-});
-
 /** The part activated on a test router, stopped when the test ends. */
 const activated = async (
   t: TestContext,
@@ -131,33 +117,18 @@ const execute = async (
   return result === undefined ? undefined : toJson(ValueSchema, result);
 };
 
-/** A tool output without its `duration_ms`, which no two runs share. */
-const timeless = (output: unknown): JsonValue => {
-  const { duration_ms: _duration, ...rest } = JSON.parse(
-    JSON.stringify(output),
-  ) as Record<string, JsonValue>;
-
-  return rest;
-};
-
-/** A twin pair: the routed answer and the kernel answer over equal sandboxes. */
-const parity = async (
+/** The routed answer of `payload` over a sandbox answering `result`. */
+const routedRun = async (
   t: TestContext,
   cwd: string,
   payload: JsonValue,
   result: SandboxExecResult,
 ) => {
   const routedSandbox = recordingSandbox(result);
-  const kernelSandbox = recordingSandbox(result);
   const h = await activated(t, { sandbox: routedSandbox, cwd });
   const routed = await execute(h, payload);
-  const kernel = await bindTool(
-    createTool(),
-    kernelSandbox,
-    kernelHost(cwd),
-  ).execute(payload as never);
 
-  return { h, routed, kernel, routedSandbox, kernelSandbox };
+  return { h, routed, routedSandbox };
 };
 
 // T1.
@@ -223,13 +194,13 @@ void test('T2: a RegisterKind refused duplicate_credential_kind rejects activate
 });
 
 // T3.
-void test('T3: Execute sends Cwd{}, one Describe{target: {}} and one Exec{expectSandboxId} under the prompt scope, and answers the kernel’s output', async (t) => {
+void test('T3: Execute sends Cwd{}, one Describe{target: {}} and one Exec{expectSandboxId} under the prompt scope, and answers the Git output', async (t) => {
   const payload = {
     args: ['branch', '--show-current'],
     working_directory: 'repo',
     timeout_ms: 5000,
   };
-  const { h, routed, kernel, routedSandbox, kernelSandbox } = await parity(
+  const { h, routed, routedSandbox } = await routedRun(
     t,
     '/workspace',
     payload,
@@ -266,13 +237,30 @@ void test('T3: Execute sends Cwd{}, one Describe{target: {}} and one Exec{expect
   for (const call of toolCalls) {
     assert.deepEqual(call.scope, promptScope);
   }
-  assert.deepEqual(routedSandbox.execs, kernelSandbox.execs);
-  assert.deepEqual(timeless(routed), timeless(kernel));
-  assert.equal((routed as { stdout: { text: string } }).stdout.text, 'main\n');
+  assert.deepEqual(routedSandbox.execs, [
+    {
+      cmd: ['git', 'branch', '--show-current'],
+      cwd: '/workspace/repo',
+      env: ENVIRONMENT,
+      timeoutMs: 5000,
+    },
+  ]);
+  const output = routed as {
+    schema: string;
+    success: boolean;
+    exit_code: number;
+    working_directory: string;
+    stdout: { text: string };
+  };
+  assert.equal(output.schema, 'git.command.v1');
+  assert.equal(output.success, true);
+  assert.equal(output.exit_code, 0);
+  assert.equal(output.working_directory, '/workspace/repo');
+  assert.equal(output.stdout.text, 'main\n');
 });
 
-// T3 (parity cases of the kernel suite `git.test.ts`).
-void test('T3: the default directory, the timeout cap, relative and absolute directories and bounded output match the kernel tool', async (t) => {
+// T3 (the cases of `git.test.ts`, whose answers that suite states).
+void test('T3: the default directory, the timeout cap, relative and absolute directories and bounded output each run one Exec', async (t) => {
   const stdout = `${'a'.repeat(20_000)}${'z'.repeat(20_000)}`;
   const cases: readonly (readonly [string, JsonValue, SandboxExecResult])[] = [
     [
@@ -294,16 +282,14 @@ void test('T3: the default directory, the timeout cap, relative and absolute dir
   ];
 
   for (const [cwd, payload, result] of cases) {
-    const { routed, kernel, routedSandbox, kernelSandbox } = await parity(
-      t,
-      cwd,
-      payload,
-      result,
-    );
+    const { routed, routedSandbox } = await routedRun(t, cwd, payload, result);
 
     assert.equal(routedSandbox.execs.length, 1, JSON.stringify(payload));
-    assert.deepEqual(routedSandbox.execs, kernelSandbox.execs);
-    assert.deepEqual(timeless(routed), timeless(kernel));
+    assert.equal(
+      (routed as { exit_code: number }).exit_code,
+      result.exitCode,
+      JSON.stringify(payload),
+    );
   }
 });
 

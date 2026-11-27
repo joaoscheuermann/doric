@@ -471,7 +471,7 @@ The comment is not an event of the artifact: it is `comments.added/v1` ([comment
 
 ### Agent tool
 
-A host tool registered in `ToolsV1` with an explicit global position, like the others (`bundles/features/files/src/host/index.ts`). The kind owns its tool ([artifacts](../artifacts.md#the-agents-tool)). It accepts **code and paths**, never a structural description of the interface:
+A host tool registered in `ToolsV1` with an explicit global position, like the others (`bundles/features/files/src/host/tools/catalog.ts`). The kind owns its tool ([artifacts](../artifacts.md#the-agents-tool)). It accepts **code and paths**, never a structural description of the interface:
 
 ```ts
 // papercraft, host/tools/preview.ts — pseudocódigo da API proposta

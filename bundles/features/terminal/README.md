@@ -44,14 +44,12 @@ the bundle CLI and is not a package export.
 - **Contracts** ([`src/contracts/index.ts`](src/contracts/index.ts)), exported
   as `terminal/contracts`: the types, schemas and references of `terminal/v1`
   and the constant `terminalNameLimit`.
-- **Host** ([`src/host/index.ts`](src/host/index.ts)): `activate` creates the
-  redaction list, the notice emitter and the session registry, provides
-  `terminal/v1`, registers the `terminal` tool with `tools/v1` as always
-  available at the order 500, and, while `runtime.hooks/v1` is served,
-  registers the `onThreadsClosingHook` handler. Its cleanup disposes the hook
-  registration, the tool and the redaction watch. The same file exports
-  `createTerminalHost`, the provider, the closing handler and the dispose
-  without the kernel wiring.
+- **Host** ([`src/host/service.ts`](src/host/service.ts)): `activate` creates the
+  redaction list, the notice emitter and the session registry with
+  `createTerminalHost` ([`src/host/terminals.ts`](src/host/terminals.ts)),
+  serves `terminal/v1`, registers the `terminal` tool with `tools/v1` as
+  always available at the order 500, and registers the `onThreadsClosingHook`
+  handler. Slice S68b deleted the kernel entry `src/host/index.ts`.
 - **Process host** ([`src/host/main.ts`](src/host/main.ts)):
   `createTerminalProcessHost` runs the host part as its own process (phase 3,
   slice S54b, of
@@ -167,7 +165,7 @@ fields; the schemas of `TerminalInput`, `TerminalSize` and each
 
 | Method                              | Input schema                                                              | Answer                                                                                                                                                                                                                                         | Window |
 | ----------------------------------- | ------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
-| `run(input)`                        | `TerminalInput`                                                           | Starts one agent command on the calling prompt's Thread. A foreground command resolves with its `TerminalResult` when it ends; a background one resolves at once with `BackgroundTerminal` ([Background results](#background-results)).        | No     |
+| `run(input)`                        | `TerminalInput`                                                           | Starts one agent command on the calling prompt's Thread. A foreground command resolves with its `TerminalResult` when it ends; a background one resolves at once with `BackgroundTerminal` ([Background results](#background-results)).        | Yes    |
 | `list(projectId)`                   | a string                                                                  | The Project's sessions, in start order.                                                                                                                                                                                                        | Yes    |
 | `create(threadId, size)`            | `[string, TerminalSize]`                                                  | Opens a manual shell in the Thread's working directory, with no time limit, and resolves with its session. `undefined` is `terminal_unavailable`: no such Thread, a finished one, a closing Thread or Project, or a Project without a sandbox. | Yes    |
 | `snapshot(terminalId, after)`       | `[string, number]`                                                        | The retained output after the offset `after`, with the session, the current offset and `truncated`. `undefined` is `terminal_missing`.                                                                                                         | Yes    |
@@ -177,9 +175,12 @@ fields; the schemas of `TerminalInput`, `TerminalSize` and each
 | `rename(terminalId, name)`          | `[string (at least 1 character), string (at most 80 characters) \| null]` | Sets the session's `name` to the trimmed `name`; `null`, an empty or a whitespace-only name removes it. The session's `updated` item carries the result. `false` is `terminal_missing`.                                                        | Yes    |
 | `watchProject(projectId, listener)` | `[string, stream listener of TerminalWatchItem]`                          | The Project's stream ([The stream](#the-stream)). Returns a `Disposable`.                                                                                                                                                                      | Yes    |
 
-"Window" is whether the method is defined with `expose: 'desktop'`, so that a
-desktop window may call it ([`src/host/provider.ts`](src/host/provider.ts)).
-`run` is reachable only from the host.
+"Window" is whether a desktop window calls the method. The manifest's
+`desktopScope` scopes the whole `terminal/v1` contract, not single methods, to
+`projectId`, `threadId` and `promptId` ([`manifest.json`](manifest.json)), so a
+window reaches `run` too; without a `threadId` and a `promptId` in its scope,
+`run` rejects with `Thread is inactive.`
+([`src/host/provider.ts`](src/host/provider.ts)).
 
 ### `run`
 
@@ -304,13 +305,13 @@ this list.
 The `onThreadsClosingHook` handler of `runtime.hooks/v1` stops every session
 of the closing Threads. A failure logs `Terminal cleanup failed` with
 `{ projectId }`, and the handler never rejects
-([`src/host/index.ts`](src/host/index.ts)). When the runtime fires the hook is
+([`src/host/terminals.ts`](src/host/terminals.ts)). When the runtime fires the hook is
 in the [runtime README](../../runtime/runtime/README.md).
 
 ## The `terminal` tool
 
 [`src/host/tool.ts`](src/host/tool.ts) defines the tool `terminal`, which
-[`src/host/index.ts`](src/host/index.ts) registers as always available at
+[`src/host/service.ts`](src/host/service.ts) registers as always available at
 the model-visible order 500. Its description is: "Executes tracked shell
 commands in the current working directory. Foreground returns compact output
 and exit status. Set background to continue working immediately; the host
@@ -455,13 +456,13 @@ text, as a prompt of the input source `terminal`, is in the
 
 | Contract                      | Part   | Use                                                                                                                                                                                                         |
 | ----------------------------- | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `tools/v1`                    | host   | Registers the `terminal` tool ([`src/host/index.ts`](src/host/index.ts)).                                                                                                                                   |
+| `tools/v1`                    | host   | Registers the `terminal` tool ([`src/host/service.ts`](src/host/service.ts)).                                                                                                                               |
 | `secrets/v1`                  | host   | `redactions()` and `watchRedactions()`, the redaction list ([`src/host/redactions.ts`](src/host/redactions.ts)).                                                                                            |
-| `hooks/v1`                    | host   | `whenAvailable(runtime.hooks/v1)` to register the closing handler ([`src/host/index.ts`](src/host/index.ts)).                                                                                               |
+| `hooks/v1`                    | host   | `register(context, OnThreadsClosingHookInputSchema, …)` registers the closing handler ([`src/host/service.ts`](src/host/service.ts)).                                                                       |
 | `log/v1`                      | host   | The two error lines of [Side effects](#side-effects).                                                                                                                                                       |
 | `runtime.workspace/v1`        | host   | `withThread` for `run` and `create`; `cwd` for the tool ([`src/host/provider.ts`](src/host/provider.ts), [`src/host/tool.ts`](src/host/tool.ts)).                                                           |
 | `runtime.threads/v1`          | host   | `enqueueTerminalResult` and `failTerminalResult` ([`src/host/provider.ts`](src/host/provider.ts)).                                                                                                          |
-| `runtime.hooks/v1`            | host   | `onThreadsClosingHook` ([`src/host/index.ts`](src/host/index.ts)).                                                                                                                                          |
+| `runtime.hooks/v1`            | host   | `onThreadsClosingHook` ([`src/host/service.ts`](src/host/service.ts)).                                                                                                                                      |
 | `ui/v1`                       | client | Defines the six elements; creates the chat's `chat-readonly-markdown` element ([`src/client/index.ts`](src/client/index.ts), [`src/client/chat/terminal-result.tsx`](src/client/chat/terminal-result.tsx)). |
 | `regions/v1`                  | client | Adds the New terminal button to `shell.header.actions` ([`src/client/index.ts`](src/client/index.ts)).                                                                                                      |
 | `navigation/v1`               | client | Navigates to a terminal's Thread; reads the route to mark the selected row ([`src/client/index.ts`](src/client/index.ts), [`src/client/elements.tsx`](src/client/elements.tsx)).                            |
@@ -737,7 +738,7 @@ result becomes part of the Thread through the runtime, which stores it.
 - Enqueues a background result on the Thread through `runtime.threads/v1`.
 - Logs only `Terminal cleanup failed` with `{ projectId }` and `Terminal
 result delivery failed` with `{ threadId }`, never a command or output
-  ([`src/host/index.ts`](src/host/index.ts),
+  ([`src/host/terminals.ts`](src/host/terminals.ts),
   [`src/host/provider.ts`](src/host/provider.ts)).
 - In the window: opens, retitles and closes workspace tabs, navigates to a
   Thread, asks `files.refresh/v1` for a refresh, writes to the clipboard, and

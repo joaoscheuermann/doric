@@ -41,7 +41,7 @@ export interface FilesHost {
    *    - `Directory` → `readDirectory(sandbox, path)`;
    *    - `Tree` → `readTree`;
    *    - `Directories` → `readDirectories(sandbox, {paths, root?})`;
-   *    - `Content` → `readContent(sandbox, path, 'utf8')`;
+   *    - `Content` → `readContent(sandbox, path)`;
    *    - `CreateFile` / `CreateDirectory` → `createEntry(sandbox, {directory,
    *      name}, 'file' | 'directory')`;
    *    - `ReadBytes` → `readBytes(sandbox, path)`;
@@ -118,7 +118,7 @@ export const createFilesHost = (): FilesHost => {
       content: async (request, context) =>
         contentResponseOf(
           await leaseOf(context).run((sandbox) =>
-            readContent(sandbox, request.path, 'utf8'),
+            readContent(sandbox, request.path),
           ),
         ),
       readBytes: async function* (request, context) {

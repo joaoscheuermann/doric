@@ -23,12 +23,8 @@ import { promisify } from 'node:util';
 
 import type { Sandbox } from 'sandbox';
 
-import {
-  fakeRuntime,
-  gitOver,
-  localSandbox,
-  repository,
-} from './support/runtime.js';
+import { routedGit } from './support/routed-git.js';
+import { fakeRuntime, localSandbox, repository } from './support/runtime.js';
 
 const run = promisify(execFile);
 
@@ -46,7 +42,7 @@ const counted = (sandbox: Sandbox) => {
 };
 
 const projectOver = (t: TestContext, sandbox: Sandbox) => {
-  const { git, dispose } = gitOver(sandbox, fakeRuntime());
+  const { git, dispose } = routedGit(sandbox, fakeRuntime());
   t.after(dispose);
   return git({ projectId: 'project-1' });
 };

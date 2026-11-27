@@ -4,8 +4,8 @@
 // `src/host/main.ts` serves them (`createFilesHost()`, its `files`,
 // `tools.implementation` and `activate`), with recording fakes of
 // section D's services: `tools/v1` (`Register`), `runtime.workspace/v1`
-// (over `fakeHost().workspace`), `runtime.lease/v1` (over a sandbox of the
-// kernel tests, with a settable lease state and sandbox id) and
+// (over `fakeHost().workspace`), `runtime.lease/v1` (over a fake sandbox,
+// with a settable lease state and sandbox id) and
 // `runtime.attachments/v1` (sniffs the image, ids it as sha256, refuses over
 // 5 MiB with runtime's message). `core`'s calls to the handler service
 // arrive through `router.client` with the caller `core` and the prompt scope;
@@ -53,11 +53,17 @@ import {
   SetCwdRequestSchema,
   WorkspaceService,
 } from 'runtime/contracts/gen/doric/runtime/workspace/v1/workspace_pb.js';
+import type { Sandbox } from 'sandbox';
 
 import { FilesService } from '../../src/contracts/gen/doric/files/v1/files_pb.js';
 import { createFilesHost } from '../../src/host/service.js';
 import { createFakeSandbox, WORKSPACE_ROOT } from '../fake-sandbox.js';
-import type { LeasedSandbox } from './services.js';
+
+/** The sandbox operations the `runtime.lease/v1` fake forwards. */
+export type LeasedSandbox = Pick<
+  Sandbox,
+  'id' | 'root' | 'exec' | 'readFile' | 'writeFile' | 'getFile'
+>;
 
 /** `core`, as the router stamps it on its calls to the handler service. */
 export const core: Caller = {
@@ -164,7 +170,7 @@ const fakeOf = <S extends DescService>(
 ): ServiceEntry => [service, implementation as ServiceImpl<S>] as ServiceEntry;
 
 /**
- * A sandbox of the kernel tests over `localRoot` (its `exec`, `readFile`
+ * The fake sandbox over `localRoot` (its `exec`, `readFile`
  * and `getFile`) that also writes files there, so `edit` and `write` run
  * through `exec`-free reads and real writes.
  */

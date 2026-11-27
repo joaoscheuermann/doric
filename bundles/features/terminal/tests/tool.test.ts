@@ -4,24 +4,34 @@ import os from 'node:os';
 import path from 'node:path';
 import { describe, test } from 'node:test';
 
-import { defineMethod, defineService } from 'bundle/contracts';
-import { createTestServices } from 'bundle/testing';
-import { z } from 'zod';
+import type { Call } from 'bundle/contracts';
 
 import type {
   Terminal,
   TerminalInput,
   TerminalResult,
 } from '../src/contracts/index.js';
-import { kernelTerminalToolPorts } from '../src/host/ports.js';
 import { createTool, type TerminalOutput } from '../src/host/tool.js';
 
 /*
  * The `terminal` tool (moved from the `files` bundle): the working
  * directory, timeout, compaction, diagnostics and trace rules, over a
  * recording terminal/v1. Every command goes through terminal/v1; the
- * plain-command fallback is gone (D10-12).
+ * plain-command fallback is gone (D10-12). The tool is bound to ports of the
+ * shape the host part binds (`service.ts`: `cwd` the Thread's working
+ * directory, `run` the bundle's terminal operations), here over fakes (S68b:
+ * the kernel ports are gone).
  */
+
+/** One prompt's call, as `core` relays an `Execute`. */
+const promptCall: Call = {
+  caller: { bundleId: 'core', version: '1.0.0', generation: 1 },
+  scope: { projectId: 'p', threadId: 't', promptId: 'q' },
+  signal: new AbortController().signal,
+  trace: {
+    traceparent: '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01',
+  },
+};
 
 const finished = (overrides: Partial<TerminalResult> = {}): TerminalResult => ({
   terminalId: 'terminal-1',
@@ -44,26 +54,14 @@ const bound = (
       return answer(input);
     },
   };
-  const harness = createTestServices({
-    bundle: { id: 'terminal' },
-    provide: [
-      defineService('runtime.workspace/v1', {
-        cwd: defineMethod({
-          input: z.tuple([]),
-          output: z.string(),
-          execute: async () => options.cwd ?? '/workspace',
-        }),
-      }),
-    ],
-  });
   const tool = createTool({
     ...(options.traceDir === undefined ? {} : { traceDir: options.traceDir }),
   })
     .bind({
-      ...kernelTerminalToolPorts(harness.services),
+      cwd: async () => options.cwd ?? '/workspace',
       run: (input, call) => terminal.run(input, call),
     })
-    .toTool(harness.call({ projectId: 'p', threadId: 't', promptId: 'q' }));
+    .toTool(promptCall);
   return { tool, runs };
 };
 

@@ -2,17 +2,13 @@ import {
   type Call,
   type CallArg,
   ContractError,
-  defineMethod,
-  defineService,
   type Log,
 } from 'bundle/contracts';
 
-import {
-  type BackgroundTerminal,
-  terminalServiceMethods as methods,
-  type TerminalResult,
-  type TerminalService,
-  TerminalServiceV1,
+import type {
+  BackgroundTerminal,
+  TerminalResult,
+  TerminalService,
 } from '../contracts/index.js';
 import type { RuntimeThreads, RuntimeWorkspace } from './peers.js';
 import type { Redactions } from './redactions.js';
@@ -43,9 +39,8 @@ export const backgroundResultText = (
   `# Background terminal result\n\nTerminal: ${result.terminalId}\nOriginating prompt: ${promptId}\nCommand: ${command}\nExit code: ${result.exitCode}\nReason: ${result.reason}\nDuration: ${result.durationMs} ms\n\n## Standard output (last 12000 characters)\n\n${result.stdout.slice(-12000)}\n\n## Standard error (last 12000 characters)\n\n${result.stderr.slice(-12000)}`;
 
 /**
- * terminal/v1's operations over the registry (D1), shared by the kernel's
- * `defineService` and the process's `TerminalService`. Semantics as today
- * (`terminal.proto`, the kernel's `TerminalService` doc), with:
+ * terminal/v1's operations over the registry (D1), served by the process's
+ * `TerminalService`. Semantics as `terminal.proto` states them, with:
  * - `run`: needs `call.scope.threadId` and `promptId`. Holds the Thread with
  *   `{exclusive: false}`; `await thread.closing()` true, a refused hold, or a
  *   missing scope rejects with `ContractError('internal', 'Thread is inactive.')` and starts
@@ -152,66 +147,3 @@ export const createTerminalOperations = ({
   watchProject: (projectId, listener) =>
     watchProject(notices, registry, projectId, listener),
 });
-
-/**
- * terminal/v1 1.2.0: the kernel's `defineService(TerminalServiceV1, …)` over
- * `createTerminalOperations`. `run` is the runner's prompt terminal control:
- * it runs on the calling prompt's own Thread (call.scope) while neither the
- * Thread nor its Project is closing, and delivers a background command's
- * result to that Thread as a terminal-sourced prompt. `create` is the manual
- * shell of `WorkspaceService.terminals.create`; the rest reads the registry.
- * Kernel-only.
- */
-export const terminalService = (operations: TerminalService) =>
-  defineService(TerminalServiceV1, {
-    run: defineMethod({
-      ...methods.run,
-      execute: (input, call) => operations.run(input, call),
-    }),
-    list: defineMethod({
-      expose: 'desktop',
-      ...methods.list,
-      execute: (projectId, call) => operations.list(projectId, call),
-    }),
-    create: defineMethod({
-      expose: 'desktop',
-      ...methods.create,
-      execute: ([threadId, size], call) =>
-        operations.create(threadId, size, call),
-    }),
-    snapshot: defineMethod({
-      expose: 'desktop',
-      ...methods.snapshot,
-      execute: ([terminalId, after], call) =>
-        operations.snapshot(terminalId, after, call),
-    }),
-    input: defineMethod({
-      expose: 'desktop',
-      ...methods.input,
-      execute: ([terminalId, data], call) =>
-        operations.input(terminalId, data, call),
-    }),
-    resize: defineMethod({
-      expose: 'desktop',
-      ...methods.resize,
-      execute: ([terminalId, cols, rows], call) =>
-        operations.resize(terminalId, cols, rows, call),
-    }),
-    stop: defineMethod({
-      expose: 'desktop',
-      ...methods.stop,
-      execute: (terminalId, call) => operations.stop(terminalId, call),
-    }),
-    rename: defineMethod({
-      expose: 'desktop',
-      ...methods.rename,
-      execute: ([terminalId, name], call) =>
-        operations.rename(terminalId, name, call),
-    }),
-    watchProject: defineMethod({
-      expose: 'desktop',
-      ...methods.watchProject,
-      execute: ([projectId, listener], call) =>
-        operations.watchProject(projectId, listener, call),
-    }),
-  });

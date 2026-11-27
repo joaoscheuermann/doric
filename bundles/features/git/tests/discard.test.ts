@@ -28,11 +28,10 @@ import { isContractError } from 'bundle/contracts';
 import type { Sandbox } from 'sandbox';
 
 import type { Discard } from '../src/contracts/index.js';
-import { createGitService } from '../src/host/service.js';
+import { routedGit } from './support/routed-git.js';
 import {
   type FakeRuntime,
   fakeRuntime,
-  gitOver,
   localSandbox,
   repository,
   terminal,
@@ -164,7 +163,7 @@ const snapshot = async (root: string, repos: readonly string[] = ['']) =>
 
 /** `discard` on `thread-1` of a fake runtime over `sandbox`. */
 const discarder = (t: TestContext, sandbox: Sandbox, runtime: FakeRuntime) => {
-  const { git, dispose } = gitOver(sandbox, runtime);
+  const { git, dispose } = routedGit(sandbox, runtime);
   t.after(dispose);
   return (input: {
     readonly cwd?: string;
@@ -214,18 +213,11 @@ const skipping = (
 });
 
 describe('git.commands/v1 discard: contract (T-4.4.15)', () => {
-  test('is exposed to the desktop', () => {
-    assert.equal(
-      createGitService(() => undefined).methods.discard.expose,
-      'desktop',
-    );
-  });
-
   test('an empty `paths` is invalid input; Discard all sends none', async (t) => {
     const repo = await committed(t, { 'a.txt': 'a\n' });
     await write(repo.root, 'u.txt', 'untracked\n');
     const before = await snapshot(repo.root);
-    const { git, dispose } = gitOver(
+    const { git, dispose } = routedGit(
       repo.sandbox,
       fakeRuntime({ cwd: repo.root }),
     );

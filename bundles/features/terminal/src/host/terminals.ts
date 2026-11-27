@@ -2,7 +2,7 @@ import type { Log, Secrets } from 'bundle/contracts';
 
 import type { TerminalService } from '../contracts/index.js';
 import type { RuntimeThreads, RuntimeWorkspace } from './peers.js';
-import { createTerminalOperations, terminalService } from './provider.js';
+import { createTerminalOperations } from './provider.js';
 import { createRedactions } from './redactions.js';
 import { createTerminalRegistry } from './registry.js';
 import { createNotices } from './watch.js';
@@ -15,9 +15,7 @@ export interface TerminalHostOptions {
 }
 
 export interface TerminalHost {
-  /** terminal/v1 1.2.0 for the kernel (`terminalService`). Kernel-only. */
-  readonly definition: ReturnType<typeof terminalService>;
-  /** The same operations, for the process's `TerminalService` (D1). */
+  /** terminal/v1's operations, for the process's `TerminalService` (D1). */
   readonly operations: TerminalService;
   /**
    * The `onThreadsClosingHook` handler: stops every session of `threadIds`
@@ -33,8 +31,8 @@ export interface TerminalHost {
 }
 
 /**
- * The bundle's terminal sessions without the kernel wiring: what `activate`
- * provides and hooks, reusable by a peer's tests that need the real owner.
+ * The bundle's terminal sessions: what the host part's `activate` serves and
+ * hooks.
  * Builds the host with no call: the redaction watch opens here
  * (`secrets.watchRedactions`).
  */
@@ -57,7 +55,6 @@ export const createTerminalHost = ({
   });
 
   return {
-    definition: terminalService(operations),
     operations,
     threadsClosing: async ({ projectId, threadIds }) => {
       await registry.close(threadIds).catch(() => {

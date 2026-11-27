@@ -6,7 +6,7 @@ import { describe, test } from 'node:test';
 
 import { tool as factory } from '../src/host/tools/tree.js';
 import { createFakeSandbox, fakeHost } from './fake-sandbox.js';
-import { bindTool } from './support/services.js';
+import { routedTool } from './support/router-fixtures.js';
 
 void describe('tree tool', () => {
   void test('renders ascii tree and includes .agents while hiding other dot paths', async () => {
@@ -20,7 +20,7 @@ void describe('tree tool', () => {
 
     await write(root, 'visible.txt', 'visible');
 
-    const output = await bindTool(
+    const output = await routedTool(
       factory,
       createFakeSandbox(root),
       fakeHost(),
@@ -48,7 +48,7 @@ void describe('tree tool', () => {
 
     await write(root, 'outside.ts', 'outside');
 
-    const output = await bindTool(
+    const output = await routedTool(
       factory,
       createFakeSandbox(root),
       fakeHost({ cwd: '/workspace/src' }),
@@ -72,7 +72,7 @@ void describe('tree tool', () => {
 
     await write(root, 'keep.txt', 'keep');
 
-    const output = await bindTool(
+    const output = await routedTool(
       factory,
       createFakeSandbox(root),
       fakeHost(),
@@ -96,7 +96,7 @@ void describe('tree tool', () => {
 
     await mkdir(path.join(root, 'a/b/empty'), { recursive: true });
 
-    const tool = bindTool(factory, createFakeSandbox(root), fakeHost());
+    const tool = routedTool(factory, createFakeSandbox(root), fakeHost());
     const shallow = await tool.execute({ path: '.' });
 
     assert.match(shallow, /c\/ \(2 entries not shown\)/);

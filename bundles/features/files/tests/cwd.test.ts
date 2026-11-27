@@ -9,7 +9,7 @@ import type { Sandbox } from 'sandbox';
 
 import { tool as factory } from '../src/host/tools/cwd.js';
 import { fakeHost, WORKSPACE_ROOT } from './fake-sandbox.js';
-import { bindTool } from './support/services.js';
+import { routedTool } from './support/router-fixtures.js';
 
 void describe('cwd tool', () => {
   void test('reports the current directory without a path', async () => {
@@ -209,7 +209,7 @@ const repositoryNote =
 /** The tool only asks the host about directories, so its sandbox is inert. */
 const sandbox = { id: 'cwd-test', root: WORKSPACE_ROOT } as Sandbox;
 
-const tool = (host: Host) => bindTool(factory, sandbox, host);
+const tool = (host: Host) => routedTool(factory, sandbox, host);
 
 const workspace = async (name: string): Promise<string> => {
   const root = await mkdtemp(path.join(os.tmpdir(), `doric-${name}-`));

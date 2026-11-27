@@ -626,7 +626,8 @@ From S43 the host parts serve their contracts beside their kernel entries (see
 no kernel entry and serve only through their process entries, and since S68a
 `claude`, `codex`, `openai`, `openrouter`, `docker`, `firecracker`,
 `host-config`, `claude-login`, `resources`, `usage`, `web`, `screen`,
-`comments` and `threads` have none either. The parts the executor path uses
+`comments` and `threads` have none either, and since S68b neither have
+`files`, `git` and `terminal`. The parts the executor path uses
 work as follows. A thrown llms provider error crosses the router as
 `provider_error` and a thrown tool error as `tool_error`, both
 `FAILED_PRECONDITION` with every field of the error's data in
@@ -644,7 +645,8 @@ is not aborted: `runtime` signals it through
 after a 5 s grace; a failure after the cancel answers `run_cancelled` or
 `compaction_cancelled`. The kernel entries stayed in use until S62; S67 deletes
 the kernel, the in-process host and the kernel entries of `core` and `postgres`,
-and S68a those of the fourteen bundles above.
+S68a those of the fourteen bundles above, and S68b those of `files`, `git`
+and `terminal`.
 
 Since S62a the build also counts what a host part serves without recording it
 (`hostProvides`, `packages/bundle/src/build/host-provides.ts`): the `HOST` or
@@ -1820,3 +1822,30 @@ sandbox pool` then `Sandbox pool configured` with the `logSandboxPool`
   tests, and contract exports without importers stay until a later slice; the
   package exports `./host` and `./kernel` dangle until S70. No boundary
   exception was needed.
+- 2026-11-27: phase 3, slice S68b, of
+  [the spec](../designs/grpc-processes.md) (version 6.49): the kernel entries
+  `files/src/host/index.ts`, `git/src/host/{index,service}.ts` and
+  `terminal/src/host/index.ts` are deleted, with the kernel symbols only they
+  used, among them `terminal`'s `terminalService`, `TerminalHost.definition`
+  and `TerminalList`; each bundle's `host-build.test.ts` asserts that
+  `dist/host/index.js` is absent, and the kernel suites are ported onto the
+  router or deleted (`files`' `activate`, `binding` and `router-files-parity`,
+  `git`'s `router-parity` and `router-parity-project`, `terminal`'s `provider`
+  and `router-parity`). Decisions: `files/src/host/{ports,sandbox}.ts`,
+  `git/src/host/{ports,sandbox}.ts` and `terminal/src/host/{ports,peers}.ts`
+  stay with only their live types (`git`'s `LeaseSandbox` too, which
+  `routed.ts` uses); `createTerminalHost` stays as the live part's builder;
+  `FilesV1`, `filesMethods`, `GitCommandsV1`, `gitMethods`, `TerminalServiceV1`
+  and `terminalServiceMethods` stay until S69, since `transport` imports them;
+  `TerminalV1` and `terminalMethods`, which nothing imports, stay until S69 as
+  the plan schedules, a pending orphan of X4; `files/v1`'s `ContentInput.encoding` stays for
+  `papercraft`. The routed `edit` answers `File not found: <path>` for a
+  missing file again (it answered `Failed to read file: ENOENT: …` since S53):
+  the lease's read failure arrives as `ContractError('internal', 'ENOENT: …')`
+  without a Node code, so `edit` also reads a message that starts with
+  `ENOENT:` as a missing file, a check that depends on the message text. Four
+  boundary exceptions until S70 keep the dependencies the deleted tests
+  orphaned: `files` → `pino` and `sandpool` (`tests/binding.test.ts`) and
+  `terminal` (`tests/support/services.ts`); `git` →
+  `@bufbuild/protovalidate` (`tests/support/parity.ts`). `terminal`'s `./host` package export dangles until
+  S70.

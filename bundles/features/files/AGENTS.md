@@ -36,8 +36,8 @@ the bundle that knows what they mean.
   read.
 - Add a `files/v1` method to `Files` and `filesMethods` in
   `src/contracts/index.ts`, implement it in `src/host/reads.ts` (or, for a
-  write, `src/host/writes.ts`) with `expose: 'desktop'`, and run it only
-  through `runtime.lease/v1.withLease`, answering every expected failure as a
+  write, `src/host/writes.ts`), serve it in `src/host/lease.ts`, and run it
+  only on the Project's current lease (`runOnProjectLease`), answering every expected failure as a
   status in its value. Call it from the window only through
   `src/client/api/reads.ts` or `src/client/api/writes.ts`.
 - Make no workspace write from the client part other than `createFile` and
@@ -87,13 +87,14 @@ the bundle that knows what they mean.
   any provider's error.
 - When you raise `version` in `manifest.json` or a `provides` entry, update
   `tests/manifest.test.ts` and `tests/workspace-sheet.test.ts`, which pin them;
-  when you add or reorder a tool, update `tests/activate.test.ts`.
+  when you add or reorder a tool, update `tests/router-tools.test.ts`.
 - Keep the Monaco slider rule of `src/client/styles.css` unlayered and after
   its `@source` lines.
 - Add the test of each change in the same change: a tool test as
   `tests/<tool>.test.ts` over `createFakeSandbox` of
-  [`tests/fake-sandbox.ts`](tests/fake-sandbox.ts) and the services of
-  [`tests/support/services.ts`](tests/support/services.ts); a `files/v1` test
+  [`tests/fake-sandbox.ts`](tests/fake-sandbox.ts), run through `routedTool` of
+  [`tests/support/router-fixtures.ts`](tests/support/router-fixtures.ts); a
+  `files/v1` test
   in `tests/reads.test.ts` or `tests/write-entry.test.ts`; a test of DOM-free
   client logic in `tests/`; and a rendered-view test in `tests/client/`
   through [`tests/client/support/render.ts`](tests/client/support/render.ts).

@@ -20,7 +20,7 @@ import { deferred } from './support/deferred.js';
  * `tests/terminals.test.ts`): snapshot truncation, OSC 633;E command
  * tracking, redaction across chunk boundaries, manual sessions kept
  * `exited`, agent sessions removed. The prompt-level cases go through the
- * provider in `provider.test.ts`.
+ * router in `router.test.ts` and `router-sessions.test.ts`.
  */
 
 const result: SandboxExecResult = {

@@ -20,7 +20,8 @@ import { createGitStore } from '../src/client/changes/store.js';
 import type { ChangesObservation, Git } from '../src/contracts/index.js';
 import { commandsOver, gitWindow } from './support/commands-connect.js';
 import { connectFailure } from './support/connect.js';
-import { fakeRuntime, gitOver, repository } from './support/runtime.js';
+import { routedGit } from './support/routed-git.js';
+import { fakeRuntime, repository } from './support/runtime.js';
 
 /** The client part's calls over Connect to today's `git` behind the host. */
 const apiOver = (git: (scope: { readonly projectId?: string }) => Git) =>
@@ -39,7 +40,7 @@ describe('the window over git.commands/v1', () => {
   test('reads changes and comparisons, and lease states as data', async (t) => {
     const repo = await dirty(t);
     const runtime = fakeRuntime({ cwd: repo.root });
-    const { git, dispose } = gitOver(repo.sandbox, runtime);
+    const { git, dispose } = routedGit(repo.sandbox, runtime);
     t.after(dispose);
     const api = apiOver(git);
 
@@ -78,7 +79,7 @@ describe('the window over git.commands/v1', () => {
   test('reads a Thread summary and branches, and its states as the route bodies', async (t) => {
     const repo = await dirty(t);
     const runtime = fakeRuntime({ cwd: repo.root });
-    const { git, dispose } = gitOver(repo.sandbox, runtime);
+    const { git, dispose } = routedGit(repo.sandbox, runtime);
     t.after(dispose);
     const api = apiOver(git);
 
@@ -124,7 +125,7 @@ describe('the window over git.commands/v1', () => {
 
   test('shows a refused switch as its sentence', async (t) => {
     const repo = await dirty(t);
-    const { git, dispose } = gitOver(
+    const { git, dispose } = routedGit(
       repo.sandbox,
       fakeRuntime({ cwd: repo.root }),
     );
@@ -138,7 +139,7 @@ describe('the window over git.commands/v1', () => {
   test('answers a Discard with the host outcome unchanged', async (t) => {
     const repo = await dirty(t);
     const runtime = fakeRuntime({ cwd: repo.root });
-    const { git, dispose } = gitOver(repo.sandbox, runtime);
+    const { git, dispose } = routedGit(repo.sandbox, runtime);
     t.after(dispose);
     const api = apiOver(git);
     const discard = (cwd = repo.root) =>
@@ -213,7 +214,7 @@ describe('the window over git.commands/v1', () => {
   }, async (t) => {
     const repo = await dirty(t);
     const runtime = fakeRuntime({ cwd: repo.root });
-    const { git, dispose } = gitOver(repo.sandbox, runtime);
+    const { git, dispose } = routedGit(repo.sandbox, runtime);
     t.after(dispose);
     const store = createGitStore(() => apiOver(git));
     t.after(() => store.dispose());

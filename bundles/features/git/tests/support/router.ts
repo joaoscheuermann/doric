@@ -12,16 +12,24 @@
 import {
   type DescMessage,
   type DescService,
+  fromJson,
   type JsonValue,
   type MessageShape,
   toJson,
 } from '@bufbuild/protobuf';
-import type { Client, HandlerContext, ServiceImpl } from '@connectrpc/connect';
+import { ValueSchema } from '@bufbuild/protobuf/wkt';
+import {
+  type Client,
+  ConnectError,
+  type HandlerContext,
+  type ServiceImpl,
+} from '@connectrpc/connect';
 import {
   type Caller,
   type CallScope,
   ContractError,
   callOf,
+  fromConnectError,
 } from 'bundle/contracts';
 import {
   RegisterKindRequestSchema,
@@ -45,6 +53,7 @@ import {
 } from 'runtime/contracts/gen/doric/runtime/workspace/v1/workspace_pb.js';
 import type { Sandbox } from 'sandbox';
 import { TerminalService } from 'terminal/contracts/gen/doric/terminal/v1/terminal_pb.js';
+import type { Tool, ToolInput, ToolOutput } from 'tool';
 
 import { createGitProcessHost } from '../../src/host/part.js';
 
@@ -269,3 +278,39 @@ export const harness = (options: HarnessOptions): Harness => {
     },
   };
 };
+
+/**
+ * `definition`'s tool as `core` calls it (S68b: the suites of the kernel-bound
+ * tool run here): each `execute` serves the part on a fresh test router over
+ * `sandbox`, with `Cwd` answering `cwd()` at that moment, activates it, sends
+ * `Execute{name: definition.name, payload}` under {@link promptScope} and
+ * stops the router. The answer is the result as parsed JSON; a failure
+ * rejects with its Doric error.
+ */
+export const routedTool = <I extends ToolInput, O extends ToolOutput>(
+  definition: { readonly name: string; readonly input: I; readonly output: O },
+  sandbox: ExecSandbox,
+  cwd: () => string,
+): Pick<Tool<I, O>, 'execute'> => ({
+  execute: async (payload) => {
+    const h = harness({ sandbox, cwd: cwd() });
+
+    try {
+      await h.activate();
+      const { result } = await h.client
+        .execute({
+          name: definition.name,
+          payload: fromJson(ValueSchema, payload as unknown as JsonValue),
+        })
+        .catch((error: unknown) => {
+          throw error instanceof ConnectError ? fromConnectError(error) : error;
+        });
+
+      return (
+        result === undefined ? undefined : toJson(ValueSchema, result)
+      ) as Awaited<ReturnType<Tool<I, O>['execute']>>;
+    } finally {
+      await h.router.control.stop();
+    }
+  },
+});

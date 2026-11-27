@@ -375,9 +375,18 @@ const resolvePath = (cwd: string, value: string): string =>
   path.normalize(path.isAbsolute(value) ? value : path.join(cwd, value));
 
 const readFailure = (filePath: string, error: unknown): string =>
-  hasCode(error, 'ENOENT')
+  isMissingFile(error)
     ? `File not found: ${filePath}`
     : `Failed to read file: ${errorMessage(error)}`;
+
+/**
+ * Whether a read failed because the file does not exist: a Node `ENOENT`,
+ * or the lease's `ReadFile` failure carrying the sandbox's `ENOENT` message
+ * (`runtime.lease/v1` answers it as `internal` with the raw message).
+ */
+const isMissingFile = (error: unknown): boolean =>
+  hasCode(error, 'ENOENT') ||
+  (error instanceof Error && error.message.startsWith('ENOENT:'));
 
 const hasCode = (error: unknown, code: string): boolean =>
   typeof error === 'object' &&

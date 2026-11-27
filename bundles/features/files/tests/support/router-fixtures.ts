@@ -1,6 +1,8 @@
-// Shared fixtures of the router tests of `files` (router-tools.test.ts):
-// activate the part, call its tools as `core` does, read the failure as a
-// Doric error, and run the kernel-bound tool on a twin workspace for parity.
+// Shared fixtures of the router tests of `files`: activate the part, call
+// its tools as `core` does, and read the failure as a Doric error.
+// `routedTool` stands a tool definition up as the agent loop reaches it
+// through the router, for the tool suites (cwd, edit, find, grep, tree,
+// view-image, write).
 
 import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
@@ -17,20 +19,16 @@ import {
   isContractError,
 } from 'bundle/contracts';
 import type { Host } from 'runtime/contracts';
-import type { ToolInput, ToolOutput, UnboundTool } from 'tool';
+import type { Tool, ToolInput, ToolOutput } from 'tool';
 
-import type { FilesToolPorts } from '../../src/host/ports.js';
 import {
+  type AttachRecord,
   type FakeCall,
   type Harness,
   type HarnessOptions,
   harness,
-} from './router.js';
-import {
-  type AttachedImages,
-  bindTool,
   type LeasedSandbox,
-} from './services.js';
+} from './router.js';
 
 /** The part activated on a test router, stopped when the test ends. */
 export const activated = async (
@@ -83,19 +81,54 @@ export const execute = async (
   return result === undefined ? undefined : toJson(ValueSchema, result);
 };
 
-/** What the kernel-bound `definition` answers for `payload`, as JSON. */
-export const kernelAnswer = async (
-  definition: UnboundTool<ToolInput, ToolOutput, FilesToolPorts>,
+/** A tool definition's agent-loop face, reached through the router. */
+export interface RoutedTool<I extends ToolInput, O extends ToolOutput> {
+  /** `Execute{name, payload}`'s result as parsed JSON; a failure rejects with its Doric error. */
+  readonly execute: Tool<I, O>['execute'];
+  /** The attachments `runtime.attachments/v1` kept, over every `execute`, in order. */
+  readonly attached: AttachRecord[];
+}
+
+/**
+ * `definition`'s tool as `core` calls it: each `execute` serves the part on a
+ * fresh test router over `sandbox` and `host` (whose working directory
+ * persists between calls), activates it as `main.ts` does, sends
+ * `Execute{name: definition.name, payload}` under the prompt scope and stops
+ * the router.
+ */
+export const routedTool = <I extends ToolInput, O extends ToolOutput>(
+  definition: { readonly name: string; readonly input: I; readonly output: O },
   sandbox: LeasedSandbox,
   host: Host,
-  payload: JsonValue,
-  attached?: AttachedImages,
-): Promise<JsonValue> => {
-  const output = await bindTool(definition, sandbox, host, attached).execute(
-    payload as never,
-  );
+): RoutedTool<I, O> => {
+  const attached: AttachRecord[] = [];
 
-  return JSON.parse(JSON.stringify(output)) as JsonValue;
+  return {
+    attached,
+    execute: async (payload) => {
+      const h = harness({ sandbox, host });
+
+      try {
+        await h.activate();
+        let answer: JsonValue | undefined;
+
+        try {
+          answer = await execute(
+            h,
+            definition.name,
+            payload as unknown as JsonValue,
+          );
+        } catch (error) {
+          throw contractErrorOf(error);
+        }
+        attached.push(...h.attached);
+
+        return answer as Awaited<ReturnType<Tool<I, O>['execute']>>;
+      } finally {
+        await h.router.control.stop();
+      }
+    },
+  };
 };
 
 /** A fresh local workspace holding `files` (path → content), removed after `t`. */

@@ -58,27 +58,19 @@ What a part can reach depends on its environment. A `host` part is served by pro
 
 ### An example
 
-The `host` part of `git` registers a credential kind and a tool, provides its own service and follows the `terminal` bundle's service when one is active ([`git/src/host/index.ts`](../../../bundles/features/git/src/host/index.ts)):
+The `host` part of `git` registers a credential kind and a tool from its `activate`, and serves its own service `git.commands/v1`, whose busy check lists the `terminal` bundle's sessions when one is served ([`git/src/host/part.ts`](../../../bundles/features/git/src/host/part.ts)):
 
 ```ts
-import { type HostContext, SecretsV1, ToolsV1 } from 'bundle/contracts';
-import { type TerminalService, TerminalServiceV1 } from 'terminal/contracts';
-
-export const activate = ({ services }: HostContext): void => {
-  let terminals: TerminalService | undefined;
-
-  services.use(SecretsV1).registerKind(gitCredentialKind);
-  services.whenAvailable(TerminalServiceV1, (api) => {
-    terminals = api;
-    return () => {
-      terminals = undefined;
-    };
-  });
-  services.provide(createGitService(() => terminals));
-  services
-    .use(ToolsV1)
-    .register(createTool(), { alwaysAvailable: false, order: 900 });
-};
+activate: async (context) => {
+  await context.registrations.track(SecretsService, (client) =>
+    client.registerKind({ credentialKindDefinition: gitKind }),
+  );
+  await tools.register(
+    context,
+    createTool().bind(routedGitToolPorts(context.services)),
+    { alwaysAvailable: false, order: 900 },
+  );
+},
 ```
 
 Each contract it touches is a line of its manifest: `secrets/v1` and `tools/v1` under `requires`, `terminal/v1` under `optional`, and `git.commands/v1`, the service it provides, under `provides`. The tool's `execute` receives `(input, call, services)` and reaches the Project's working directory and sandbox through `runtime.workspace/v1` and `runtime.lease/v1`, bound to the scope of the call, so both are under `requires` as well ([`git/manifest.json`](../../../bundles/features/git/manifest.json), [`tools/git.ts`](../../../bundles/features/git/src/host/tools/git.ts), [`sandbox.ts`](../../../bundles/features/git/src/host/sandbox.ts)). The contracts of `git` are described in its [README](../../../bundles/features/git/README.md).

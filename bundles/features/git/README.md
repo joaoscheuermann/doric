@@ -21,29 +21,29 @@ the bundle are in [`AGENTS.md`](AGENTS.md).
 
   | Contract                 | Version | Part                       | Provided by                                                  |
   | ------------------------ | ------- | -------------------------- | ------------------------------------------------------------ |
-  | `git.commands/v1`        | 1.1.0   | host                       | [`src/host/service.ts`](src/host/service.ts)                 |
+  | `git.commands/v1`        | 1.1.0   | host                       | [`src/host/commands.ts`](src/host/commands.ts)               |
   | `git.changes/v1`         | 1.0.0   | client                     | [`src/client/changes/store.ts`](src/client/changes/store.ts) |
   | `git.open-comparison/v1` | 1.0.0   | client (command)           | [`src/client/commands.ts`](src/client/commands.ts)           |
   | `files.decorations/v1`   | 1.0.0   | client, cardinality `many` | [`src/client/changes/store.ts`](src/client/changes/store.ts) |
 
 - `requires`, and what the bundle uses each for:
 
-  | Contract                        | Part         | Use                                                                                                                                                                                                                 |
-  | ------------------------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-  | `tools/v1@^1.5.0`               | host         | registers the `git` tool ([`src/host/index.ts`](src/host/index.ts))                                                                                                                                                 |
-  | `skills/v1@^1.3.0`              | host         | the host SDK registers the bundle's skills (see [Skills](#skills))                                                                                                                                                  |
-  | `runtime.workspace/v1@^1.3.0`   | host         | the tool's working directory, and every Thread read of `git.commands/v1` through `withThread` ([`src/host/sandbox.ts`](src/host/sandbox.ts), [`src/host/service.ts`](src/host/service.ts))                          |
-  | `runtime.lease/v1@^1.4.0`       | host         | the tool's sandbox, and every Project read of `git.commands/v1` through `withLease` ([`src/host/sandbox.ts`](src/host/sandbox.ts), [`src/host/service.ts`](src/host/service.ts))                                    |
-  | `secrets/v1@^1.3.0`             | host, client | registers the `GIT` credential kind; lists the stored credentials for the Versioning section ([`src/host/index.ts`](src/host/index.ts), [`src/client/settings/versioning.tsx`](src/client/settings/versioning.tsx)) |
-  | `ui/v1@^1.0.0`                  | client       | defines the six elements ([`src/client/index.ts`](src/client/index.ts))                                                                                                                                             |
-  | `regions/v1@^1.0.0`             | client       | adds the three region items ([`src/client/index.ts`](src/client/index.ts))                                                                                                                                          |
-  | `navigation/v1@^1.0.0`          | client       | registers the route `/settings/git` ([`src/client/index.ts`](src/client/index.ts))                                                                                                                                  |
-  | `commands/v1@^1.0.0`            | client       | registers `git.open-comparison/v1`; runs it and `files.open-file/v1` ([`src/client/commands.ts`](src/client/commands.ts))                                                                                           |
-  | `workspace.selection/v1@^1.0.0` | client       | the selected Project and Thread ids ([`src/client/hooks/use-selection.ts`](src/client/hooks/use-selection.ts))                                                                                                      |
-  | `runtime.records/v1@^1.0.0`     | client       | the selected Project's and Thread's records ([`src/client/hooks/use-selection.ts`](src/client/hooks/use-selection.ts))                                                                                              |
-  | `layout.tabs/v2@^2.0.0`         | client       | opens the comparison tab with its `menu`; reads the current tab ([`src/client/commands.ts`](src/client/commands.ts), [`src/client/changes/git-changes.tsx`](src/client/changes/git-changes.tsx))                    |
-  | `settings.config/v1@^1.0.0`     | client       | reads and edits the settings window's draft ([`src/client/settings/versioning.tsx`](src/client/settings/versioning.tsx))                                                                                            |
-  | `hooks/v1@^1.0.0`               | client       | waits for `chat.hooks/v2` ([`src/client/index.ts`](src/client/index.ts))                                                                                                                                            |
+  | Contract                        | Part         | Use                                                                                                                                                                                                               |
+  | ------------------------------- | ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+  | `tools/v1@^1.5.0`               | host         | registers the `git` tool ([`src/host/part.ts`](src/host/part.ts))                                                                                                                                                 |
+  | `skills/v1@^1.3.0`              | host         | the host SDK registers the bundle's skills (see [Skills](#skills))                                                                                                                                                |
+  | `runtime.workspace/v1@^1.3.0`   | host         | the tool's working directory, and every Thread read of `git.commands/v1` through `withThread` ([`src/host/sandbox.ts`](src/host/sandbox.ts), [`src/host/commands.ts`](src/host/commands.ts))                      |
+  | `runtime.lease/v1@^1.4.0`       | host         | the tool's sandbox, and every Project read of `git.commands/v1` through `withLease` ([`src/host/sandbox.ts`](src/host/sandbox.ts), [`src/host/commands.ts`](src/host/commands.ts))                                |
+  | `secrets/v1@^1.3.0`             | host, client | registers the `GIT` credential kind; lists the stored credentials for the Versioning section ([`src/host/part.ts`](src/host/part.ts), [`src/client/settings/versioning.tsx`](src/client/settings/versioning.tsx)) |
+  | `ui/v1@^1.0.0`                  | client       | defines the six elements ([`src/client/index.ts`](src/client/index.ts))                                                                                                                                           |
+  | `regions/v1@^1.0.0`             | client       | adds the three region items ([`src/client/index.ts`](src/client/index.ts))                                                                                                                                        |
+  | `navigation/v1@^1.0.0`          | client       | registers the route `/settings/git` ([`src/client/index.ts`](src/client/index.ts))                                                                                                                                |
+  | `commands/v1@^1.0.0`            | client       | registers `git.open-comparison/v1`; runs it and `files.open-file/v1` ([`src/client/commands.ts`](src/client/commands.ts))                                                                                         |
+  | `workspace.selection/v1@^1.0.0` | client       | the selected Project and Thread ids ([`src/client/hooks/use-selection.ts`](src/client/hooks/use-selection.ts))                                                                                                    |
+  | `runtime.records/v1@^1.0.0`     | client       | the selected Project's and Thread's records ([`src/client/hooks/use-selection.ts`](src/client/hooks/use-selection.ts))                                                                                            |
+  | `layout.tabs/v2@^2.0.0`         | client       | opens the comparison tab with its `menu`; reads the current tab ([`src/client/commands.ts`](src/client/commands.ts), [`src/client/changes/git-changes.tsx`](src/client/changes/git-changes.tsx))                  |
+  | `settings.config/v1@^1.0.0`     | client       | reads and edits the settings window's draft ([`src/client/settings/versioning.tsx`](src/client/settings/versioning.tsx))                                                                                          |
+  | `hooks/v1@^1.0.0`               | client       | waits for `chat.hooks/v2` ([`src/client/index.ts`](src/client/index.ts))                                                                                                                                          |
 
 - `optional`, and what happens without each:
 
@@ -99,7 +99,7 @@ takes every other `files.*` type with `import type`.
   fake `git.commands/v1` from it
   ([`bundles/foundation/transport/tests/support/host.ts`](../../foundation/transport/tests/support/host.ts)).
 
-- **Host part** ([`src/host/index.ts`](src/host/index.ts)): at activation it
+- **Host part** ([`src/host/part.ts`](src/host/part.ts)): at activation it
   registers the `GIT` credential kind with `secrets/v1`, follows
   `terminal/v1` while some bundle provides it, provides `git.commands/v1`, and
   registers the `git` tool with `tools/v1` (`alwaysAvailable: false`,
@@ -188,8 +188,8 @@ how the stored identity reaches the sandbox.
 
 `GitCommandsV1 = ref<Git>('git.commands/v1')`, version 1.1.0, provided by the
 host part ([`src/contracts/index.ts`](src/contracts/index.ts),
-[`src/host/service.ts`](src/host/service.ts)). Every method is exposed to the
-desktop. `status` and `branches` take the Thread id as a string; every other
+[`src/host/commands.ts`](src/host/commands.ts)). The window reaches every method
+through the manifest's `desktopScope`. `status` and `branches` take the Thread id as a string; every other
 input is a strict object (an unknown field is refused). Outputs are loose
 objects (an extra field is accepted), except the `ready` value of `discard`,
 `{ discarded }`, which is strict.
@@ -358,7 +358,7 @@ sandbox command: a shell probe that prints labeled facts, then
 ### `branches` and `switchBranch`
 
 [`src/host/branches.ts`](src/host/branches.ts) and
-[`src/host/service.ts`](src/host/service.ts).
+[`src/host/commands.ts`](src/host/commands.ts).
 
 - `branches` lists `refs/heads/` with `git for-each-ref`, newest committer
   date first: `name`, short `commit`, `subject` and `worktree` (the path of
@@ -439,7 +439,7 @@ with `{ discarded }`.
 ### `changes`
 
 `readProjectChanges` in [`src/host/changes.ts`](src/host/changes.ts); the
-scope check in [`src/host/service.ts`](src/host/service.ts).
+scope check in [`src/host/commands.ts`](src/host/commands.ts).
 
 - A `path` that escapes the sandbox answers `invalid_path`, and a missing one
   `not_found` (`workspacePathKind` of `sandbox`).
@@ -830,10 +830,10 @@ Monaco's scrollbar slider as the window's 7 px pill.
 
 ## The host process
 
-The host part also builds as a process (phase 3 of
+The host part runs as a process (phase 3 of
 [`docs/designs/grpc-processes.md`](../../../docs/designs/grpc-processes.md)),
-into `dist/host/main.mjs`; the running host keeps the kernel entry
-([`src/host/index.ts`](src/host/index.ts)) until slice S62.
+built into `dist/host/main.mjs`; slice S68b deleted the kernel entry
+`src/host/index.ts` and its `git.commands/v1` provider `src/host/service.ts`.
 
 - [`src/host/main.ts`](src/host/main.ts) runs `createGitProcessHost`
   ([`src/host/part.ts`](src/host/part.ts)) with `runBundle`, serving
@@ -846,11 +846,10 @@ into `dist/host/main.mjs`; the running host keeps the kernel entry
   registered. Before `activate` resolved, or after a refusal, every
   `git.commands/v1` method fails `unavailable` "git is not activated.".
 - The operations of `git.commands/v1` live once in `createGitCommands`
-  ([`src/host/commands.ts`](src/host/commands.ts)), used by the kernel
-  through `kernelGitCommandPorts` ([`src/host/ports.ts`](src/host/ports.ts))
-  and by the process through `routedGitCommandPorts`
-  ([`src/host/routed.ts`](src/host/routed.ts)); the tool's ports are
-  `kernelGitToolPorts` and `routedGitToolPorts`. Responses are encoded by
+  ([`src/host/commands.ts`](src/host/commands.ts)) over `GitCommandPorts`
+  ([`src/host/ports.ts`](src/host/ports.ts)), which the process binds with
+  `routedGitCommandPorts` ([`src/host/routed.ts`](src/host/routed.ts)); the
+  tool's ports are `routedGitToolPorts`. Responses are encoded by
   [`src/host/codec.ts`](src/host/codec.ts).
 - Routed, Thread methods open a session with `withThreadSession` (passing
   `exclusive`) and read the busy working directories from `ThreadState`;
@@ -877,9 +876,11 @@ npx nx run bundle-git:build
   `tsconfig.client-spec.json` into `dist-tests/`, and runs
   `dist-tests/tests/*.test.js` and `dist-tests/tests/client/*.test.js` with
   `node --test`. The host tests run real `git` and `sh` in a temporary
-  directory through fakes of `runtime.workspace/v1`, `runtime.lease/v1` and
-  `terminal/v1` ([`tests/support/runtime.ts`](tests/support/runtime.ts),
-  [`tests/support/services.ts`](tests/support/services.ts)); the tests under
+  directory through the host part on a test router, with fakes of
+  `runtime.workspace/v1`, `runtime.lease/v1` and `terminal/v1`
+  ([`tests/support/runtime.ts`](tests/support/runtime.ts),
+  [`tests/support/routed-git.ts`](tests/support/routed-git.ts),
+  [`tests/support/router.ts`](tests/support/router.ts)); the tests under
   `tests/client/` boot `happy-dom`. `tests/generated-imports.test.ts` imports
   `files/contracts/gen` and bundles it with `esbuild`, a dev dependency.
 - `npx nx run doric-host:build-bundles` stages `dist/` into the Doric host's

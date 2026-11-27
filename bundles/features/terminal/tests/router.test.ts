@@ -6,6 +6,8 @@
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 
+import { fromJson, type JsonValue, toJson } from '@bufbuild/protobuf';
+import { ValueSchema } from '@bufbuild/protobuf/wkt';
 import { type CallScope, ContractError } from 'bundle/contracts';
 import { LeaseService } from 'runtime/contracts/gen/doric/runtime/lease/v1/lease_pb.js';
 
@@ -278,6 +280,21 @@ void test('R5: a rejected Enqueue sends FailTerminalResult; a rejected Fail logs
   );
 });
 
+// Ported from the kernel `provider.test.ts` (S68b): the text R5 enqueues.
+void test('R5: the background text keeps the last 12000 characters of each stream', () => {
+  assert.equal(
+    backgroundResultText('p-1', 'make', {
+      terminalId: 't-1',
+      stdout: `${'a'.repeat(5)}${'b'.repeat(12000)}`,
+      stderr: 'err',
+      exitCode: -1,
+      durationMs: 9,
+      reason: 'timeout',
+    }),
+    `# Background terminal result\n\nTerminal: t-1\nOriginating prompt: p-1\nCommand: make\nExit code: -1\nReason: timeout\nDuration: 9 ms\n\n## Standard output (last 12000 characters)\n\n${'b'.repeat(12000)}\n\n## Standard error (last 12000 characters)\n\nerr`,
+  );
+});
+
 void test('R6: the Start of a background Run outlives the Run’s deadline and keeps streaming', async (t) => {
   const h = await activated(t);
   const watch = watching(h, 'project-1');
@@ -364,6 +381,55 @@ void test('R9: Start failing after started answers reason failed with the execut
   assert.equal(answer.stdout, '');
   assert.equal(answer.stderr, 'Terminal execution failed.');
   assert.equal(answer.exitCode, -1);
+});
+
+/** `terminal` through `ToolHandlerService.Execute` under the prompt scope, as JSON. */
+const executeTool = async (
+  h: Harness,
+  payload: JsonValue,
+): Promise<JsonValue> => {
+  const { result } = await h.tools(promptScope).execute({
+    name: 'terminal',
+    payload: fromJson(ValueSchema, payload),
+  });
+
+  assert.ok(result, 'Execute answered a result');
+
+  return toJson(ValueSchema, result);
+};
+
+// Ported from `router-parity.test.ts` (S68b), with the compact output stated
+// instead of the kernel-bound tool's answer.
+void test('R17: Execute of terminal asks Cwd under the prompt scope, runs on the local operations and answers the compact output', async (t) => {
+  const h = await activated(t);
+  const executing = executeTool(h, { command: 'echo hi' });
+  const process = await processAt(h);
+
+  process.exit({ exitCode: 0, stdout: 'hi\n' });
+
+  const answer = (await executing) as Record<string, JsonValue>;
+  const cwdCalls = methodCalls(h, 'workspace.cwd');
+
+  assert.equal(cwdCalls.length, 1);
+  assert.deepEqual(cwdCalls[0]?.scope, promptScope);
+  assert.deepEqual(h.sessions[0]?.scope, promptScope);
+  assert.deepEqual(process.head, agentHead('echo hi'));
+  assert.equal(answer.schema, 'terminal.compact.v1');
+  assert.equal(answer.command, 'echo hi');
+  assert.equal(answer.working_directory, '/workspace/app');
+  assert.equal(answer.success, true);
+  assert.equal(answer.exit_code, 0);
+  assert.equal(answer.termination_reason, 'exited');
+  assert.deepEqual((answer.stdout as { head?: JsonValue }).head, ['hi']);
+
+  const background = await executeTool(h, {
+    command: 'serve',
+    background: true,
+  });
+  const terminalId = (background as { terminal_id?: unknown }).terminal_id;
+
+  assert.equal(typeof terminalId, 'string');
+  assert.deepEqual(background, { terminal_id: terminalId, background: true });
 });
 
 void test('R18: without runtime.lease/v1 declared, Run fails undeclared_requirement', async (t) => {

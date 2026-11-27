@@ -1,5 +1,5 @@
-// `git.commands/v1`'s method bodies over `GitCommandPorts` (phase 3, S55c):
-// one set of bodies the kernel service and the process host both run.
+// `git.commands/v1`'s method bodies over `GitCommandPorts` (phase 3, S55c),
+// run by the process host (`part.ts`).
 
 import { workspacePathKind } from 'sandbox';
 
@@ -35,7 +35,7 @@ export const busyMessage =
 
 /**
  * `git.commands/v1`'s operations, without the call argument (the ports
- * carry the call). Each answers what the kernel method answers today
+ * carry the call). Each answers what the `Git` method answers
  * (`src/contracts/index.ts`); a Thread or lease state is an answer, never a
  * failure.
  */

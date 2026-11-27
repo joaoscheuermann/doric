@@ -8,7 +8,8 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { describe, test } from 'node:test';
 
-import { fakeRuntime, gitOver, repository } from './support/runtime.js';
+import { routedGit } from './support/routed-git.js';
+import { fakeRuntime, repository } from './support/runtime.js';
 
 type Repository = Awaited<ReturnType<typeof repository>>;
 
@@ -43,7 +44,7 @@ const summaryAt = async (
   repo: Repository,
   cwd: string,
 ) => {
-  const { git, dispose } = gitOver(repo.sandbox, fakeRuntime({ cwd }));
+  const { git, dispose } = routedGit(repo.sandbox, fakeRuntime({ cwd }));
   t.after(dispose);
   const read = await git({ threadId: 'thread-1' }).status('thread-1');
   assert.equal(read.status, 'ready');

@@ -6,7 +6,7 @@ import { describe, test } from 'node:test';
 
 import { tool as factory } from '../src/host/tools/grep.js';
 import { createFakeSandbox, fakeHost } from './fake-sandbox.js';
-import { bindTool } from './support/services.js';
+import { routedTool } from './support/router-fixtures.js';
 
 void describe('grep tool', () => {
   void test('finds matching lines with requested context and glob filtering', async () => {
@@ -20,7 +20,7 @@ void describe('grep tool', () => {
 
     await write(root, 'src/two.txt', 'Target\n');
 
-    const result = await bindTool(
+    const result = await routedTool(
       factory,
       createFakeSandbox(root),
       fakeHost(),
@@ -54,7 +54,7 @@ void describe('grep tool', () => {
     const host = fakeHost({ cwd: '/workspace/src' });
     const sandbox = createFakeSandbox(root);
 
-    const relative = await bindTool(factory, sandbox, host).execute({
+    const relative = await routedTool(factory, sandbox, host).execute({
       pattern: 'Target',
     });
 
@@ -63,7 +63,7 @@ void describe('grep tool', () => {
       ['one.ts'],
     );
 
-    const absolute = await bindTool(factory, sandbox, host).execute({
+    const absolute = await routedTool(factory, sandbox, host).execute({
       pattern: 'Target',
       path: '/workspace',
     });
@@ -79,7 +79,7 @@ void describe('grep tool', () => {
   void test('returns a structured error for invalid regular expressions', async () => {
     const root = await workspace('grep-invalid-regex');
 
-    const result = await bindTool(
+    const result = await routedTool(
       factory,
       createFakeSandbox(root),
       fakeHost(),
@@ -103,7 +103,7 @@ void describe('grep tool', () => {
 
     await write(root, 'keep.txt', 'Target\n');
 
-    const result = await bindTool(
+    const result = await routedTool(
       factory,
       createFakeSandbox(root),
       fakeHost(),
@@ -129,7 +129,7 @@ void describe('grep tool', () => {
 
     await write(root, 'src/main.js', 'Target\n');
 
-    const result = await bindTool(
+    const result = await routedTool(
       factory,
       createFakeSandbox(root),
       fakeHost(),

@@ -45,7 +45,7 @@ None. The contracts module exports nothing
   ([packages/bundle/src/contracts/basic/tools.ts](../../../packages/bundle/src/contracts/basic/tools.ts)).
   `tools/v1` lists tools by `order`, then by registration, so 700 places `web`
   between the [`files` bundle](../files/README.md)'s `tree` (600) and `write`
-  (800) ([bundles/features/files/src/host/index.ts](../files/src/host/index.ts),
+  (800) ([bundles/features/files/src/host/tools/catalog.ts](../files/src/host/tools/catalog.ts),
   [docs/features/files.md](../../../docs/features/files.md)).
 - `skills/v1@^1.3.0`: the bundle's own code never calls it. The host SDK
   registers the skill files from the bundle's process, as the instance, after

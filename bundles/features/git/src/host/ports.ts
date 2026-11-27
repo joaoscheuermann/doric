@@ -1,27 +1,12 @@
-import {
-  bindRegistrant,
-  type Call,
-  type ContractTool,
-  type Registrable,
-  type Services,
-} from 'bundle/contracts';
-import {
-  type LeaseOutcome,
-  RuntimeLeaseV1,
-  RuntimeWorkspaceV1,
-  type ThreadTaskOutcome,
-  type WithThreadOptions,
+import type { Call } from 'bundle/contracts';
+import type {
+  LeaseOutcome,
+  ThreadTaskOutcome,
+  WithThreadOptions,
 } from 'runtime/contracts';
 import type { TerminalSession } from 'terminal/contracts';
-import type { ToolInput, ToolOutput, UnboundTool } from 'tool';
 
-import {
-  currentDirectory,
-  type GitSandbox,
-  type LeaseSandbox,
-  leaseSandbox,
-} from './sandbox.js';
-import type { TerminalList } from './service.js';
+import type { GitSandbox, LeaseSandbox } from './sandbox.js';
 
 /** What the `git` tool reaches, per call; each method runs under `call`. */
 export interface GitToolPorts {
@@ -90,59 +75,3 @@ export interface GitCommandPorts {
    */
   terminals(projectId: string): Promise<readonly TerminalListing[]>;
 }
-
-/**
- * The tool ports over the kernel `Services`: `cwd` is `currentDirectory`,
- * `sandbox` is `leaseSandbox`. Today's behaviour. Kernel-only; deleted in
- * group F.
- */
-export const kernelGitToolPorts = (services: Services): GitToolPorts => ({
-  cwd: (call) => currentDirectory(services, call),
-  sandbox: (call) => leaseSandbox(services, call),
-});
-
-/**
- * A kernel `Registrable` of `definition`, binding
- * `kernelGitToolPorts(services)` when the kernel's `tools/v1` binds it.
- * Kernel-only; deleted in group F.
- */
-export const kernelRegistrable = (
-  definition: UnboundTool<ToolInput, ToolOutput, GitToolPorts>,
-): Registrable<ContractTool> => ({
-  [bindRegistrant]: (services) => definition.bind(kernelGitToolPorts(services)),
-});
-
-/**
- * The command ports over the kernel `Services` for one call (S55c):
- * - `withThread` → `RuntimeWorkspaceV1.withThread(threadId, options, task',
- *   call)` under `call.scope`, where `task'` passes the `ThreadContext` with
- *   `busyCwds` made async;
- * - `withProjectLease` → `RuntimeLeaseV1.withLease(task, call)` under
- *   `call.scope`;
- * - `terminals(projectId)` → `terminals()?.list(projectId, call) ?? []`.
- * Today's behaviour. Kernel-only; deleted in group F.
- */
-export const kernelGitCommandPorts = (
-  services: Services,
-  call: Call,
-  terminals: TerminalList,
-): GitCommandPorts => ({
-  withThread: (threadId, options, task) =>
-    services.use(RuntimeWorkspaceV1, call.scope).withThread(
-      threadId,
-      options,
-      (thread) =>
-        task({
-          projectId: thread.projectId,
-          threadId: thread.threadId,
-          cwd: thread.cwd,
-          sandbox: thread.sandbox,
-          busyCwds: async () => thread.busyCwds(),
-        }),
-      call,
-    ),
-  withProjectLease: (task) =>
-    services.use(RuntimeLeaseV1, call.scope).withLease(task, call),
-  terminals: async (projectId) =>
-    (await terminals()?.list(projectId, call)) ?? [],
-});

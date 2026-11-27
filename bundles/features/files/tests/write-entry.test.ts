@@ -20,20 +20,16 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, test } from 'node:test';
 import { promisify } from 'node:util';
 
-import { defineMethod, defineService, isContractError } from 'bundle/contracts';
-import { createTestServices } from 'bundle/testing';
-import {
-  type LeaseOutcome,
-  type LeaseTask,
-  RuntimeLeaseV1,
-  runtimeLeaseMethods,
-} from 'runtime/contracts';
+import { toJson } from '@bufbuild/protobuf';
 import type { Sandbox, SandboxExecInput, SandboxExecResult } from 'sandbox';
 
-import { FilesV1 } from '../src/contracts/index.js';
-import { filesService } from '../src/host/reads.js';
+import {
+  CreateDirectoryResponseSchema,
+  CreateFileResponseSchema,
+} from '../src/contracts/gen/doric/files/v1/files_pb.js';
 import { createEntry } from '../src/host/writes.js';
 import { createFakeSandbox, WORKSPACE_ROOT } from './fake-sandbox.js';
+import { filesPart } from './support/router-files.js';
 
 const run = promisify(execFile);
 
@@ -300,73 +296,35 @@ describe('createEntry', () => {
   });
 });
 
-const fakeLease = (sandbox: Sandbox, state: LeaseOutcome<unknown>['status']) =>
-  defineService(RuntimeLeaseV1.id, {
-    withLease: defineMethod({
-      ...runtimeLeaseMethods.withLease,
-      execute: async (
-        task: LeaseTask<unknown>,
-      ): Promise<LeaseOutcome<unknown>> =>
-        state === 'ready'
-          ? { status: 'ready', value: await task(sandbox) }
-          : { status: state },
-    }),
-  });
-
+// The part's `FilesService` over the router, on the Project lease the fake answers.
 describe('files/v1 createFile and createDirectory', () => {
-  test('both methods are exposed to the desktop', () => {
-    assert.equal(filesService.methods.createFile.expose, 'desktop');
-    assert.equal(filesService.methods.createDirectory.expose, 'desktop');
-  });
-
   test('run on the Project lease and answer its state', async (t) => {
-    const ready = createTestServices({
-      bundle: { id: 'files-client' },
-      provide: [filesService, fakeLease(localSandbox(root), 'ready')],
-    });
-    t.after(ready.dispose);
-    const files = ready.services.use(FilesV1, { projectId: 'p-1' });
+    const h = await filesPart(t, root);
+    const files = h.files({ projectId: 'p-1' });
 
-    assert.deepEqual(await files.createFile({ directory: 'src', name: 'n' }), {
-      status: 'ready',
-      value: { status: 'created', path: 'src/n' },
-    });
     assert.deepEqual(
-      await files.createDirectory({ directory: 'src', name: 'm' }),
+      toJson(
+        CreateFileResponseSchema,
+        await files.createFile({ directory: 'src', name: 'n' }),
+      ),
+      { status: 'ready', value: { status: 'created', path: 'src/n' } },
+    );
+    assert.deepEqual(
+      toJson(
+        CreateDirectoryResponseSchema,
+        await files.createDirectory({ directory: 'src', name: 'm' }),
+      ),
       { status: 'ready', value: { status: 'created', path: 'src/m' } },
     );
 
-    const pending = createTestServices({
-      bundle: { id: 'files-client' },
-      provide: [filesService, fakeLease(localSandbox(root), 'pending')],
-    });
-    t.after(pending.dispose);
+    h.lease.status = 'pending';
     assert.deepEqual(
-      await pending.services
-        .use(FilesV1, { projectId: 'p-1' })
-        .createFile({ directory: 'src', name: 'later' }),
+      toJson(
+        CreateFileResponseSchema,
+        await files.createFile({ directory: 'src', name: 'later' }),
+      ),
       { status: 'pending' },
     );
     await assert.rejects(stat(join(root, 'src', 'later')));
-  });
-
-  test('reject an extra input property with invalid_input', async (t) => {
-    const harness = createTestServices({
-      bundle: { id: 'files-client' },
-      provide: [filesService, fakeLease(localSandbox(root), 'ready')],
-    });
-    t.after(harness.dispose);
-    const files = harness.services.use(FilesV1, { projectId: 'p-1' });
-    const extra = { directory: 'src', name: 'x', overwrite: true };
-
-    await assert.rejects(
-      async () => files.createFile(extra),
-      (error) => isContractError(error) && error.code === 'invalid_input',
-    );
-    await assert.rejects(
-      async () => files.createDirectory(extra),
-      (error) => isContractError(error) && error.code === 'invalid_input',
-    );
-    await assert.rejects(stat(join(root, 'src', 'x')));
   });
 });

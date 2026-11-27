@@ -1,6 +1,5 @@
 // `files`' host part as a process (phase 3, S53): `files/v1` and the seven
-// workspace tools served through the router. The running host keeps the
-// kernel entry (`./index.ts`) until S62.
+// workspace tools served through the router.
 
 import { ToolHandlerService } from 'bundle/contracts/gen/doric/tools/v1/tools_pb.js';
 import { runBundle } from 'bundle/host';

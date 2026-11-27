@@ -1,26 +1,7 @@
-import { posix as path } from 'node:path';
+import type { Call } from 'bundle/contracts';
+import type { CwdChange, CwdLocation } from 'runtime/contracts';
 
-import {
-  bindRegistrant,
-  type Call,
-  type ContractTool,
-  type Registrable,
-  type Services,
-} from 'bundle/contracts';
-import {
-  type CwdChange,
-  type CwdLocation,
-  RuntimeAttachmentsV1,
-  RuntimeLeaseV1,
-  RuntimeWorkspaceV1,
-} from 'runtime/contracts';
-import type { ToolInput, ToolOutput, UnboundTool } from 'tool';
-
-import {
-  currentDirectory,
-  type LeaseSandbox,
-  leaseSandbox,
-} from './sandbox.js';
+import type { LeaseSandbox } from './sandbox.js';
 
 /**
  * What a workspace tool reaches, per call. Every method runs under `call`
@@ -57,44 +38,3 @@ export interface FilesToolPorts {
     call: Call,
   ): Promise<{ readonly id: string; readonly name: string }>;
 }
-
-/**
- * The ports over the kernel `Services`:
- * - `cwd` is `currentDirectory`; `sandbox` is `leaseSandbox`;
- * - `setCwd`/`location` are `RuntimeWorkspaceV1`'s under `call.scope`;
- * - `attachFile` is `RuntimeLeaseV1.readFileBytes` then
- *   `RuntimeAttachmentsV1.attach({ name, bytes })`.
- *
- * Today's behaviour, unchanged. Kernel-only; deleted in group F.
- */
-export const kernelFilesToolPorts = (services: Services): FilesToolPorts => ({
-  cwd: (call) => currentDirectory(services, call),
-  sandbox: (call) => leaseSandbox(services, call),
-  setCwd: (cwd, call) =>
-    services.use(RuntimeWorkspaceV1, call.scope).setCwd(cwd, call),
-  location: (call) =>
-    services.use(RuntimeWorkspaceV1, call.scope).location(call),
-  attachFile: async (filePath, call) => {
-    const bytes = await services
-      .use(RuntimeLeaseV1, call.scope)
-      .readFileBytes(filePath, call);
-    const attached = await services
-      .use(RuntimeAttachmentsV1, call.scope)
-      .attach({ name: path.basename(filePath), bytes }, call);
-
-    return { id: attached.id, name: attached.name };
-  },
-});
-
-/**
- * A kernel `Registrable` of `definition`: its `[bindRegistrant](services)`
- * answers `definition.bind(kernelFilesToolPorts(services))`, since the
- * kernel's `tools/v1` binds every `Registrable` with the registering
- * bundle's `Services`. Kernel-only; deleted in group F.
- */
-export const kernelRegistrable = (
-  definition: UnboundTool<ToolInput, ToolOutput, FilesToolPorts>,
-): Registrable<ContractTool> => ({
-  [bindRegistrant]: (services) =>
-    definition.bind(kernelFilesToolPorts(services)),
-});

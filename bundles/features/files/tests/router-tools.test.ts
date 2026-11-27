@@ -1,10 +1,11 @@
 // `files`' host part through the router (phase 3, slice S53a, tests T1–T8):
-// `activate` registers the seven workspace tools with `tools/v1` as the
-// kernel entry did (always available, positions 100–850), and `core`'s
+// `activate` registers the seven workspace tools with `tools/v1` (always
+// available, positions 100–850), and `core`'s
 // `ToolHandlerService` calls run them over `runtime.workspace/v1`,
 // `runtime.lease/v1` and `runtime.attachments/v1` under the relayed prompt
-// scope. A tool's answer is compared with the kernel-bound tool's answer on a
-// twin workspace, as parsed JSON.
+// scope. Each tool's answers case by case are the tool suites' (`cwd`, `edit`,
+// `find`, `grep`, `tree`, `view-image`, `write`), which run through the router
+// too (`routedTool`).
 
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
@@ -29,12 +30,10 @@ import {
   activated,
   callsOf,
   execute,
-  kernelAnswer,
   rejectionOf,
   targetOf,
   workspace,
 } from './support/router-fixtures.js';
-import type { AttachedImages } from './support/services.js';
 
 /** The bytes that open every PNG, then a little body. */
 const png = Buffer.from([
@@ -118,7 +117,7 @@ void test('T2: a Register refused duplicate_tool rejects activate with it, and t
 });
 
 // T3.
-void test('T3: cwd reports without a path, sends SetCwd{path: trimmed} then Location{}, and maps every outcome as the kernel tool', async (t) => {
+void test('T3: cwd reports without a path, sends SetCwd{path: trimmed} then Location{}, and maps every outcome', async (t) => {
   const files = { 'repo/.keep': '', 'src/.keep': '', 'notes.txt': 'notes\n' };
   const hostOptions = { repositoryRoots: ['/workspace/repo'] };
   const cases: readonly (readonly [JsonValue, JsonValue])[] = [
@@ -167,19 +166,9 @@ void test('T3: cwd reports without a path, sends SetCwd{path: trimmed} then Loca
 
   for (const [payload, answer] of cases) {
     const root = await workspace(t, files);
-    const twin = await workspace(t, files);
     const h = await partOver(t, root, hostOptions);
 
     assert.deepEqual(await execute(h, 'cwd', payload), answer);
-    assert.deepEqual(
-      await kernelAnswer(
-        cwdTool,
-        diskSandbox(twin),
-        fakeHost({ localRoot: twin, ...hostOptions }),
-        payload,
-      ),
-      answer,
-    );
 
     const asked = (payload as { path?: string }).path;
 
@@ -195,17 +184,26 @@ void test('T3: cwd reports without a path, sends SetCwd{path: trimmed} then Loca
   }
 });
 
-/** One T4 case: the seed, the tool and its payload. */
-interface ParityCase {
+/** One T4 case: the seed, the tool, its payload and what it must answer. */
+interface LeaseCase {
   readonly label: string;
   readonly files: Readonly<Record<string, string>>;
-  readonly tool: Parameters<typeof kernelAnswer>[0];
+  readonly tool: { readonly name: string };
   readonly payload: JsonValue;
-  /** Files whose content must end equal in both workspaces. */
-  readonly compare?: readonly string[];
+  /** Checks the parsed answer. */
+  readonly answers: (answer: JsonValue | undefined) => void;
+  /** Files (path → content) the workspace must hold after the call. */
+  readonly holds?: Readonly<Record<string, string>>;
 }
 
-const parityCases: readonly ParityCase[] = [
+/** The field `key` of an answer object. */
+const field = (
+  answer: JsonValue | undefined,
+  key: string,
+): JsonValue | undefined =>
+  (answer as Record<string, JsonValue> | undefined)?.[key];
+
+const leaseCases: readonly LeaseCase[] = [
   {
     label: 'edit',
     files: { 'src/lib.ts': 'one\noldCall();\nthree\n' },
@@ -214,27 +212,48 @@ const parityCases: readonly ParityCase[] = [
       path: 'src/lib.ts',
       edits: [{ oldText: 'oldCall();', newText: 'newCall();' }],
     },
-    compare: ['src/lib.ts'],
+    answers: (answer) => {
+      assert.equal(field(answer, 'success'), true);
+      assert.equal(field(answer, 'first_changed_line'), 2);
+    },
+    holds: { 'src/lib.ts': 'one\nnewCall();\nthree\n' },
   },
   {
     label: 'edit refusal (duplicate old text)',
     files: { 'same.txt': 'same\nsame\n' },
     tool: editTool,
     payload: { path: 'same.txt', edits: [{ oldText: 'same', newText: 'x' }] },
-    compare: ['same.txt'],
+    answers: (answer) => {
+      assert.equal(field(answer, 'success'), false);
+      assert.match(
+        String(field(answer, 'error')),
+        /Please provide more context/,
+      );
+    },
+    holds: { 'same.txt': 'same\nsame\n' },
   },
   {
     label: 'write',
     files: { 'notes/today.txt': 'old\n' },
     tool: writeTool,
     payload: { path: 'notes/today.txt', content: 'hello\n' },
-    compare: ['notes/today.txt'],
+    answers: (answer) => {
+      assert.equal(field(answer, 'success'), true);
+      assert.equal(field(answer, 'bytes_written'), 6);
+    },
+    holds: { 'notes/today.txt': 'hello\n' },
   },
   {
     label: 'find',
     files: { 'src/a.ts': 'a', 'src/nested/b.ts': 'b', 'src/c.txt': 'c' },
     tool: findTool,
     payload: { pattern: '*.ts', path: 'src' },
+    answers: (answer) =>
+      assert.deepEqual(answer, {
+        results: ['a.ts', 'nested/b.ts'],
+        total: 2,
+        truncated: false,
+      }),
   },
   {
     label: 'grep',
@@ -244,36 +263,49 @@ const parityCases: readonly ParityCase[] = [
     },
     tool: grepTool,
     payload: { pattern: 'Target', path: 'src', glob: '*.ts', context: 1 },
+    answers: (answer) => {
+      assert.equal(field(answer, 'total'), 1);
+      assert.deepEqual((field(answer, 'matches') as JsonValue[])[0], {
+        file: 'one.ts',
+        line: 2,
+        text: 'const value = Target;',
+        context_before: ['before one'],
+        context_after: ['after one'],
+      });
+    },
   },
   {
     label: 'tree',
     files: { 'src/lib.ts': 'lib', 'visible.txt': 'visible' },
     tool: treeTool,
     payload: { path: '.' },
+    answers: (answer) => {
+      assert.equal(typeof answer, 'string');
+      assert.match(String(answer), /lib\.ts/);
+      assert.match(String(answer), /visible\.txt/);
+    },
   },
 ];
 
 // T4.
-void test('T4: edit, write, find, grep and tree answer as the kernel tool, over one Describe{target: {}} and expectSandboxId on every later lease call', async (t) => {
-  for (const { label, files, tool, payload, compare = [] } of parityCases) {
+void test('T4: edit, write, find, grep and tree answer over one Describe{target: {}} and expectSandboxId on every later lease call', async (t) => {
+  for (const {
+    label,
+    files,
+    tool,
+    payload,
+    answers,
+    holds = {},
+  } of leaseCases) {
     const root = await workspace(t, files);
-    const twin = await workspace(t, files);
     const h = await partOver(t, root);
 
-    const answer = await execute(h, tool.name, payload);
-    const kernel = await kernelAnswer(
-      tool,
-      diskSandbox(twin),
-      fakeHost({ localRoot: twin }),
-      payload,
-    );
+    answers(await execute(h, tool.name, payload));
 
-    assert.deepEqual(answer, kernel, label);
-
-    for (const file of compare) {
+    for (const [file, content] of Object.entries(holds)) {
       assert.equal(
         await readFile(path.join(root, file), 'utf8'),
-        await readFile(path.join(twin, file), 'utf8'),
+        content,
         `${label}: ${file}`,
       );
     }
@@ -325,10 +357,9 @@ void test('T5: a sandbox switched after Describe fails Execute unavailable with 
 });
 
 // T6.
-void test('T6: view-image reads ReadFileBytes{target: {}, path: absolute}, attaches head{name} then the bytes in order, and answers the kernel’s line', async (t) => {
+void test('T6: view-image reads ReadFileBytes{target: {}, path: absolute}, attaches head{name} then the bytes in order, and answers the attachment’s line', async (t) => {
   const image = Buffer.concat([png, Buffer.alloc(2 * MIB + MIB / 2, 7)]);
   const root = await workspace(t, { 'shots/cat.png': image });
-  const twin = await workspace(t, { 'shots/cat.png': image });
   const h = await partOver(t, root, { cwd: '/workspace/shots' });
 
   const answer = await execute(h, 'view-image', { path: 'cat.png' });
@@ -349,19 +380,6 @@ void test('T6: view-image reads ReadFileBytes{target: {}, path: absolute}, attac
   const id = `sha256-${createHash('sha256').update(image).digest('hex')}`;
 
   assert.equal(answer, attachmentReference('cat.png', id));
-
-  const attached: AttachedImages = new Map();
-
-  assert.equal(
-    answer,
-    await kernelAnswer(
-      viewImageTool,
-      diskSandbox(twin),
-      fakeHost({ localRoot: twin, cwd: '/workspace/shots' }),
-      { path: 'cat.png' },
-      attached,
-    ),
-  );
 });
 
 // T7.

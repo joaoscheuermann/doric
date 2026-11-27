@@ -1,8 +1,8 @@
-// Fakes of the runtime boundary the git service runs on: a sandbox that runs
-// its commands in a local directory (real `git`, real `sh`), a
-// `runtime.workspace/v1` whose `withThread` answers one Thread's state, and a
-// `runtime.lease/v1` whose `withLease` answers one Project's lease state, and
-// the Project's terminal sessions as `terminal/v1` lists them.
+// Fixtures of the runtime boundary the git service runs on: a sandbox that
+// runs its commands in a local directory (real `git`, real `sh`), and the
+// state one Thread, one Project lease and the Project's terminal sessions
+// answer with (`FakeRuntime`), which `./routed-git.ts` hands to the router
+// fakes.
 
 import { Buffer } from 'node:buffer';
 import { execFile } from 'node:child_process';
@@ -12,38 +12,8 @@ import { join, resolve } from 'node:path';
 import type { TestContext } from 'node:test';
 import { promisify } from 'node:util';
 
-import {
-  type AnyServiceDefinition,
-  type Disposable,
-  defineMethod,
-  defineService,
-  SecretsV1,
-  secretsMethods,
-  ToolsV1,
-  toolsMethods,
-} from 'bundle/contracts';
-import { createTestServices } from 'bundle/testing';
-import {
-  type LeaseTask,
-  RuntimeLeaseV1,
-  RuntimeWorkspaceV1,
-  readRuntimeScope,
-  runtimeLeaseMethods,
-  runtimeWorkspaceMethods,
-  type ThreadTask,
-  type WithThreadOptions,
-} from 'runtime/contracts';
 import type { Sandbox } from 'sandbox';
-import {
-  type TerminalService,
-  TerminalServiceV1,
-  type TerminalSession,
-  terminalServiceMethods,
-} from 'terminal/contracts';
-
-import { GitCommandsV1 } from '../../src/contracts/index.js';
-import { activate } from '../../src/host/index.js';
-import { createGitService } from '../../src/host/service.js';
+import type { TerminalSession } from 'terminal/contracts';
 
 const run = promisify(execFile);
 
@@ -116,6 +86,13 @@ export type LeaseState =
   | 'expired'
   | 'missing';
 
+/** How a Thread session was opened (`runtime.workspace/v1.OpenThread`). */
+export interface ThreadOpen {
+  readonly exclusive: boolean;
+  readonly refreshHint?: boolean;
+  readonly resume?: boolean;
+}
+
 /** What the fake runtime answers and what it was asked. */
 export interface FakeRuntime {
   thread: ThreadState;
@@ -127,141 +104,11 @@ export interface FakeRuntime {
   dropDuringTask: boolean;
   /** The Project's sessions, while some bundle provides `terminal/v1`. */
   terminals?: TerminalSession[];
-  /** Each `withThread` call: the Thread and its options. */
-  readonly threads: { threadId: string; options: WithThreadOptions }[];
-  /** Each `withLease` call's Project. */
+  /** Each Thread session opened: the Thread and its options. */
+  readonly threads: { threadId: string; options: ThreadOpen }[];
+  /** The Project of each Project lease read. */
   readonly leases: (string | undefined)[];
 }
-
-/** The fake `runtime.workspace/v1` and `runtime.lease/v1` over `runtime`. */
-/** Every method of `methods`, each refusing unless `overrides` names it. */
-const complete = <Methods extends Record<string, object>>(
-  methods: Methods,
-  overrides: Partial<Record<keyof Methods, (...args: never[]) => unknown>>,
-) =>
-  Object.fromEntries(
-    Object.entries(methods).map(([name, spec]) => [
-      name,
-      defineMethod({
-        ...(spec as Parameters<typeof defineMethod>[0]),
-        execute:
-          overrides[name] ??
-          (() => {
-            throw new Error(`The test does not call ${name}.`);
-          }),
-      } as Parameters<typeof defineMethod>[0]),
-    ]),
-  );
-
-const runtimeProviders = (
-  sandbox: Sandbox,
-  runtime: FakeRuntime,
-): AnyServiceDefinition[] => [
-  defineService(RuntimeWorkspaceV1.id, {
-    withThread: defineMethod({
-      ...runtimeWorkspaceMethods.withThread,
-      execute: async ([threadId, options, task]: [
-        string,
-        WithThreadOptions,
-        ThreadTask<unknown>,
-      ]) => {
-        runtime.threads.push({ threadId, options });
-        if (runtime.thread !== 'ready') return { status: runtime.thread };
-        const value = await task({
-          projectId: 'project-1',
-          threadId,
-          cwd: runtime.cwd,
-          sandbox,
-          closing: () => false,
-          busyCwds: () => runtime.busy,
-        });
-        return { status: 'ready' as const, value };
-      },
-    }),
-  }),
-  defineService(RuntimeLeaseV1.id, {
-    withLease: defineMethod({
-      ...runtimeLeaseMethods.withLease,
-      execute: async (task: LeaseTask<unknown>, call) => {
-        runtime.leases.push(readRuntimeScope(call).projectId);
-        if (runtime.lease !== 'ready') return { status: runtime.lease };
-        const value = await task(sandbox);
-        return runtime.dropDuringTask
-          ? { status: 'unavailable' as const }
-          : { status: 'ready' as const, value };
-      },
-    }),
-  }),
-];
-
-/** The terminal list `runtime.terminals` stands for, while it is set. */
-const terminalList = (
-  runtime: FakeRuntime,
-): Pick<TerminalService, 'list'> | undefined =>
-  runtime.terminals === undefined
-    ? undefined
-    : { list: async () => runtime.terminals ?? [] };
-
-/** `git.commands/v1` over a fake runtime and `sandbox`. */
-export const gitOver = (sandbox: Sandbox, runtime: FakeRuntime) => {
-  const harness = createTestServices({
-    bundle: { id: 'git-test' },
-    provide: [
-      createGitService(() => terminalList(runtime)),
-      ...runtimeProviders(sandbox, runtime),
-    ],
-  });
-  return {
-    git: (scope: { readonly projectId?: string; readonly threadId?: string }) =>
-      harness.services.use(GitCommandsV1, scope),
-    dispose: harness.dispose,
-  };
-};
-
-const inert: Disposable = { dispose: () => undefined };
-
-/**
- * `git.commands/v1` as the git bundle's activation provides it, over a fake
- * runtime and `sandbox`, with the `secrets/v1` and `tools/v1` it registers
- * with. A `terminal/v1` that lists `runtime.terminals` is provided only when
- * that list is set.
- */
-export const activatedGit = async (sandbox: Sandbox, runtime: FakeRuntime) => {
-  const terminals: AnyServiceDefinition[] =
-    runtime.terminals === undefined
-      ? []
-      : [
-          defineService(
-            TerminalServiceV1.id,
-            complete(terminalServiceMethods, {
-              list: async () => runtime.terminals ?? [],
-            }),
-          ),
-        ];
-  const harness = createTestServices({
-    bundle: { id: 'git' },
-    provide: [
-      defineService(
-        SecretsV1.id,
-        complete(secretsMethods, { registerKind: () => inert }),
-      ),
-      defineService(
-        ToolsV1.id,
-        complete(toolsMethods, { register: () => inert }),
-      ),
-      ...terminals,
-      ...runtimeProviders(sandbox, runtime),
-    ],
-  });
-  await activate({ services: harness.services } as Parameters<
-    typeof activate
-  >[0]);
-  return {
-    git: (scope: { readonly projectId?: string; readonly threadId?: string }) =>
-      harness.services.use(GitCommandsV1, scope),
-    dispose: harness.dispose,
-  };
-};
 
 export const fakeRuntime = (
   overrides: Partial<FakeRuntime> = {},

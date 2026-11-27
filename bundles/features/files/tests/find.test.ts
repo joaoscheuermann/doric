@@ -6,7 +6,7 @@ import { describe, test } from 'node:test';
 
 import { tool as factory } from '../src/host/tools/find.js';
 import { createFakeSandbox, fakeHost } from './fake-sandbox.js';
-import { bindTool } from './support/services.js';
+import { routedTool } from './support/router-fixtures.js';
 
 void describe('find tool', () => {
   void test('returns matching files relative to the requested search path', async () => {
@@ -18,7 +18,7 @@ void describe('find tool', () => {
 
     await write(root, 'src/c.txt', 'c');
 
-    const result = await bindTool(
+    const result = await routedTool(
       factory,
       createFakeSandbox(root),
       fakeHost(),
@@ -47,14 +47,14 @@ void describe('find tool', () => {
     const sandbox = createFakeSandbox(root);
 
     assert.deepEqual(
-      (await bindTool(factory, sandbox, host).execute({ pattern: '*.ts' }))
+      (await routedTool(factory, sandbox, host).execute({ pattern: '*.ts' }))
         .results,
       ['a.ts'],
     );
 
     assert.deepEqual(
       (
-        await bindTool(factory, sandbox, host).execute({
+        await routedTool(factory, sandbox, host).execute({
           pattern: '*.ts',
           path: '/workspace',
         })
@@ -76,7 +76,7 @@ void describe('find tool', () => {
 
     await write(root, 'keep.txt', 'keep');
 
-    const result = await bindTool(
+    const result = await routedTool(
       factory,
       createFakeSandbox(root),
       fakeHost(),
@@ -110,7 +110,7 @@ void describe('find tool', () => {
 
     await write(root, 'src/other.gen.ts', 'outside the nested rule');
 
-    const result = await bindTool(
+    const result = await routedTool(
       factory,
       createFakeSandbox(root),
       fakeHost(),
@@ -143,7 +143,7 @@ void describe('find tool', () => {
 
     const started = performance.now();
 
-    const result = await bindTool(
+    const result = await routedTool(
       factory,
       createFakeSandbox(root),
       fakeHost(),

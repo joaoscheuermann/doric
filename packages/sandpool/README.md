@@ -25,12 +25,10 @@ Part of [Doric](../../README.md). The feature it serves is described in
   ([bundles/runtime/runtime/src/contracts/sandbox.ts](../../bundles/runtime/runtime/src/contracts/sandbox.ts),
   [bundles/runtime/runtime/src/host/ports.ts](../../bundles/runtime/runtime/src/host/ports.ts),
   [bundles/runtime/runtime/src/host/domain/runtime.ts](../../bundles/runtime/runtime/src/host/domain/runtime.ts)).
-- The tests of [`files`](../../bundles/features/files/README.md),
-  [`docker-sandbox`](../docker-sandbox/README.md) and
+- The tests of [`docker-sandbox`](../docker-sandbox/README.md) and
   [`firecracker-sandbox`](../firecracker-sandbox/README.md) build pools over
-  real or in-memory sessions, with `sandpool` as a devDependency
-  ([bundles/features/files/tests/binding.test.ts](../../bundles/features/files/tests/binding.test.ts),
-  [packages/docker-sandbox/tests/sandbox.e2e.ts](../docker-sandbox/tests/sandbox.e2e.ts),
+  real sessions, with `sandpool` as a devDependency
+  ([packages/docker-sandbox/tests/sandbox.e2e.ts](../docker-sandbox/tests/sandbox.e2e.ts),
   [packages/firecracker-sandbox/tests/sandbox.e2e.ts](../firecracker-sandbox/tests/sandbox.e2e.ts)).
 - The host application lists it as a dependency
   ([app/backend/doric-host/package.json](../../app/backend/doric-host/package.json)).

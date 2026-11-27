@@ -8,7 +8,8 @@ import { mkdir, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { describe, test } from 'node:test';
 
-import { fakeRuntime, gitOver, repository } from './support/runtime.js';
+import { routedGit } from './support/routed-git.js';
+import { fakeRuntime, repository } from './support/runtime.js';
 
 const changedRepository = async (t: Parameters<typeof repository>[0]) => {
   const repo = await repository(t);
@@ -28,7 +29,7 @@ describe('git.commands/v1 Project reads', () => {
   test('lists each change with its line totals, without patches', async (t) => {
     const repo = await changedRepository(t);
     const runtime = fakeRuntime();
-    const { git, dispose } = gitOver(repo.sandbox, runtime);
+    const { git, dispose } = routedGit(repo.sandbox, runtime);
     t.after(dispose);
 
     const outcome = await git({ projectId: 'project-1' }).changes({});
@@ -60,7 +61,7 @@ describe('git.commands/v1 Project reads', () => {
 
   test('scopes the changes to a path and refuses a missing or escaping one', async (t) => {
     const repo = await changedRepository(t);
-    const { git, dispose } = gitOver(repo.sandbox, fakeRuntime());
+    const { git, dispose } = routedGit(repo.sandbox, fakeRuntime());
     t.after(dispose);
     const project = git({ projectId: 'project-1' });
 
@@ -91,7 +92,7 @@ describe('git.commands/v1 Project reads', () => {
 
   test('reads the tracked diff of the repositories a path reaches', async (t) => {
     const repo = await changedRepository(t);
-    const { git, dispose } = gitOver(repo.sandbox, fakeRuntime());
+    const { git, dispose } = routedGit(repo.sandbox, fakeRuntime());
     t.after(dispose);
 
     const outcome = await git({ projectId: 'project-1' }).diff({});
@@ -107,7 +108,7 @@ describe('git.commands/v1 Project reads', () => {
 
   test('compares one changed file, HEAD against the working tree', async (t) => {
     const repo = await changedRepository(t);
-    const { git, dispose } = gitOver(repo.sandbox, fakeRuntime());
+    const { git, dispose } = routedGit(repo.sandbox, fakeRuntime());
     t.after(dispose);
     const project = git({ projectId: 'project-1' });
 
@@ -144,7 +145,7 @@ describe('git.commands/v1 Project reads', () => {
   test('refuses a comparison path outside the workspace before asking the lease', async (t) => {
     const repo = await changedRepository(t);
     const runtime = fakeRuntime({ lease: 'missing' });
-    const { git, dispose } = gitOver(repo.sandbox, runtime);
+    const { git, dispose } = routedGit(repo.sandbox, runtime);
     t.after(dispose);
     const project = git({ projectId: 'project-1' });
 
@@ -170,7 +171,7 @@ describe('git.commands/v1 Project reads', () => {
       'expired',
       'missing',
     ] as const) {
-      const { git, dispose } = gitOver(
+      const { git, dispose } = routedGit(
         repo.sandbox,
         fakeRuntime({ lease: state }),
       );
@@ -184,7 +185,7 @@ describe('git.commands/v1 Project reads', () => {
       );
     }
     // Closing started, or the lease dropped, while the read ran.
-    const dropped = gitOver(
+    const dropped = routedGit(
       repo.sandbox,
       fakeRuntime({ dropDuringTask: true }),
     );
@@ -199,7 +200,7 @@ describe('git.commands/v1 Project reads', () => {
 
   test("summarizes a Thread directory's repository", async (t) => {
     const repo = await changedRepository(t);
-    const inside = gitOver(
+    const inside = routedGit(
       repo.sandbox,
       fakeRuntime({ cwd: join(repo.root, 'docs') }),
     );
@@ -216,7 +217,7 @@ describe('git.commands/v1 Project reads', () => {
       untracked: 1,
     });
 
-    const outside = gitOver(
+    const outside = routedGit(
       repo.sandbox,
       fakeRuntime({ cwd: join(repo.root, '..') }),
     );

@@ -63,18 +63,17 @@ bundle has no settings, routes or storage of its own.
   `files/contracts` through [`package.json`](package.json)): the five
   contracts below, their schemas and the sandbox vocabulary, listed under
   [Exports of `files/contracts`](#exports-of-filescontracts).
-- **Host** ([`src/host/index.ts`](src/host/index.ts)): on activation it
+- **Host** ([`src/host/service.ts`](src/host/service.ts)): on activation it
   provides `files/v1` ([`src/host/reads.ts`](src/host/reads.ts),
   [`src/host/writes.ts`](src/host/writes.ts)) and registers seven tools with
   `tools/v1` ([`src/host/tools/`](src/host/tools)). The build copies the
   skills of [`src/skills/`](src/skills) into the bundle.
 - **Host process** ([`src/host/main.ts`](src/host/main.ts),
-  `createFilesHost` in [`src/host/service.ts`](src/host/service.ts)), beside
-  the kernel until slice S62 of
-  [`docs/designs/grpc-processes.md`](../../../docs/designs/grpc-processes.md):
-  the seven tools run over `FilesToolPorts`
-  ([`src/host/ports.ts`](src/host/ports.ts)), shared with the kernel; the
-  routed ports ([`src/host/routed.ts`](src/host/routed.ts)) call
+  `createFilesHost` in [`src/host/service.ts`](src/host/service.ts)), the only
+  host entry since slice S68b of
+  [`docs/designs/grpc-processes.md`](../../../docs/designs/grpc-processes.md)
+  deleted the kernel entry `src/host/index.ts`: the seven tools run over
+  `FilesToolPorts` ([`src/host/ports.ts`](src/host/ports.ts)); the routed ports ([`src/host/routed.ts`](src/host/routed.ts)) call
   `runtime.workspace/v1` and `runtime.lease/v1`, and `view-image` streams
   `ReadFileBytes` into `runtime.attachments/v1.Attach`. The process serves
   `files/v1` 1.4.0 ([`src/host/lease.ts`](src/host/lease.ts)) on the lease
@@ -123,8 +122,8 @@ error.
 [`src/host/reads.ts`](src/host/reads.ts). The Project is `call.scope.projectId`
 (`services.use(FilesV1, { projectId })` on the host; the window binds the
 generated `FilesService` to it over Connect, `services.use(FilesService,
-{ projectId })`, slice S65d). Every method is exposed to the
-desktop (`expose: 'desktop'`), and runs on the Project's current lease through
+{ projectId })`, slice S65d). The window reaches every method through the
+manifest's `desktopScope`, and each runs on the Project's current lease through
 `runtime.lease/v1.withLease`, which never acquires a lease:
 
 ```ts
@@ -473,7 +472,7 @@ time.
 
 | Contract                 | Kind     | What for                                                                                                                                                                                                                            |
 | ------------------------ | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `tools/v1`               | requires | `register` of the seven tools ([`src/host/index.ts`](src/host/index.ts))                                                                                                                                                            |
+| `tools/v1`               | requires | `register` of the seven tools ([`src/host/service.ts`](src/host/service.ts))                                                                                                                                                        |
 | `runtime.workspace/v1`   | requires | `cwd`, `setCwd` and `location` of the calling Thread ([`src/host/sandbox.ts`](src/host/sandbox.ts), [`src/host/tools/cwd.ts`](src/host/tools/cwd.ts), [runtime README](../../runtime/runtime/README.md))                            |
 | `runtime.lease/v1`       | requires | `withLease` for every `files/v1` method; `describe`, `exec`, `readFile`, `readFileBytes` and `writeFile` for the tools ([`src/host/reads.ts`](src/host/reads.ts), [`src/host/sandbox.ts`](src/host/sandbox.ts))                     |
 | `runtime.attachments/v1` | requires | `attach` keeps the image `view-image` reads; `ATTACHMENT_MAX_BYTES` and `attachmentReference` ([`src/host/tools/view-image.ts`](src/host/tools/view-image.ts))                                                                      |
@@ -502,7 +501,7 @@ and refreshes nothing after a tool call.
 ## Tools
 
 The host part registers every tool always available, at a fixed global
-position in the model's tool list ([`src/host/index.ts`](src/host/index.ts)).
+position in the model's tool list ([`src/host/tools/catalog.ts`](src/host/tools/catalog.ts)).
 Positions 500 and 700 are the `terminal` tool of
 [`terminal`](../terminal/README.md) and the `web` tool of
 [`web`](../web/README.md).
@@ -958,10 +957,12 @@ The `test` target builds the bundle, compiles `tests/` and `tests/client/` to
 
 The tests live in [`tests/`](tests): one file per tool, over a local
 directory posing as the sandbox ([`tests/fake-sandbox.ts`](tests/fake-sandbox.ts))
-and fake runtime services ([`tests/support/services.ts`](tests/support/services.ts));
+each tool run through `Execute` on a test router of the host part
+([`tests/support/router.ts`](tests/support/router.ts),
+[`tests/support/router-fixtures.ts`](tests/support/router-fixtures.ts));
 the host reads and writes (`reads.test.ts`, `write-entry.test.ts`); the
 window's DOM-free logic (coordinator, sandbox store, reads, decorations, open
-file); the manifest, the activation order, the skills and the stylesheet; the
+file); the manifest, the tool order (`router-tools.test.ts`), the skills and the stylesheet; the
 generated code's imports (`generated-imports.test.ts`); and,
 in [`tests/client/`](tests/client), the rendered views under `happy-dom`
 through [`tests/client/support/render.ts`](tests/client/support/render.ts).

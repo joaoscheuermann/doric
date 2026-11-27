@@ -1729,7 +1729,7 @@ a directory.`. A Thread without a runtime answers `409 thread_inactive`. A
   Thread's prompts settles, and when the Git summary below is read, and
   `thread:updated` is published only when it changed
   ([`domain/runner.ts`](../../../bundles/runtime/runtime/src/host/domain/runner.ts),
-  [`git/src/host/service.ts`](../../../bundles/features/git/src/host/service.ts)).
+  [`git/src/host/commands.ts`](../../../bundles/features/git/src/host/commands.ts)).
 
 When a Project reacquires a sandbox, every Thread whose directory is not the
 workspace root is checked in one probe: a directory the sandbox no longer
@@ -1766,14 +1766,14 @@ readable, and otherwise `{ branches, blocked? }`: the local branches, newest
 commit first, each `{ name, current, commit, subject, worktree }`, and the
 sentence that says why switching is blocked, when it is
 ([`git/src/host/branches.ts`](../../../bundles/features/git/src/host/branches.ts),
-[`git/src/host/service.ts`](../../../bundles/features/git/src/host/service.ts)).
+[`git/src/host/commands.ts`](../../../bundles/features/git/src/host/commands.ts)).
 `POST /threads/:id/branches` takes `{ branch, cwd }`: an existing local
 branch name (1–1024 characters, no NUL, not starting with `-`) and the
 working directory the client last read, under the same rule as the `cwd` of
 `PATCH /threads/:id` (at most 4096 characters, no NUL, not blank). A body
 that breaks either rule answers `422 invalid_branch`. `cwd` is only a guard:
 the switch always runs in the Thread's own working directory
-([`git/src/host/service.ts`](../../../bundles/features/git/src/host/service.ts)).
+([`git/src/host/commands.ts`](../../../bundles/features/git/src/host/commands.ts)).
 It is refused with `409 branch_refused` and its sentence, in this order:
 
 1. `cwd` differs from the Thread's current working directory: `The working

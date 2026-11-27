@@ -8,7 +8,7 @@ import type { SandboxSession } from 'sandbox';
 
 import { tool as factory } from '../src/host/tools/edit.js';
 import { fakeHost } from './fake-sandbox.js';
-import { bindTool } from './support/services.js';
+import { routedTool } from './support/router-fixtures.js';
 
 void describe('edit tool', () => {
   void test('updates a unique exact match and returns first changed line', async () => {
@@ -19,7 +19,7 @@ void describe('edit tool', () => {
       'one\noldCall();\nthree\n',
     );
 
-    const result = await bindTool(
+    const result = await routedTool(
       factory,
       sandbox,
       fakeHost({ cwd: '/workspace/repo' }),
@@ -53,7 +53,7 @@ void describe('edit tool', () => {
 
     await sandbox.seed('/workspace/repo/src/lib.ts', 'one\noldCall();\n');
 
-    const result = await bindTool(
+    const result = await routedTool(
       factory,
       sandbox,
       fakeHost({ cwd: '/workspace/repo/src' }),
@@ -79,7 +79,7 @@ void describe('edit tool', () => {
 
     await sandbox.seed('/workspace/repo/same.txt', 'same\nsame\n');
 
-    const result = await bindTool(
+    const result = await routedTool(
       factory,
       sandbox,
       fakeHost({ cwd: '/workspace/repo' }),
@@ -100,7 +100,7 @@ void describe('edit tool', () => {
 
     await sandbox.mkdir('/workspace/repo/src');
 
-    const tool = bindTool(
+    const tool = routedTool(
       factory,
       sandbox,
       fakeHost({ cwd: '/workspace/repo' }),

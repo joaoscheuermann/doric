@@ -9,13 +9,8 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { describe, test } from 'node:test';
 
-import {
-  activatedGit,
-  fakeRuntime,
-  gitOver,
-  repository,
-  terminal,
-} from './support/runtime.js';
+import { routedGit } from './support/routed-git.js';
+import { fakeRuntime, repository, terminal } from './support/runtime.js';
 
 const busy =
   'Wait for active prompts and terminal commands in this worktree to finish before switching branches.';
@@ -37,7 +32,7 @@ describe('git.commands/v1 branches', () => {
     await repo.git('branch', 'feature');
     await writeFile(join(repo.root, 'new'), 'keep me');
     const runtime = fakeRuntime({ cwd: repo.root });
-    const { git, dispose } = gitOver(repo.sandbox, runtime);
+    const { git, dispose } = routedGit(repo.sandbox, runtime);
     t.after(dispose);
     const thread = git({ threadId: 'thread-1' });
 
@@ -72,7 +67,7 @@ describe('git.commands/v1 branches', () => {
   test('refuses a switch from a working directory the picker no longer shows', async (t) => {
     const repo = await committed(t);
     await repo.git('branch', 'feature');
-    const { git, dispose } = gitOver(
+    const { git, dispose } = routedGit(
       repo.sandbox,
       fakeRuntime({ cwd: repo.root }),
     );
@@ -107,7 +102,7 @@ describe('git.commands/v1 branches', () => {
     await repo.git('commit', '-qam', 'Feature');
     await repo.git('switch', '-q', 'main');
     await writeFile(join(repo.root, 'file'), 'local edits\n');
-    const { git, dispose } = gitOver(
+    const { git, dispose } = routedGit(
       repo.sandbox,
       fakeRuntime({ cwd: repo.root }),
     );
@@ -146,7 +141,7 @@ describe('git.commands/v1 branches', () => {
     const repo = await committed(t);
     await repo.git('commit', '-q', '--allow-empty', '-m', 'Second');
     await writeFile(join(repo.root, 'file'), 'local edits\n');
-    const { git, dispose } = gitOver(
+    const { git, dispose } = routedGit(
       repo.sandbox,
       fakeRuntime({ cwd: repo.root }),
     );
@@ -173,7 +168,7 @@ describe('git.commands/v1 branches', () => {
 
   test('blocks switching outside a repository and during a Git operation', async (t) => {
     const repo = await committed(t);
-    const outside = gitOver(
+    const outside = routedGit(
       repo.sandbox,
       fakeRuntime({ cwd: join(repo.root, '..') }),
     );
@@ -190,7 +185,7 @@ describe('git.commands/v1 branches', () => {
     // A merge in progress: MERGE_HEAD marks it.
     const head = (await repo.git('rev-parse', 'HEAD')).trim();
     await writeFile(join(repo.root, '.git', 'MERGE_HEAD'), `${head}\n`);
-    const merging = gitOver(repo.sandbox, fakeRuntime({ cwd: repo.root }));
+    const merging = routedGit(repo.sandbox, fakeRuntime({ cwd: repo.root }));
     t.after(merging.dispose);
     const blocked =
       'Finish the current Git operation and resolve conflicts before switching branches.';
@@ -242,7 +237,7 @@ describe('git.commands/v1 branches', () => {
     ];
 
     for (const { busy: paths, terminals, blocked } of cases) {
-      const { git, dispose } = gitOver(
+      const { git, dispose } = routedGit(
         repo.sandbox,
         fakeRuntime({ cwd: repo.root, busy: paths, terminals }),
       );
@@ -270,7 +265,7 @@ describe('git.commands/v1 branches', () => {
   test('passes a Thread that is gone, closing or waiting for its sandbox through as data', async (t) => {
     const repo = await committed(t);
     for (const state of ['missing', 'inactive', 'pending'] as const) {
-      const { git, dispose } = gitOver(
+      const { git, dispose } = routedGit(
         repo.sandbox,
         fakeRuntime({ thread: state, cwd: repo.root }),
       );
@@ -294,7 +289,7 @@ describe('git.commands/v1 branches', () => {
   test('blocks switching while terminal/v1 lists a running agent session in the repository', async (t) => {
     const repo = await committed(t);
     await repo.git('branch', 'feature');
-    const { git, dispose } = await activatedGit(
+    const { git, dispose } = await routedGit(
       repo.sandbox,
       fakeRuntime({
         cwd: repo.root,
@@ -325,7 +320,7 @@ describe('git.commands/v1 branches', () => {
   test('does not block switching while no bundle provides terminal/v1', async (t) => {
     const repo = await committed(t);
     await repo.git('branch', 'feature');
-    const { git, dispose } = await activatedGit(
+    const { git, dispose } = await routedGit(
       repo.sandbox,
       fakeRuntime({ cwd: repo.root }),
     );
@@ -349,7 +344,7 @@ describe('git.commands/v1 branches', () => {
   test('reads and switches under the Project lock; the summary refreshes the hint', async (t) => {
     const repo = await committed(t);
     const runtime = fakeRuntime({ cwd: repo.root });
-    const { git, dispose } = gitOver(repo.sandbox, runtime);
+    const { git, dispose } = routedGit(repo.sandbox, runtime);
     t.after(dispose);
 
     await git({}).status('thread-1');

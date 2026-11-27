@@ -12,6 +12,34 @@
       "target": "tool",
       "decision": "docs/designs/grpc-processes.md",
       "until": "S70"
+    },
+    {
+      "check": "dependencies",
+      "bundle": "files",
+      "target": "pino",
+      "decision": "docs/designs/grpc-processes.md",
+      "until": "S70"
+    },
+    {
+      "check": "dependencies",
+      "bundle": "files",
+      "target": "sandpool",
+      "decision": "docs/designs/grpc-processes.md",
+      "until": "S70"
+    },
+    {
+      "check": "dependencies",
+      "bundle": "files",
+      "target": "terminal",
+      "decision": "docs/designs/grpc-processes.md",
+      "until": "S70"
+    },
+    {
+      "check": "dependencies",
+      "bundle": "git",
+      "target": "@bufbuild/protovalidate",
+      "decision": "docs/designs/grpc-processes.md",
+      "until": "S70"
     }
   ]
 }

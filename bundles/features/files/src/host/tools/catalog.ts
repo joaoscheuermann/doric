@@ -17,10 +17,9 @@ export interface FileToolEntry {
 
 /**
  * The seven tools in registration order: cwd 100, edit 200, find 300,
- * grep 400, tree 600, write 800, view-image 850. Both entries (kernel
- * `activate` and the host part) register exactly these, with
- * `alwaysAvailable: true`. `terminal` (500) is the `terminal` bundle's, and
- * `web` (700) the `web` bundle's.
+ * grep 400, tree 600, write 800, view-image 850. The host part registers
+ * exactly these, with `alwaysAvailable: true`. `terminal` (500) is the
+ * `terminal` bundle's, and `web` (700) the `web` bundle's.
  */
 export const fileTools: readonly FileToolEntry[] = [
   { tool: cwd, order: 100 },

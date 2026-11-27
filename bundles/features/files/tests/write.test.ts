@@ -8,13 +8,13 @@ import type { SandboxSession } from 'sandbox';
 
 import { tool as factory } from '../src/host/tools/write.js';
 import { fakeHost } from './fake-sandbox.js';
-import { bindTool } from './support/services.js';
+import { routedTool } from './support/router-fixtures.js';
 
 void describe('write tool', () => {
   void test('creates parent directories and returns byte count with diff', async () => {
     const sandbox = await fakeSandbox('write');
 
-    const result = await bindTool(
+    const result = await routedTool(
       factory,
       sandbox,
       fakeHost({ cwd: '/workspace/repo' }),
@@ -44,7 +44,7 @@ void describe('write tool', () => {
   void test('resolves relative paths against the working directory the thread holds', async () => {
     const sandbox = await fakeSandbox('write-cwd');
     const host = fakeHost({ cwd: '/workspace/repo' });
-    const tool = bindTool(factory, sandbox, host);
+    const tool = routedTool(factory, sandbox, host);
 
     await tool.execute({ path: 'first.txt', content: 'first' });
 
@@ -71,7 +71,7 @@ void describe('write tool', () => {
   void test('rejects empty paths with structured error output', async () => {
     const sandbox = await fakeSandbox('write-empty');
 
-    const result = await bindTool(
+    const result = await routedTool(
       factory,
       sandbox,
       fakeHost({ cwd: '/workspace/repo' }),

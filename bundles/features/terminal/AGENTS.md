@@ -22,9 +22,10 @@ through its own contracts.
 - Run every command of the `terminal` tool through this bundle's own
   `terminal/v1` `run`, in the calling prompt's scope; never start a process
   from [`src/host/tool.ts`](src/host/tool.ts).
-- Never give `run` `expose: 'desktop'`: it runs on the calling prompt's
-  Thread. Give every other method a window calls `expose: 'desktop'` in
-  [`src/host/provider.ts`](src/host/provider.ts).
+- Never call `run` from the window: it runs on the calling prompt's Thread.
+  Implement every other method a window calls in
+  [`src/host/provider.ts`](src/host/provider.ts); the window reaches it
+  through the manifest's `desktopScope`.
 - Call `redactions.refresh()` inside the `withThread` task before every
   `registry.start`, and pass the session's command, each marker's command and
   each output chunk through the redaction list; leave the `stdout` and
@@ -88,9 +89,9 @@ through its own contracts.
     `src/host/registry.ts`, with its test in
     [`tests/registry.test.ts`](tests/registry.test.ts);
   - a change to a method or to background delivery in `src/host/provider.ts`,
-    with its test in [`tests/provider.test.ts`](tests/provider.test.ts);
+    with its test in [`tests/router.test.ts`](tests/router.test.ts);
   - a change to the stream in `src/host/watch.ts`, tested in
-    `tests/provider.test.ts`;
+    `tests/router.test.ts`;
   - a change to the `terminal` tool's input, output or compaction in
     `src/host/tool.ts`, with its test in
     [`tests/tool.test.ts`](tests/tool.test.ts);

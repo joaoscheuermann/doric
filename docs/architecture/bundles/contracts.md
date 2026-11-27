@@ -51,20 +51,17 @@ The environments in the last column are those in which the platform publishes `c
 A service carries its logic in its definition, as a tool does: each method has its `execute(input, call, services)`, where `services` are the services of the bundle that provided it, bound when it calls `services.provide(definition)` ([`define.ts`](../../../packages/bundle/src/contracts/define.ts), [`context.ts`](../../../packages/bundle/src/contracts/context.ts), [`services.ts`](../../../packages/bundle/src/runtime/services.ts)). A method's `input` may be any zod type, not only an object. A method whose `input` is a `z.tuple` takes the tuple's items as positional arguments, as `ui/v1.define(tag, element)` and `commands/v1.execute(command, input?)` do. After them a stub takes the optional call argument of [The call](#the-call): a trailing parent call is always that argument, while a trailing `{ signal, deadline }` is that argument only when it lies beyond the tuple's length or the tuple item at its position rejects it, so `commands/v1.execute(command, { signal })` passes `{ signal }` as the command's input ([`dispatch.ts`](../../../packages/bundle/src/runtime/dispatch.ts), [`basic/ui.ts`](../../../packages/bundle/src/contracts/basic/ui.ts), [`basic/commands.ts`](../../../packages/bundle/src/contracts/basic/commands.ts)). A stub reads `then`, `toJSON`, `constructor`, `valueOf` and `toString` as `undefined`, so a method with one of those names cannot be called through a stub ([`dispatch.ts`](../../../packages/bundle/src/runtime/dispatch.ts)). How a stub binds late and runs one call is in [Stubs](services-and-channels.md#stubs).
 
 ```ts
-// git, src/host/service.ts
-export const createGitService = (terminals: TerminalList) =>
-  defineService(GitCommandsV1, {
-    status: defineMethod({
-      expose: 'desktop',
-      ...gitMethods.status,
-      execute: (threadId: string, call: Call, services) =>
-        workspace(services, call).withThread(/* … */),
+// workspace.sidebar/v1, a client service of `workspace`
+export const createWorkspaceSidebar = () =>
+  defineService(WorkspaceSidebarV1, {
+    addThreadRows: defineMethod({
+      ...workspaceSidebarMethods.addThreadRows,
+      execute: (rows: ThreadRows) => addThreadRows(rows),
     }),
-    // …
   });
 ```
 
-Passing the `ref` in place of the id makes the compiler check the methods against the interface the ref carries ([`define.ts`](../../../packages/bundle/src/contracts/define.ts), [`types.ts`](../../../packages/bundle/src/contracts/types.ts)). In this example `gitMethods.status` holds the method's `input` and `output` schemas, which `git` exports from its `contracts` entry point together with the interface and the ref ([`git/src/contracts/index.ts`](../../../bundles/features/git/src/contracts/index.ts), [`git/src/host/service.ts`](../../../bundles/features/git/src/host/service.ts)).
+Passing the `ref` in place of the id makes the compiler check the methods against the interface the ref carries ([`define.ts`](../../../packages/bundle/src/contracts/define.ts), [`types.ts`](../../../packages/bundle/src/contracts/types.ts)). In this example `gitMethods.status` holds the method's `input` and `output` schemas, which `git` exports from its `contracts` entry point together with the interface and the ref ([`git/src/contracts/index.ts`](../../../bundles/features/git/src/contracts/index.ts)).
 
 When a consumer calls a method, the runtime validates the input with the provider's `input` schema and hands the parsed value to `execute`, or rejects with `invalid_input`; it validates the result with the `output` schema, rejects with `invalid_output` when it fails, and returns the original value, never the parsed copy. An `output` schema is therefore descriptive: no default, transform or pipe ([`dispatch.ts`](../../../packages/bundle/src/runtime/dispatch.ts), [`define.ts`](../../../packages/bundle/src/contracts/define.ts)). A stub call fails with `unavailable` when the calling bundle is no longer active, when the contract has no active provider, and when the provider has no method of that name. In the host kernel, while no generation is active during a respawn, a call to a contract the latest generation provides waits for the next activation instead, and its signal aborts the wait ([`dispatch.ts`](../../../packages/bundle/src/runtime/dispatch.ts), [`manager.ts`](../../../packages/bundle/src/process/manager.ts), [`kernel.ts`](../../../packages/bundle/src/process/kernel.ts)). Every error that crosses a contract is a `ContractError`, with a stable `code`, a `message` and optional `details`. It is recognized by its name `ContractError`, a string `code` and a string `message`, not by `instanceof`. Any other thrown value becomes code `internal`, with the message of an `Error`, the string itself, or `Internal error.` for any other value ([`error.ts`](../../../packages/bundle/src/contracts/error.ts)). Every code is listed in [Errors](../../../packages/bundle/README.md#errors) of the package README, and where each arises in [Errors](services-and-channels.md#errors).
 
