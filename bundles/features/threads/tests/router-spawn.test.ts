@@ -4,7 +4,7 @@
 // and `core`'s `ToolHandlerService` calls run them over
 // `runtime.threads/v1`'s `ThreadsService` and `default.agents/v1`'s
 // `AgentsService` under the relayed prompt scope. A tool's text answer is
-// compared with the kernel tool's as parsed JSON (key order may differ).
+// compared as parsed JSON (key order may differ).
 
 import assert from 'node:assert/strict';
 import test from 'node:test';
@@ -255,4 +255,62 @@ void test('T14: without default.agents/v1 declared, a spawn with an agent fails 
 
   assert.equal(error.code, 'undeclared_requirement');
   assert.deepEqual(h.calls, []);
+});
+
+// P1–P2: what the kernel suite `threads.test.ts` covered and T1–T14 do not
+// (S68a, X3), ported to the router harness.
+
+void test('P1: without any AgentsService provider, a model and an effort, or an effort alone, reach Spawn as given and resolve no agent', async (t) => {
+  const h = await activated(t, { control });
+
+  await execute(h, 'thread-spawn', {
+    prompt: 'task',
+    model: 'gpt-9',
+    effort: 'max',
+  });
+  await execute(h, 'thread-spawn', { prompt: 'task', effort: 'high' });
+
+  assert.deepEqual(h.calls, [
+    {
+      method: 'spawn',
+      request: { prompt: 'task', options: { model: 'gpt-9', effort: 'max' } },
+      scope: promptScope,
+    },
+    {
+      method: 'spawn',
+      request: { prompt: 'task', options: { effort: 'high' } },
+      scope: promptScope,
+    },
+  ]);
+});
+
+void test('P2: Spawn refusing the effort of an agent’s definition fails Execute with the runtime’s error unchanged', async (t) => {
+  const refusal = new ContractError(
+    'invalid_execution',
+    'Effort "max" is not supported by model "gpt-5". Supported efforts: low, medium, high.',
+    { issue: 'effort' },
+  );
+  const h = await activated(t, {
+    control: {
+      spawn: async () => {
+        throw refusal;
+      },
+    },
+    agents: () => ({
+      ...review,
+      source: 'workspace',
+      model: 'gpt-5',
+      effort: 'max',
+    }),
+  });
+
+  const error = contractErrorOf(
+    await rejectionOf(
+      execute(h, 'thread-spawn', { prompt: 'task', agent: 'review' }),
+    ),
+  );
+
+  assert.equal(error.code, 'invalid_execution');
+  assert.equal(error.message, refusal.message);
+  assert.deepEqual(error.details, { issue: 'effort' });
 });

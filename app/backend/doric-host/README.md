@@ -591,7 +591,7 @@ Features:
   tools `thread-spawn`, `thread-list`, `thread-get`, `thread-events`,
   `thread-send`, `thread-restart`, `thread-interrupt` and `thread-terminate`,
   over `runtime.threads/v1` only
-  ([`threads/src/host/index.ts`](../../../bundles/features/threads/src/host/index.ts)).
+  ([`threads/src/host/part.ts`](../../../bundles/features/threads/src/host/part.ts)).
 - [`terminal`](../../../bundles/features/terminal/README.md): tracked shell
   commands and manual terminal sessions, `terminal/v1`.
 - [`usage`](../../../bundles/features/usage/README.md): Thread usage and cost,

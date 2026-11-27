@@ -17,7 +17,6 @@ import { createSandpool } from 'sandpool';
 
 import { logV1Logger } from './logger.js';
 import type { SandboxPoolBinding } from './service.js';
-import { logSandboxPool } from './start.js';
 
 export type Environment = Readonly<Record<string, string | undefined>>;
 
@@ -177,10 +176,5 @@ export const activateDockerSandbox =
       }),
     );
 
-    const start = logSandboxPool(services, options.environment ?? process.env);
-
-    return () => {
-      start.dispose();
-      return pool.dispose();
-    };
+    return () => pool.dispose();
   };

@@ -84,8 +84,7 @@ export interface WebToolOptions {
 
 /**
  * Creates the provider-neutral web tool. It reads nothing from its `deps`
- * (`Deps = unknown`): the kernel registers it as before, and the host part
- * binds it with `bind(undefined)`.
+ * (`Deps = unknown`): the host part binds it with `bind(undefined)`.
  */
 export const createTool = (
   options: WebToolOptions = {},

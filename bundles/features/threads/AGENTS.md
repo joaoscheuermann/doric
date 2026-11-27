@@ -23,17 +23,17 @@ a child or delivers its result: those belong to the bundle that provides
   the tool call it serves; pass `call` on to every runtime method.
 - Put a new tool in `src/host/tools/<tool-name>.ts`, exporting `tool` built
   with `defineTool` and a strict zod input, and register it in the
-  `threadTools` list of `src/host/index.ts` with `alwaysAvailable: true` and an
+  `threadTools` list of `src/host/tools/catalog.ts` with `alwaysAvailable: true` and an
   order that no other tool of this bundle uses. Never renumber an existing
   tool: each order is the tool's global model-visible position. Keep the
-  expected tool names of the order test in `tests/threads.test.ts` in the
+  expected tool names of the order test in `tests/router.test.ts` in the
   order of `threadTools`.
 - Return every tool output as a string: the JSON of the runtime's answer,
   except `thread-interrupt`, which answers the runtime's bare result. Never
   trim or rewrite a `prompt` before it reaches the runtime.
 - Let a runtime or `default.agents/v1` error reach the caller unchanged; map an
   error only where `src/host/tools/thread-spawn.ts` already does, and add a
-  case there only with its test in `tests/threads.test.ts`.
+  case there only with its test in `tests/router-spawn.test.ts`.
 - Keep `default.agents/v1` under `optional` in [`manifest.json`](manifest.json):
   a spawn that names no agent must work without it.
 - Put a new skill in `src/skills/<skill-name>/SKILL.md` with `name`,
@@ -65,10 +65,10 @@ a child or delivers its result: those belong to the bundle that provides
   never remove the `desktop/workspace/src/client` line, which
   `tests/workspace-sheet.test.ts` checks.
 - When you change `version` in `manifest.json`, change the version that
-  `tests/threads.test.ts` and `tests/workspace-sheet.test.ts` assert in the
+  `tests/manifest.test.ts` and `tests/workspace-sheet.test.ts` assert in the
   same change.
 - Add the tests of a change in the same change: a host tool's in
-  `tests/threads.test.ts`, through `activatedTools` of `tests/support/services.ts`;
+  `tests/router.test.ts`, through `tests/support/router.ts`;
   a domain helper's in `tests/<helper>.test.ts`; an element's in
   `tests/client/<element>.test.ts`, mounted in `happy-dom` through
   `tests/client/support/`.

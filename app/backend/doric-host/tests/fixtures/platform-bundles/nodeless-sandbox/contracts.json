@@ -8,7 +8,7 @@
       "kind": "service",
       "environment": "host",
       "cardinality": "one",
-      "local": true,
+      "local": false,
       "schema": "schemas/sandbox/v1.json"
     }
   ]

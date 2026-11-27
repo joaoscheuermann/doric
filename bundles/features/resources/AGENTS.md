@@ -25,8 +25,10 @@ slot.
   advances the one sample.
 - Add a member to `resources/v1` in three places in one change: the
   `Resources` interface and its schema in `resourcesMethods` in
-  `src/contracts/index.ts`, and its method in `resourcesService` in
-  `src/host/index.ts`, with `expose: 'desktop'` only when a window calls it.
+  `src/contracts/index.ts`, and its method in `createResourcesService` in
+  `src/host/rpc/resources.ts`; give it the
+  `(doric.platform.v1.method).expose = EXPOSE_DESKTOP` option in
+  `proto/doric/resources/v1/resources.proto` only when a window calls it.
 - Add a field of `HostResources` or `ContainerResources` in one change to the
   contract and its schema in `src/contracts/index.ts`, to the copy of the type
   in `src/client/domain/resources.ts`, and, for `ContainerResources`, to
@@ -85,8 +87,9 @@ slot.
   draws.
 - Add the tests of a change in the file for its layer:
   [`tests/contracts.test.ts`](tests/contracts.test.ts) for a schema,
-  [`tests/resources.test.ts`](tests/resources.test.ts) for the host service
-  and the window's reads, over its fake `runtime.lease/v1`,
+  [`tests/router.test.ts`](tests/router.test.ts) for the host service, over
+  its fake `runtime.lease/v1`, [`tests/resources.test.ts`](tests/resources.test.ts)
+  for the window's reads,
   [`tests/domain.test.ts`](tests/domain.test.ts) for formatting and
   thresholds, and
   [`tests/client/connection-badge.test.ts`](tests/client/connection-badge.test.ts)

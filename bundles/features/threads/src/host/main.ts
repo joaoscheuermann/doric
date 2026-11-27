@@ -1,6 +1,5 @@
 // `threads`' host part as a process (phase 3, S52b): the delegation tools
-// served as `ToolHandlerService` and registered through `tools/v1`. The
-// running host keeps the kernel entry (`./index.ts`) until S62.
+// served as `ToolHandlerService` and registered through `tools/v1`.
 import { ToolHandlerService } from 'bundle/contracts/gen/doric/tools/v1/tools_pb.js';
 import { createToolHandlers, runBundle } from 'bundle/host';
 

@@ -48,8 +48,8 @@ elements, storage types or `desktopScope`. Its package
   `HookHandlerService` and, in `activate`, registers the start step on
   `onHostStartHook` with `registerSandboxPoolStep(hooks, context, environment)`
   ([Start step](#start-step)); a failing startup call fails `Handle` with its
-  code. The running host keeps the kernel entry
-  `src/host/index.ts` until the switch (phase 3, slice S44 of
+  code. The kernel entry `src/host/index.ts` was deleted in slice S68a
+  (phase 3, slices S44 and S68a of
   [`grpc-processes.md`](../../../docs/designs/grpc-processes.md)).
 
 `sandbox/v1` is declared by the [`runtime`](../../runtime/runtime/README.md)
@@ -57,9 +57,10 @@ bundle in `runtime/contracts`.
 
 ## Parts
 
-- **Host** ([`src/host/index.ts`](src/host/index.ts)): exports `activate`,
-  built by `activateDockerSandbox()` in
-  [`src/host/sandbox.ts`](src/host/sandbox.ts). On activation it reads the
+- **Host** ([`src/host/main.ts`](src/host/main.ts)): a process. Its tests
+  build the sandbox with `activateDockerSandbox()` in
+  [`src/host/sandbox.ts`](src/host/sandbox.ts), which no entry uses since the
+  kernel entry was deleted in S68a and which stays for them. On activation it reads the
   settings from the environment, builds the Docker client, the registry of
   running machines and the sandbox pool, provides `sandbox/v1` over them,
   and registers its start step ([`src/host/start.ts`](src/host/start.ts)).
@@ -75,9 +76,8 @@ use ([`src/host/sandbox.ts`](src/host/sandbox.ts)):
 | `environment` | `Readonly<Record<string, string \| undefined>>`        | `process.env`        |
 | `client`      | `(options: CreateDockerClientOptions) => DockerClient` | `createDockerClient` |
 
-The shipped composition does not list `docker` under `resident`, so its host
-part runs in the generation process, next to `runtime`, and reads the
-environment that process inherits from the kernel
+The host part runs as its own process and reads the environment that process
+inherits from the host
 ([`composition.json`](../../../app/backend/doric-host/composition.json),
 [`resident`](../../../docs/architecture/bundles/composition-and-distribution.md#resident)).
 
@@ -124,19 +124,16 @@ interface SandboxLease {
 | `machines` | none                    | `RunningMachine[]`            | One entry per container id whose disposal has not completed (a failed disposal stays listed), `provider: 'docker'` (see [Durable workspaces](#durable-workspaces)) |
 | `machine`  | machine id              | `RunningMachine \| undefined` | That entry while it is listed, else undefined                                                                                                                      |
 
-Only `acquire` is process-local: its lease and its `signal` are live objects,
-so only a bundle in the same process can call it. `describe`, `discard`,
-`machines` and `machine` take and return plain data, so the kernel reaches
-them across processes ([`sandbox.ts`](../../runtime/runtime/src/contracts/sandbox.ts)).
-The platform validates each call with the method schemas of `sandboxMethods`,
-rejecting an input that fails them with `invalid_input` and a result that
-fails them with `invalid_output`, as
-[Contracts](../../../docs/architecture/bundles/contracts.md) describes. No
-method has an error code of its own: a failure reaches an in-process caller as
-the error thrown, and a caller in another process as a `ContractError` of
-code `internal` with the same message
-([`error.ts`](../../../packages/bundle/src/contracts/error.ts)). The failures
-are listed under [Errors and failure behavior](#errors-and-failure-behavior).
+The bundle's host process serves these as `sandbox/v1` 1.1.0 over Connect, by
+lease id ([`service.ts`](src/host/service.ts)): `Acquire({ identity })` acquires
+a pool sandbox with the call's signal and answers a new `leaseId`, owned by the
+calling instance; `Release`, and the sandbox operations (`Exec`, `Start`,
+`ReadFile`, …), take that `leaseId`, and a lease that is unknown, released or
+another instance's fails with `NOT_FOUND`, reason `unknown_lease`. `Describe`,
+`Discard`, `Machines` and `Machine` take and return plain data
+([`sandbox.proto`](../../runtime/runtime/proto/doric/sandbox/v1/sandbox.proto)).
+The failures are listed under
+[Errors and failure behavior](#errors-and-failure-behavior).
 
 `runtime` acquires with the Project id as `identity` and discards that identity
 when the Project is deleted

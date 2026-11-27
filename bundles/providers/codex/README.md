@@ -37,38 +37,23 @@ and has no slots. The bundle has no
 settings, routes, tools, client part or desktop part.
 
 [`package.json`](package.json) names the package `codex` and exports one
-entry, `./host` ([`src/host/index.ts`](src/host/index.ts), built to
-`dist/host/index.js`). It depends on `bundle` (for `bundle/contracts`), `llms`
+entry, `./host`, whose kernel entry `src/host/index.ts`
+was deleted in slice S68a (the export is removed in S70). It depends on `bundle` (for `bundle/contracts`), `llms`
 (the Codex provider), `pino` (the logger the `llms` providers take) and
 `tslib`.
 
 ## Host part
-
-[`src/host/index.ts`](src/host/index.ts) exports `activate`, which provides
-one `models.provider/v1` record built from the `codex` kind definition
-([`src/host/kind.ts`](src/host/kind.ts)) by `createKindProvider`
-([`src/host/provider.ts`](src/host/provider.ts)). `activate` does no I/O and
-uses no contract.
-
-It also exports `createActivate(options)`, the same host part with injected
-dependencies, for tests:
-
-| Option      | Type                  | Default                                                                                |
-| ----------- | --------------------- | -------------------------------------------------------------------------------------- |
-| `transport` | `() => HttpTransport` | `createFetchTransport()` of `llms`, called once per `create` call                      |
-| `logger`    | pino `Logger`         | a pino logger whose records go to `log/v1`, made on the first `create` and then reused |
-
-The default logger is made lazily: the host part calls `services.use(LogV1)`
-only on the first `create`, and every later `create` of the same activation
-reuses that logger ([`src/host/index.ts`](src/host/index.ts)).
 
 The host process entry [`src/host/main.ts`](src/host/main.ts) (built to
 `dist/host/main.mjs`) serves `doric.models.provider.v1.ProviderService` through
 `runBundle` with `serveProviderKind` of `llms/rpc`, from the kind source that
 `kindSource()` of [`src/host/provider.ts`](src/host/provider.ts) returns; it
 reads images through `runtime.attachments/v1`, so the package depends on
-`runtime`. The kernel entry stays `src/host/index.ts` until the host switch
-(phase 3, slice S43 of
+`runtime`. `kindSource` takes the kind definition
+([`src/host/kind.ts`](src/host/kind.ts)) and `KindProviderOptions`: `transport`
+(default `createFetchTransport()` of `llms`, called once per `create` call) and
+`logger`, which `main.ts` makes on first use over the instance's `context.log`,
+whose records go to `log/v1` (phase 3, slices S43 and S68a of
 [`grpc-processes.md`](../../../docs/designs/grpc-processes.md)).
 
 ## Provided contract: `models.provider/v1@1.4.0`
@@ -228,8 +213,8 @@ through the `secret` callback of `create`.
 ## Data, side effects and configuration
 
 - **Persistence.** None: the bundle stores nothing and keeps no state beyond
-  the lazily made logger of its activation
-  ([`src/host/index.ts`](src/host/index.ts)).
+  the lazily made logger of its process
+  ([`src/host/main.ts`](src/host/main.ts)).
 - **Network.** Only a built provider sends requests, through the transport
   (`fetch` by default) to the endpoint; `kind`, `advertised`, `catalog`,
   `catalogCapacity` and `icons` send none
@@ -239,7 +224,7 @@ through the `secret` callback of `create`.
   ([`src/host/logger.ts`](src/host/logger.ts),
   [`packages/llms/src/lib/providers/logging.ts`](../../../packages/llms/src/lib/providers/logging.ts)).
 - **Configuration.** None of its own: no settings and no environment
-  variables ([`src/host/index.ts`](src/host/index.ts),
+  variables ([`src/host/main.ts`](src/host/main.ts),
   [`src/host/kind.ts`](src/host/kind.ts)). A provider's values come from the
   host's provider configuration through `models/v1`, and the credential from
   `secrets/v1`.
@@ -272,10 +257,12 @@ through the `secret` callback of `create`.
 Every target first builds its dependencies (`^build`), among them `llms` and
 `bundle` ([`project.json`](project.json)).
 
-The tests run the host part through `createTestServices` of `bundle/testing`
-beside a recording `log/v1` ([`tests/support/world.ts`](tests/support/world.ts)):
+The tests serve `kindSource` through `serveProviderKind` on a test router,
+with a transport that records requests or one that fails, and never the
+network ([`tests/support/world.ts`](tests/support/world.ts) holds the frozen
+kind):
 
-- [`tests/provider.test.ts`](tests/provider.test.ts): the record's descriptor
+- [`tests/router.test.ts`](tests/router.test.ts): the record's descriptor
   equals the fixture and `providerKind('codex')` of `llms` and has no `site`;
   `advertised` and `catalogCapacity` are `false`; `catalog` is `absent` without
   a request; `create` refuses a missing or blank token and a `fedramp` that is
@@ -283,6 +270,8 @@ beside a recording `log/v1` ([`tests/support/world.ts`](tests/support/world.ts))
   chooses `openai` for the provider and every model.
 - [`tests/manifest.test.ts`](tests/manifest.test.ts): the manifest's
   `version`, `provides` and `engines.doric`.
+- [`tests/host-build.test.ts`](tests/host-build.test.ts): the host part builds
+  to `dist/host/main.mjs`, and no `dist/host/index.js` exists.
 
 The Doric host stages this bundle with every other bundle of its composition:
 

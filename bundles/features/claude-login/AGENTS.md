@@ -25,7 +25,7 @@ that draws the settings window.
   token store that outlives the sign-in.
 - Never read or reuse an existing Claude Code login: nothing in this bundle
   refreshes a stored token, so every sign-in runs a fresh authorization.
-- Keep the waiting sign-in inside the `loginService` closure of
+- Keep the waiting sign-in inside the `createLoginSessions` closure of
   `src/host/login.ts`, one per activation. End a sign-in that has not
   finished only through `cancel`, which aborts its authorization. Once the
   wait in `finish` ends, clear the waiting sign-in and its timer in `finish`.
@@ -64,14 +64,14 @@ that draws the settings window.
   add no `src/client/styles.css`.
 - Put a new step of the sign-in on the host in `src/host/login.ts`, and a new
   method of `claude.login/v1` in the `ClaudeLogin` interface and in
-  `claudeLoginMethods` of `src/contracts/index.ts` and in the `defineService`
-  of `src/host/login.ts`, with `expose: 'desktop'` when a window calls it.
+  `claudeLoginMethods` of `src/contracts/index.ts`, its `.proto`, and
+  `createClaudeLoginService` of `src/host/rpc/login.ts`.
 - Put a change to the row in `src/client/claude-login-field.tsx`, a change to
   how a sign-in runs in `src/client/use-claude-login.ts`, and a new call in
   `src/client/api.ts`.
-- Test a change to the host part in [`tests/login.test.ts`](tests/login.test.ts)
-  through `createActivate` with the fakes of
-  [`tests/support/world.ts`](tests/support/world.ts), never with a real port
+- Test a change to the host part in [`tests/router.test.ts`](tests/router.test.ts)
+  through the router with the fakes of
+  [`tests/support/router.ts`](tests/support/router.ts), never with a real port
   or network; a change to the manifest in
   [`tests/manifest.test.ts`](tests/manifest.test.ts); a change to the
   activation, the adapter or the row in the matching file of

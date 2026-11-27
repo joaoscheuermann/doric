@@ -24,23 +24,23 @@ provides `secrets/v1`.
 - Keep the descriptor of `openRouterKind` in `src/host/kind.ts` equal to
   `providerKind('openrouter')` of `packages/llms/src/lib/providers/kinds.ts`
   and to `tests/fixtures/provider-kind.json`, and change all three in one
-  change: `tests/provider.test.ts` asserts that they match.
+  change: `tests/router.test.ts` asserts that they match.
 - Change the shape of `models.provider/v1` only in
   `packages/bundle/src/contracts/basic/models.ts`, never in this bundle.
 - Put what is specific to the `openrouter` kind (its fields, its `build`, its
   `catalog` and its `icons`) in `src/host/kind.ts`, the catalog read in
   `src/host/catalog.ts`, and what turns any kind definition into the record
-  (`createKindProvider`, `buildConfigured`) and the field and value helpers
+  (`kindSource`, `buildConfigured`) and the field and value helpers
   (`endpointField`, `tokenField`, `literalValue`, `baseUrl`) in
   `src/host/provider.ts`.
 - When `models.provider/v1` gains a method or an output field in
   `packages/bundle/src/contracts/basic/models.ts`, add its member to
-  `KindDefinition` and its method to `createKindProvider` in
+  `KindDefinition` and its method to `kindSource` in
   `src/host/provider.ts`, give it the `openrouter` answer in
   `src/host/kind.ts`, version [`manifest.json`](manifest.json) as
   [`bundles/AGENTS.md`](../../AGENTS.md) requires, and in the same change update
   `tests/manifest.test.ts` and add the answer's test to
-  `tests/provider.test.ts`.
+  `tests/router.test.ts`.
 - Add a new provider value as a field of `openRouterKind` in
   `src/host/kind.ts`, mark it `advanced: true` unless every user must set it,
   read it in `build` through `literalValue`, and refuse a malformed value there
@@ -65,14 +65,13 @@ provides `secrets/v1`.
 - Keep `icons` pure: never do I/O or read a secret in it, and choose a model's
   icon only through `openRouterModelIcon` of `llms`.
 - Make the default logger only inside the `logger` callback of
-  `createActivate` in `src/host/index.ts`, so that `log/v1` is used on the
+  `kindSource` in `src/host/main.ts`, so that `log/v1` is used on the
   first `create` and never during `activate`, and keep one logger per
-  activation.
+  process.
 - Never let the `log/v1` sink of `src/host/logger.ts` throw: a log record must
   never fail the caller.
-- Test a behavior of the record in `tests/provider.test.ts`, and a behavior of
-  `catalog` in `tests/catalog.test.ts`, activating the host part with
-  `providerWorld` of `tests/support/world.ts` and injecting a transport with
+- Test a behavior of the record in `tests/router.test.ts`, `catalog` included,
+  serving the kind through the router and injecting a transport with
   `recordingTransport` or `failingTransport`; never let a test reach the
   network.
 - Test a request rule, a model-family policy or the repair loop of the built

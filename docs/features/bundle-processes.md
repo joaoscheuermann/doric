@@ -623,7 +623,10 @@ lists both as optional.
 
 From S43 the host parts serve their contracts beside their kernel entries (see
 [Evolution](#evolution) for each slice); since S67 `core` and `postgres` have
-no kernel entry and serve only through their process entries. The parts the executor path uses
+no kernel entry and serve only through their process entries, and since S68a
+`claude`, `codex`, `openai`, `openrouter`, `docker`, `firecracker`,
+`host-config`, `claude-login`, `resources`, `usage`, `web`, `screen`,
+`comments` and `threads` have none either. The parts the executor path uses
 work as follows. A thrown llms provider error crosses the router as
 `provider_error` and a thrown tool error as `tool_error`, both
 `FAILED_PRECONDITION` with every field of the error's data in
@@ -640,7 +643,8 @@ is not aborted: `runtime` signals it through
 `executor.session/v1.WatchCancel`, waits for the call, and cancels it only
 after a 5 s grace; a failure after the cancel answers `run_cancelled` or
 `compaction_cancelled`. The kernel entries stayed in use until S62; S67 deletes
-the kernel, the in-process host and the kernel entries of `core` and `postgres`.
+the kernel, the in-process host and the kernel entries of `core` and `postgres`,
+and S68a those of the fourteen bundles above.
 
 Since S62a the build also counts what a host part serves without recording it
 (`hostProvides`, `packages/bundle/src/build/host-provides.ts`): the `HOST` or
@@ -1798,3 +1802,21 @@ sandbox pool` then `Sandbox pool configured` with the `logSandboxPool`
   dependency on `tool` is a boundary exception until S70. The kernel's
   lost-hold handover and window-hold cases are retired with no counterpart:
   the platform drains on work holds per instance.
+- 2026-11-26: phase 3, slice S68a, of
+  [the spec](../designs/grpc-processes.md) (version 6.48): the kernel entries
+  `src/host/index.ts` of `claude`, `codex`, `openai`, `openrouter`, `docker`,
+  `firecracker`, `host-config`, `claude-login`, `resources`, `usage`, `web`,
+  `screen`, `comments` and `threads` are deleted, with `host-config`'s
+  `src/kernel.ts` (`createHostConfig`, `HostConfig`, `boundTools`), the
+  providers' `createKindProvider`, `claude-login`'s `loginService`,
+  `resources`' `resourcesService`, `usage`'s `usageService`, `screen`'s
+  `screenSessionsService`, `comments`' and `threads`' kernel ports and
+  `kernelRegistrable`, and `docker`'s and `firecracker`'s `logSandboxPool`;
+  each bundle's `host-build.test.ts` asserts that `dist/host/index.js` (and
+  `host-config`'s `dist/kernel.js`) is absent. Decisions: `threads.ts` stays
+  for `ThreadToolPorts`, `ScreenLease` stays for `rpc/lease.ts` and
+  `rpc/sessions.ts`,
+  `activateDockerSandbox` and `activateFirecrackerSandbox` stay for their
+  tests, and contract exports without importers stay until a later slice; the
+  package exports `./host` and `./kernel` dangle until S70. No boundary
+  exception was needed.

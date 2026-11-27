@@ -20,7 +20,7 @@ export interface CpuTimes {
  * the counters did not advance. It is the whole point of holding a previous
  * sample: the machine's own `cpus()` counters are cumulative since boot.
  */
-export const cpuPercentBetween = (
+const cpuPercentBetween = (
   previous: readonly CpuTimes[],
   current: readonly CpuTimes[],
 ): number | undefined => {

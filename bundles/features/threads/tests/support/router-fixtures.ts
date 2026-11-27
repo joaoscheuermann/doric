@@ -19,10 +19,8 @@ import type {
   ThreadEventView,
   ThreadView,
 } from 'runtime/contracts';
-import { createToolStorage, type ToolCall } from 'tool';
 
 import { type Harness, type HarnessOptions, harness } from './router.js';
-import { activatedTools } from './services.js';
 
 export const threadId = '018f47d2-e3b1-7b4f-8b2c-1f5a7fdf1601';
 export const promptId = '018f47d2-e3b1-7b4f-8b2c-1f5a7fdf1602';
@@ -141,18 +139,6 @@ export const execute = async (
 
   return json as string;
 };
-
-/** What the kernel tool `name` answers for `payload` over `kernelControl`. */
-export const kernelAnswer = async (
-  kernelControl: ThreadControl,
-  name: string,
-  payload: ToolCall['payload'],
-): Promise<unknown> =>
-  createToolStorage(await activatedTools(kernelControl)).execute({
-    id: 'call',
-    name,
-    payload,
-  });
 
 /** The calls of `method` the fakes received. */
 export const callsOf = (h: Harness, method: string) =>

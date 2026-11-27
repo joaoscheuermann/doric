@@ -28,7 +28,7 @@ describes how bundles are built, loaded and activated.
   `src/contracts/` module; its `package.json` exports only `./package.json`
   ([package.json](package.json)).
 - `requires`:
-  - `tools/v1@^1.5.0`: registers the eight tools ([src/host/index.ts](src/host/index.ts)).
+  - `tools/v1@^1.5.0`: registers the eight tools ([src/host/part.ts](src/host/part.ts)).
   - `skills/v1@^1.3.0`: the host SDK registers the bundle's skills (see
     [Skills](#skills)).
   - `runtime.threads/v1@^1.7.0`: every tool's work on the children
@@ -45,7 +45,9 @@ describes how bundles are built, loaded and activated.
     the ask rows and the `thread-spawn` drawing ([src/client/index.ts](src/client/index.ts)).
   - `runtime.records/v1`: reads a Thread's name and Project for the links
     ([src/client/source.ts](src/client/source.ts)).
-- Parts: a host part (`src/host/index.ts`) and a client part
+- Parts: a host part (`src/host/main.ts`, a process; its kernel entry
+  `src/host/index.ts`, with `kernelThreadToolPorts` and `kernelRegistrable`,
+  was deleted in slice S68a) and a client part
   (`src/client/index.ts`, with `src/client/styles.css`). Skills live in
   `src/skills/<name>/SKILL.md`. There is no desktop part.
 
@@ -53,9 +55,11 @@ describes how bundles are built, loaded and activated.
 
 ### Activation
 
-`activate` registers each tool with `tools/v1.register(tool, { alwaysAvailable:
-true, order })`, in this order and at these global model-visible orders
-([src/host/index.ts](src/host/index.ts)):
+`activate` registers each tool of `threadTools` with `tools/v1`
+(`{ alwaysAvailable: true, order }`), bound to the routed `ThreadToolPorts`
+([src/host/threads.ts](src/host/threads.ts)), in this order and at these
+global model-visible orders ([src/host/part.ts](src/host/part.ts),
+[src/host/tools/catalog.ts](src/host/tools/catalog.ts)):
 
 | Tool               | Order |
 | ------------------ | ----- |
@@ -370,7 +374,8 @@ npx nx run bundle-threads:build
 - `build` compiles `src/` outside `src/client/` into `dist/`, type-checks the
   client with `tsconfig.client.json`, then runs the bundle CLI. The CLI
   validates the manifest and each skill, copies the skills, builds the client
-  part, dry-activates the parts, and writes the JSON Schemas, `contracts.json`
+  part, dry-activates the client part (the host part has no
+  `dist/host/index.js`), and writes the JSON Schemas, `contracts.json`
   and `package.json` into `dist/`
   ([packages/bundle/src/build/cli.ts](../../../packages/bundle/src/build/cli.ts)).
   `doric-host:build-bundles` stages every bundle, this one into
@@ -380,7 +385,9 @@ npx nx run bundle-threads:build
   (`tsconfig.spec.json`) and `tests/client/` (`tsconfig.client-spec.json`),
   and runs
   `dist-tests/tests/*.test.js` and `dist-tests/tests/client/*.test.js` with
-  `node --test`. `tests/*.test.ts` cover the host tools, the manifest, the
+  `node --test`. `tests/*.test.ts` cover the host tools through the router
+  (`router.test.ts`, `router-spawn.test.ts`), the build with no
+  `dist/host/index.js` (`host-build.test.ts`), the manifest, the
   parsing helpers, the ask-row projector and the stylesheet's `@source`
   lines; `tests/client/*.test.ts` mount the elements in `happy-dom`.
 - `stories/` holds the stories of `DelegatedTurn`.

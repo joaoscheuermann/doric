@@ -33,31 +33,28 @@ how a Claude provider is signed in.
 
 The bundle declares no slot and fills none.
 
-The bundle has one part, the host part, exported as `claude/host` from
-[`src/host/index.ts`](src/host/index.ts). It has no desktop part, no client
+The bundle has one part, the host part, which runs as its own process from
+[`src/host/main.ts`](src/host/main.ts). It has no desktop part, no client
 part and no contracts module: it declares no contract of its own, since
 `models.provider/v1` and `log/v1` are declared in `bundle/contracts`
 ([`models.ts`](../../../packages/bundle/src/contracts/basic/models.ts),
 [`log.ts`](../../../packages/bundle/src/contracts/basic/log.ts)). Its package
-exports `./package.json` and `./host`; `./host` resolves to
-`./src/host/index.ts` under the `@org/source` condition and to
-`./dist/host/index.js` (types `./dist/host/index.d.ts`) otherwise. It depends
-on `bundle`, `llms`, `pino`, `runtime` and `tslib`.
+exports `./package.json` and `./host`; `./host` named the kernel entry
+`src/host/index.ts`, deleted in slice S68a, and the export is removed in S70. It depends on `bundle`, `llms`, `pino`, `runtime` and `tslib`.
 
 The host process entry [`src/host/main.ts`](src/host/main.ts) (built to
 `dist/host/main.mjs`) serves `doric.models.provider.v1.ProviderService` through
 `runBundle` with `serveProviderKind` of `llms/rpc`, from the kind source that
 `kindSource()` of [`src/host/provider.ts`](src/host/provider.ts) returns; it
 reads images through `runtime.attachments/v1`, so the package depends on
-`runtime`. The kernel entry stays `src/host/index.ts` until the host switch
-(phase 3, slice S43 of
+`runtime` (phase 3, slices S43 and S68a of
 [`grpc-processes.md`](../../../docs/designs/grpc-processes.md)).
 
 ## Provided contract: `models.provider/v1` (1.3.0)
 
-`activate` provides one record of `models.provider/v1` with cardinality
+The process serves one record of `models.provider/v1` with cardinality
 `many`, so it sits beside the records of the other provider bundles
-([`src/host/index.ts`](src/host/index.ts),
+([`src/host/main.ts`](src/host/main.ts),
 [`src/host/provider.ts`](src/host/provider.ts)). The record is built from
 the kind definition in [`src/host/kind.ts`](src/host/kind.ts). All methods
 run in the host. The full shape of the contract is in the
@@ -102,7 +99,7 @@ authorization value.`
 
 The descriptor equals the one `llms` exports as `providerKind('claude')`; it
 is a separate copy, and the tests assert the two are deeply equal
-([`tests/provider.test.ts`](tests/provider.test.ts); the fixture freezes the
+([`tests/router.test.ts`](tests/router.test.ts); the fixture freezes the
 fields and text; its `lists` is not compared).
 
 ### `catalog`
@@ -134,7 +131,7 @@ through `secrets/v1`
 
 ### `create`
 
-[`createKindProvider`](src/host/provider.ts) and
+[`kindSource`](src/host/provider.ts)'s `build` and
 [`buildConfigured`](src/host/provider.ts):
 
 1. The values become the provider's sources; when `secret` is given, it
@@ -184,8 +181,8 @@ The `llms` Claude provider
 ## Used contract: `log/v1`
 
 The `llms` provider logs through a pino logger. By default the bundle creates
-it on first use with `services.use(LogV1)` and keeps it for the life of the
-activation ([`src/host/index.ts`](src/host/index.ts),
+it on first use over the instance's `context.log` and keeps it for the life of
+the process ([`src/host/main.ts`](src/host/main.ts),
 [`src/host/logger.ts`](src/host/logger.ts)):
 
 - The pino logger is at level `debug`.
@@ -197,16 +194,16 @@ activation ([`src/host/index.ts`](src/host/index.ts),
 - A record that cannot be parsed or written is dropped; logging never fails
   the caller.
 
-## Activation options
+## Kind source options
 
-[`src/host/index.ts`](src/host/index.ts) exports `activate`, and
-`createActivate(options)` for tests, where `options` is
-`ProviderBundleOptions`:
+[`kindSource(definition, options)`](src/host/provider.ts) takes
+`KindProviderOptions`:
 
 - `transport?: () => HttpTransport`: the transport of every request; by
   default a new `llms` fetch transport (`createFetchTransport`) for each
   `catalog` and `create` call.
-- `logger?: Logger`: the `llms` logger; by default the `log/v1` logger above.
+- `logger: () => Logger`: the `llms` logger; `main.ts` passes the `log/v1`
+  logger above.
 
 ## Data, side effects and configuration
 
@@ -258,8 +255,8 @@ target first builds the packages it depends on (`^build`).
   [`tsconfig.json`](tsconfig.json).
 - `npx nx run bundle-claude:build` compiles `src/` to `dist/` and runs the
   bundle build (`packages/bundle/dist/build/cli.js build`), which validates
-  `manifest.json`, dry-activates the host part and fails when `activate` is
-  missing or a provided contract is not in `provides`, then writes
+  `manifest.json`, skips the host part, which since S68a has no
+  `dist/host/index.js` to dry-activate, then writes
   `contracts.json`, the method schemas and `package.json` into `dist/`
   ([`cli.ts`](../../../packages/bundle/src/build/cli.ts),
   [`record.ts`](../../../packages/bundle/src/build/record.ts)).
@@ -268,10 +265,12 @@ target first builds the packages it depends on (`^build`).
   `node --test` on `dist-tests/tests/*.test.js`:
   [`tests/manifest.test.ts`](tests/manifest.test.ts) checks the manifest's
   version, `provides` and engine range, and
-  [`tests/provider.test.ts`](tests/provider.test.ts) activates the host part
-  with `createTestServices` and a recording or failing transport
-  ([`tests/support/world.ts`](tests/support/world.ts)) and checks each method
-  of the record.
+  [`tests/router.test.ts`](tests/router.test.ts) serves `kindSource(claudeKind)`
+  through `serveProviderKind` on a test router, with a recording or failing
+  transport, and checks each method of `ProviderService`
+  ([`tests/support/world.ts`](tests/support/world.ts) holds the frozen kind);
+  [`tests/host-build.test.ts`](tests/host-build.test.ts) builds the host part
+  and checks that no `dist/host/index.js` exists.
 
 The host loads the bundle because `claude` is listed in `enabled` of
 [`composition.json`](../../../app/backend/doric-host/composition.json).

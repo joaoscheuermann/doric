@@ -34,12 +34,12 @@ Project belongs to the bundles that own the Project's files and sandbox.
   and the tests replace only the fetch function it calls.
 - Clamp every new numeric input to a default and a maximum with `clamp`, as
   `limit` and `maxChars` are, and state both in the README's Limits.
-- Register tools only in `src/host/index.ts`, through `tools/v1`.
+- Register tools only in `src/host/part.ts`, through `tools/v1`.
 - Put a new tool in its own file `src/host/tools/<name>.ts`, built with
   `defineTool` of `tool` with strict `input` and `output`; register it in
-  `src/host/index.ts` with an `order` no other bundle's tool uses (search
+  `src/host/part.ts` with an `order` no other bundle's tool uses (search
   `order:` under `bundles/*/*/src/host/`), test it in `tests/<name>.test.ts`,
-  and update the registration test of `tests/activate.test.ts`, which expects
+  and update the registration test of `tests/router.test.ts`, which expects
   exactly one tool.
 - Keep the `web` tool at `alwaysAvailable: true` and `order: 700`, and the
   `web-research` skill at `order: 1200`: these are global positions in the
@@ -53,12 +53,12 @@ Project belongs to the bundles that own the Project's files and sandbox.
   a missing tool.
 - Update `src/skills/web-research/SKILL.md` in the same change when an action
   is added, renamed or changes its arguments: its procedure names the actions.
-- Test a change of the tool in [`tests/web.test.ts`](tests/web.test.ts),
-  through `bindTool(createTool({ fetch }))` with a fake `fetch`, and never
+- Test a change of the tool in [`tests/router.test.ts`](tests/router.test.ts),
+  with a fake `fetch`, and never
   reach the network from a test.
-- Test a change of registration or of a skill's frontmatter in
-  [`tests/activate.test.ts`](tests/activate.test.ts), through `activated()`
-  of [`tests/support/services.ts`](tests/support/services.ts).
+- Test a change of registration in [`tests/router.test.ts`](tests/router.test.ts),
+  through [`tests/support/router.ts`](tests/support/router.ts), and of a
+  skill's frontmatter in [`tests/skill.test.ts`](tests/skill.test.ts).
 - Update the feature doc [Web research](../../../docs/features/web-research.md)
   with any change to the tool's actions, inputs, outputs, limits or errors, or
   to the skill; update [Skills](../../../docs/features/skills.md) when the
@@ -74,8 +74,8 @@ Project belongs to the bundles that own the Project's files and sandbox.
   `tests/`.
 - `npx nx run bundle-web:build`: run it after any change under `src/`, or to
   `manifest.json`, `package.json` or a `tsconfig*.json` file: the build
-  dry-activates the host part against the manifest and checks every skill
-  file.
+  validates the manifest and checks every skill file; the host part has no
+  `dist/host/index.js` and is not dry-activated.
 
 ## Generated files
 

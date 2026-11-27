@@ -33,7 +33,7 @@ providers and how one is chosen.
 | `requires`        | `hooks/v1@^1.1.0`, `log/v1@^1.0.0`                                                 |
 | `optional`        | `secrets/v1`                                                                       |
 | Slots             | none                                                                               |
-| Parts             | host only: [`src/host/index.ts`](src/host/index.ts) exports `activate`             |
+| Parts             | host only: [`src/host/main.ts`](src/host/main.ts), a process                       |
 
 The host part also runs as a process ([`src/host/main.ts`](src/host/main.ts), built into
 `dist/host/main.mjs`) with `runBundle`,
@@ -48,8 +48,8 @@ every lease and disposes the pool. The process also serves
 `HookHandlerService` and, in `activate`, registers the start step on
 `onHostStartHook` with `registerSandboxPoolStep(hooks, context, environment)`
 ([`start.ts`](src/host/start.ts)); a failing startup call fails `Handle` with
-its code. The running host keeps the kernel entry
-`src/host/index.ts` until the switch (phase 3, slice S44 of
+its code. The kernel entry `src/host/index.ts` was deleted in slice S68a
+(phase 3, slices S44 and S68a of
 [`grpc-processes.md`](../../../docs/designs/grpc-processes.md)).
 
 The bundle declares no contract of its own and has no `src/contracts/`:
@@ -174,8 +174,9 @@ Platform contracts need no declaration in the manifest.
 
 ### Activation
 
-`activate` is `activateFirecrackerSandbox()` with no options
-([`index.ts`](src/host/index.ts)). `activateFirecrackerSandbox(options)`
+`activateFirecrackerSandbox(options)`, which no entry uses since the kernel
+entry `src/host/index.ts` was deleted in slice S68a and which stays for the
+tests,
 ([`sandbox.ts`](src/host/sandbox.ts)) takes:
 
 | Option        | Default                   | Meaning                                                       |

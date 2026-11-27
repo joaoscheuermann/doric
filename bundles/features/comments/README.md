@@ -48,27 +48,24 @@ The bundle has two parts and no settings, slots, skills, routes or UI.
   `COMMENT_ID_PATTERN`, and the stored-row decoders `commentsAddedOf` and
   `commentsResolvedOf` ([`src/contracts/rows.ts`](src/contracts/rows.ts)),
   which read a row in either stored encoding.
-- **Host** ([`src/host/index.ts`](src/host/index.ts)). `activate` does, in
-  order: provides the `comments/v1` service; registers `comments.added/v1`
-  and `comments.resolved/v1` with `events/v1`; registers the `comment_reply`
-  tool with `tools/v1` as `{ alwaysAvailable: true, order: 1800 }`. It reads
-  no data and holds no state. The host entry also exports `AGENT_AUTHOR`
-  (`'agent'`), `COMMENT_REPLY_ORDER` (`1800`), `COMMENT_REPLY_TOOL`
-  (`'comment_reply'`), the tool as `commentReplyTool` and its types
-  `CommentReplyInput` and `CommentReplyOutput`
-  ([`src/host/tools/comment-reply.ts`](src/host/tools/comment-reply.ts)); the
-  package does not export the host entry, and nothing outside `src/host/`
-  imports these names; the tests import only `activate`
-  ([`tests/support/harness.ts`](tests/support/harness.ts)).
+- **Host**: the process entry below. The kernel entry `src/host/index.ts`
+  (`activate`, `kernelCommentsPorts`, `kernelRegistrable`) and the kernel
+  `commentsService` were deleted in slice S68a.
+  [`src/host/tools/comment-reply.ts`](src/host/tools/comment-reply.ts) exports
+  the tool and `COMMENT_REPLY_ORDER` (`1800`); `AGENT_AUTHOR` (`'agent'`) and
+  `COMMENT_REPLY_TOOL` (`'comment_reply'`) stay in that file, unexported, and
+  the types `CommentReplyInput` and `CommentReplyOutput` are gone.
 - **Process entry** ([`src/host/main.ts`](src/host/main.ts)), for the
   bundle-process runtime
   ([bundle processes](../../../docs/features/bundle-processes.md)).
   `createCommentsHost` serves `comments/v1` and the `comment_reply` tool over
   routed ports of `events/v1`, `runtime.threads/v1` and `tools/v1`
   ([`src/host/routed.ts`](src/host/routed.ts)), and registers
-  `comments.added/v1` and `comments.resolved/v1` as loose events with no sink.
-  The registry and the tool take the same `CommentsPorts`
-  ([`src/host/ports.ts`](src/host/ports.ts)) as the kernel part.
+  `comments.added/v1` and `comments.resolved/v1` as loose events with no sink,
+  then registers `comment_reply` with `tools/v1` as
+  `{ alwaysAvailable: true, order: 1800 }`
+  ([`src/host/service.ts`](src/host/service.ts)). The registry and the tool
+  take `CommentsPorts` ([`src/host/ports.ts`](src/host/ports.ts)).
 
 ## Contracts used
 
@@ -88,7 +85,7 @@ afterSequence: 0 })` to read one Thread's whole log (in the process, through
   `projectThreads(projectId)` to list a Project's Threads
   ([`src/host/comments.ts`](src/host/comments.ts)).
 - `tools/v1` (provided by [`core`](../../foundation/core/README.md)):
-  `register` for `comment_reply` ([`src/host/index.ts`](src/host/index.ts),
+  `register` for `comment_reply` ([`src/host/service.ts`](src/host/service.ts),
   [`tools.ts`](../../../packages/bundle/src/contracts/basic/tools.ts)).
 
 ## Data shapes
@@ -212,7 +209,7 @@ interface CommentResolveInput {
 
 Both events are defined in [`src/contracts/index.ts`](src/contracts/index.ts)
 and registered by the host part at activation
-([`src/host/index.ts`](src/host/index.ts)).
+([`src/host/routed.ts`](src/host/routed.ts)).
 
 | Type                   | Payload                                                        | Written by                                          |
 | ---------------------- | -------------------------------------------------------------- | --------------------------------------------------- |
@@ -353,7 +350,7 @@ into threads ([`comment-threads.ts`](../../desktop/chat/src/client/domain/commen
 - Appends `comments.added/v1` and `comments.resolved/v1` rows to the call's
   Thread log, nothing else ([`src/host/comments.ts`](src/host/comments.ts)).
 - Registers two event types and one tool at activation
-  ([`src/host/index.ts`](src/host/index.ts)).
+  ([`src/host/service.ts`](src/host/service.ts)).
 
 ## Configuration
 
@@ -403,6 +400,9 @@ npx nx run bundle-comments:build
 build CLI; `test` compiles `src/host`, `src/contracts` and `tests/` to
 `dist-tests/` and runs `tests/*.test.js` with `node --test`
 ([`project.json`](project.json)). The tests in
-[`tests/comments.test.ts`](tests/comments.test.ts) activate the host part over
-`createTestServices` with a fake Thread log behind `events/v1` and
-`runtime.threads/v1` ([`tests/support/harness.ts`](tests/support/harness.ts)).
+[`tests/router.test.ts`](tests/router.test.ts) serve the host part on a test
+router with a fake Thread log behind `events/v1` and `runtime.threads/v1`
+([`tests/support/router.ts`](tests/support/router.ts),
+[`tests/support/harness.ts`](tests/support/harness.ts));
+[`tests/host-build.test.ts`](tests/host-build.test.ts) checks that the build
+writes no `dist/host/index.js`.

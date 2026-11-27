@@ -1,4 +1,5 @@
-// `web`'s host part through the router (phase 3, slice S50a, tests W1–W6):
+// `web`'s host part through the router (phase 3, slice S50a, tests W1–W6;
+// W1b, W2b, W3b and W3c ported from the deleted kernel entry's tests in S68a):
 // `activate` registers the web tool with `tools/v1` as the kernel entry did
 // (always available, position 700), and `core`'s `ToolHandlerService` calls
 // run the same tool `createTool(options).bind(undefined)` answers directly.
@@ -269,4 +270,94 @@ void test('W6: a Register refused with duplicate_tool fails activate with it, an
     'not_found',
   );
   assert.deepEqual(fetch.urls, []);
+});
+
+// Ported from the kernel entry's `web.test.ts` and `activate.test.ts` (S68a):
+// the tool's own answers, as values, through `ToolHandlerService`.
+
+void test('W1b (S68a, from activate.test.ts): the registered web tool carries the established description, and a blank search query answers the tool’s error', async (t) => {
+  const h = await activated(t, { tool: { fetch: okFetch(SEARCH_HTML).fetch } });
+
+  assert.equal(
+    (h.registers[0] as { readonly tool?: { readonly description?: string } })
+      .tool?.description,
+    'Search the web, open HTTP(S) pages as extracted text, or find literal text in a page.',
+  );
+  assert.equal(
+    (
+      (await executeJson(h, { action: 'search', query: ' ' })) as {
+        readonly error?: string;
+      }
+    ).error,
+    'Missing query for search',
+  );
+});
+
+void test('W2b (S68a, from web.test.ts): Execute of a search parses DuckDuckGo results and normalizes their redirect URLs', async (t) => {
+  const h = await activated(t, { tool: { fetch: okFetch(SEARCH_HTML).fetch } });
+
+  const result = (await executeJson(h, {
+    action: 'search',
+    query: 'docs',
+  })) as { readonly results?: unknown; readonly total?: unknown };
+
+  assert.deepEqual(result.results, [
+    {
+      title: 'Example & Docs',
+      url: 'https://example.com/doc',
+      snippet: 'A short snippet & context.',
+    },
+  ]);
+  assert.equal(result.total, 1);
+});
+
+void test('W3b (S68a, from web.test.ts): Execute of open_page extracts the page text, and find_in_page finds literal matches case insensitively', async (t) => {
+  const h = await activated(t, { tool: { fetch: okFetch(PAGE_HTML).fetch } });
+
+  const opened = (await executeJson(h, {
+    action: 'open_page',
+    url: 'https://example.com/page',
+  })) as {
+    readonly page?: { readonly title?: string; readonly text?: string };
+  };
+  const found = (await executeJson(h, {
+    action: 'find_in_page',
+    url: 'https://example.com/page',
+    pattern: 'needle',
+    limit: 1,
+  })) as {
+    readonly matches?: unknown;
+    readonly total?: unknown;
+    readonly truncated?: unknown;
+  };
+
+  assert.equal(opened.page?.title, 'Example & Page');
+  assert.match(opened.page?.text ?? '', /Hello World/);
+  assert.deepEqual(found.matches, [{ line: 2, text: 'Beta Needle' }]);
+  assert.equal(found.total, 2);
+  assert.equal(found.truncated, true);
+});
+
+void test('W3c (S68a, from web.test.ts): Execute aborts a request after the configured timeout and answers the tool’s timeout error', async (t) => {
+  let observedAbort = false;
+  const h = await activated(t, {
+    tool: {
+      requestTimeoutMs: 10,
+      fetch: (_url, init) =>
+        new Promise((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () => {
+            observedAbort = true;
+            reject(new Error('aborted by test fetch'));
+          });
+        }),
+    },
+  });
+
+  const result = (await executeJson(h, {
+    action: 'open_page',
+    url: 'https://example.com/slow',
+  })) as { readonly error?: string };
+
+  assert.equal(observedAbort, true);
+  assert.match(result.error ?? '', /timed out after 10ms/);
 });

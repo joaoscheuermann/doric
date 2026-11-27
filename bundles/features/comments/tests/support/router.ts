@@ -6,8 +6,8 @@
 // (`Register`, `Unregister`). Each fake records its request and
 // `callOf(context).scope`.
 //
-// The Thread log is the kernel harness's `ThreadLog`, so a test can run the
-// kernel and the router over the same rows. An appended row is stored as
+// The Thread log is `./harness.ts`' `ThreadLog`; it outlives a harness, so a
+// test can activate the part again over its rows. An appended row is stored as
 // `core` stores it: `{type, ...toJson(unpacked)}` with fields at their default
 // left out (finding F1), plus the envelope.
 

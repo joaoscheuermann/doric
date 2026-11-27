@@ -26,8 +26,10 @@ belongs to `host-config`.
   the line the configuration still names when `replace` refuses: never throw
   for a refusal.
 - Add a method to `usage/v1` in `usageMethods` and the `Usage` interface of
-  `src/contracts/index.ts` and in `usageService` of `src/host/usage.ts`, with
-  `expose: 'desktop'` only when a window calls it.
+  `src/contracts/index.ts` and in `createUsageService` of
+  `src/host/rpc/usage.ts`; give it the
+  `(doric.platform.v1.method).expose = EXPOSE_DESKTOP` option in
+  `proto/doric/usage/v1/usage.proto` only when a window calls it.
 - Call `usage/v1` from the client part only through a function of
   `src/client/domain/read.ts` that sets a deadline (10 s for a read or a
   settings write, longer only for a call that runs a model generation) and
@@ -65,7 +67,7 @@ belongs to `host-config`.
 - When you raise `version` in [`manifest.json`](manifest.json), change the version that
   `tests/workspace-sheet.test.ts` asserts in the same change, or `test` fails.
 - Add the test of each change in the same change: a host test in
-  [`tests/usage-service.test.ts`](tests/usage-service.test.ts), a test of a
+  [`tests/router.test.ts`](tests/router.test.ts), a test of a
   client call or its error in [`tests/read.test.ts`](tests/read.test.ts), and
   a test of a label or the cost breakdown in
   [`tests/usage.test.ts`](tests/usage.test.ts).

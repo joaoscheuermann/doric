@@ -40,7 +40,7 @@ None. The contracts module exports nothing
 - `tools/v1` (from `bundle/contracts`, provided by the
   [`core` bundle](../../foundation/core/README.md)): the host part calls
   `register(tool, { alwaysAvailable: true, order: 700 })` once during
-  `activate` ([src/host/index.ts](src/host/index.ts)). The range is `^1.2.0`
+  `activate` ([src/host/part.ts](src/host/part.ts)). The range is `^1.2.0`
   because the `order` option exists from 1.2.0
   ([packages/bundle/src/contracts/basic/tools.ts](../../../packages/bundle/src/contracts/basic/tools.ts)).
   `tools/v1` lists tools by `order`, then by registration, so 700 places `web`
@@ -59,10 +59,10 @@ None. The contracts module exports nothing
 
 ### Host part
 
-`activate({ services })` registers the tool that `createTool()` returns, with
-no options, so it uses the global `fetch` and a 20 s timeout
-([src/host/index.ts](src/host/index.ts)). The part registers nothing else and
-returns nothing to dispose.
+The host part runs as a process (below); its kernel entry `src/host/index.ts`
+was deleted in slice S68a. It registers the tool that `createTool()` returns,
+with no options, so it uses the global `fetch` and a 20 s timeout
+([src/host/part.ts](src/host/part.ts)). The part registers nothing else.
 
 ### Process entry (S50a)
 
@@ -73,14 +73,10 @@ built to `dist/host/main.mjs`, for the bundle-process runtime
 `registerWebTool` ([src/host/part.ts](src/host/part.ts)) registers the `web`
 tool, defined with `Deps = unknown` and bound with `bind(undefined)`, with
 `tools/v1` (`alwaysAvailable`, order 700). Provider rejections pass through
-unchanged. The kernel entry stays until S62; since S62c1 the
+unchanged. The kernel entry was deleted in slice S68a; since S62c1 the
 manifest requires `tools/v1@^1.5.0`.
 
-The host part runs in the generation process the Doric host forks: `web` is an
-installed bundle that the host's composition enables and does not list as
-`resident`
-([app/backend/doric-host/composition.json](../../../app/backend/doric-host/composition.json),
-[packages/bundle/src/process/partition.ts](../../../packages/bundle/src/process/partition.ts)).
+The host part runs as its own process, supervised by the Doric host.
 
 ### Skill files
 
@@ -89,7 +85,7 @@ installed bundle that the host's composition enables and does not list as
 
 - frontmatter: `name: web-research`, `allowed-tools: [web]`, `order: 1200`, no
   `alwaysAvailable`, so it is registered as not always available
-  ([packages/bundle/src/loader/activate.ts](../../../packages/bundle/src/loader/activate.ts));
+  ([packages/bundle/src/sdk/host/skills.ts](../../../packages/bundle/src/sdk/host/skills.ts));
 - description: it finds and inspects current or externally hosted information
   through a search-open-find workflow, for goals that depend on facts or
   documentation not present in the workspace or the supplied context;
@@ -176,7 +172,7 @@ non-matching one with a `ToolErrorObject` of code `invalid_output`
 6. Returns the first `limit` results; `total` is the number of results kept
    before the limit, `truncated` is `total > limit`, and `detail` is the query.
 
-([src/host/tools/web.ts](src/host/tools/web.ts), [tests/web.test.ts](tests/web.test.ts))
+([src/host/tools/web.ts](src/host/tools/web.ts), [tests/router.test.ts](tests/router.test.ts))
 
 ### `open_page`
 
@@ -189,7 +185,7 @@ non-matching one with a `ToolErrorObject` of code `invalid_output`
    after redirects), `title` and `text` cut to `maxChars`; `truncated` says
    whether the text was cut, `total` is 1 and `detail` is the URL.
 
-([src/host/tools/web.ts](src/host/tools/web.ts), [tests/web.test.ts](tests/web.test.ts))
+([src/host/tools/web.ts](src/host/tools/web.ts), [tests/router.test.ts](tests/router.test.ts))
 
 ### `find_in_page`
 
@@ -206,7 +202,7 @@ non-matching one with a `ToolErrorObject` of code `invalid_output`
    `true` and `total` is `limit + 1`; otherwise `truncated` is `false` and
    `total` is the number of matching lines. `detail` is `'<pattern>' in <url>`.
 
-([src/host/tools/web.ts](src/host/tools/web.ts), [tests/web.test.ts](tests/web.test.ts))
+([src/host/tools/web.ts](src/host/tools/web.ts), [tests/router.test.ts](tests/router.test.ts))
 
 ### Title and text extraction
 
@@ -225,7 +221,7 @@ non-matching one with a `ToolErrorObject` of code `invalid_output`
   `&apos;`, `&#39;` and `&nbsp;`, which becomes a plain space (U+0020); any
   other entity, `&#X7b;` included, stays as written.
 
-([src/host/tools/web.ts](src/host/tools/web.ts), [tests/web.test.ts](tests/web.test.ts))
+([src/host/tools/web.ts](src/host/tools/web.ts), [tests/router.test.ts](tests/router.test.ts))
 
 ## Side effects
 
@@ -247,7 +243,7 @@ None at run time: the bundle reads no setting, environment variable or secret.
 `createTool(options)` takes `fetch` (a replacement for the global `fetch`) and
 `requestTimeoutMs` (default 20,000, raised to at least 1), which only the tests
 pass ([src/host/tools/web.ts](src/host/tools/web.ts),
-[tests/web.test.ts](tests/web.test.ts)).
+[tests/router.test.ts](tests/router.test.ts)).
 
 ## Limits
 
@@ -266,9 +262,10 @@ to the extracted text ([src/host/tools/web.ts](src/host/tools/web.ts)).
 ### At activation
 
 `duplicate_tool`, the code of the `ContractError` that `tools/v1.register`
-throws when another bundle in the same generation view already registered a
-tool named `web`, fails the bundle's activation
-([bundles/foundation/core/src/host/tools.ts](../../foundation/core/src/host/tools.ts)).
+answers when another bundle already registered a tool named `web`, fails the
+bundle's activation
+([bundles/foundation/core/src/host/tools/service.ts](../../foundation/core/src/host/tools/service.ts),
+[`part.ts`](src/host/part.ts)).
 A skill that cannot be read or parsed, or that `skills/v1` refuses, does not:
 the host SDK skips it, logs `skill not registered` with its path and code, and
 the bundle activates without it
@@ -280,7 +277,7 @@ A missing argument or a failed request is returned as output, not thrown:
 `error` holds the message, `detail` is `''`, `results` and `matches` are empty,
 `page` is absent, `total` is 0 and `truncated` is `false`
 ([src/host/tools/web.ts](src/host/tools/web.ts),
-[tests/activate.test.ts](tests/activate.test.ts)).
+[tests/router.test.ts](tests/router.test.ts)).
 
 | Message                                   | When                                           |
 | ----------------------------------------- | ---------------------------------------------- |
@@ -310,9 +307,8 @@ npx nx run bundle-web:build
 
 - `build` compiles `src/` to `dist/` with `tsc`, then runs the bundle build:
   it validates `manifest.json` and copies it to `dist/`, checks each skill file
-  and copies it to `dist/skills/<folder>/SKILL.md`, imports
-  `dist/host/index.js` and dry-activates it, failing when the part provides or
-  defines a contract missing from `provides`, and writes the JSON Schemas,
+  and copies it to `dist/skills/<folder>/SKILL.md`, skips the host part
+  (it has no `dist/host/index.js` to dry-activate), and writes the JSON Schemas,
   `contracts.json` and `package.json` into `dist/`
   ([project.json](project.json),
   [packages/bundle/src/build/cli.ts](../../../packages/bundle/src/build/cli.ts),
@@ -320,11 +316,13 @@ npx nx run bundle-web:build
 - `test` compiles `src/` and `tests/` to `dist-tests/` and runs
   `dist-tests/tests/*.test.js` with `node --test`
   ([project.json](project.json)).
-  [tests/web.test.ts](tests/web.test.ts) tests the tool with a fake `fetch`;
-  [tests/activate.test.ts](tests/activate.test.ts) activates the host part
-  over a recording `tools/v1` from
-  [tests/support/services.ts](tests/support/services.ts) and checks the
-  skill's frontmatter.
+  [tests/router.test.ts](tests/router.test.ts) serves the host part on a test
+  router over a recording `tools/v1`
+  ([tests/support/router.ts](tests/support/router.ts)) and tests the tool and
+  its registration with a fake `fetch`;
+  [tests/skill.test.ts](tests/skill.test.ts) checks the skill's frontmatter;
+  [tests/host-build.test.ts](tests/host-build.test.ts) builds the host part
+  and checks that no `dist/host/index.js` exists.
 
 `npx nx run doric-host:build-bundles` rebuilds and stages every bundle the
 Doric host loads ([app/backend/doric-host/project.json](../../../app/backend/doric-host/project.json)).

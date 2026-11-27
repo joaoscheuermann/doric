@@ -11,7 +11,7 @@ import { buildBundle } from 'bundle';
 // `src/host/main.ts` into one `dist/host/main.mjs`, which imports
 // `runBundle` from `bundle/host` and lists `models.provider/v1`'s service as
 // the static `[Service, implementation]` literal the build reads (S29, A61,
-// A63). The kernel entry and the manifest stay as they were until S62.
+// A63). The manifest stays as it was; the kernel entry is gone (S68a).
 //
 // `buildBundle` rewrites `dist/`, which other test files read while they
 // run, so this file builds a copy of the bundle inside the package, where
@@ -92,7 +92,7 @@ const runWithoutSpawnEnvironment = (
     );
   });
 
-void test('the build bundles openai’s host part into a runnable main.mjs and keeps the kernel entry and the manifest', async (t) => {
+void test('the build bundles openai’s host part into a runnable main.mjs and keeps the manifest', async (t) => {
   const copy = await copyBundle();
 
   t.after(() => rm(copy, { recursive: true, force: true }));
@@ -102,9 +102,10 @@ void test('the build bundles openai’s host part into a runnable main.mjs and k
   const main = join(copy, 'dist', 'host', 'main.mjs');
 
   assert.ok((await stat(main)).size > 0, 'dist/host/main.mjs is empty');
-  assert.ok(
-    (await stat(join(copy, 'dist', 'host', 'index.js'))).size > 0,
-    'the kernel entry dist/host/index.js is gone',
+  await assert.rejects(
+    stat(join(copy, 'dist', 'host', 'index.js')),
+    { code: 'ENOENT' },
+    'the kernel entry dist/host/index.js is still built',
   );
   assert.ok(
     (await readFile(join(copy, 'dist', 'manifest.json'))).equals(

@@ -39,8 +39,8 @@ collapse control: that belongs to the bundle that provides `layout.stack/v2`.
   methods, and the desktop bridge treats only a last-item listener as a
   stream. Wire it in `screenViewsService` of `src/desktop/index.ts` through
   `envOf`, and implement it in `src/desktop/views.ts`. Give a
-  `screen.sessions/v2` method `expose: 'desktop'` in `screenSessionsService` of
-  `src/host/provider.ts`.
+  `screen.sessions/v2` method `expose: 'desktop'` and serve it in
+  `createScreenSessionsService` of `src/host/rpc/sessions.ts`.
 - Keep the mapping of an answer to a status, the retry delays, `canRetry` and
   the window decision as pure functions in `src/desktop/status.ts`, and make
   every window call through `src/desktop/windows.ts`.
@@ -82,7 +82,8 @@ collapse control: that belongs to the bundle that provides `layout.stack/v2`.
 - Add the test of each change in the same change: session behavior in
   [`tests/session.test.ts`](tests/session.test.ts) over the fake sandbox of
   [`tests/support/sandbox.ts`](tests/support/sandbox.ts); lease and relay
-  handling in [`tests/provider.test.ts`](tests/provider.test.ts); decisions in
+  handling in [`tests/provider.test.ts`](tests/provider.test.ts) over a
+  `ScreenLease` and [`tests/router.test.ts`](tests/router.test.ts); decisions in
   [`tests/status.test.ts`](tests/status.test.ts); the views owner in
   [`tests/views.test.ts`](tests/views.test.ts), with an injected clock and id;
   the client's call, dial and mirror in [`tests/api.test.ts`](tests/api.test.ts),

@@ -48,7 +48,7 @@ condition), `./contracts/gen/*` (the protobuf-es code `generate-proto` writes fr
 | Part      | Entry                                              | What it does                                                                  |
 | --------- | -------------------------------------------------- | ----------------------------------------------------------------------------- |
 | contracts | [`src/contracts/index.ts`](src/contracts/index.ts) | Declares `resources/v1`, its types and its schemas.                           |
-| host      | [`src/host/index.ts`](src/host/index.ts)           | Provides `resources/v1`: the machine reading and the Project sandbox reading. |
+| host      | [`src/host/main.ts`](src/host/main.ts)             | Provides `resources/v1`: the machine reading and the Project sandbox reading. |
 | client    | [`src/client/index.ts`](src/client/index.ts)       | Defines `<resources-monitor>` and adds it to the `account.status` slot.       |
 
 The bundle has no desktop part and no sandbox part.
@@ -103,8 +103,9 @@ The module also exports the schemas each method is checked against, as
 `containerResourcesSchema` is a loose object: it accepts fields beyond
 `ContainerResources`.
 
-Both methods are exposed to desktop windows (`expose: 'desktop'`)
-([`src/host/index.ts`](src/host/index.ts)).
+Both methods are exposed to desktop windows (the `EXPOSE_DESKTOP` method
+option in
+[`proto/doric/resources/v1/resources.proto`](proto/doric/resources/v1/resources.proto)).
 
 ### `host()`
 
@@ -135,7 +136,7 @@ Both methods are exposed to desktop windows (`expose: 'desktop'`)
   starts or the lease drops while the read runs; `pending` while its runtime
   has no lease yet. A call for a Project in standby waits until this process
   adopts it
-  ([`src/host/index.ts`](src/host/index.ts),
+  ([`src/host/rpc/resources.ts`](src/host/rpc/resources.ts),
   [`lease.ts`](../../runtime/runtime/src/host/services/lease.ts),
   [`service.ts`](../../runtime/runtime/src/host/domain/service.ts)).
 - A call whose scope has no `projectId` rejects with `invalid_input` and the
@@ -164,15 +165,15 @@ Its status codes are described in the
 
 ## Host part
 
-[`src/host/index.ts`](src/host/index.ts) exports `activate`, which provides
-`resourcesService`, and re-exports `readHostResources`, `cpuPercentBetween`
-and `readSandboxResources`:
+The host part runs as a process (below); its kernel entry `src/host/index.ts`,
+with `activate` and `resourcesService`, was deleted in slice S68a. Its readings
+are:
 
-- `readHostResources(now?: Date): HostResources` — one machine reading, taken
-  at `now` (default: the current time), advancing the module's CPU sample.
-- `cpuPercentBetween(previous, current): number | undefined` — the busy share
-  between two lists of `{ idle, total }` per-core counters, or `undefined` when
-  the total did not advance.
+- `readHostResources(now?: Date): HostResources`
+  ([`machine.ts`](src/host/machine.ts)) — one machine reading, taken at `now`
+  (default: the current time), advancing the module's CPU sample. The busy
+  share between two samples is `cpuPercentBetween`, which `machine.ts` no
+  longer exports: `undefined` when the total did not advance.
 - `readSandboxResources(sandbox: Sandbox, now?: Date): Promise<ContainerResources>`
   — one sandbox reading, as described under [`project()`](#project).
 
@@ -190,7 +191,7 @@ method fails `unavailable` before activation.
   `expired`, `missing`). Any other failure rejects with its code: a runtime
   that is down is not hidden.
 
-The kernel entry stays until S62. Since S62c1 the manifest requires
+The kernel entry was deleted in slice S68a. Since S62c1 the manifest requires
 `runtime.lease/v1@^1.4.0`.
 
 ## Client part
@@ -404,7 +405,7 @@ sheets.
 
 - The host part reads `node:os` and calls the leased sandbox's `stats()`; it
   never acquires, starts or stops a lease or a sandbox
-  ([`src/host/index.ts`](src/host/index.ts),
+  ([`src/host/rpc/resources.ts`](src/host/rpc/resources.ts),
   [`src/host/container.ts`](src/host/container.ts)).
 - The client part defines one custom element and registers one region item
   ([`src/client/index.ts`](src/client/index.ts)).
@@ -445,7 +446,7 @@ Run from the repository root ([`project.json`](project.json), project
   `.storybook/` with `tsconfig.client.json` (no output), then runs the
   `bundle` build CLI, which bundles the client part and its sheet into
   `dist/client/`, writes `dist/contracts.json` and `dist/schemas/`, and
-  dry-activates the parts
+  dry-activates the client part (the host part has no `dist/host/index.js`)
   ([`cli.ts`](../../../packages/bundle/src/build/cli.ts)).
 - `npx nx run bundle-resources:typecheck` runs the same two `tsc` steps
   without the CLI.
@@ -453,8 +454,12 @@ Run from the repository root ([`project.json`](project.json), project
   and `tests/client/` (`tsconfig.client-spec.json`) into the untracked
   `dist-tests/`, and runs them with `node --test`:
   - [`tests/contracts.test.ts`](tests/contracts.test.ts): the schemas.
-  - [`tests/resources.test.ts`](tests/resources.test.ts): the host service and
-    the window's reads, over a fake `runtime.lease/v1`.
+  - [`tests/resources.test.ts`](tests/resources.test.ts): the window's reads
+    over the generated `ResourcesService` client.
+  - [`tests/router.test.ts`](tests/router.test.ts): the host service through
+    the router, over a fake `runtime.lease/v1`, and the CPU-share arithmetic.
+  - [`tests/host-build.test.ts`](tests/host-build.test.ts): the host part
+    builds, and no `dist/host/index.js` exists.
   - [`tests/domain.test.ts`](tests/domain.test.ts): formatting and thresholds.
   - [`tests/client/connection-badge.test.ts`](tests/client/connection-badge.test.ts):
     the badge, the popover and the region item, under `happy-dom`, and the

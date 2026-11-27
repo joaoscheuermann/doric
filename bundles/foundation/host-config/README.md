@@ -35,26 +35,17 @@ and the credentials behave across bundles.
 ([manifest](../../../docs/architecture/bundles/manifest.md#desktopscope)); the
 methods ignore them.
 
-The bundle has one part, the host part ([`src/host/index.ts`](src/host/index.ts)),
+The bundle has one part, the host part ([`src/host/main.ts`](src/host/main.ts)),
 and a contracts module ([`src/contracts/index.ts`](src/contracts/index.ts)). It
 declares no slot. The build writes the descriptor `dist/contracts.json`, where
 `host-config.configuration/v1` is a `settings` contract and `host-config/v1` a
 `service` contract, both of the `host` environment, cardinality `one`, not
 `local`, at version `1.2.0`, with their JSON schemas under `dist/schemas/`.
 
-The shipped [`composition.json`](../../../app/backend/doric-host/composition.json)
-lists `host-config` under `resident`, so its host part runs in the host's own
-(kernel) process rather than in the generation process
-([`resident`](../../../docs/architecture/bundles/composition-and-distribution.md#resident)):
-the `secrets/v1` view and the credential reference source it uses are local to
-that process. When a publish changes the kernel partition — the id, version,
-phase, state or install directory of a resident bundle, or a contract one
-provides, with its cardinality and versions — the publish fails with
-`kernel_restart_required` and the host must be restarted; a new version of
-`host-config` is such a change. A publish that leaves them unchanged starts the
-new generation, and the kernel keeps running this bundle's loaded code until
-the next host start ([`manager.ts`](../../../packages/bundle/src/process/manager.ts),
-[`partition.ts`](../../../packages/bundle/src/process/partition.ts)). The same file
+The host part runs as its own process, like every host part; the kernel's
+`resident` partition, which ran it in the host's own process, was deleted in
+slice S67, and its kernel entry `src/host/index.ts` in slice S68a. The shipped
+[`composition.json`](../../../app/backend/doric-host/composition.json)
 names `host-config/v1` under `required.contracts`, so the host does not start
 without it.
 
@@ -65,8 +56,8 @@ built to `dist/host/main.mjs`, for the bundle-process runtime
 ([bundle processes](../../../docs/features/bundle-processes.md)). It calls
 `runBundle` with `HostConfigService` (`host-config/v1`),
 `ReferenceSourceService` and `HookHandlerService` listed statically, and
-depends on `@connectrpc/connect`. The kernel entry is
-unchanged until S62. In this entry:
+depends on `@connectrpc/connect`. The kernel entry `src/host/index.ts` and
+`src/kernel.ts` were deleted in slice S68a. In this entry:
 
 - `host-config.configuration/v1` is a settings space registered with
   `settings/v1` at activate. It is read through `settings/v1` `Entry` and
@@ -95,22 +86,21 @@ are `bundle`, `core` (for `readModelProperties` of `core/contracts`), `llms`
 
 ## Contracts it uses
 
-| Contract             | Used for                                                                                                                                                                                                                                                                                         |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `settings/v1`        | `register` the space `host-config.configuration/v1`, `subscribe` to its writes, `entry` to load it and `set` to replace it ([`configuration.ts`](src/host/configuration.ts), [`store.ts`](src/host/config/store.ts)); shape in the [core README](../core/README.md#settingsv1).                  |
-| `secrets/v1`         | `view()` for the stored credential list the settings schema checks, `registerReferences` for the reference source, and `list`, `create`, `update`, `delete` in the credential service ([`credentials/service.ts`](src/host/credentials/service.ts)); [core README](../core/README.md#secretsv1). |
-| `models/v1`          | `kind(id)` to learn whether a kind's model list is its catalog, `catalog({ kind, configuration })` to fill the listed models, and `prepare(configuration)` to build providers ([`service.ts`](src/host/config/service.ts)); [core README](../core/README.md#modelsv1).                           |
-| `tools/v1`           | `list()`, whose tools must each be a `tool` package bound factory, to check their required fields ([`configuration.ts`](src/host/configuration.ts)); [core README](../core/README.md#toolsv1).                                                                                                   |
-| `hooks/v1`           | `use(AppHooksV1).onHostStartHook(...)` to register the start step ([`configuration.ts`](src/host/configuration.ts)); [core README](../core/README.md#hooksv1).                                                                                                                                   |
-| `doric.app.hooks/v1` | Its `onHostStartHook` runs the start step ([hooks](../../../docs/architecture/bundles/hooks.md#host-start-and-stop)). A `doric.*` contract needs no declaration.                                                                                                                                 |
-| `doric.startup/v1`   | `stage('configuration_activation')` and two `info` lines with `log(record)` in the start step ([hooks](../../../docs/architecture/bundles/hooks.md#host-start-and-stop)).                                                                                                                        |
+| Contract             | Used for                                                                                                                                                                                                                                                                                                                                                             |
+| -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `settings/v1`        | `Register` the space `host-config.configuration/v1`, `Entry` to load it and `Set` to replace it ([`service.ts`](src/host/service.ts), [`routed.ts`](src/host/routed.ts)); shape in the [core README](../core/README.md#settingsv1).                                                                                                                                  |
+| `secrets/v1`         | `List` for the stored credentials the settings schema checks ([`routed.ts`](src/host/routed.ts)), `RegisterReferences` for the reference source ([`service.ts`](src/host/service.ts)), and `list`, `create`, `update`, `delete` in the credential service ([`credentials/service.ts`](src/host/credentials/service.ts)); [core README](../core/README.md#secretsv1). |
+| `models/v1`          | `kind(id)` to learn whether a kind's model list is its catalog, `catalog({ kind, configuration })` to fill the listed models, and `prepare(configuration)` to build providers ([`service.ts`](src/host/config/service.ts)); [core README](../core/README.md#modelsv1).                                                                                               |
+| `tools/v1`           | `List`, whose `tool.settings` fields are checked for the required ones ([`routed.ts`](src/host/routed.ts)); [core README](../core/README.md#toolsv1).                                                                                                                                                                                                                |
+| `hooks/v1`           | `onHostStart(hooks, context, …)` of `bundle/host` to register the start step ([`service.ts`](src/host/service.ts)); [core README](../core/README.md#hooksv1).                                                                                                                                                                                                        |
+| `doric.app.hooks/v1` | Its `onHostStartHook` runs the start step ([hooks](../../../docs/architecture/bundles/hooks.md#host-start-and-stop)). A `doric.*` contract needs no declaration.                                                                                                                                                                                                     |
+| `doric.startup/v1`   | `stage('configuration_activation')` and two `info` lines with `log(record)` in the start step ([hooks](../../../docs/architecture/bundles/hooks.md#host-start-and-stop)).                                                                                                                                                                                            |
 
 ## `host-config/v1` (version 1.2.0)
 
 Declared in [`src/contracts/index.ts`](src/contracts/index.ts) as
-`ConfigurationV1 = ref<Configuration>('host-config/v1')`, and provided during
-`activate` with `services.provide(defineService(...))`
-([`configuration.ts`](src/host/configuration.ts)).
+`ConfigurationV1 = ref<Configuration>('host-config/v1')`, and served by the
+process as `HostConfigService` ([`service.ts`](src/host/service.ts)).
 
 | Method                  | Input                           | Output                | Exposed   |
 | ----------------------- | ------------------------------- | --------------------- | --------- |
@@ -243,8 +233,7 @@ failed replacement does not block the next one
 4. Every tool of `tools/v1.list()` must resolve each required field it
    declares from `tools[<tool name>][<field key>]` or else from the field's
    default; a missing or blank value of a required field fails with
-   `Tool <name> requires a <key> value.`, and a listed tool that is not a
-   `tool` bound factory fails with `Tool "<name>" was not defined with defineTool.`
+   `Tool <name> requires a <key> value.`
    ([`tool-config.ts`](src/host/config/tool-config.ts)).
 5. `models/v1.prepare(configuration)` builds the candidate providers from the
    bare filled configuration, so a configuration whose providers fail to build
@@ -381,7 +370,7 @@ The references of a configuration are each provider's `secret` field values,
 ## Start step
 
 The host part registers an `onHostStartHook` handler
-([`configuration.ts`](src/host/configuration.ts)). It sets the startup stage
+([`service.ts`](src/host/service.ts)). It sets the startup stage
 `configuration_activation`, logs `Activating Doric configuration`, loads the
 snapshot through `current`, calls `models/v1.prepare(snapshot)`, and logs
 `Doric configuration activated` with the fields `configRevision`,
@@ -413,21 +402,9 @@ The bundle reads no environment variable and has no configuration of its own;
   `ContextCompactionConfig`), the three Zod schemas,
   `configurationMethods`, `defaultContextCompaction` and
   `defaultMaxToolResultChars`.
-- `host-config/kernel` ([`src/kernel.ts`](src/kernel.ts)), for kernel and test
-  compositions that embed the bundle instead of installing it:
-  - `createHostConfig()` returns `{ bundle, definition, track(configuration) }`:
-    `bundle` is the embedded bundle (its manifest has the same `provides` and
-    `requires` as `manifest.json`, version `0.0.0`, no `desktopScope`, and
-    carries the service document of `host-config/v1`); `definition` is the
-    settings space definition; `track` sets the configuration the reference
-    source answers. The installed part's `activate`
-    ([`src/host/index.ts`](src/host/index.ts)) activates this same bundle.
-  - The types `HostConfig` (the return of `createHostConfig`) and
-    `ConfigurationSettings` (the type of `definition`).
-  - `configurationSettingsId` (`'host-config.configuration/v1'`),
-    `referencedCredentialIds(configuration)`, and `boundTools(registered)`,
-    which answers the bound factories of `tools/v1.list()` and throws a
-    `TypeError` for a tool not defined with `defineTool`.
+- `host-config/kernel`: the package still exports it, but its file
+  `src/kernel.ts` (`createHostConfig`, `HostConfig`, `boundTools` and its
+  re-exports) was deleted in slice S68a; the export dangles until S70.
 - `host-config/testing` ([`src/testing.ts`](src/testing.ts)), for tests only:
   - `ConfigInputSchema`, `defaultConfig`, `providerCredentials` and the types
     `ConfigInput` and `DoricConfig` ([`schema.ts`](src/host/config/schema.ts)).
@@ -492,8 +469,11 @@ npx nx run bundle-host-config:build
   `replace` pipeline, and [`credentials.test.ts`](tests/credentials.test.ts)
   for credential resolution.
 
-Activation, the reference source and the start step of `createHostConfig` are
-tested in `app/backend/doric-host/tests/` (`npx nx run doric-host:test`), whose
-tests skip unless `DORIC_TEST_DATABASE_URL` names a test database.
+Activation, the reference source and the start step of the process are
+tested in the bundle's router suites and in `app/backend/doric-host/tests/`
+(`npx nx run doric-host:test`), whose tests skip unless
+`DORIC_TEST_DATABASE_URL` names a test database;
+[`host-build.test.ts`](tests/host-build.test.ts) checks that neither
+`dist/host/index.js` nor `dist/kernel.js` exists.
 
 Each target first builds the projects the bundle depends on.

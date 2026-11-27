@@ -4,13 +4,12 @@
 // and `core`'s `ToolHandlerService` calls run them over
 // `runtime.threads/v1`'s `ThreadsService` and `default.agents/v1`'s
 // `AgentsService` under the relayed prompt scope. A tool's text answer is
-// compared with the kernel tool's as parsed JSON (key order may differ).
+// compared as parsed JSON (key order may differ).
 
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import type { JsonValue } from '@bufbuild/protobuf';
-import type { ToolCall } from 'tool';
 
 import { tool as eventsTool } from '../src/host/tools/thread-events.js';
 import { tool as getTool } from '../src/host/tools/thread-get.js';
@@ -27,11 +26,11 @@ import {
   control,
   eventView,
   execute,
-  kernelAnswer,
   promptId,
   review,
   threadId,
   toValue,
+  view,
 } from './support/router-fixtures.js';
 
 // T1.
@@ -72,52 +71,92 @@ void test('T1: activate sends eight tools/v1.Register in catalog order, always a
 });
 
 // T2.
-void test('T2: each control tool sends its ThreadsService request under the prompt scope and answers the kernel tool’s JSON', async (t) => {
+void test('T2: each control tool sends its ThreadsService request under the prompt scope and answers the control’s result as JSON', async (t) => {
   const h = await activated(t, { control });
-  const cases: readonly (readonly [string, JsonValue, string, JsonValue])[] = [
+  const accepted = { status: 'accepted', promptId };
+  const listed = { items: [view], nextCursor: 'cursor-2' };
+  const digested = {
+    events: [
+      { sequence: 1, type: 'assistant.message', promptId, summary: 'hello' },
+    ],
+    nextSequence: 1,
+  };
+  const cases: readonly (readonly [
+    string,
+    JsonValue,
+    string,
+    JsonValue,
+    unknown,
+  ])[] = [
     [
       'thread-spawn',
       { prompt: ' task ', title: ' Task ' },
       'spawn',
       { prompt: ' task ', title: ' Task ' },
+      { threadId, promptId },
     ],
-    ['thread-list', {}, 'list', { limit: 50 }],
+    ['thread-list', {}, 'list', { limit: 50 }, listed],
     [
       'thread-list',
       { limit: 5, cursor: '00000000-0000-4000-8000-000000000001' },
       'list',
       { limit: 5, cursor: '00000000-0000-4000-8000-000000000001' },
+      listed,
     ],
-    ['thread-get', { threadId }, 'get', { threadId }],
+    [
+      'thread-get',
+      { threadId },
+      'get',
+      { threadId },
+      {
+        thread: view,
+        result: {
+          status: 'completed',
+          text: 'Done.',
+          promptId,
+          at: '2026-10-09T00:00:03.000Z',
+        },
+      },
+    ],
     [
       'thread-events',
       { threadId },
       'events',
       { threadId, afterSequence: 0, limit: 20 },
+      digested,
     ],
     [
       'thread-events',
       { threadId, afterSequence: 3, limit: 7 },
       'events',
       { threadId, afterSequence: 3, limit: 7 },
+      digested,
     ],
     [
       'thread-send',
       { threadId, prompt: ' follow-up ' },
       'send',
       { threadId, prompt: ' follow-up ' },
+      accepted,
     ],
-    ['thread-terminate', { threadId }, 'terminate', { threadId }],
-    ['thread-restart', { threadId }, 'restart', { threadId }],
+    [
+      'thread-terminate',
+      { threadId },
+      'terminate',
+      { threadId },
+      { ...view, state: 'cancelled' },
+    ],
+    ['thread-restart', { threadId }, 'restart', { threadId }, accepted],
     [
       'thread-restart',
       { threadId, prompt: ' again ' },
       'restart',
       { threadId, prompt: ' again ' },
+      accepted,
     ],
   ];
 
-  for (const [name, payload, method, request] of cases) {
+  for (const [name, payload, method, request, expected] of cases) {
     const before = h.calls.length;
     const answer = await execute(h, name, payload);
 
@@ -126,17 +165,7 @@ void test('T2: each control tool sends its ThreadsService request under the prom
       [{ method, request, scope: promptScope }],
       name,
     );
-    assert.deepEqual(
-      JSON.parse(answer),
-      JSON.parse(
-        (await kernelAnswer(
-          control,
-          name,
-          payload as ToolCall['payload'],
-        )) as string,
-      ),
-      name,
-    );
+    assert.deepEqual(JSON.parse(answer), expected, name);
   }
 });
 

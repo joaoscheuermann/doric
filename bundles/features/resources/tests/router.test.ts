@@ -1,11 +1,13 @@
 // `resources`' host part through the router (phase 3, slice S50b, tests
-// R1–R7): `resources/v1` served by `createResourcesService`. `Host` reads the
-// machine in process; `Project` reads the calling Project's container through
+// R1–R7; R1b ported from the kernel case of `resources.test.ts` in S68a):
+// `resources/v1` served by `createResourcesService`. `Host` reads the
+// machine in process (`os.cpus()` is faked only in R1b); `Project` reads the calling Project's container through
 // one `runtime.lease/v1.Stats`, answers a non-ready lease as its status, and
 // rejects any other lease failure with its code (coordinator decision Q3).
 
 import assert from 'node:assert/strict';
-import { cpus, totalmem } from 'node:os';
+import { syncBuiltinESMExports } from 'node:module';
+import os, { type CpuInfo, cpus, totalmem } from 'node:os';
 import test from 'node:test';
 
 import { toJson } from '@bufbuild/protobuf';
@@ -89,6 +91,43 @@ void test('R1: Host answers the machine; the first answer of the process has no 
       String(second.cpuPercent),
     );
   }
+});
+
+/** One core of `os.cpus()` whose counters are `idle` idle and `busy` user time. */
+const core = (idle: number, busy: number): CpuInfo => ({
+  model: 'test',
+  speed: 1,
+  times: { user: busy, nice: 0, sys: 0, idle, irq: 0 },
+});
+
+void test('R1b (S68a, from resources.test.ts): Host’s cpuPercent is the busy share of every core between two samples, and absent when the counters did not advance', async (t) => {
+  const h = await harness(t);
+  const client = h.client();
+  let sample: CpuInfo[] = [core(100, 100)];
+  const sampled = t.mock.method(os, 'cpus', () => sample);
+
+  syncBuiltinESMExports();
+  t.after(() => {
+    sampled.mock.restore();
+    syncBuiltinESMExports();
+  });
+
+  // The first sample (idle 100 of 200), whatever an earlier answer kept.
+  await client.host({});
+
+  sample = [core(150, 150)];
+
+  const advanced = await client.host({});
+
+  assert.equal(advanced.cpuCount, 1);
+  assert.equal(advanced.cpuPercent, 50);
+
+  const unchanged = toJson(HostResponseSchema, await client.host({})) as Record<
+    string,
+    unknown
+  >;
+
+  assert.equal('cpuPercent' in unchanged, false);
 });
 
 void test('R2: Project answers the Stats reading as ready, stamped now, with one Stats of an empty target', async (t) => {

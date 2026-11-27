@@ -1,6 +1,7 @@
 // `claude-login`'s host part through the router (phase 3, slice S50b, tests
-// L1–L14): `claude.login/v1` served by `createClaudeLoginService` answers as
-// the kernel entry did, and stores the authorization through a routed
+// L1–L14; L4b and L11b ported from the kernel's `login.test.ts` in S68a):
+// `claude.login/v1` served by `createClaudeLoginService` answers as the
+// deleted kernel entry did, and stores the authorization through a routed
 // `secrets/v1` client that carries the `Finish` call's scope. The OAuth
 // seams are the kernel tests': the real callback server on a free port and
 // a faked token endpoint; the test "is the browser".
@@ -19,6 +20,7 @@ import {
 import {
   createLocalCallbackServer,
   type LocalCallbackServerOptions,
+  type OAuthHttpRequest,
 } from 'oauth';
 
 import { FinishResponseSchema } from '../src/contracts/gen/doric/claude/login/v1/login_pb.js';
@@ -203,6 +205,35 @@ void test('L4: Start, the callback, Finish: one Create of the API_TOKEN Claude, 
   assert.doesNotMatch(JSON.stringify(h.router.logs), /fresh-token/);
 });
 
+void test('L4b (S68a, from login.test.ts): the URL is Claude’s authorization with a /callback redirect, the callback’s code is exchanged once, and the callback server closes once the sign-in is stored', async (t) => {
+  const exchanges: OAuthHttpRequest[] = [];
+  const h = await harness(t, {
+    deps: {
+      createServer: freePort(),
+      transport: tokenEndpoint('fresh-token', exchanges),
+    },
+  });
+  const client = h.client();
+
+  const { url } = await client.start({});
+  const authorize = new URL(url);
+
+  assert.equal(authorize.origin, 'https://claude.com');
+  assert.equal(
+    new URL(authorize.searchParams.get('redirect_uri') ?? '').pathname,
+    '/callback',
+  );
+
+  const finished = client.finish({});
+
+  assert.equal(await approve(url), 200);
+  await finished;
+
+  assert.equal(exchanges.length, 1);
+  assert.equal(JSON.parse(exchanges[0]?.body ?? '{}').code, 'code-1');
+  assert.ok(await callbackCloses(url), 'the callback server still answers');
+});
+
 void test('L5: Create failing credential_name_taken lists, then updates the listed Claude credential, and answers Update’s description', async (t) => {
   const h = await harness(t, {
     deps: { createServer: freePort(), transport: tokenEndpoint('token-2') },
@@ -359,6 +390,23 @@ void test('L11: a sign-in nobody finishes within deps.timeoutMs closes its callb
 
   assert.ok(await callbackCloses(url), 'the callback server still answers');
   await assert.rejects(client.finish({}), refusal('claude_login_not_started'));
+});
+
+void test('L11b (S68a, from login.test.ts): a Finish waiting when deps.timeoutMs elapses fails claude_login_aborted, and the callback closes', async (t) => {
+  const h = await harness(t, {
+    deps: {
+      createServer: freePort(),
+      transport: tokenEndpoint('late'),
+      timeoutMs: 20,
+    },
+  });
+  const client = h.client();
+
+  const { url } = await client.start({});
+
+  await assert.rejects(client.finish({}), refusal('claude_login_aborted'));
+  assert.ok(await callbackCloses(url), 'the callback server still answers');
+  assert.deepEqual(h.secrets.creates, []);
 });
 
 void test('L12: a failed authorization fails Finish claude_login_failed and calls no secrets/v1', async (t) => {

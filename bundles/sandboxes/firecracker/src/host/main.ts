@@ -1,8 +1,7 @@
 // The `firecracker` bundle's host part as a process (spec
 // `docs/designs/grpc-processes.md`, "Sandbox leases"; phase 3, slice S44):
 // `sandbox/v1` by lease id through the router. Built into
-// `dist/host/main.mjs`; the running host keeps the kernel entry
-// (`./index.ts`) until the switch, slice S62.
+// `dist/host/main.mjs`.
 
 import { ContractError } from 'bundle/contracts';
 import { HookHandlerService } from 'bundle/contracts/gen/doric/hooks/v1/hooks_pb.js';

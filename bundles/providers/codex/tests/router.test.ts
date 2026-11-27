@@ -126,8 +126,15 @@ async function* completion(
   };
 }
 
-/** Asserts `promise` failed with a ConnectError of the Doric code `code`. */
-const rejectsWithCode = async (promise: Promise<unknown>, code: string) => {
+/**
+ * Asserts `promise` failed with a ConnectError of the Doric code `code`, and
+ * with a message `message` matches when given.
+ */
+const rejectsWithCode = async (
+  promise: Promise<unknown>,
+  code: string,
+  message?: RegExp,
+) => {
   await assert.rejects(promise, (error: unknown) => {
     assert.ok(
       error instanceof Error && 'findDetails' in error,
@@ -138,6 +145,10 @@ const rejectsWithCode = async (promise: Promise<unknown>, code: string) => {
       code,
       error.message,
     );
+
+    if (message !== undefined) {
+      assert.match(error.message, message);
+    }
 
     return true;
   });
@@ -228,4 +239,66 @@ void test('a target without its required token fails with invalid_input', async 
     client.models({ target: { providerId: 'cx', values: {} } }),
     'invalid_input',
   );
+});
+
+// Ported from the kernel suite `provider.test.ts` (S68a, X3): the behaviours
+// no router case above covered.
+
+void test('Advertised and CatalogCapacity answer that codex is not listed and reports no catalog capacity', async (t) => {
+  const client = await serve(t, routedTransport({}).transport);
+
+  assert.equal((await client.advertised({})).advertised, false);
+  assert.equal((await client.catalogCapacity({})).catalogCapacity, false);
+});
+
+void test('a blank token or a fedramp value that is not a flag fails with invalid_input, and a flag builds', async (t) => {
+  const { requests, transport } = routedTransport({
+    answer: () => ({ body: { data: [{ id: 'gpt-5.5' }] } }),
+  });
+  const client = await serve(t, transport);
+  const blanks: Record<string, string>[] = [{}, { token: '   ' }];
+
+  for (const values of blanks) {
+    await rejectsWithCode(
+      client.models({ target: { providerId: 'cx', values } }),
+      'invalid_input',
+      /Provider kind codex requires a token value\./,
+    );
+  }
+
+  await rejectsWithCode(
+    client.models({
+      target: { providerId: 'cx', values: { fedramp: 'yes' }, secret: 'auth' },
+    }),
+    'invalid_input',
+    /Provider value fedramp is not a flag: yes/,
+  );
+  assert.equal(requests.length, 0);
+
+  const { models } = await client.models({
+    target: {
+      providerId: 'cx',
+      values: { chatGptAccountId: 'acct', fedramp: 'true' },
+      secret: 'auth',
+    },
+  });
+
+  assert.deepEqual(
+    models.map((model) => model.id),
+    ['gpt-5.5'],
+  );
+});
+
+void test('Icons choose OpenAI for the provider and every model', async (t) => {
+  const client = await serve(t, routedTransport({}).transport);
+
+  const { modelIconChoice } = await client.icons({
+    configuration: {},
+    models: ['a', 'b'],
+  });
+
+  assert.deepEqual(plain(modelIconChoice), {
+    provider: 'openai',
+    models: ['openai', 'openai'],
+  });
 });

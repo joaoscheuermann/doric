@@ -3,8 +3,8 @@
 // `ResourcesService` client, and are observed as the REST client answered:
 // lease states are data, `pending` carries `Retry-After: 1`, a failed call is
 // a sentence. The host part itself (the Stats widening, the lease states and
-// the failures behind them) is `tests/router.test.ts`; the only host-part case
-// kept here is the CPU-share arithmetic the window's gauges take from it.
+// the failures behind them, and the CPU-share arithmetic) is
+// `tests/router.test.ts`.
 
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
@@ -17,19 +17,7 @@ import {
   resourcesHostOf,
 } from '../src/client/api/resources.js';
 import { ResourcesService } from '../src/contracts/gen/doric/resources/v1/resources_pb.js';
-import { cpuPercentBetween } from '../src/host/index.js';
 import { resourcesWindow } from './support/resources-connect.js';
-
-test('reads the busy share of every core between two samples', () => {
-  assert.equal(
-    cpuPercentBetween([{ idle: 100, total: 200 }], [{ idle: 150, total: 300 }]),
-    50,
-  );
-  assert.equal(
-    cpuPercentBetween([{ idle: 0, total: 100 }], [{ idle: 0, total: 100 }]),
-    undefined,
-  );
-});
 
 describe("the window's resource reads over resources/v1", () => {
   /** The window's reads over a host that answers `impl`. */

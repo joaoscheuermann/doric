@@ -1,8 +1,7 @@
 // `host-config`'s host part as a process (spec `docs/designs/grpc-processes.md`,
 // "Files, phase 3"; slice S45): `host-config/v1`, the configuration space's
 // reference source and the configuration start step, through the router.
-// Built into `dist/host/main.mjs`; the running host keeps the kernel entry
-// (`./index.ts`) until the switch, slice S62.
+// Built into `dist/host/main.mjs`.
 
 import { HookHandlerService } from 'bundle/contracts/gen/doric/hooks/v1/hooks_pb.js';
 import { ReferenceSourceService } from 'bundle/contracts/gen/doric/secrets/v1/secrets_pb.js';

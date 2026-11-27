@@ -33,19 +33,19 @@ settings, and storing a credential belongs to the bundle that provides
 - Keep the descriptor of `openAiKind` in `src/host/kind.ts` equal to
   `providerKind('openai')` of `packages/llms/src/lib/providers/kinds.ts` and
   to `tests/fixtures/provider-kind.json`, and change all three in one change:
-  `tests/provider.test.ts` asserts that they match.
+  `tests/router.test.ts` asserts that they match.
 - Change the shape of `models.provider/v1` only in
   `packages/bundle/src/contracts/basic/models.ts`, never in this bundle.
 - Put what is specific to the `openai` kind (its fields, its `build`, its
   `icons`) in `src/host/kind.ts`, and put what turns any kind definition into
-  the record (`createKindProvider`, `buildConfigured`) and the field and value
+  the record (`kindSource`, `buildConfigured`) and the field and value
   helpers (`endpointField`, `tokenField`, `literalValue`, `baseUrl`) in
   `src/host/provider.ts`.
 - When `models.provider/v1` gains a method or an output field in
   `packages/bundle/src/contracts/basic/models.ts`, add its member to
-  `KindDefinition` and its method to `createKindProvider` in
+  `KindDefinition` and its method to `kindSource` in
   `src/host/provider.ts`, give it the `openai` answer in `src/host/kind.ts`,
-  and add the answer's test to `tests/provider.test.ts`.
+  and add the answer's test to `tests/router.test.ts`.
 - When you change the manifest's `version` or a `provides` entry, change the
   expected values in `tests/manifest.test.ts` in the same change.
 - Read every value of a field that is not of kind `secret` through
@@ -68,13 +68,13 @@ settings, and storing a credential belongs to the bundle that provides
   `catalog` must answer `{ status: 'absent' }` without a request while the
   kind has none.
 - Make the default logger only inside the `logger` callback of
-  `createActivate` in `src/host/index.ts`, so that `log/v1` is used on the
+  `kindSource` in `src/host/main.ts`, so that `log/v1` is used on the
   first `create` and never during `activate`, and keep one logger per
-  activation.
+  process.
 - Never let the `log/v1` sink of `src/host/logger.ts` throw: a log record must
   never fail the caller.
-- Test a behavior of the record in `tests/provider.test.ts`, activating the
-  host part with `providerWorld` of `tests/support/world.ts` and injecting a
+- Test a behavior of the record in `tests/router.test.ts`, serving the
+  kind through the router and injecting a
   transport with `recordingTransport`, or `failingTransport` for a transport
   failure; never let a test reach the network.
 - Assert a request the built provider sends through a method that uses

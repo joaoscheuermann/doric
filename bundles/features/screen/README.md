@@ -38,7 +38,7 @@ quarantines the bundle. The package exports `screen/contracts`, `screen/contract
 | Part        | Entry                                              | What it does                                                                                                                                                                   |
 | ----------- | -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `contracts` | [`src/contracts/index.ts`](src/contracts/index.ts) | Declares both contracts, their types and their zod schemas.                                                                                                                    |
-| host        | [`src/host/index.ts`](src/host/index.ts)           | Provides `screen.sessions/v2`: ensures the xpra session in a Project's sandbox and publishes it on `screen.relay/v1`.                                                          |
+| host        | [`src/host/main.ts`](src/host/main.ts)             | Provides `screen.sessions/v2`: ensures the xpra session in a Project's sandbox and publishes it on `screen.relay/v1`.                                                          |
 | desktop     | [`src/desktop/index.ts`](src/desktop/index.ts)     | Provides `screen.views/v1`: owns the reader's views, their cache file, the dial loop and the screen windows.                                                                   |
 | client      | [`src/client/index.ts`](src/client/index.ts)       | Registers the Screens pane in `layout.stack/v2`, defines `<screen-sidebar>` and `<screen-group-action>`, mirrors the views and makes the host calls the desktop part asks for. |
 
@@ -221,7 +221,7 @@ importing their packages; `runtime.records/v1` and `runtime.lease/v1` come from
   host on, which the relay serves.
 - **Deactivation.** The host part forgets every token it published, ignoring a
   relay that fails or is gone; a generation that published none touches no
-  relay ([`src/host/index.ts`](src/host/index.ts)).
+  relay ([`src/host/rpc/sessions.ts`](src/host/rpc/sessions.ts)).
 
 ### Process entry (S49b)
 
@@ -230,7 +230,9 @@ built to `dist/host/main.mjs`, for the bundle-process runtime
 ([bundle processes](../../../docs/features/bundle-processes.md)). It calls
 `runBundle` with `SessionsService` (`screen.sessions/v2`) listed statically.
 The session code takes narrower types (`ScreenSandbox`, `ScreenLease`,
-`ScreenRelayPublisher`). The kernel entry stays until S62. Since
+`ScreenRelayPublisher`). The kernel entry `src/host/index.ts`, with
+`screenSessionsService` and its kernel use of `RuntimeLease`, was deleted in
+slice S68a; `ScreenLease` stays for the routed lease (`rpc/lease.ts`) and the sessions (`rpc/sessions.ts`). Since
 S62c1 the manifest requires `runtime.lease/v1@^1.4.0`,
 `screen.relay/v1@^1.1.0` and `log/v1@^1.1.0`, and provides `screen.sessions/v2@2.1.0`.
 In this entry:
@@ -448,8 +450,11 @@ npx nx run bundle-screen:build
 them with `node --test` ([`project.json`](project.json)). The tests cover the
 session manager over a fake sandbox
 ([`tests/session.test.ts`](tests/session.test.ts),
-[`tests/support/sandbox.ts`](tests/support/sandbox.ts)), the provider
-([`tests/provider.test.ts`](tests/provider.test.ts)), the status and window
+[`tests/support/sandbox.ts`](tests/support/sandbox.ts)), the session code over a
+`ScreenLease` ([`tests/provider.test.ts`](tests/provider.test.ts)), the
+routed service ([`tests/router.test.ts`](tests/router.test.ts)), the build
+with no `dist/host/index.js`
+([`tests/host-build.test.ts`](tests/host-build.test.ts)), the status and window
 decisions ([`tests/status.test.ts`](tests/status.test.ts)), the views owner
 ([`tests/views.test.ts`](tests/views.test.ts)), the client's call, dial and
 mirror ([`tests/api.test.ts`](tests/api.test.ts),

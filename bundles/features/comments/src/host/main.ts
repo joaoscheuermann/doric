@@ -1,7 +1,6 @@
 // `comments`' host part as a process (phase 3, S52a): `comments/v1` and the
 // `comment_reply` tool served through the router. Built into
-// `dist/host/main.mjs`; the running host keeps the kernel entry
-// (`./index.ts`) until S62.
+// `dist/host/main.mjs`.
 
 import { ToolHandlerService } from 'bundle/contracts/gen/doric/tools/v1/tools_pb.js';
 import { runBundle } from 'bundle/host';

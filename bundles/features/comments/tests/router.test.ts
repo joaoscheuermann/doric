@@ -1,9 +1,10 @@
-// `comments`' host part through the router (phase 3, S52a, C1–C18):
+// `comments`' host part through the router (phase 3, S52a, C1–C17; S68a's
+// ported cases P1–P8 carry what the deleted kernel suite covered alone):
 // `comments/v1` and the `comment_reply` tool over `events/v1`,
 // `runtime.threads/v1` and `tools/v1`, as `src/host/main.ts` serves them. The
 // fakes store an appended row as `core` does (the message's JSON, fields at
 // their default left out), so every read below goes through finding F1's
-// encoding; C12 and C18 also read rows the kernel wrote.
+// encoding; C12 also reads rows in the kernel's 1.x encoding.
 
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
@@ -30,13 +31,8 @@ import {
   CommentSchema,
   type CommentTargetSchema,
 } from '../src/contracts/gen/doric/comments/v1/comments_pb.js';
-import {
-  type CommentTarget,
-  commentsAddedOf,
-  commentsResolvedOf,
-} from '../src/contracts/index.js';
+import type { CommentTarget } from '../src/contracts/index.js';
 import { tool } from '../src/host/tools/comment-reply.js';
-import { commentsHarness } from './support/harness.js';
 import {
   type Harness,
   harness,
@@ -250,7 +246,6 @@ const row = (
 /** A log holding `rows`. */
 const logOf = (rows: readonly ThreadEvent[]): ThreadLog => ({
   rows: rows.map((entry) => structuredClone(entry)),
-  failAppends: false,
 });
 
 // ---------------------------------------------------------------------------
@@ -931,159 +926,273 @@ void test('C17: Check refuses a missing text, an empty comment_id or an extra ke
 });
 
 // ---------------------------------------------------------------------------
-// C18: parity with the kernel entry.
+// P1–P8: what the kernel suite `comments.test.ts` covered and C1–C17 do not
+// (S68a, X3), ported to the router harness.
 
-/**
- * `value` with each generated comment id replaced by `<id:n>` (n in order of
- * first appearance) and every `createdAt` by `<time>`.
- */
-const masked = (value: unknown): JsonValue => {
-  const ids = new Map<string, string>();
-  const walk = (entry: unknown, key?: string): JsonValue => {
-    if (key === 'createdAt' && typeof entry === 'string') return '<time>';
-
-    if (typeof entry === 'string' && GENERATED_ID.test(entry)) {
-      if (!ids.has(entry)) ids.set(entry, `<id:${ids.size}>`);
-
-      return ids.get(entry) ?? entry;
-    }
-
-    if (Array.isArray(entry)) return entry.map((item) => walk(item));
-
-    if (entry !== null && typeof entry === 'object') {
-      return Object.fromEntries(
-        Object.entries(entry).map(([name, item]) => [name, walk(item, name)]),
-      );
-    }
-
-    return entry as JsonValue;
+void test('P1: every anchor form C4 writes lists back as written, an absent author left absent', async (t) => {
+  const h = await activated(t);
+  const unseated: CommentTarget = {
+    kind: 'message',
+    id: 'prompt-1',
+    anchor: { form: 'range', text: 'essa resposta' },
   };
+  const targets = [...everyForm, unseated];
 
-  return walk(value);
-};
+  for (const target of targets) {
+    await h.comments().add({ target: wireTarget(target), text: 'nota' });
+  }
 
-/** The rows appended after `from`, each read back through `rows.ts`. */
-const appendedSince = (log: ThreadLog, from: number): JsonValue =>
-  plain(
-    log.rows.slice(from).map((entry) => ({
-      type: entry.type,
-      payload:
-        entry.type === 'comments.added/v1'
-          ? commentsAddedOf(entry.event)
-          : commentsResolvedOf(entry.event),
-    })),
-  );
-
-void test('C18: over the same 1.x log and script, the router answers and appends what the kernel does', async (t) => {
-  const initial: ThreadEvent[] = [
-    row(1, 'comments.added/v1', {
-      type: 'comments.added/v1',
-      commentId: 'comment-old',
-      target: plain(onElement) as JsonObject,
-      text: 'antigo',
-      author: 'jao',
-      createdAt: '2026-11-20T09:00:00.000Z',
-    }),
-    row(2, 'comments.resolved/v1', {
-      type: 'comments.resolved/v1',
-      commentId: 'comment-old',
-      resolved: true,
-    }),
-  ];
-  const kernelLog = logOf(initial);
-  const kernel = await commentsHarness(kernelLog);
-
-  t.after(() => kernel.close());
-
-  const call = () => kernel.call();
-  const kernelRoot = await kernel.comments.add(
-    { target: onElement, text: '  raiz  ', author: 'jao' },
-    call(),
-  );
-  const kernelAnswers = [
-    kernelRoot,
-    await kernel.comments.add(
-      {
-        target: onElement,
-        text: 'resposta',
-        commentId: 'comment-chosen',
-        inReplyTo: kernelRoot.commentId,
-      },
-      call(),
-    ),
-    await kernel.comments.resolve(
-      { commentId: kernelRoot.commentId, resolved: true },
-      call(),
-    ),
-    await kernel.comments.resolve(
-      { commentId: kernelRoot.commentId, resolved: false },
-      call(),
-    ),
-    await kernel.comments.list(
-      { target: { kind: 'artifact', id: 'checkout-7f3a', revision: 1 } },
-      call(),
-    ),
-    await kernel.comments.list({ kind: 'artifact' }, call()),
-    await kernel.tool('comment_reply').execute({
-      comment_id: 'comment-chosen',
-      text: 'feito',
-      resolve: true,
-    }),
-    await kernel.comments.list({}, call()),
-  ].map(plain);
-
-  const routedLog = logOf(initial);
-  const h = await activated(t, routedLog);
-  const routedRoot = domainOf(
-    (
-      await h.comments().add({
-        target: wireTarget(onElement),
-        text: '  raiz  ',
-        author: 'jao',
-      })
-    ).comment,
-  ) as JsonObject;
-  const rootId = String(routedRoot.commentId);
-  const routedAnswers = [
-    routedRoot,
-    domainOf(
-      (
-        await h.comments().add({
-          target: wireTarget(onElement),
-          text: 'resposta',
-          commentId: 'comment-chosen',
-          inReplyTo: rootId,
-        })
-      ).comment,
-    ),
-    domainOf(
-      (await h.comments().resolve({ commentId: rootId, resolved: true }))
-        .comment,
-    ),
-    domainOf(
-      (await h.comments().resolve({ commentId: rootId, resolved: false }))
-        .comment,
-    ),
-    await listed(h, {
-      target: { kind: 'artifact', id: 'checkout-7f3a', revision: 1 },
-    }),
-    await listed(h, { kind: 'artifact' }),
-    await reply(h, {
-      comment_id: 'comment-chosen',
-      text: 'feito',
-      resolve: true,
-    }),
-    await listed(h),
-  ];
+  const comments = (await listed(h)) as JsonObject[];
 
   assert.deepEqual(
-    masked({
-      answers: routedAnswers,
-      appended: appendedSince(routedLog, initial.length),
-    }),
-    masked({
-      answers: kernelAnswers,
-      appended: appendedSince(kernelLog, initial.length),
-    }),
+    comments.map((entry) => entry.target),
+    targets.map(plain),
+  );
+  assert.equal(
+    (await h.comments().list({})).comments[1]?.author,
+    undefined,
+    'the second comment was written without an author',
+  );
+});
+
+void test('P2: a seat whose block, offset or item is not a 0-based index, an empty turn, or an offset or item without its seat is invalid_input', async (t) => {
+  const h = await activated(t);
+  const seat = { form: 'range', text: 'essa resposta', turn: 'agent:p:3' };
+
+  for (const anchor of [
+    { ...seat, block: -1 },
+    { ...seat, turn: '', block: 2 },
+    { ...seat, block: 2, at: -1 },
+    { ...seat, block: 2, at: 0.5 },
+    { ...seat, block: 2, item: -1 },
+    { form: 'range', text: 'essa resposta', item: 0 },
+  ] as const) {
+    assert.equal(
+      await codeOf(
+        h.comments().add({
+          target: wireTarget({
+            kind: 'message',
+            id: 'prompt-1',
+            anchor,
+          } as CommentTarget),
+          text: 'nota',
+        }),
+      ),
+      'invalid_input',
+      JSON.stringify(anchor),
+    );
+  }
+
+  assert.deepEqual(h.appends, []);
+});
+
+void test('P3: a pseudo-element other than ::before or ::after, and a chosen id outside the format, are invalid_input; a 128-character id is accepted', async (t) => {
+  const h = await activated(t);
+
+  for (const pseudo of ['after', '']) {
+    assert.equal(
+      await codeOf(
+        h.comments().add({
+          target: wireTarget({
+            kind: 'artifact',
+            id: 'a',
+            anchor: { form: 'source', path: 'src/App.tsx', pseudo },
+          } as CommentTarget),
+          text: 'nota',
+        }),
+      ),
+      'invalid_input',
+      JSON.stringify(pseudo),
+    );
+  }
+
+  for (const commentId of ['', 'slash/id', 'acentuação', 'x'.repeat(129)]) {
+    assert.equal(
+      await codeOf(
+        h.comments().add({
+          target: wireTarget(onElement),
+          text: 'nota',
+          commentId,
+        }),
+      ),
+      'invalid_input',
+      JSON.stringify(commentId),
+    );
+  }
+
+  assert.deepEqual(h.appends, []);
+
+  const longest = 'x'.repeat(128);
+  const { comment } = await h.comments().add({
+    target: wireTarget(onElement),
+    text: 'nota',
+    commentId: longest,
+  });
+
+  assert.equal(comment?.commentId, longest);
+});
+
+void test('P4: a fresh activation over the same log lists what an earlier one wrote and resolved', async (t) => {
+  const log = threadLog();
+  const first = harness(log);
+
+  await first.activate();
+
+  try {
+    const { comment } = await first.comments().add({
+      target: wireTarget(onElement),
+      text: 'sobrevive ao reinício',
+      author: 'jao',
+    });
+
+    await first
+      .comments()
+      .resolve({ commentId: comment?.commentId ?? '', resolved: true });
+  } finally {
+    await first.router.control.stop();
+  }
+
+  const restarted = await activated(t, log);
+  const [only, ...rest] = (await restarted.comments().list({})).comments;
+
+  assert.deepEqual(rest, []);
+  assert.equal(only?.text, 'sobrevive ao reinício');
+  assert.equal(only?.author, 'jao');
+  assert.equal(only?.resolved, true);
+});
+
+void test('P5: Resolve of an id never written, or from another Thread or Project, answers no comment, appends nothing and leaves the comment open', async (t) => {
+  const h = await activated(t);
+
+  await h.comments().add({
+    target: wireTarget(onElement),
+    text: 'desta conversa',
+    commentId: 'comment-1',
+  });
+
+  const unknown = await h
+    .comments()
+    .resolve({ commentId: 'comment-unknown', resolved: true });
+
+  assert.equal(unknown.comment, undefined);
+
+  for (const scope of [otherThread, otherProject]) {
+    const foreign = await h
+      .comments(scope)
+      .resolve({ commentId: 'comment-1', resolved: true });
+
+    assert.equal(foreign.comment, undefined, JSON.stringify(scope));
+  }
+
+  assert.equal(h.appends.length, 1);
+  assert.deepEqual(
+    (await listed(h)).map((entry) => (entry as JsonObject).resolved),
+    [false],
+  );
+});
+
+void test('P6: a failed Append fails Resolve with its code and leaves the comment open', async (t) => {
+  const h = await activated(t);
+
+  await h.comments().add({
+    target: wireTarget(onElement),
+    text: 'ajusta o espaçamento',
+    commentId: 'comment-1',
+  });
+
+  h.failures.append = new ContractError('unavailable', 'refused');
+
+  assert.equal(
+    await codeOf(
+      h.comments().resolve({ commentId: 'comment-1', resolved: true }),
+    ),
+    'unavailable',
+  );
+
+  h.failures.append = undefined;
+
+  assert.deepEqual(
+    (await listed(h)).map((entry) => (entry as JsonObject).resolved),
+    [false],
+  );
+});
+
+void test('P7: a retried Add of a resolved comment answers it resolved and appends nothing; the same id in another Thread is another comment', async (t) => {
+  const h = await activated(t);
+  const input = {
+    target: wireTarget(onElement),
+    text: 'resolvida',
+    commentId: 'comment-done',
+  };
+
+  await h.comments().add(input);
+  await h.comments().resolve({ commentId: 'comment-done', resolved: true });
+
+  const retried = await h.comments().add(input);
+
+  assert.equal(retried.comment?.resolved, true);
+  assert.equal(h.appends.length, 2);
+
+  const elsewhere = await h.comments(otherThread).add(input);
+
+  assert.equal(elsewhere.comment?.resolved, false);
+  assert.equal(h.appends.length, 3);
+  assert.deepEqual(h.appends[2]?.scope, otherThread);
+});
+
+void test('P8: replies — one to another Thread’s comment is invalid_input; a retried batch of a root and its reply lists both once, in order; resolving the root keeps the reply open', async (t) => {
+  const h = await activated(t);
+
+  await h.comments(otherThread).add({
+    target: wireTarget(onElement),
+    text: 'de outra conversa',
+    commentId: 'comment-elsewhere',
+  });
+
+  assert.equal(
+    await codeOf(
+      h.comments().add({
+        target: wireTarget(onElement),
+        text: 'resposta',
+        inReplyTo: 'comment-elsewhere',
+      }),
+    ),
+    'invalid_input',
+  );
+  assert.equal(h.appends.length, 1);
+
+  const batch = [
+    { target: wireTarget(onElement), text: 'raiz', commentId: 'comment-root' },
+    {
+      target: wireTarget(onElement),
+      text: 'resposta',
+      commentId: 'comment-reply',
+      inReplyTo: 'comment-root',
+    },
+  ];
+
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    for (const input of batch) {
+      await h.comments().add(input);
+    }
+  }
+
+  await h.comments().resolve({ commentId: 'comment-root', resolved: true });
+
+  assert.deepEqual(
+    (await h.comments().list({})).comments.map((entry) => [
+      entry.commentId,
+      entry.inReplyTo,
+      entry.resolved,
+    ]),
+    [
+      ['comment-root', undefined, true],
+      ['comment-reply', 'comment-root', false],
+    ],
+  );
+  assert.equal(
+    h.appends.filter(({ request }) => request.type === 'comments.added/v1')
+      .length,
+    3,
   );
 });

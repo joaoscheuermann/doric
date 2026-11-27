@@ -1,12 +1,7 @@
-import {
-  type CatalogResult,
-  defineMethod,
-  defineService,
-  type ModelField,
-  type ModelKindDescriptor,
-  ModelsProviderV1,
-  modelsProviderMethods,
-  toLanguageModel,
+import type {
+  CatalogResult,
+  ModelField,
+  ModelKindDescriptor,
 } from 'bundle/contracts';
 import {
   createFetchTransport,
@@ -104,80 +99,10 @@ export const buildConfigured = (
 };
 
 /**
- * The kind as a `models.provider/v1` record. `create` builds the provider with
- * the kind's values; the secret field reads the `secret` callback, which llms
- * awaits before every request, so a rotated credential reaches the next
- * request of a provider built before the rotation.
- */
-export const createKindProvider = (
-  definition: KindDefinition,
-  options: KindProviderOptions,
-) => {
-  const { kind } = definition;
-  const transport = () => options.transport?.() ?? createFetchTransport();
-  const secretField = kind.fields.find((field) => field.kind === 'secret');
-
-  // By id: the llms kind and catalog shapes are readonly, which the typed
-  // overload's mutable zod outputs refuse.
-  return defineService(
-    ModelsProviderV1.id,
-    {
-      kind: defineMethod({
-        ...modelsProviderMethods.kind,
-        execute: () => Promise.resolve(kind),
-      }),
-      advertised: defineMethod({
-        ...modelsProviderMethods.advertised,
-        execute: () => Promise.resolve(definition.advertised),
-      }),
-      catalog: defineMethod({
-        ...modelsProviderMethods.catalog,
-        execute: (input) =>
-          definition.catalog === undefined
-            ? Promise.resolve({ status: 'absent' as const })
-            : definition.catalog(input, {
-                transport: transport(),
-                logger: options.logger(),
-              }),
-      }),
-      create: defineMethod({
-        ...modelsProviderMethods.create,
-        execute: ({ providerId, values, secret }) => {
-          const sources: Record<string, SecretSource> = { ...values };
-
-          if (secret !== undefined && secretField !== undefined) {
-            sources[secretField.key] = secret;
-          }
-
-          return toLanguageModel(
-            buildConfigured(definition, sources, {
-              transport: transport(),
-              logger: options.logger(),
-              identity: { id: providerId, name: providerId },
-            }),
-          );
-        },
-      }),
-      catalogCapacity: defineMethod({
-        ...modelsProviderMethods.catalogCapacity,
-        execute: () => Promise.resolve(definition.catalogCapacity),
-      }),
-      icons: defineMethod({
-        ...modelsProviderMethods.icons,
-        execute: (input) =>
-          Promise.resolve().then(() => definition.icons(input)),
-      }),
-    },
-    { cardinality: 'many' },
-  );
-};
-
-/**
  * The kind as `llms/rpc`'s source: the descriptor and traits of `definition`,
  * its catalog and icons, and `build` as `buildConfigured` with a fresh
  * transport (`options.transport?.()` else `createFetchTransport()`) and
  * `options.logger()`, identity `{ id: providerId, name: providerId }`.
- * Answers the same descriptor, catalog and icons `createKindProvider` does.
  * `build` throws as `buildConfigured` does (a required value missing).
  */
 export const kindSource = (
@@ -196,9 +121,9 @@ export const kindSource = (
       : {
           catalog: (input: Parameters<typeof catalog>[0]) =>
             catalog(input, {
-          transport: transport(),
-          logger: options.logger(),
-        }),
+              transport: transport(),
+              logger: options.logger(),
+            }),
         }),
     icons: (input) => definition.icons(input),
     build: ({ providerId, values }) =>

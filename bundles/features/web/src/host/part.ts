@@ -12,11 +12,10 @@ import { createTool, type WebToolOptions } from './tools/web.js';
 /**
  * Serves the web tool from `tools` and registers it with `tools/v1`
  * (`tools.register(context, createTool(options).bind(undefined),
- * { alwaysAvailable: true, order: 700 })`, the model-visible position 700 of
- * the kernel entry). Resolves with the registration once `Register` resolved;
- * replayed after a `core` restart by `context.registrations`. Rejects with the
- * provider's `ContractError` (`duplicate_tool`, `invalid_input`); nothing is
- * then served.
+ * { alwaysAvailable: true, order: 700 })`, the model-visible position 700).
+ * Resolves with the registration once `Register` resolved; replayed after a
+ * `core` restart by `context.registrations`. Rejects with the provider's
+ * `ContractError` (`duplicate_tool`, `invalid_input`); nothing is then served.
  */
 export const registerWebTool = (
   context: Pick<HostContext, 'registrations'>,

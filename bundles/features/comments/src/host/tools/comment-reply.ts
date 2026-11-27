@@ -16,13 +16,13 @@ import { addComment, findComment, resolveComment } from '../comments.js';
 import type { CommentsPorts } from '../ports.js';
 
 /** The tool name the model calls. */
-export const COMMENT_REPLY_TOOL = 'comment_reply';
+const COMMENT_REPLY_TOOL = 'comment_reply';
 
 /** The global model-visible position, the next free band after `papercraft_preview`. */
 export const COMMENT_REPLY_ORDER = 1800;
 
 /** The author the agent's replies are written under. */
-export const AGENT_AUTHOR = 'agent';
+const AGENT_AUTHOR = 'agent';
 
 const description = [
   "Answer one review comment the user left, in the comment's thread.",
@@ -41,8 +41,6 @@ export const input = z
   })
   .strict();
 
-export type CommentReplyInput = z.output<typeof input>;
-
 export const output = z
   .object({
     /** The id of the reply just written. */
@@ -53,8 +51,6 @@ export const output = z
     resolved: z.boolean(),
   })
   .strict();
-
-export type CommentReplyOutput = z.output<typeof output>;
 
 export const tool = defineTool<typeof input, typeof output, CommentsPorts>({
   name: COMMENT_REPLY_TOOL,

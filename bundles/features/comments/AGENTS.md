@@ -56,19 +56,20 @@ bundle that owns the target's `kind`.
   and search it for `"bundle": "comments"`.
 - Put a new method of `comments/v1` in the `Comments` interface and in
   `commentsMethods` of `src/contracts/index.ts`, and implement it in
-  `commentsService` of `src/host/comments.ts`; expose it with `expose:
+  `createCommentsHost` of `src/host/service.ts`; expose it with `expose:
 'desktop'` only when a window calls it, and add each scope key a window
   sends to `desktopScope` of [`manifest.json`](manifest.json).
-- Register each new event in `activate` of `src/host/index.ts` next to the
+- Register each new event in `registerCommentEvents` of `src/host/routed.ts`
+  next to the
   two existing events.
 - Put a new tool in its own file under `src/host/tools/`, written with
-  `defineTool` from `tool`, and register it in `activate` of
-  `src/host/index.ts` through `tools/v1` with `alwaysAvailable: true` and an
+  `defineTool` from `tool`, and register it in
+  `createCommentsHost` of `src/host/service.ts` through `tools/v1` with `alwaysAvailable: true` and an
   `order` exported as a constant from its own file, as `COMMENT_REPLY_ORDER`
   is, that no other registered tool uses.
 - Add the test of each change in the same change to
-  [`tests/comments.test.ts`](tests/comments.test.ts), through
-  `commentsHarness` of [`tests/support/harness.ts`](tests/support/harness.ts).
+  [`tests/router.test.ts`](tests/router.test.ts), through
+  [`tests/support/router.ts`](tests/support/router.ts).
   When the change calls a method of another contract that the harness does
   not fake, add that method to the harness's fake, writing to or reading from
   its shared log.

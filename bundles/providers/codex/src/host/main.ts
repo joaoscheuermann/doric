@@ -1,7 +1,6 @@
 // `codex`'s host part as a process (spec `docs/designs/grpc-processes.md`,
 // "Model providers"; phase 3, slice S43): `models.provider/v1` through the
-// router. Built into `dist/host/main.mjs`; the running host keeps the kernel
-// entry (`./index.ts`) until the switch, slice S62.
+// router. Built into `dist/host/main.mjs`.
 
 import { ContractError } from 'bundle/contracts';
 import { ProviderService } from 'bundle/contracts/gen/doric/models/provider/v1/provider_pb.js';
@@ -20,7 +19,10 @@ let logger: Logger | undefined;
 /** The instance's context; the router serves no call before `activate`. */
 const contextOf = (): HostContext => {
   if (context === undefined) {
-    throw new ContractError('unavailable', 'The codex bundle is not active yet.');
+    throw new ContractError(
+      'unavailable',
+      'The codex bundle is not active yet.',
+    );
   }
 
   return context;

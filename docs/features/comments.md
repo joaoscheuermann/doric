@@ -35,7 +35,7 @@ Three bundles carry the feature. [`comments`](../../bundles/features/comments/RE
 
 ### The registry: `comments/v1`
 
-`comments/v1` 1.0.0 is a host service of cardinality `one`, provided by the `comments` bundle (manifest 1.0.0), which requires `events/v1`, `runtime.threads/v1` (`^1.2.0`) and `tools/v1` ([bundles/features/comments/manifest.json](../../bundles/features/comments/manifest.json), [bundles/features/comments/src/contracts/index.ts](../../bundles/features/comments/src/contracts/index.ts), [bundles/features/comments/src/host/index.ts](../../bundles/features/comments/src/host/index.ts)).
+`comments/v1` 1.0.0 is a host service of cardinality `one`, provided by the `comments` bundle (manifest 1.0.0), which requires `events/v1`, `runtime.threads/v1` (`^1.2.0`) and `tools/v1` ([bundles/features/comments/manifest.json](../../bundles/features/comments/manifest.json), [bundles/features/comments/src/contracts/index.ts](../../bundles/features/comments/src/contracts/index.ts), [bundles/features/comments/src/host/service.ts](../../bundles/features/comments/src/host/service.ts)).
 
 - A comment is `{ commentId, target, text, author?, resolved, createdAt, inReplyTo? }`; a target is `{ kind, id, revision?, anchor }` ([bundles/features/comments/src/contracts/index.ts](../../bundles/features/comments/src/contracts/index.ts)).
 - An anchor has one of four forms, each requiring its own field: `source` a `path` (with an optional positive whole `line`), `selector` a `selector`, `point` both `x` and `y`, `range` the selected `text`. Every form may carry any of the other fields as optional: `path`, `line`, `selector`, `x`, `y`, `text`, `label`, `pseudo` (`::before` or `::after`), and the seat fields `turn`, `block`, `at` and `item`. The target and anchor schemas are loose objects: the registry keeps any key a caller adds ([bundles/features/comments/src/contracts/index.ts](../../bundles/features/comments/src/contracts/index.ts)).
@@ -51,7 +51,7 @@ Three bundles carry the feature. [`comments`](../../bundles/features/comments/RE
 | `comments.added/v1`    | `{ commentId, target, text, author?, createdAt?, inReplyTo? }` |
 | `comments.resolved/v1` | `{ commentId, resolved }`                                      |
 
-The bundle registers both events with `events/v1` on activation ([bundles/features/comments/src/host/index.ts](../../bundles/features/comments/src/host/index.ts)). A folded comment's `createdAt` is the payload's, else the log entry's time ([bundles/features/comments/src/host/comments.ts](../../bundles/features/comments/src/host/comments.ts)).
+The bundle registers both events with `events/v1` on activation ([bundles/features/comments/src/host/service.ts](../../bundles/features/comments/src/host/service.ts)). A folded comment's `createdAt` is the payload's, else the log entry's time ([bundles/features/comments/src/host/comments.ts](../../bundles/features/comments/src/host/comments.ts)).
 
 ### How comments reach the agent
 
@@ -77,7 +77,7 @@ The bundle registers both events with `events/v1` on activation ([bundles/featur
 
 ### The `comment_reply` tool
 
-- The `comments` bundle registers `comment_reply` as always available, at the model-visible order 1800, with no skill ([bundles/features/comments/src/host/index.ts](../../bundles/features/comments/src/host/index.ts), [bundles/features/comments/src/host/tools/comment-reply.ts](../../bundles/features/comments/src/host/tools/comment-reply.ts)).
+- The `comments` bundle registers `comment_reply` as always available, at the model-visible order 1800, with no skill ([bundles/features/comments/src/host/service.ts](../../bundles/features/comments/src/host/service.ts), [bundles/features/comments/src/host/tools/comment-reply.ts](../../bundles/features/comments/src/host/tools/comment-reply.ts)).
 - Input `{ comment_id, text, resolve? }`; output `{ commentId, inReplyTo, resolved }`: the reply's id, the root it answers and whether the root is resolved now ([bundles/features/comments/src/host/tools/comment-reply.ts](../../bundles/features/comments/src/host/tools/comment-reply.ts)).
 - The tool looks `comment_id` up in the calling prompt's Thread; an unknown id is `invalid_input`. It writes the answer through `add` with `author: "agent"`, the root's target and `inReplyTo` the root, even when `comment_id` names a reply. With `resolve: true` it also resolves the root ([bundles/features/comments/src/host/tools/comment-reply.ts](../../bundles/features/comments/src/host/tools/comment-reply.ts)).
 
@@ -132,3 +132,7 @@ The bundle registers both events with `events/v1` on activation ([bundles/featur
 - A comment on a papercraft program is drafted with the item kind and target kind `papercraft-program`, the target `{ kind: 'papercraft-program', id: <identity>, revision, anchor }` and `refs: { title: <identity> }`. A click on an element wrapped by a statement anchors with `selector` (the statement's name), `label` (its component, else its tag) and the click's `x` and `y`; otherwise the anchor is `{ form: 'point', x, y }`, with no label, so the envelope gives it no `near` attribute ([bundles/features/papercraft/src/client/anchor.ts](../../bundles/features/papercraft/src/client/anchor.ts), [bundles/features/papercraft/src/client/surface/gestures.ts](../../bundles/features/papercraft/src/client/surface/gestures.ts), [bundles/features/papercraft/src/client/comment.ts](../../bundles/features/papercraft/src/client/comment.ts), [bundles/features/papercraft/src/client/surface/preview-container.tsx](../../bundles/features/papercraft/src/client/surface/preview-container.tsx)).
 - The canvas window, which has no prompt, sends the stack through `chat.send/v1` ([bundles/features/papercraft/src/client/comment.ts](../../bundles/features/papercraft/src/client/comment.ts)).
 - Resolving or reopening a thread from the canvas's thread popover calls `comments/v1.resolve` on the root, in the scope of the prompt the root was written under ([bundles/features/papercraft/src/client/comment.ts](../../bundles/features/papercraft/src/client/comment.ts)).
+
+## Evolution
+
+- 2026-11-26: slice S68a of [the spec](../designs/grpc-processes.md) (version 6.48) deletes the kernel entry `src/host/index.ts` of `comments`; its host part is served only by its process entry `src/host/main.ts`, and its kernel suites are replaced by `tests/router.test.ts` and `tests/host-build.test.ts`. The links above point to the current files.

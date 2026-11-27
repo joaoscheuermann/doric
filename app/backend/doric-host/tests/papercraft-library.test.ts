@@ -57,10 +57,14 @@ const libraryInstruct =
  * A bundles root for PC23: a copy of the staged `dist/bundles` inside
  * `app/backend/doric-host/dist-tests` (so package imports resolve), plus
  * `nodeless-sandbox/` staged as `stage --dev` stages a host part: the
- * fixture's `manifest.json`, `contracts.json`, `package.json`; `schemas/` and
+ * fixture's `manifest.json`, `contracts.json`, `package.json`;
  * `descriptors.binpb` copied from the staged `docker`; the compiled
  * `main.js` copied to `host/main.js`; `host/command.json` =
- * `[process.execPath, <absolute host/main.js>]`. Resolves with the root's
+ * `[process.execPath, <absolute host/main.js>]`. Like the staged `docker`,
+ * whose build gives its served `sandbox/v1` a host entry (`local: false`)
+ * whose `schemas/sandbox/v1.json` is not written, it has no `schemas/`: a
+ * reader treats the missing document as a contract with no JSON Schema and
+ * no `x-doric-expose`. Resolves with the root's
  * path; the caller removes it. Rejects with the file system's error when
  * `dist/bundles` or the compiled fixture is missing (build first).
  */
@@ -75,9 +79,6 @@ const nodelessRoot = async (): Promise<string> => {
     for (const file of ['manifest.json', 'contracts.json', 'package.json']) {
       await cp(join(fixtureSource, file), join(fixture, file));
     }
-    await cp(join(root, 'docker', 'schemas'), join(fixture, 'schemas'), {
-      recursive: true,
-    });
     await cp(
       join(root, 'docker', 'descriptors.binpb'),
       join(fixture, 'descriptors.binpb'),

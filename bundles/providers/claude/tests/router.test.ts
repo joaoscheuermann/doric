@@ -123,8 +123,15 @@ async function* completion(
   };
 }
 
-/** Asserts `promise` failed with a ConnectError of the Doric code `code`. */
-const rejectsWithCode = async (promise: Promise<unknown>, code: string) => {
+/**
+ * Asserts `promise` failed with a ConnectError of the Doric code `code`, and
+ * with a message `message` matches when given.
+ */
+const rejectsWithCode = async (
+  promise: Promise<unknown>,
+  code: string,
+  message?: RegExp,
+) => {
   await assert.rejects(promise, (error: unknown) => {
     assert.ok(
       error instanceof Error && 'findDetails' in error,
@@ -135,6 +142,10 @@ const rejectsWithCode = async (promise: Promise<unknown>, code: string) => {
       code,
       error.message,
     );
+
+    if (message !== undefined) {
+      assert.match(error.message, message);
+    }
 
     return true;
   });
@@ -250,4 +261,132 @@ void test('a target without its required token fails with invalid_input', async 
     client.models({ target: { providerId: 'cl', values: {} } }),
     'invalid_input',
   );
+});
+
+// Ported from the kernel suite `provider.test.ts` (S68a, X3): the behaviours
+// no router case above covered.
+
+void test('Advertised and CatalogCapacity answer that claude is listed and reports catalog capacity', async (t) => {
+  const client = await serve(t, routedTransport({}).transport);
+
+  assert.equal((await client.advertised({})).advertised, true);
+  assert.equal((await client.catalogCapacity({})).catalogCapacity, true);
+});
+
+void test('Catalog is every model the login may call, with the efforts Anthropic lists for each', async (t) => {
+  const effort = (...levels: string[]) => ({
+    supported: levels.length > 0,
+    ...Object.fromEntries(
+      ['low', 'medium', 'high', 'xhigh', 'max'].map((level) => [
+        level,
+        { supported: levels.includes(level) },
+      ]),
+    ),
+  });
+  const { requests, transport } = routedTransport({
+    answer: () => ({
+      body: {
+        data: [
+          {
+            id: 'claude-opus-5-5',
+            display_name: 'Claude Opus 5.5',
+            max_input_tokens: 1_000_000,
+            capabilities: {
+              effort: effort('low', 'medium', 'high', 'xhigh', 'max'),
+            },
+          },
+          {
+            id: 'claude-sonnet-4-6',
+            display_name: 'Claude Sonnet 4.6',
+            capabilities: { effort: effort('low', 'medium', 'high', 'max') },
+          },
+          {
+            id: 'claude-haiku-4-5-20251001',
+            display_name: 'Claude Haiku 4.5',
+            capabilities: { effort: effort() },
+          },
+          // A listing without capabilities falls back to what the id says.
+          { id: 'claude-sonnet-5-5', display_name: 'Claude Sonnet 5.5' },
+        ],
+        has_more: false,
+      },
+    }),
+  });
+  const client = await serve(t, transport);
+
+  const { catalogResult } = await client.catalog({
+    configuration: {},
+    secret: 'Bearer claude-login',
+  });
+
+  assert.equal(requests.length, 1);
+  assert.match(requests[0]?.url ?? '', /\/v1\/models\?/);
+  assert.equal(requests[0]?.headers?.authorization, 'Bearer claude-login');
+  assert.deepEqual(
+    plain(catalogResult),
+    plain({
+      status: 'read',
+      models: [
+        {
+          id: 'claude-opus-5-5',
+          name: 'Claude Opus 5.5',
+          reasonings: ['low', 'medium', 'high', 'xhigh', 'max'],
+          parameters: [],
+          defaultEffort: 'medium',
+          mandatory: false,
+        },
+        {
+          id: 'claude-sonnet-4-6',
+          name: 'Claude Sonnet 4.6',
+          reasonings: ['low', 'medium', 'high', 'max'],
+          parameters: [],
+          defaultEffort: 'high',
+          mandatory: false,
+        },
+        {
+          id: 'claude-haiku-4-5-20251001',
+          name: 'Claude Haiku 4.5',
+          reasonings: [],
+          parameters: [],
+          mandatory: false,
+        },
+        {
+          id: 'claude-sonnet-5-5',
+          name: 'Claude Sonnet 5.5',
+          reasonings: ['low', 'medium', 'high', 'xhigh', 'max'],
+          parameters: [],
+          defaultEffort: 'high',
+          mandatory: false,
+        },
+      ],
+    }),
+  );
+});
+
+void test('a target without a token, or with a blank one, fails with invalid_input naming the token', async (t) => {
+  const client = await serve(t, routedTransport({}).transport);
+
+  const blanks: Record<string, string>[] = [{}, { token: '   ' }];
+
+  for (const values of blanks) {
+    await rejectsWithCode(
+      client.models({ target: { providerId: 'cl', values } }),
+      'invalid_input',
+      /Provider kind claude requires a token value\./,
+    );
+  }
+});
+
+void test('Icons choose Claude for the provider and every model', async (t) => {
+  const client = await serve(t, routedTransport({}).transport);
+
+  const { modelIconChoice } = await client.icons({
+    configuration: {},
+    models: ['a', 'b'],
+  });
+
+  assert.deepEqual(plain(modelIconChoice), {
+    provider: 'claude',
+    models: ['claude', 'claude'],
+  });
 });

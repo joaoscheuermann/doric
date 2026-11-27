@@ -11,8 +11,9 @@ import { buildBundle } from 'bundle';
 // `buildBundle` bundles `src/host/main.ts` into one `dist/host/main.mjs`,
 // which imports `createToolHandlers` and `runBundle` from `bundle/host` and
 // lists `tools/v1`'s `ToolHandlerService` as the static
-// `[Service, implementation]` literal the build reads. The kernel entry, the
-// client entry and the manifest stay as they were until S62.
+// `[Service, implementation]` literal the build reads. The client entry and
+// the manifest stay as they were; the kernel entry `dist/host/index.js` is
+// gone since S68a.
 //
 // `buildBundle` rewrites `dist/`, which other test files read while they
 // run, so this file builds a copy of the bundle inside the package, where
@@ -100,7 +101,7 @@ const runWithoutSpawnEnvironment = (
     );
   });
 
-void test('B3: the build bundles threads’ host part into a runnable main.mjs and keeps the kernel entry, the client entry and the manifest', async (t) => {
+void test('B3: the build bundles threads’ host part into a runnable main.mjs and keeps the client entry and the manifest', async (t) => {
   const copy = await copyBundle();
 
   t.after(() => rm(copy, { recursive: true, force: true }));
@@ -110,9 +111,10 @@ void test('B3: the build bundles threads’ host part into a runnable main.mjs a
   const main = join(copy, 'dist', 'host', 'main.mjs');
 
   assert.ok((await stat(main)).size > 0, 'dist/host/main.mjs is empty');
-  assert.ok(
-    (await stat(join(copy, 'dist', 'host', 'index.js'))).size > 0,
-    'the kernel entry dist/host/index.js is gone',
+  await assert.rejects(
+    stat(join(copy, 'dist', 'host', 'index.js')),
+    { code: 'ENOENT' },
+    'the kernel entry dist/host/index.js still exists',
   );
   assert.ok(
     (await stat(join(copy, 'dist', 'client', 'index.js'))).size > 0,

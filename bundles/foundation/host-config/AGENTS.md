@@ -22,7 +22,7 @@ it.
   [credentials](../../../docs/features/credentials.md) for how the
   configuration and its credentials behave across bundles.
 - Put new code only in `src/host/` and `src/contracts/`, and only re-exports in
-  `src/kernel.ts` and `src/testing.ts`.
+  `src/testing.ts`.
 - Never add a desktop or client part: drawing the configuration belongs to the
   bundle that draws settings, which reaches this bundle only through
   `host-config/v1`.
@@ -67,19 +67,16 @@ it.
   `app/backend/doric-host/tests/persistence.test.ts` asserts they are equal.
 - When [`bundles/AGENTS.md`](../../AGENTS.md) requires raising the version of
   `host-config/v1` or `host-config.configuration/v1`, raise both to the same
-  version, in both `provides` entries of [`manifest.json`](manifest.json) and
-  in the one `contractVersion` constant of `src/host/configuration.ts`, which
-  versions both in the embedded manifest and descriptor.
-- Keep the `provides` and `requires` of the embedded manifest in
-  `createHostConfig` (`src/host/configuration.ts`) equal to those of
-  [`manifest.json`](manifest.json).
+  version, in both `provides` entries of [`manifest.json`](manifest.json) (the
+  `contractVersion` constant that versioned the embedded manifest left with
+  `createHostConfig` in slice S68a).
 - Add a method to `host-config/v1` in `configurationMethods` of
-  `src/contracts/index.ts` and in the `defineService` call of
-  `src/host/configuration.ts`; give it `expose: 'desktop'` only when a window
+  `src/contracts/index.ts` and in `HostConfigService` of
+  `src/host/service.ts`; give it `expose: 'desktop'` only when a window
   calls it.
-- Export from `src/kernel.ts` only what a kernel or test composition needs to
-  embed the bundle, and from `src/testing.ts` only seams the host's tests and
-  this bundle's tests drive.
+- Export from `src/testing.ts` only seams the host's tests and this bundle's
+  tests drive; `src/kernel.ts` was deleted in slice S68a, so add no kernel
+  entry.
 - Before adding an exception for this bundle, open
   [`tests/boundary-exceptions.json`](../../../tests/boundary-exceptions.json)
   and search it for `"bundle": "host-config"`.
@@ -93,12 +90,12 @@ it.
   body that carries the key, then read it back with `current()` from a new
   service, since a fake store never runs `fromSettings`, where a key is lost.
 - Test a change to activation, the reference source or the start step in
-  `app/backend/doric-host/tests/`, which boots `createHostConfig` in a host.
-- After a change to `src/host/configuration.ts`, `src/kernel.ts`,
+  `app/backend/doric-host/tests/`, which boots the bundle in a host.
+- After a change to `src/host/configuration.ts`, `src/host/service.ts`,
   `src/testing.ts` or a signature they export, run `npx nx run doric-host:test`
   with `DORIC_TEST_DATABASE_URL` set to a test database, since these tests skip
   without it, and `npx nx run doric-host-e2e:typecheck`; their tests import
-  `host-config/kernel` and `host-config/testing`.
+  `host-config/testing`.
 - Update [`README.md`](README.md) in every change to a contract, a
   configuration key or rule, the `replace` pipeline, storage or the start step,
   and update the feature doc [settings](../../../docs/features/settings.md) for

@@ -14,13 +14,7 @@
 
 import { randomUUID } from 'node:crypto';
 
-import {
-  type Call,
-  ContractError,
-  defineMethod,
-  defineService,
-  type Services,
-} from 'bundle/contracts';
+import { type Call, ContractError } from 'bundle/contracts';
 import type { ThreadEvent } from 'runtime/contracts';
 
 import {
@@ -30,16 +24,14 @@ import {
   type CommentAnchor,
   type CommentListInput,
   type CommentResolveInput,
-  CommentsV1,
   type CommentTarget,
   type CommentTargetKey,
   commentsAddedEvent,
   commentsAddedOf,
-  commentsMethods,
   commentsResolvedEvent,
   commentsResolvedOf,
 } from '../contracts/index.js';
-import { type CommentsPorts, kernelCommentsPorts } from './ports.js';
+import type { CommentsPorts } from './ports.js';
 
 /** A record without the keys whose value is `undefined`: absent means absent. */
 const definedFields = <T extends object>(value: T): T =>
@@ -347,7 +339,7 @@ export const findComment = async (
 };
 
 /**
- * `comments/v1.list` (moved out of `commentsService`): the comments of the
+ * `comments/v1.list`: the comments of the
  * call's read scope — the Thread's own when the scope names one, else every
  * Thread of the Project in `projectThreadIds` order, each in log order —
  * whose kind is `input.kind` (when given) and whose target's
@@ -364,29 +356,3 @@ export const listComments = async (
       (input.kind === undefined || comment.target.kind === input.kind) &&
       (input.target === undefined || sameTarget(comment.target, input.target)),
   );
-
-export const commentsService = () =>
-  defineService(CommentsV1, {
-    add: defineMethod({
-      expose: 'desktop',
-      ...commentsMethods.add,
-      execute: (input: CommentAddInput, call: Call, services: Services) =>
-        addComment(kernelCommentsPorts(services), call, input),
-    }),
-    list: defineMethod({
-      expose: 'desktop',
-      ...commentsMethods.list,
-      execute: (
-        input: CommentListInput,
-        call: Call,
-        services: Services,
-      ): Promise<readonly Comment[]> =>
-        listComments(kernelCommentsPorts(services), call, input),
-    }),
-    resolve: defineMethod({
-      expose: 'desktop',
-      ...commentsMethods.resolve,
-      execute: (input: CommentResolveInput, call: Call, services: Services) =>
-        resolveComment(kernelCommentsPorts(services), call, input),
-    }),
-  });

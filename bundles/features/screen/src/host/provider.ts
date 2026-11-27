@@ -8,19 +8,14 @@
 // answer, and a session that cannot be served reports why instead of failing
 // the bridge call.
 
-import type { Log } from 'bundle/contracts';
-import { type Call, defineMethod, defineService } from 'bundle/contracts';
-import { type LeaseOutcome, RuntimeLeaseV1 } from 'runtime/contracts';
+import type { Call, Log } from 'bundle/contracts';
+import type { LeaseOutcome } from 'runtime/contracts';
 import type {
   ScreenRelayExpose,
   ScreenRelayForget,
 } from 'screen-relay/contracts';
 
-import {
-  type ScreenAttach,
-  ScreenSessionsV2,
-  screenSessionsMethods,
-} from '../contracts/index.js';
+import type { ScreenAttach } from '../contracts/index.js';
 import {
   createScreenSessionManager,
   type ScreenSandbox,
@@ -35,7 +30,6 @@ import {
  * sandbox, never acquiring one, and answers `{ status: 'ready', value }`, or
  * the non-ready outcome without running (or while running) the task. A
  * failure of `task` other than a lease outcome rejects with it.
- * `RuntimeLease` (kernel, `runtime/contracts`) is assignable to it unchanged.
  */
 export interface ScreenLease {
   withLease<T>(
@@ -47,7 +41,7 @@ export interface ScreenLease {
 /**
  * Where sessions are published: `expose` resolves once the relay serves the
  * token, `forget` once it dropped it; both reject with the relay's failure.
- * The kernel's `ScreenRelay` and the router's `trackedRelay` are both one.
+ * The router's `trackedRelay` is one.
  */
 export interface ScreenRelayPublisher {
   expose(input: ScreenRelayExpose): Promise<unknown>;
@@ -57,7 +51,6 @@ export interface ScreenRelayPublisher {
 /** One `attach` request as the provider receives it. */
 export interface ScreenAttachInput {
   readonly projectId: string;
-  /** Was `RuntimeLease`; widened to what the sessions use. */
   readonly lease: ScreenLease;
   readonly call?: Call;
 }
@@ -174,18 +167,3 @@ export const createScreenSessions = (
     },
   };
 };
-
-/** The `screen.sessions/v2` definition over one sessions owner. */
-export const screenSessionsService = (sessions: ScreenSessions) =>
-  defineService(ScreenSessionsV2, {
-    attach: defineMethod({
-      expose: 'desktop',
-      ...screenSessionsMethods.attach,
-      execute: (projectId: string, call: Call, services) =>
-        sessions.attach({
-          projectId,
-          lease: services.use(RuntimeLeaseV1, call.scope),
-          call,
-        }),
-    }),
-  });

@@ -98,14 +98,14 @@ instead of becoming `claude_login_failed`, and so does an error of
 
 ## Host part
 
-[`src/host/index.ts`](src/host/index.ts) exports `activate`, which provides
-`claude.login/v1` and returns a cleanup that cancels a sign-in still waiting.
-It also exports `createActivate(options?: LoginBundleOptions)`, the same
-activation with injected seams, where
-`LoginBundleOptions = { deps?: ClaudeLoginDeps }` and every member of
-`ClaudeLoginDeps` is optional and defaults to the real piece of the
-[`oauth`](../../../packages/oauth/README.md) package, so tests inject fakes
-([`src/host/login.ts`](src/host/login.ts)):
+The host part runs as a process ([`src/host/main.ts`](src/host/main.ts),
+[Process entry](#process-entry-s50b)); its kernel entry `src/host/index.ts`,
+with `activate`, `createActivate` and the kernel `loginService`, was deleted
+in slice S68a. The sign-in logic is `createLoginSessions(deps)`, which
+`createClaudeLoginService` ([`src/host/rpc/login.ts`](src/host/rpc/login.ts))
+serves; every member of `ClaudeLoginDeps` is optional and defaults to the real
+piece of the [`oauth`](../../../packages/oauth/README.md) package, so tests
+inject fakes ([`src/host/login.ts`](src/host/login.ts)):
 
 ```ts
 interface ClaudeLoginDeps {
@@ -189,8 +189,7 @@ The bundle also has a process entry, [`src/host/main.ts`](src/host/main.ts),
 built to `dist/host/main.mjs`, for the bundle-process runtime
 ([bundle processes](../../../docs/features/bundle-processes.md)). It calls
 `runBundle` with `LoginService` (`claude.login/v1`) listed statically. The
-sign-in logic lives in `createLoginSessions`; the kernel `loginService`
-delegates to it, so its behaviour is unchanged.
+sign-in logic lives in `createLoginSessions`.
 
 - Before activation the routed service fails `unavailable` with "The Claude
   sign-in is not ready."; deactivation cancels a waiting sign-in.
@@ -201,7 +200,7 @@ delegates to it, so its behaviour is unchanged.
 - The callback server listens on port 54545, falling back to 54546. `Finish`
   can wait up to 10 minutes; the process transport (S60) must not shorten it.
 
-The kernel entry stays until S62. Since S62c1 the manifest provides
+The kernel entry was deleted in slice S68a. Since S62c1 the manifest provides
 `claude.login/v1@1.1.0`; `secrets/v1` stays required.
 
 ## Client part
@@ -330,11 +329,13 @@ writes `dist/` ([`project.json`](project.json)). `typecheck` runs
 part and `tsc -p tsconfig.client.json` for the client part. `test` compiles the tests
 into `dist-tests/` and runs them with `node --test`:
 
-- [`tests/login.test.ts`](tests/login.test.ts) activates the host part through
-  `createActivate` with fake OAuth seams
-  ([`tests/support/world.ts`](tests/support/world.ts)) and covers each answer
+- [`tests/router.test.ts`](tests/router.test.ts) serves `LoginService` on a
+  test router with fake OAuth seams and a recording `secrets/v1`
+  ([`tests/support/router.ts`](tests/support/router.ts)) and covers each answer
   and each refusal of `finish`, the replacement of a waiting sign-in, the
   fallback port, the timeout and deactivation.
+- [`tests/host-build.test.ts`](tests/host-build.test.ts) builds the host part
+  and checks that no `dist/host/index.js` exists.
 - [`tests/manifest.test.ts`](tests/manifest.test.ts) checks the manifest's
   version, engine range, `provides` and `requires`.
 - [`tests/client/`](tests/client/) runs in a `happy-dom` window, with

@@ -13,18 +13,7 @@
 // closed however the sign-in ends, and the authorization value is never
 // logged anywhere.
 
-import {
-  type Call,
-  type Cleanup,
-  ContractError,
-  type CredentialUpdate,
-  type CredentialWrite,
-  defineMethod,
-  defineService,
-  isContractError,
-  SecretsV1,
-  type Services,
-} from 'bundle/contracts';
+import { ContractError, isContractError } from 'bundle/contracts';
 import {
   CLAUDE_OAUTH_CALLBACK_HOST,
   CLAUDE_OAUTH_CALLBACK_PATH,
@@ -42,11 +31,7 @@ import {
   type OAuthTransport,
 } from 'oauth';
 
-import {
-  type ClaudeLoginStart,
-  ClaudeLoginV1,
-  claudeLoginMethods,
-} from '../contracts/index.js';
+import type { ClaudeLoginStart } from '../contracts/index.js';
 
 /** The name the authorization is stored under: the settings list shows it. */
 export const CLAUDE_CREDENTIAL_NAME = 'Claude';
@@ -205,45 +190,8 @@ const begin = async (
 };
 
 /**
- * Stores the authorization as the `API_TOKEN` credential named `Claude`, or
- * replaces the secret of the same-name `API_TOKEN` credential when one is
- * already stored. The value itself is only ever passed into `secrets/v1`;
- * nothing here logs it.
- */
-const storeAuthorization = async (
-  services: Services,
-  call: Call,
-  authorization: string,
-): Promise<CredentialWrite> => {
-  const secrets = services.use(SecretsV1);
-  try {
-    return await secrets.create(
-      {
-        kind: 'API_TOKEN',
-        name: CLAUDE_CREDENTIAL_NAME,
-        secret: authorization,
-      },
-      call,
-    );
-  } catch (error) {
-    if (!isContractError(error) || error.code !== 'credential_name_taken') {
-      throw error;
-    }
-    const listed = await secrets.list(call);
-    const existing = listed.find(
-      (credential) =>
-        credential.kind === 'API_TOKEN' &&
-        credential.name === CLAUDE_CREDENTIAL_NAME,
-    );
-    if (existing === undefined) throw error;
-    const update: CredentialUpdate = { secret: authorization };
-    return secrets.update({ id: existing.id }, update, call);
-  }
-};
-
-/**
- * One Claude sign-in at a time, shared by the kernel service and the routed
- * one. No I/O until `start`.
+ * One Claude sign-in at a time, which the routed service drives. No I/O
+ * until `start`.
  */
 export interface ClaudeLoginSessions {
   /**
@@ -363,34 +311,4 @@ export const createLoginSessions = (
       if (pending !== undefined) cancelSession(pending);
     },
   };
-};
-
-/**
- * The `claude.login/v1` service and the cleanup that cancels a waiting
- * sign-in when the bundle deactivates. The waiting sign-in lives in this
- * factory, so each activation gets its own.
- */
-export const loginService = (deps: ClaudeLoginDeps = {}) => {
-  const sessions = createLoginSessions(deps);
-
-  const service = defineService(ClaudeLoginV1, {
-    start: defineMethod({
-      expose: 'desktop',
-      ...claudeLoginMethods.start,
-      execute: (_input: readonly [], call: Call): Promise<ClaudeLoginStart> =>
-        sessions.start(call.signal),
-    }),
-    finish: defineMethod({
-      expose: 'desktop',
-      ...claudeLoginMethods.finish,
-      execute: (_input: readonly [], call: Call, services) =>
-        sessions.finish(call.signal, (authorization) =>
-          storeAuthorization(services, call, authorization),
-        ),
-    }),
-  });
-
-  const cleanup: Cleanup = () => sessions.cancel();
-
-  return { service, cleanup };
 };

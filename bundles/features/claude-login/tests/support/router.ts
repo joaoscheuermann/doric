@@ -24,6 +24,7 @@ import {
   createClaudeOAuth,
   createLocalCallbackServer,
   type LocalCallbackServerOptions,
+  type OAuthHttpRequest,
   type OAuthTransport,
 } from 'oauth';
 
@@ -193,20 +194,30 @@ export const harness = async (
   };
 };
 
-/** A token endpoint that answers every exchange with the given access token. */
+/**
+ * A token endpoint that answers every exchange with the given access token,
+ * recording each exchange request in `exchanges`.
+ */
 export const tokenEndpoint =
-  (accessToken: string): (() => OAuthTransport) =>
+  (
+    accessToken: string,
+    exchanges: OAuthHttpRequest[] = [],
+  ): (() => OAuthTransport) =>
   () => ({
-    request: async () => ({
-      status: 200,
-      headers: {},
-      body: JSON.stringify({
-        access_token: accessToken,
-        refresh_token: 'refresh',
-        token_type: 'Bearer',
-        expires_in: 31536000,
-      }),
-    }),
+    request: async (request) => {
+      exchanges.push(request);
+
+      return {
+        status: 200,
+        headers: {},
+        body: JSON.stringify({
+          access_token: accessToken,
+          refresh_token: 'refresh',
+          token_type: 'Bearer',
+          expires_in: 31536000,
+        }),
+      };
+    },
   });
 
 /** The real callback server on a free port, recording the options asked for. */

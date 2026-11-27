@@ -41,7 +41,8 @@ Parts: `src/contracts/` (exported as `usage/contracts`), `src/host/` and
 Declared in [`src/contracts/index.ts`](src/contracts/index.ts) as `UsageV1`
 (`ref<Usage>('usage/v1')`), with the method schemas `usageMethods`. Provided
 by the host part ([`src/host/usage.ts`](src/host/usage.ts)). Every method is
-defined with `expose: 'desktop'`, so a desktop window may call each of them
+given the `EXPOSE_DESKTOP` method option in
+[`proto/doric/usage/v1/usage.proto`](proto/doric/usage/v1/usage.proto), so a desktop window may call each of them
 ([contracts](../../../docs/architecture/bundles/contracts.md)).
 
 | Method                                     | Input (schema)                                | Output (schema)                                             |
@@ -129,7 +130,7 @@ type CompactResult =
   `execution.contextCompaction.pressurePercent`, or `80`, the
   `pressurePercent` of `defaultContextCompaction` from `host-config/contracts`,
   when the configuration has no `contextCompaction` section
-  ([`src/host/usage.ts`](src/host/usage.ts), `compactionTargetOf`).
+  ([`src/host/rpc/usage.ts`](src/host/rpc/usage.ts)).
 - `setCompactionTarget({ pressurePercent })` reads the configuration in
   force and calls `host-config/v1.replace` with the same configuration, its
   `execution.contextCompaction` section (or `defaultContextCompaction` when
@@ -177,9 +178,11 @@ workspace's contracts module ([`src/client/api/workspace.ts`](src/client/api/wor
 
 ## Host part
 
-[`src/host/index.ts`](src/host/index.ts): `activate` provides `usageService`,
-the `usage/v1` service of [`src/host/usage.ts`](src/host/usage.ts). The part
-keeps no state.
+The host part runs as a process (below); its kernel entry `src/host/index.ts`,
+with `activate`, `usageService` and `compactionTargetOf`, was deleted in slice
+S68a. The service is `createUsageService` of
+[`src/host/rpc/usage.ts`](src/host/rpc/usage.ts), with `withContextCapacity`
+of [`src/host/usage.ts`](src/host/usage.ts). The part keeps no state.
 
 ### Process entry (S50c)
 
@@ -200,8 +203,8 @@ codes.
   value on `replaced` and the previous one on `invalid` or `rejected`; a
   `host-config/v1` answer without a configuration fails `invalid_output`.
 
-The `usage/v1` proto header says version 1.1.0. The kernel entry stays
-until S62; since S62c1 the manifest provides `usage/v1@1.1.0`.
+The `usage/v1` proto header says version 1.1.0. The kernel entry was
+deleted in slice S68a; since S62c1 the manifest provides `usage/v1@1.1.0`.
 
 ## Client part
 
@@ -382,8 +385,9 @@ The client keeps the usage only in its query cache.
 - `test` compiles [`tsconfig.spec.json`](tsconfig.spec.json), which covers
   `src/host/`, `src/contracts/`, `src/client/domain/` and `tests/`, into
   `dist-tests/`, and runs `dist-tests/tests/*.test.js` with `node --test`:
-  [`tests/usage-service.test.ts`](tests/usage-service.test.ts) (the host
-  service), [`tests/read.test.ts`](tests/read.test.ts) (the client calls and
+  [`tests/router.test.ts`](tests/router.test.ts) (the host service through
+  the router), [`tests/host-build.test.ts`](tests/host-build.test.ts) (the
+  build, with no `dist/host/index.js`), [`tests/read.test.ts`](tests/read.test.ts) (the client calls and
   their errors), [`tests/usage.test.ts`](tests/usage.test.ts) (labels and
   breakdown) and [`tests/workspace-sheet.test.ts`](tests/workspace-sheet.test.ts)
   (the stylesheet scans the workspace client sources once, and the manifest

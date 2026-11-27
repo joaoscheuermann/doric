@@ -46,9 +46,8 @@ to its own provider bundle.
 - When the descriptor's fields or text change, update
   [`tests/fixtures/provider-kind.json`](tests/fixtures/provider-kind.json) in
   the same change.
-- Add a test of a record method to `tests/provider.test.ts` through
-  `providerWorld` and a recording or failing transport from
-  `tests/support/world.ts`, and never let a test reach the network.
+- Add a test of a record method to `tests/router.test.ts`, through the router
+  and a recording or failing transport, and never let a test reach the network.
 - When the manifest's `version` or `provides` changes, update
   `tests/manifest.test.ts` in the same change.
 - Declare every contract the bundle uses in [`manifest.json`](manifest.json),
@@ -76,8 +75,8 @@ to its own provider bundle.
   `tests/`, or to `manifest.json`, and run the tests only through this target.
 - `npx nx run bundle-claude:build`: run it after any change under `src/`, or
   to `manifest.json`, `package.json` or `tsconfig.json`, since only the build
-  dry-activates the host part and checks what it provides against the
-  manifest.
+  validates the manifest and writes `dist/`; the host part has no
+  `dist/host/index.js` and is not dry-activated.
 
 ## Generated files
 
