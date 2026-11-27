@@ -1,6 +1,8 @@
 # Feature: bundle processes
 
-- Status: `accepted` (phases 0–2 built; phase 3 in progress; phases 4–8 to come)
+- Status: `accepted` (phases 0–2 built; phase 3 built apart from the owner's
+  runs of T8, AC3.6 and the host and desktop end-to-end tests on `postgres`,
+  see "Phase 3: what is still open"; phases 4–8 to come)
 
 ## Problem
 
@@ -102,16 +104,19 @@ generation process (158.4 MiB).
 
 ### RK1
 
-| Measure           |     Value |
-| ----------------- | --------: |
-| Mean SEA RSS      | 103.2 MiB |
-| Mean SEA RSS × 26 | 2,682 MiB |
-| Ceiling: 2.75 GiB | 2,816 MiB |
+| Measure                          |     Value |
+| -------------------------------- | --------: |
+| Mean SEA RSS                     | 103.2 MiB |
+| Mean SEA RSS × 26                | 2,682 MiB |
+| Ceiling (A55, phase 0): 2.75 GiB | 2,816 MiB |
 
 The projected 26 processes take 2,682 MiB idle, 7.3 times today's two. The
 owner set RK1's ceiling at 2.75 GiB idle, measured as mean SEA RSS × 26 (spec
 A55), replacing the earlier bounds of 2 GiB and 3 × today's; the measurement
-passes it.
+passes it. Phase 3 measured the composition itself at 3,161 MiB, over that
+ceiling, and the owner raised it to 4 GiB (4,096 MiB) idle for the shipped
+composition, for phase 3 (AC3.16) and phase 7 (AC7.4) alike, with no bound
+relative to today's (spec A74; "Phase 3: memory (AC3.16, RK1)" below).
 
 ### The codec benchmark (AC0.4)
 
@@ -169,6 +174,255 @@ bounds those two.
 
 The gates, RK1's ceiling and the codec rule, are met on arm64 only. The x64
 numbers come from the CI job `sea-spike` and are not recorded yet.
+
+## Phase 3: measurements
+
+Slice S71 measured phase 3 on one x64 machine, not phase 0's arm64 machine: a
+Debian 12 container on WSL2 (Linux 6.18.58.1), AMD Ryzen 9 3900X, 24 CPUs,
+32 GiB, Node v26.13.1. It ran today's host (`4677b54c`) and the branch after
+S70 (`cf60c521`) with the shipped composition idle (no Project, no window),
+load average 0.6 to 0.9 before each run, five runs each, 5 s apart. The
+database is PostgreSQL 18.4 in the sandbox's container
+`doric-sandbox-postgres-1`, with the databases `doric_main` (today's host) and
+`doric_grpc` (the branch), per spec A73; A73 names `127.0.0.1:5432`, but the
+sandbox is itself a container, so the runs reached it at `172.18.0.2:5432`. The
+branch's bundles are staged with `stage --dev`, so each bundle process is
+`node <bundle>/dist/host/main.mjs`, not an SEA. The probes wrote their per-run
+results to a scratch file outside the repository
+(`/workspace/.tools/probes-s71/results.json`); its numbers are transcribed in
+the tables below, which are the record.
+
+### Phase 3: boot time (AC3.7, RK2)
+
+Boot is the time from the host's spawn to its log record `Doric listening`.
+
+| Host                    |   Median |          Range | Runs                              |
+| ----------------------- | -------: | -------------: | --------------------------------- |
+| Today's (`4677b54c`)    | 2,063 ms | 1,916–2,142 ms | 2,063, 1,916, 2,142, 2,132, 1,990 |
+| The branch (`cf60c521`) | 2,100 ms | 2,087–2,178 ms | 2,165, 2,100, 2,087, 2,178, 2,095 |
+
+The branch boots in 1.02 times today's time, under RK2's limit of twice
+today's (4,126 ms), so RK2 passes. Per bundle (the table under "Phase 3:
+memory"), spawn to Hello is the bundle process's time from its start to its
+first `doric.platform.v1.BundleHostService/Connect` request, a lower bound of
+its Hello, read by a `NODE_OPTIONS=--import` hook the bundle processes inherit
+from the host (`packages/bundle/src/platform/supervisor/spawn.ts:33-51`); host
+spawn to Hello counts from the host's spawn to the same request. `Activate` to
+`ActivateResult` is each bundle's `activation_ms` from
+`doric.diagnostics/v1.Get`, read over the router port, since the gateway does
+not serve that service (`packages/bundle/src/platform/gateway/handler.ts:83-84`).
+Over every bundle's five runs, spawn to Hello ran 246–714 ms (the slowest
+`runtime`), host spawn to Hello 1,038–1,442 ms, and activation 2–232 ms (the
+slowest `core`). The slowest Hello (714 ms) and activation (232 ms) stay far
+under half of the 10 s and 60 s timeouts
+(`packages/bundle/src/platform/supervisor/timings.ts:55,57`), so no timing
+becomes configurable.
+
+### Phase 3: memory (AC3.16, RK1)
+
+RSS is `VmRSS` of the host and every descendant process 60 s after
+`Doric listening`, the median of the five runs above.
+
+| Process             | Today's (`4677b54c`) | The branch (`cf60c521`) |
+| ------------------- | -------------------: | ----------------------: |
+| Host                |            228.2 MiB |               191.5 MiB |
+| Generation process  |            187.8 MiB |                       – |
+| 26 bundle processes |                    – |               3,161 MiB |
+| Total               |            416.0 MiB |               3,352 MiB |
+
+The 26 bundle processes take 3,161 MiB (3,150.7–3,180.9 MiB over the five
+runs), a mean of 121.6 MiB, and the whole branch 8.06 times today's two
+processes. Against phase 0's projection (mean SEA RSS × 26, 2,682 MiB) the
+bundle processes take 479 MiB more. The gap is not attributable to activation
+alone: phase 0 measured SEAs on arm64 that did not run `activate`, phase 3
+`node main.mjs` processes on x64 that did. RK1 failed A55's ceiling of
+2,816 MiB by 345 MiB; the owner raised it to 4,096 MiB (A74), under which it
+passes, 935 MiB under. One branch run without the hook (and without the
+activation call) measured 3,164.5 MiB for the bundle processes, so the hook
+does not move the memory; that run's boot, 2,323 ms, lies outside the hooked
+runs' range (2,087–2,178 ms), and one run does not tell whether the hook moves
+the boot.
+
+| Bundle         |  Idle RSS |   RSS range | Spawn to Hello | Host spawn to Hello | Activate to ActivateResult |
+| -------------- | --------: | ----------: | -------------: | ------------------: | -------------------------: |
+| `chat`         | 102.8 MiB | 102.4–102.9 |         505 ms |            1,145 ms |                       3 ms |
+| `claude`       | 110.6 MiB | 107.6–113.1 |         492 ms |            1,107 ms |                       8 ms |
+| `claude-login` | 101.7 MiB | 101.6–102.4 |         448 ms |            1,065 ms |                       9 ms |
+| `codex`        | 109.8 MiB | 108.1–112.5 |         482 ms |            1,124 ms |                       9 ms |
+| `comments`     | 121.2 MiB | 119.6–121.5 |         587 ms |            1,227 ms |                      47 ms |
+| `core`         | 158.6 MiB | 154.9–171.1 |         506 ms |            1,118 ms |                     136 ms |
+| `default`      | 131.8 MiB | 131.6–136.3 |         589 ms |            1,235 ms |                      59 ms |
+| `docker`       | 123.1 MiB | 120.2–124.0 |         591 ms |            1,220 ms |                      92 ms |
+| `files`        | 127.4 MiB | 126.2–129.9 |         571 ms |            1,223 ms |                     146 ms |
+| `git`          | 128.5 MiB | 126.6–129.1 |         587 ms |            1,241 ms |                      96 ms |
+| `host-config`  | 109.0 MiB | 107.8–109.7 |         472 ms |            1,098 ms |                     106 ms |
+| `mcp`          | 139.7 MiB | 139.1–142.8 |         662 ms |            1,320 ms |                      67 ms |
+| `openai`       | 111.8 MiB | 111.7–112.3 |         487 ms |            1,119 ms |                       8 ms |
+| `openrouter`   | 110.7 MiB | 108.5–113.3 |         512 ms |            1,144 ms |                       9 ms |
+| `openui`       | 124.7 MiB | 123.5–124.7 |         577 ms |            1,244 ms |                      57 ms |
+| `papercraft`   | 127.0 MiB | 124.2–127.7 |         562 ms |            1,229 ms |                      31 ms |
+| `postgres`     | 172.4 MiB | 165.0–173.2 |         585 ms |            1,194 ms |                      15 ms |
+| `resources`    | 107.1 MiB | 106.8–107.8 |         471 ms |            1,149 ms |                       5 ms |
+| `runtime`      | 139.2 MiB | 138.7–139.5 |         662 ms |            1,299 ms |                     195 ms |
+| `screen`       | 107.6 MiB | 107.1–108.3 |         495 ms |            1,220 ms |                       7 ms |
+| `screen-relay` | 103.0 MiB | 102.2–103.6 |         576 ms |            1,257 ms |                      13 ms |
+| `terminal`     | 122.1 MiB | 121.6–124.9 |         548 ms |            1,288 ms |                      42 ms |
+| `threads`      | 123.4 MiB | 122.5–124.1 |         561 ms |            1,305 ms |                     109 ms |
+| `transport`    | 133.7 MiB | 132.6–134.4 |         596 ms |            1,374 ms |                      20 ms |
+| `usage`        | 109.6 MiB | 108.7–111.8 |         303 ms |            1,410 ms |                       6 ms |
+| `web`          | 104.4 MiB | 103.0–104.9 |         262 ms |            1,419 ms |                     108 ms |
+
+Each cell is the median of five runs (RSS ranges in MiB). Both Hello columns
+run to the bundle process's first `BundleHostService/Connect` request, a lower
+bound of its Hello.
+
+### Phase 3: what is still open
+
+Phase 3 ends when its "Ends with" in the spec's Phases table and AC3.1–AC3.16
+hold. RK1's gate (AC3.16) and RK2's (AC3.7) pass; phase 3 is not complete.
+Still open, each a run for the owner:
+
+- T8 (RK18, RK31), below.
+- AC3.6 (RK6): a TCP connection from inside a Docker sandbox and from inside a
+  Firecracker sandbox to the router port fails. No revision of the spec
+  records it met and no test covers it; it needs the sandboxes.
+- The host and desktop end-to-end tests, green on `postgres` (phase 3's end
+  condition).
+
+### Phase 3: T8, for the owner to run (RK18, RK31)
+
+T8 moved from slice S62d4 to S71. It needs the Docker sandbox with `nft` and
+`CAP_NET_ADMIN`, a Docker-sandbox Project and a host that can reach the Docker
+daemon, so the owner runs it. S71 wrote this procedure and ran only its
+restage.
+
+What it records:
+
+- **RK18.** A terminal opened with `doric.terminal.v1.TerminalService/Create`
+  (the branch has no `TerminalService.Start`), whose PTY runs over a
+  `sandbox/v1.Start` stream through `runtime` to `docker`, while `runtime`
+  drains. Record when `runtime`'s old generation stops and when the terminal's
+  stream ends, against the time of the reset and the 10-minute drain deadline
+  (`drainDeadlineMs`, `packages/bundle/src/platform/supervisor/timings.ts:66`).
+  Expected per RK18: the stream ends, and the old generation stops, at the
+  reset plus 10 minutes, unless the terminal ends first.
+- **RK31.** An `mcp` stdio server connected while `mcp` changes generation.
+  Record whether its tools stay listed, when the old `mcp` instance stops, and
+  whether the new instance restarts the server (a new process in the sandbox).
+  Phase 3 has no storage library, so this covers the stdio server only.
+
+Prerequisites: the branch built and staged
+(`app/backend/doric-host/dist/bundles`), Node 26.13.1 on `PATH`, the host's
+database and credential environment as for the S71 runs (not written here),
+and the Docker sandbox. All commands run from the repository root.
+
+**The restage.** The host reads its staged bundles from `DORIC_BUNDLES_PATH`
+(default `app/backend/doric-host/dist/bundles`,
+`app/backend/doric-host/src/lib/bundles/boot.ts:50-62`), and every publish
+reads them again. A bundle moves to a new generation when its signature
+changes, and the signature includes its version
+(`packages/bundle/src/platform/supervisor/publish.ts`, `signatureOf`). So the
+restage works on a scratch copy and never touches the repository's staged
+tree:
+
+1. Copy the staged tree and start the host on the copy:
+
+   ```sh
+   T8=/tmp/t8; mkdir -p "$T8"
+   cp -r app/backend/doric-host/dist/bundles "$T8/bundles"
+   DORIC_HOST=127.0.0.1 DORIC_PORT=3071 DORIC_LOG_FILE="$T8/doric.log" \
+     DORIC_STORAGE_PATH="$T8/storage" DORIC_STATE_DIR="$T8/state" \
+     DORIC_BUNDLES_PATH="$T8/bundles" \
+     node app/backend/doric-host/dist/src/index.js &
+   ```
+
+2. Raise the bundle's patch version in the copy: `version` in
+   `$T8/bundles/<id>/manifest.json` and `bundle.version` in
+   `$T8/bundles/<id>/contracts.json` (`runtime`: 3.0.0 → 3.0.1). The staged
+   `host/command.json` still points to the built `main.mjs`, so the new
+   generation runs the same code under a new version.
+3. Call `doric.platform.catalog.v1.CatalogService/ResetComposition` on the
+   public port (served without authentication, RK11); its publish reads the
+   copy again and drains the bundle's old generation:
+
+   ```sh
+   call() {
+     curl -sS -X POST "http://127.0.0.1:3071/$1" \
+       -H 'content-type: application/json' -H 'connect-protocol-version: 1' \
+       --data "$2"; echo
+   }
+   call doric.platform.catalog.v1.CatalogService/ResetComposition '{}'
+   ```
+
+To time the generations, read each bundle process's `DORIC_BUNDLE_ID` and
+`DORIC_GENERATION` from `/proc/<pid>/environ` of the host's descendants, and
+the host's log (`$T8/doric.log`); note the time of each step.
+
+**RK18, a terminal through a draining `runtime`:**
+
+1. Create a Docker-sandbox Project and a Thread
+   (`doric.api.projects.v1.ProjectsService/CreateProject` with
+   `{"name":"t8"}`, then `CreateThread` with
+   `{"projectId":"<project id>","name":"t8"}`), or create them in the desktop
+   against this host, and wait until the Project's sandbox is up
+   (`GetProject`).
+2. Open the terminal and keep output flowing:
+
+   ```sh
+   call doric.terminal.v1.TerminalService/Create '{"threadId":"<thread id>"}'
+   call doric.terminal.v1.TerminalService/Input \
+     '{"terminalId":"<terminal id>","data":"while :; do date; sleep 5; done\n"}'
+   ```
+
+   If the gateway answers `PERMISSION_DENIED` `undeclared_requirement`, repeat
+   with the header `doric-client-part: terminal` (the desktop part that
+   declares `terminal/v1`).
+
+3. Raise `runtime`'s patch version in the copy and call `ResetComposition`;
+   note the time.
+4. Every 30 s, call `TerminalService/Snapshot` with
+   `{"terminalId":"<terminal id>"}` until the output stops advancing or the
+   session reports it exited, and at least 11 minutes after the reset.
+5. Record the time of the reset, of the stop of `runtime`'s old generation and
+   of the stream's end.
+
+**RK31, an `mcp` stdio server across a generation change:**
+
+1. In the same Project, add a stdio server that lives in the sandbox, for
+   example the reference "everything" server if the sandbox image has `npx`:
+   `doric.mcp.v1.McpService/Create` with
+   `{"mcpServerInput":{"projectId":"<project id>","name":"t8-stdio","enabled":true,"transport":{"stdio":{"command":"npx","args":["-y","@modelcontextprotocol/server-everything"]}}}}`.
+   Watch the Project (`McpService/Watch`, or open it in the desktop) so the
+   server connects; `McpService/List` shows it connected with its tools. Note
+   the server's process in the sandbox
+   (`docker exec <sandbox container> ps -ef`).
+2. Raise `mcp`'s patch version in the copy and call `ResetComposition`; note
+   the time.
+3. Every 15 s for 11 minutes, call `McpService/List` with
+   `{"projectId":"<project id>"}` (tools still listed? state?) and run the
+   `ps` in the sandbox (the same pid, a new one, none?).
+4. Record when `mcp`'s new generation started and its old one stopped,
+   whether the tools stayed listed throughout, and whether and when the stdio
+   process restarted (a new pid).
+
+Cleanup: delete the Project (`ProjectsService/DeleteProject`) if its sandbox
+container should go, then stop the host with `SIGTERM`; the database stays.
+
+**The check already made.** On 2026-11-27 at 15:29 UTC, without a Project and
+without Docker, S71 ran the restage of `runtime` on the branch:
+`ResetComposition` answered `{}` in 0.42 s, `runtime`'s generation 2 (3.0.1)
+was up by the answer, and generation 1 stopped 0.22 s later, with nothing in
+flight to drain. The terminal and `mcp` steps were not run.
+
+**Field names.** The terminal bodies' fields (`threadId`, `terminalId`,
+`data`) match `terminal.proto`'s `CreateRequest`, `InputRequest` and
+`SnapshotRequest`
+(`bundles/features/terminal/proto/doric/terminal/v1/terminal.proto`). The
+field names of the Projects and MCP bodies and the `doric-client-part` retry
+are not verified: check them against `projects.proto` and `mcp.proto`
+(`McpServerInput`) before the run.
+
+T8's results go into this section, beside the S71 measurements above.
 
 ## Current behavior and contracts
 
@@ -2006,3 +2260,16 @@ sandbox pool` then `Sandbox pool configured` with the `logSandboxPool`
   public contract exports without an importer stay (the spec's 6.53 entry
   lists them). Tests: `lint:test` 53 → 48, `test:fake-host` gone, `doric-app`
   241/241.
+- 2026-11-27: phase 3, slice S71, of
+  [the spec](../designs/grpc-processes.md) (version 6.54): phase 3 measured on
+  x64 against today's host on the same machine ("Phase 3: boot time (AC3.7,
+  RK2)" and "Phase 3: memory (AC3.16, RK1)" above); no source file changes.
+  RK2 passes (2,100 ms against 2,063 ms). RK1 failed A55's 2,816 MiB at
+  3,161 MiB, and the owner raised its ceiling to 4,096 MiB idle for phases 3
+  and 7 (A74), under which it passes. Bundle processes inherit the host's
+  environment, so spawn to Hello is measured with a `NODE_OPTIONS` hook and no
+  code (the group F plan's Q-G1). RK1's and RK2's gates (AC3.16, AC3.7) pass;
+  phase 3 is not complete. Still open, as the owner's runs ("Phase 3: what is
+  still open" above): T8 (RK18, RK31), whose procedure is "Phase 3: T8, for the
+  owner to run" above; AC3.6 (RK6), which needs the Docker and Firecracker
+  sandboxes; and the host and desktop end-to-end tests green on `postgres`.
