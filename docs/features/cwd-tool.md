@@ -9,7 +9,7 @@ The Threads of a Project share one sandbox, and each Thread works from its own d
 ## Decisions
 
 - Each Thread has one working directory. A new top-level Thread starts at the workspace root `/workspace`; a child starts where its parent is when it is created.
-- The agent moves the directory with the `cwd` tool, and the reader moves the same Thread's with `PATCH /threads/:id`. Both reach one resolving rule in the runtime, which refuses any path that resolves outside the workspace root.
+- The agent moves the directory with the `cwd` tool, and the reader moves the same Thread's with `ThreadsService.UpdateThread`, which replaced `PATCH /threads/:id` in slice S69. Both reach one resolving rule in the runtime, which refuses any path that resolves outside the workspace root.
 - A relative path a tool is given resolves against the Thread's working directory, the way `cd` resolves one against the current directory.
 - The `cwd` result, not the system prompt, says whether the directory is a repository root; a move into a repository during a run is reported by the same result.
 - The result carries the boolean `repositoryRoot` on every status, and the `note` with one exact text only at a root.
@@ -48,12 +48,15 @@ The flow crosses the `files` bundle ([README](../../bundles/features/files/READM
 
 ### `PATCH /threads/:id`
 
-- `PATCH /threads/:id` ([bundles/foundation/transport/src/host/routes/threads.ts](../../bundles/foundation/transport/src/host/routes/threads.ts)) accepts `cwd` beside `name`, `providerId`, `model` and `effort`. A `cwd` that is blank, longer than 4096 characters or holds a NUL character answers `422 invalid_thread`; the route does not trim it.
+> **2026-11-27, slice S69:** `transport`'s REST routes and Socket.IO namespaces are removed; these operations answer over `doric.api.*` ([`ThreadsService`](../../bundles/foundation/transport/proto/doric/api/threads/v1/threads.proto) `UpdateThread`) with the same refusal codes and messages. The REST wording of this section is rewritten in phase 8 of [the spec](../designs/grpc-processes.md).
+
+- `PATCH /threads/:id` ([bundles/foundation/transport/src/host/api/operations/threads.ts](../../bundles/foundation/transport/src/host/api/operations/threads.ts)) accepts `cwd` beside `name`, `providerId`, `model` and `effort`. A `cwd` that is blank, longer than 4096 characters or holds a NUL character answers `422 invalid_thread`; the route does not trim it.
 - A `name` in the same request is applied first and is kept when the move is then refused or rejects. The move goes through `runtime.threads/v1.setThreadCwd` ([bundles/runtime/runtime/src/host/rpc/threads.ts](../../bundles/runtime/runtime/src/host/rpc/threads.ts)), the same resolving rule the `cwd` tool reaches.
-- A refused move answers `400 invalid_cwd` with `The working directory must stay inside the workspace.`, `No such directory.` or `The working directory must be a directory.`; a missing Thread answers `404 thread_not_found`; a Thread that cannot move now answers `409 thread_inactive` ([bundles/foundation/transport/src/host/routes/input.ts](../../bundles/foundation/transport/src/host/routes/input.ts)). A move that rejects, a probe timeout included, answers `500 internal_error` ([bundles/foundation/transport/src/host/errors.ts](../../bundles/foundation/transport/src/host/errors.ts)).
+- A refused move answers `400 invalid_cwd` with `The working directory must stay inside the workspace.`, `No such directory.` or `The working directory must be a directory.`; a missing Thread answers `404 thread_not_found`; a Thread that cannot move now answers `409 thread_inactive` ([bundles/foundation/transport/src/host/api/input.ts](../../bundles/foundation/transport/src/host/api/input.ts)). A move that rejects, a probe timeout included, answers `500 internal_error` ([bundles/foundation/transport/src/host/api/answer.ts](../../bundles/foundation/transport/src/host/api/answer.ts)).
 - The execution fields are described in [per-thread model](per-thread-model.md).
 
 ## Evolution
 
 - 2026-11-27: slice S68b of [the spec](../designs/grpc-processes.md) (version 6.49) deletes `git`'s `src/host/service.ts`; `git.commands/v1.status` is in `src/host/commands.ts`. The link above points to the current file.
 - 2026-11-27: slice S68d of [the spec](../designs/grpc-processes.md) (version 6.51) deletes the kernel entry of `runtime`. Its envelope services (`src/host/services/{runtime,threads,workspace,lease,attachments}.ts`, `handover.ts`, `ports.ts`' `createPorts`) have only test importers until phase 6, so the links above point to the live process path (`src/host/rpc/*.ts`, `routed.ts`).
+- 2026-11-27: slice S69 of [the spec](../designs/grpc-processes.md) (version 6.52) deletes `transport`'s REST routes (`src/host/routes/`), Socket.IO namespaces (`src/host/sockets/`) and kernel entry (`src/kernel.ts`, `src/host/{index,app,errors,services}.ts`), `screen-relay`'s kernel entry and `doric.network/v1`. The links above that pointed at them now point at the `doric.api.*` operations that carry the same answers (`transport/src/host/api/operations/`, `api/input.ts`, `api/answer.ts`), the `Watch` streams (`process/watch.ts`) and the process host (`process/service.ts`); the routes and namespaces this doc names are no longer served.

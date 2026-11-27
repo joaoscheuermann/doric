@@ -55,8 +55,9 @@ bundles that provide them.
   and check it against the bundle in a test.
 - Register no HTTP route and no Socket.IO namespace from the kernel: the
   platform binds the public listener and the gateway serves the bundles'
-  `doric.api.*` services, and a bundle registers its own routes through
-  `doric.network/v1`. The kernel calls no `listen` and creates no server.
+  `doric.api.*` services, and a bundle serves its own HTTP prefix on its own
+  loopback listener behind the gateway (`doric.network/v1` was removed in
+  slice S69). The kernel calls no `listen` and creates no server.
 - Decide which contracts and bundles the host needs only in the `required`
   entry of [`composition.json`](composition.json); never hard-code a
   structural provider in `src/`.

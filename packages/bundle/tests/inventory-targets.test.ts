@@ -158,7 +158,8 @@ const targetOf = (row: InventoryRow, seen: Set<number> = new Set()): Target => {
 
 describe('T1.2: every target of inventory section A is an rpc of the image', () => {
   test('section A has rows', () => {
-    assert.ok(sectionARows.length >= 115, `${sectionARows.length} rows`);
+    // 115 methods, less `doric.network/v1.register` (row 100), removed in S69.
+    assert.ok(sectionARows.length >= 114, `${sectionARows.length} rows`);
   });
 
   for (const row of sectionARows) {

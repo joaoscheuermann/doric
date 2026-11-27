@@ -129,13 +129,14 @@ const copyMarkdown = async (from: string, to: string): Promise<void> => {
 /**
  * Parts recorded at build time. A client part is imported and dry-activated
  * with the DOM shim installed (stage 9): it may touch the DOM at import time
- * only through `class … extends HTMLElement`.
+ * only through `class … extends HTMLElement`. The host part is never
+ * dry-activated: a stale `dist/host/index.js` is ignored, and what the host
+ * part provides comes from its static `services` ({@link hostProvides}).
  */
 const parts: readonly {
   readonly path: string;
   readonly environment: Environment;
 }[] = [
-  { path: 'host/index.js', environment: 'host' },
   { path: 'desktop/index.js', environment: 'desktopMain' },
   { path: 'client/index.js', environment: 'client' },
 ];
@@ -453,9 +454,8 @@ export interface EnvironmentProblem {
  * checked. For a version 2 manifest:
  *
  * - each recorded provide whose id is a contract of `index` must be provided
- *   by a part of its environment: a host part provides `HOST` and `HOOKS`
- *   contracts, a client part `CLIENT` contracts; any other pairing, a
- *   `desktopMain` recording included, is a `contract_environment` problem
+ *   by a part of its environment: a client part provides `CLIENT`
+ *   contracts; any other pairing, a `desktopMain` recording included, is a `contract_environment` problem
  *   naming the contract and the part. A provide whose id has no `.proto` in
  *   `index` (a `define*` contract) is not checked;
  * - each entry of `services` must name a service of `index` (its
@@ -492,12 +492,7 @@ export const checkContractEnvironment = (input: {
       continue;
     }
 
-    const allowed =
-      entry.environment === 'host'
-        ? contract.environment === 'HOST' || contract.environment === 'HOOKS'
-        : entry.environment === 'client' && contract.environment === 'CLIENT';
-
-    if (!allowed) {
+    if (entry.environment !== 'client' || contract.environment !== 'CLIENT') {
       problems.push({
         code: 'contract_environment',
         message: `${entry.id} is a ${contract.environment} contract; the ${entry.environment} part may not provide it.`,
@@ -530,9 +525,8 @@ export const checkContractEnvironment = (input: {
 
 /**
  * `build <bundleDir>` (after tsc): validates the v1 manifest, copies skills
- * and the host part's Markdown templates (every `.md` file below `src/host`,
- * which the host part reads at import time, so before the dry activation),
- * builds the desktop and client parts, dry-activates the parts, writes JSON
+ * and the host part's Markdown templates (every `.md` file below `src/host`),
+ * builds the desktop and client parts, dry-activates them, writes JSON
  * Schemas, `contracts.json` and package.json. The semver check against a
  * published baseline is not here yet: it returns with publishing (stage 11).
  *

@@ -136,8 +136,8 @@ Two bundles call it. `runtime` acquires and discards each Project's sandbox
 ([runtime README](../../runtime/runtime/README.md)), and `transport`, which
 requires `sandbox/v1`, serves `machines()` at `GET /vms` and `machine(id)` at
 `GET /vms/:id/ssh`
-([`vms.ts`](../../foundation/transport/src/host/routes/vms.ts),
-[`app.ts`](../../foundation/transport/src/host/app.ts)).
+([`host.ts`](../../foundation/transport/src/host/api/operations/host.ts),
+[`service.ts`](../../foundation/transport/src/host/process/service.ts)).
 
 What this bundle answers ([`sandbox.ts`](src/host/sandbox.ts)):
 

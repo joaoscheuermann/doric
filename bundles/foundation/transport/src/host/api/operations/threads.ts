@@ -13,8 +13,8 @@ import {
 } from 'runtime/contracts';
 import { z } from 'zod';
 
-import { nameInput, ok, refused } from '../../routes/input.js';
 import type { ApiAnswer, RouteInput } from '../answer.js';
+import { nameInput, ok, refused } from '../input.js';
 import type { TransportPorts } from '../ports.js';
 
 type Op<V> = (input: RouteInput) => Promise<ApiAnswer<V>>;

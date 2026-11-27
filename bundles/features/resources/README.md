@@ -158,8 +158,8 @@ option in
 The `transport` bundle lists `resources/v1` under `optional` and serves it over
 REST: `GET /resources` answers `host()`, and `GET /projects/:id/resources`
 answers `project()` bound to that Project
-([`routes/resources.ts`](../../foundation/transport/src/host/routes/resources.ts),
-[`routes/projects.ts`](../../foundation/transport/src/host/routes/projects.ts)).
+([`operations/host.ts`](../../foundation/transport/src/host/api/operations/host.ts),
+[`operations/projects.ts`](../../foundation/transport/src/host/api/operations/projects.ts)).
 Its status codes are described in the
 [`transport` README](../../foundation/transport/README.md).
 

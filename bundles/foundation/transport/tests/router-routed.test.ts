@@ -33,9 +33,8 @@ import { TerminalSnapshotSchema } from 'terminal/contracts/gen/doric/terminal/v1
 
 import type { TransportPorts } from '../src/host/api/ports.js';
 import { routedTransportPorts } from '../src/host/process/routed.js';
-import type { Fakes } from './support/host.js';
 import { type FakeCall, REQUIRES, type Recorder } from './support/router.js';
-import { routerFakes } from './support/router-fakes.js';
+import { type Fakes, routerFakes } from './support/router-fakes.js';
 import {
   access,
   catalogEntry,

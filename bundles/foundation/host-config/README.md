@@ -259,7 +259,7 @@ failed replacement does not block the next one
 `transport` serves the two methods as `GET /config` and `PUT /config`, and
 answers `invalid` with 422 `invalid_config` and `rejected` with 503
 `configuration_rejected`
-([`routes/config.ts`](../transport/src/host/routes/config.ts)).
+([`operations/config.ts`](../transport/src/host/api/operations/config.ts)).
 
 ## The configuration
 

@@ -1,11 +1,11 @@
 # Transport bundle
 
-`transport` is the Doric host's network API: it registers the REST routes and
-the Socket.IO namespaces that clients use to create Projects and Threads, send
-prompts, read workspace files and diffs, drive terminals, edit the
-configuration and credentials, and follow a Thread's events live. It stores
-nothing: every route and every socket answer is the answer of a contract call
-to the bundle that owns the data.
+`transport` is the Doric host's network API: it serves the `doric.api.*`
+services that clients use to create Projects and Threads, send prompts, read
+workspace files and diffs, drive terminals, edit the configuration and
+credentials, and follow a Thread's events live. Its REST routes and Socket.IO
+namespaces were deleted in slice S69. It stores nothing: every answer is the
+answer of a contract call to the bundle that owns the data.
 
 The route and event reference, with every path, success status, request rule
 and payload a client sees, is the host's:
@@ -32,7 +32,7 @@ bundles is in the feature docs
 
 - `manifestVersion`: `1`; `id`: `transport`; `version`: `0.0.2`;
   `engines.doric`: `^1.0.0`;
-  `description`: "The host REST routes and Socket.IO namespaces."
+  `description`: "The host API: the doric.api.\* Connect services."
 - `provides`: since slice S62c1, the eight public API contracts
   `api.config/v1`, `api.credentials/v1`, `api.providers/v1`, `api.host/v1`,
   `api.projects/v1`, `api.threads/v1`, `api.terminals/v1` and
@@ -44,173 +44,120 @@ bundles is in the feature docs
 - `optional`: `files/v1`, `git.commands/v1`, `usage/v1`, `resources/v1`,
   `terminal/v1` and `log/v1`. The first five are the feature bundles' contracts: the transport
   activates without them, and a disabled or quarantined feature bundle does
-  not take it down; the routes and the socket reads that call one fail while
-  it is absent ([Absent provider](#activation-and-mounting)).
+  not take it down; the RPCs and the `Watch` reads that call one fail while
+  it is absent.
 
-It has one part, the host part ([`src/host/`](src/host)). The shipped
-[`composition.json`](../../../app/backend/doric-host/composition.json) lists it
-under `resident`, so its host part runs in the kernel process, the only
-process where the native network handles are reachable, and under
-`required.bundles`, so the host does not start without it
-([Bundles and composition](../../../app/backend/doric-host/README.md#bundles-and-composition),
-[`resident`](../../../docs/architecture/bundles/composition-and-distribution.md#resident)).
-A resident bundle belongs to the kernel, so publishing a new generation does
-not replace it; a change to it needs a host restart.
+It has one part, the host part ([`src/host/`](src/host)), whose only entry
+since slice S69 is the process entry [`src/host/main.ts`](src/host/main.ts).
+`package.json` still exports `./kernel` (`src/kernel.ts`, deleted in S69); the
+export goes in slice S70.
 
 ## Contracts it uses
 
-| Contract                                                                                                                                                                                    | What the transport calls it for                                                                                                                   |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `doric.network/v1` ([shape](../../../docs/architecture/bundles/contexts.md#shapes-of-the-platform-contracts))                                                                               | `register`: receives the kernel's Express app and Socket.IO server ([`src/host/index.ts`](src/host/index.ts))                                     |
-| `hooks/v1`, `doric.app.hooks/v1` ([hooks](../../../docs/architecture/bundles/hooks.md))                                                                                                     | `onHostStartHook`: the startup log line ([`src/kernel.ts`](src/kernel.ts))                                                                        |
-| `doric.startup/v1`                                                                                                                                                                          | `log`: writes the startup log line ([`src/kernel.ts`](src/kernel.ts))                                                                             |
-| `host-config/v1` ([README](../host-config/README.md))                                                                                                                                       | `current`, `replace`: `/config`                                                                                                                   |
-| `secrets/v1`                                                                                                                                                                                | `list`, `kinds`, `create`, `update`, `delete`: `/credentials`                                                                                     |
-| `models/v1`                                                                                                                                                                                 | `kinds`, `kind`, `catalog`: `/providers`                                                                                                          |
-| `tools/v1`                                                                                                                                                                                  | `list`: `/tools`                                                                                                                                  |
-| `sandbox/v1` (declared by [`runtime`](../../runtime/runtime/README.md), provided by [`docker`](../../sandboxes/docker/README.md) or [`firecracker`](../../sandboxes/firecracker/README.md)) | `machines`, `machine`: `/vms`                                                                                                                     |
-| `runtime/v2` ([README](../../runtime/runtime/README.md))                                                                                                                                    | Project creation, listing, rename, color, read, terminate and delete; `vmSsh`; `watch` for the workspace sockets                                  |
-| `runtime.threads/v1` ([README](../../runtime/runtime/README.md))                                                                                                                            | Every Thread and queue route, Project Thread creation and lists, and the durable reads of the socket snapshots                                    |
-| `runtime.lease/v1` ([README](../../runtime/runtime/README.md))                                                                                                                              | `ssh`, bound to `{ projectId }`: `GET /projects/:id/ssh`                                                                                          |
-| `files/v1` ([README](../../features/files/README.md))                                                                                                                                       | `directory`, `tree`, `content`, bound to `{ projectId }`: the Project file reads                                                                  |
-| `git.commands/v1` ([README](../../features/git/README.md))                                                                                                                                  | `diff`, `changes`, `fileDiff` bound to `{ projectId }`; `status`, `branches`, `switchBranch` unbound: the Project diffs and the Thread Git routes |
-| `resources/v1` ([README](../../features/resources/README.md))                                                                                                                               | `host` unbound for `GET /resources`; `project` bound to `{ projectId }` for `GET /projects/:id/resources`                                         |
-| `usage/v1` ([README](../../features/usage/README.md))                                                                                                                                       | `thread`: `GET /threads/:id/usage`                                                                                                                |
-| `terminal/v1` ([README](../../features/terminal/README.md))                                                                                                                                 | `list`, `create`, `snapshot`, `input`, `resize`, `stop`: the terminal routes; `watchProject`: the `/projects` terminal events                     |
+| Contract                                                                                                                                                                                    | What the transport calls it for                                                                                                                                                                                              |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `hooks/v1`, `doric.app.hooks/v1` ([hooks](../../../docs/architecture/bundles/hooks.md))                                                                                                     | `onHostStartHook`: the startup log line ([`src/host/process/service.ts`](src/host/process/service.ts))                                                                                                                       |
+| `doric.startup/v1`                                                                                                                                                                          | `log`: writes the startup log line ([`src/host/process/service.ts`](src/host/process/service.ts))                                                                                                                            |
+| `host-config/v1` ([README](../host-config/README.md))                                                                                                                                       | `current`, `replace`: `ConfigService.GetConfig` and `PutConfig`                                                                                                                                                              |
+| `secrets/v1`                                                                                                                                                                                | `list`, `kinds`, `create`, `update`, `delete`: `CredentialsService`                                                                                                                                                          |
+| `models/v1`                                                                                                                                                                                 | `kinds`, `kind`, `catalog`: `ProvidersService`                                                                                                                                                                               |
+| `tools/v1`                                                                                                                                                                                  | `list`: `HostService.ListTools`                                                                                                                                                                                              |
+| `sandbox/v1` (declared by [`runtime`](../../runtime/runtime/README.md), provided by [`docker`](../../sandboxes/docker/README.md) or [`firecracker`](../../sandboxes/firecracker/README.md)) | `machines`, `machine`: `HostService.ListVms` and `GetVmSsh`                                                                                                                                                                  |
+| `runtime/v2` ([README](../../runtime/runtime/README.md))                                                                                                                                    | Project creation, listing, rename, color, read, terminate and delete; `vmSsh`; `WatchProject` for `ProjectsService.Watch`                                                                                                    |
+| `runtime.threads/v1` ([README](../../runtime/runtime/README.md))                                                                                                                            | Every `ThreadsService` Thread and queue RPC, `ProjectsService.CreateThread` and `ListThreads`, and `WatchThread` for `ThreadsService.Watch`                                                                                  |
+| `runtime.lease/v1` ([README](../../runtime/runtime/README.md))                                                                                                                              | `ssh`, bound to `{ projectId }`: `ProjectsService.GetProjectSsh`                                                                                                                                                             |
+| `files/v1` ([README](../../features/files/README.md))                                                                                                                                       | `directory`, `tree`, `content`, bound to `{ projectId }`: `ProjectsService.ListFiles`, `GetTree` and `ReadFile`                                                                                                              |
+| `git.commands/v1` ([README](../../features/git/README.md))                                                                                                                                  | `diff`, `changes`, `fileDiff` bound to `{ projectId }`: `ProjectsService.GetDiff`, `ListChanges` and `GetFileDiff`; `status`, `branches`, `switchBranch` unbound: `ThreadsService.GetGit`, `ListBranches` and `CreateBranch` |
+| `resources/v1` ([README](../../features/resources/README.md))                                                                                                                               | `host` unbound for `HostService.ListResources`; `project` bound to `{ projectId }` for `ProjectsService.GetProjectResources`                                                                                                 |
+| `usage/v1` ([README](../../features/usage/README.md))                                                                                                                                       | `thread`: `ThreadsService.GetUsage`                                                                                                                                                                                          |
+| `terminal/v1` ([README](../../features/terminal/README.md))                                                                                                                                 | `list`, `create`, `snapshot`, `input`, `resize`, `stop`: `ProjectsService.ListTerminals`, `ThreadsService.CreateTerminal` and `TerminalsService`; `WatchProject`: the terminal items of `ProjectsService.Watch`              |
 
 `secrets/v1`, `models/v1` and `tools/v1` are basic contracts of
 `bundle/contracts`, provided by [`core`](../core/README.md)
 ([basic contracts](../../../docs/architecture/bundles/contexts.md#the-basic-contracts)).
 
-## Activation and mounting
+## REST and Socket.IO, removed (slice S69)
 
-- **Registration.** The host part's `activate` calls
-  `doric.network/v1.register` with a listener. The kernel calls it with its
-  native Express app (`http`) and Socket.IO server (`sockets`), in process and
-  never serialized; the listener builds the bundle with `createTransport` over
-  them and activates it with the part's own services. The cleanup it returns
-  runs when the registration is disposed, which the part's own cleanup does on
-  deactivation ([`src/host/index.ts`](src/host/index.ts)).
-- **Call-time resolution.** `createTransport` builds one `TransportServices`
-  object ([`src/host/services.ts`](src/host/services.ts),
-  [`src/kernel.ts`](src/kernel.ts)). Each member is a contract stub that finds
-  its provider when it is called, so a request reaches the generation that is
-  active when it arrives, and nothing calls a generation at activation.
-  `lease`, `files`, `git` and `resources` are functions that bind the call
-  scope given (`{ projectId }` or `{ threadId }`); `usage` and `terminal`
-  resolve the contract on each member access. The feature contracts are read
-  from `options.features()` when it is given and from the part's own services
-  otherwise; the installed host part gives none.
-- **Absent provider.** A call to a contract with no active provider rejects
-  with the contract error `unavailable`, so its route answers
-  `500 internal_error` (`PUT /config` answers `503 configuration_rejected`);
-  without `terminal/v1`, the `terminal/v1.list` read of
-  every `/projects` snapshot rejects, so every `/projects` subscription gets
-  `workspace:error` `replay_failed` and is disconnected. While no generation
-  is active, a call to a contract the latest generation provides waits for
-  the next activation instead
-  ([`dispatch.ts`](../../../packages/bundle/src/runtime/dispatch.ts),
-  [`manager.ts`](../../../packages/bundle/src/process/manager.ts),
-  [`src/host/sockets/workspace.ts`](src/host/sockets/workspace.ts)).
-- **Mount order.** `registerHttpRoutes` mounts on the app, in this order
-  ([`src/host/app.ts`](src/host/app.ts)): `express.json()`, the terminal router
-  at the root, then `/vms`, `/config`, `/credentials`, `/resources`,
-  `/providers`, `/projects`, `/threads` and `/tools`, and last the error
-  handler `handleHttpError`. The vms, resources and tools routers take the
-  services like the others.
-- **Route bodies.** Each route body is an operation of
+Slice S69 deleted the kernel path of this bundle: `src/kernel.ts`
+(`createTransport`, `transportRequires`), `src/host/{index,app,errors,services}.ts`
+(the `doric.network/v1` registration, `TransportServices`, the Express mount
+order and `handleHttpError`), the routers `src/host/routes/` and the Socket.IO
+namespaces `src/host/sockets/` (`/status`, `/projects`, `/threads`), and
+`sendAnswer` with the `express` import of
+[`src/host/api/answer.ts`](src/host/api/answer.ts). The bundle serves only the
+`doric.api.*` services of [its process part](#the-process-part-slices-s60c-s60d).
+
+- **Operations.** Each RPC body is an operation of
   [`src/host/api/operations/`](src/host/api/operations) (`config`,
-  `credentials`, `providers`, `host`, `projects`, `threads`, `terminals`)
-  over `TransportPorts` ([`src/host/api/ports.ts`](src/host/api/ports.ts)), the
-  narrowed services. An operation returns an `ApiAnswer`, and the router only
-  calls `sendAnswer(response, await operations.x(routeInput(request)))`
-  ([`src/host/api/answer.ts`](src/host/api/answer.ts)): `pending` answers
-  `202` with `Retry-After: 1`, an empty answer `204` with no body, a refusal
-  `{ error: { code, message } }`. `apiError` turns a REST refusal into a
-  `ContractError`; `apiFailure` passes `unavailable`, `generation_lost`,
-  `limit_exceeded`, `deadline_exceeded` and `cancelled` through, reading a
-  `ConnectError` as well as a `ContractError`, and turns any
+  `credentials`, `providers`, `host`, `projects`, `threads`, `terminals`) over
+  `TransportPorts` ([`src/host/api/ports.ts`](src/host/api/ports.ts), which
+  also exports `LeaseScope`, `{ projectId }` or `{ threadId }`, and
+  `ProjectScope`, `{ projectId }`). An operation returns an `ApiAnswer`
+  ([`src/host/api/answer.ts`](src/host/api/answer.ts)): `apiError` turns a
+  REST refusal into a `ContractError`; `apiFailure` passes `unavailable`,
+  `generation_lost`, `limit_exceeded`, `deadline_exceeded` and `cancelled`
+  through, reading a `ConnectError` as well as a `ContractError`, and turns any
   other failure into `internal_error`; `answerValue` unwraps an answer;
   `routeInputOf` decodes a message through `runtime/contracts` `decode`. The
   credential body schemas `CredentialCreateSchema` and
   `CredentialUpdateSchema` live in `operations/credentials.ts`.
-- **Namespaces.** `registerStatusSocket` opens `/status`
-  ([`src/host/sockets/status.ts`](src/host/sockets/status.ts));
-  `createWorkspaceSocket` opens `/threads` and `/projects` and returns a
-  `runtime/v2` listener
-  ([`src/host/sockets/workspace.ts`](src/host/sockets/workspace.ts)).
-- **Following providers.** `whenAvailable(RuntimeV2)` calls `watch` with that
-  listener on each `runtime/v2` provider, and `whenAvailable(TerminalServiceV1)`
-  attaches each `terminal/v1` provider to the terminal feed, so both follow a
-  generation change; each subscription ends when its provider leaves
-  ([`src/kernel.ts`](src/kernel.ts)).
-- **Startup log.** An `onHostStartHook` handler logs, through
-  `doric.startup/v1.log`, the message `Network interfaces configured` at level
-  `info` with the field `socketNamespaces: ['/status', '/projects', '/threads']`,
-  before the host binds ([`src/kernel.ts`](src/kernel.ts)).
-- **Deactivation** disposes the startup hook and the two `whenAvailable`
-  subscriptions. Express and Socket.IO have no unmount: the routers and
-  namespaces stay on the app and the server until the kernel closes them
-  ([`src/kernel.ts`](src/kernel.ts)).
+- **Inputs.** [`src/host/api/input.ts`](src/host/api/input.ts) holds the
+  input schemas and answers the operations share: `pageInput` (`limit` 50 by
+  default, 1 to 100; `cursor` a UUID), `nameInput` (a normalised name, empty
+  refused), `ok` (status 200 unless one is given) and `refused`.
 
-The kernel owns the address, the bind, the close, and the generic desktop
-namespace `/doric/bridge`
-([The desktop bridge](../../../app/backend/doric-host/README.md#the-desktop-bridge));
-the host app itself registers no product route.
+[Common rules](#common-rules) states how the operations refuse today. The
+sections [Routers](#routers) and
+[Socket.IO behavior](#socketio-behavior) below describe the removed surface.
+Their refusal codes, messages and payload rules are those the operations and
+the `Watch` streams still answer; the paths, HTTP statuses, headers, body
+parser and Engine.IO details left with REST and have no RPC counterpart.
 
 ## HTTP behavior
 
 ### Common rules
 
-- **Authentication.** No route authenticates its caller; the host is kept on a
+- **Authentication.** No RPC authenticates its caller; the host is kept on a
   trusted network
   ([Network exposure](../../../app/backend/doric-host/README.md#network-exposure),
-  [`src/host/routes/credentials.ts`](src/host/routes/credentials.ts)).
-- **Bodies.** `express.json()` with its defaults parses JSON bodies up to
-  100 KiB. A route that reads `request.body ?? {}` treats a missing body as an
-  empty object. Every body schema of the routers is strict, so an unknown
-  field fails it; `PUT /config` alone hands its body unchecked to
-  `host-config/v1` ([`src/host/app.ts`](src/host/app.ts),
-  [`src/host/routes/config.ts`](src/host/routes/config.ts)).
-- **Error envelope.** Every refusal is `{ error: { code, message } }`, written
-  by `sendError` ([`src/host/errors.ts`](src/host/errors.ts)). The shared
-  helpers of [`src/host/routes/input.ts`](src/host/routes/input.ts) for the
-  kinds `project`, `thread` and `credential`:
-  - `validateId(kind)`, mounted on `/:id` of the Projects, Threads and
-    Credentials routers: a path id that is not a UUID answers
-    `400 invalid_<kind>_id` with `The <kind> ID is invalid.`;
-  - `missing(response, kind)`: `404 <kind>_not_found`,
-    `The <kind> was not found.`;
-  - `conflict(response, kind, reason)`: `409 <kind>_<reason>`, with
-    `storageMessage` of `runtime/contracts` when `reason` is `storage_low` and
-    `The <kind> cannot perform this operation.` otherwise;
-  - `pageInput`: `limit` 1–100 (default 50) and an optional UUID `cursor`,
-    coerced from the query; `nameInput`: `normalizeName`, then `isValidName`,
-    both from `runtime/contracts`.
-- **Terminal and VM ids** are not UUIDs, and their routers check none: an
-  unknown one answers `404 terminal_missing` or `404 vm_not_found` where the
-  route reads it, and `DELETE /terminals/:id` answers `204` for any id.
-  `GET /projects/:id/terminals` and `POST /threads/:id/terminals` belong to
-  the terminal router, which answers them before the Projects and Threads
-  routers, so their ids are not checked either.
-- **Caching.** The terminal router, mounted first at the root, sets
-  `Cache-Control: no-store` on every request that enters it, so every route
-  answers `no-store` ([`src/host/routes/terminals.ts`](src/host/routes/terminals.ts)).
-  A malformed or oversized JSON body fails in `express.json()`, before the
-  terminal router, so its `500` carries no `no-store`.
-  The SSH, workspace, queue, usage, events, Git and resources routes also set
-  it themselves.
-- **Unexpected failures.** A handler that throws or rejects, a contract call
-  that fails, a malformed JSON body and a body over the parser's limit all
-  reach `handleHttpError`, which answers `500 internal_error` with
-  `The request could not be completed.` and never the underlying message. The
-  Projects, Threads and VMs routers end with the same handler, and the app
-  ends with it ([`src/host/errors.ts`](src/host/errors.ts)).
-- **Unknown routes** answer Express's default `404` HTML page.
+  [`src/host/api/operations/credentials.ts`](src/host/api/operations/credentials.ts)).
+- **Requests.** A request breaking its `.proto`'s protovalidate rules is
+  refused before the operation runs, through `invalidApiInput`
+  ([`src/host/api/violations.ts`](src/host/api/violations.ts)): a Project,
+  Thread or Credential id that is not a UUID answers `invalid_<kind>_id` with
+  `The <kind> ID is invalid.`, any other violation the method's own refusal.
+  The operation then reads the request as its route read it (`routeInputOf`),
+  and its own schemas check it (`pageInput`: `limit` 1–100, default 50, and an optional UUID `cursor`;
+  `nameInput`: `normalizeName`, then `isValidName`, both from
+  `runtime/contracts`, [`src/host/api/input.ts`](src/host/api/input.ts)).
+  `PutConfig` alone hands its configuration unchecked to `host-config/v1`
+  ([`src/host/api/operations/config.ts`](src/host/api/operations/config.ts)).
+- **Refusals.** An operation refuses with `refused(error)`, a `RestError`
+  `{ status, code, message }`, and the RPC ends with `apiError`'s
+  `ContractError(code, message)` ([`src/host/api/answer.ts`](src/host/api/answer.ts)).
+  For the kinds `project`, `thread` and `credential`, `runtime/contracts`'
+  `notFoundError(kind)` is `<kind>_not_found`, `The <kind> was not found.`,
+  and `conflictError(kind, reason)` is `<kind>_<reason>`, with
+  `storageMessage` when `reason` is `storage_low` and
+  `The <kind> cannot perform this operation.` otherwise
+  ([`rest-errors.ts`](../../runtime/runtime/src/contracts/rest-errors.ts)).
+- **Terminal and VM ids** are not UUIDs, and no rule checks them: an unknown
+  one answers `terminal_missing` or `vm_not_found` where the operation reads
+  it, and `TerminalsService.DeleteTerminal` succeeds for any id
+  ([`src/host/api/operations/terminals.ts`](src/host/api/operations/terminals.ts),
+  [`src/host/api/operations/host.ts`](src/host/api/operations/host.ts)).
+- **Unexpected failures.** An operation that throws or rejects and a contract
+  call that fails end with `apiFailure`: `unavailable`, `generation_lost`,
+  `limit_exceeded`, `deadline_exceeded` and `cancelled` pass through, anything
+  else answers `internal_error` with `The request could not be completed.`
+  and never the underlying message
+  ([`src/host/api/answer.ts`](src/host/api/answer.ts),
+  [`src/host/process/service.ts`](src/host/process/service.ts)).
 - **REST error table.** The answers to the `runtime/contracts` outcomes match
   the table `restErrors` of the `runtime` bundle, which the desktop's adapters
-  read; `PATCH /threads/:id` calls `restErrors.setThreadExecution` itself
-  ([`src/host/routes/threads.ts`](src/host/routes/threads.ts),
+  read; `UpdateThread`'s execution change calls `restErrors.setThreadExecution`
+  itself
+  ([`src/host/api/operations/threads.ts`](src/host/api/operations/threads.ts),
   [errors of the runtime](../../runtime/runtime/README.md#errors-and-failure-behavior)).
 
 ### Routers
@@ -219,14 +166,14 @@ Each router validates its input, calls one contract method per step, and maps
 the method's outcome to a status. The paths and success statuses are in the
 host's [Routes](../../../app/backend/doric-host/README.md#routes) table.
 
-- **Configuration** ([`src/host/routes/config.ts`](src/host/routes/config.ts)):
+- **Configuration** ([`src/host/api/operations/config.ts`](src/host/api/operations/config.ts)):
   `GET` answers `host-config/v1.current()` unchanged. `PUT` hands the body to
   `replace`: `replaced` answers `200` with the new `config`, `invalid` answers
   `422 invalid_config` with the contract's message, and any other outcome or a
   rejection answers `503 configuration_rejected`
   (`The Doric configuration could not be activated.`).
 - **Credentials**
-  ([`src/host/routes/credentials.ts`](src/host/routes/credentials.ts)):
+  ([`src/host/api/operations/credentials.ts`](src/host/api/operations/credentials.ts)):
   answers only `secrets/v1`'s descriptions, which never hold a secret. A
   create body (`CredentialCreateSchema`) holds `kind`, a trimmed `name` of
   1–128 characters, and optionally a trimmed `username` (1–128), an `email`
@@ -243,9 +190,9 @@ host's [Routes](../../../app/backend/doric-host/README.md#routes) table.
   `credential_kind_immutable` and `credential_name_taken` to
   `409 credential_<reason>`, and `credential_storage_unavailable` to
   `503 credential_storage_unavailable`
-  (`The host cannot store credential secrets.`); any other error reaches the error handler. `DELETE` answers `missing` with
+  (`The host cannot store credential secrets.`); any other error ends with `apiFailure`. `DELETE` answers `missing` with
   `404` and `referenced` with `409 credential_referenced`.
-- **Providers** ([`src/host/routes/providers.ts`](src/host/routes/providers.ts)):
+- **Providers** ([`src/host/api/operations/providers.ts`](src/host/api/operations/providers.ts)):
   `GET /providers/kinds` answers `{ kinds }` from `models/v1.kinds()`.
   `POST /providers/models` takes `{ kind, configuration }` (a trimmed kind of
   1–128 characters and a record of strings), looks the kind up with
@@ -255,19 +202,19 @@ host's [Routes](../../../app/backend/doric-host/README.md#routes) table.
   `text`: any) and every required field is present; otherwise it answers
   `422 invalid_provider`. It answers `{ models }` when `models/v1.catalog`
   reads them, and `502 model_catalog_unreadable` otherwise.
-- **Tools** ([`src/host/routes/tools.ts`](src/host/routes/tools.ts)): answers
+- **Tools** ([`src/host/api/operations/host.ts`](src/host/api/operations/host.ts)): answers
   `{ tools: [{ name, description, settings }] }` from `tools/v1.list()`;
   listing runs no tool.
-- **Resources** ([`src/host/routes/resources.ts`](src/host/routes/resources.ts)):
+- **Resources** ([`src/host/api/operations/host.ts`](src/host/api/operations/host.ts)):
   answers `resources/v1.host()` unchanged.
-- **VMs** ([`src/host/routes/vms.ts`](src/host/routes/vms.ts)): `GET /vms`
+- **VMs** ([`src/host/api/operations/host.ts`](src/host/api/operations/host.ts)): `GET /vms`
   answers `sandbox/v1.machines()`. `GET /vms/:id/ssh` reads the machine with
   `sandbox/v1.machine` (`404 vm_not_found` when absent), then
   `runtime/v2.vmSsh` (`409 vm_ssh_unavailable` when absent), and answers
   `{ vm, ...access }`. The machines are those of the active generation's
   `sandbox/v1` provider, the `docker` or `firecracker` bundle
   ([sandboxes](../../../docs/features/sandboxes.md)).
-- **Projects** ([`src/host/routes/projects.ts`](src/host/routes/projects.ts)):
+- **Projects** ([`src/host/api/operations/projects.ts`](src/host/api/operations/projects.ts)):
   - Creation calls `runtime/v2.createProject` and adds
     `ssh: { href: '/projects/<id>/ssh' }` to the Project; a body without a
     valid name answers `422 invalid_project`. Lists take `pageInput`
@@ -302,7 +249,7 @@ host's [Routes](../../../app/backend/doric-host/README.md#routes) table.
     answers `404 project_path_not_found` and any other read outcome
     `422 invalid_project_path`. Normalizing a path and bounding content are
     the `files` and `git` bundles' work.
-- **Threads** ([`src/host/routes/threads.ts`](src/host/routes/threads.ts)):
+- **Threads** ([`src/host/api/operations/threads.ts`](src/host/api/operations/threads.ts)):
   - `PATCH /threads/:id` takes `name`, `cwd` (non-blank, at most 4096
     characters, no NUL, not trimmed), and an execution (`providerId` and
     `model` together, `providerId` trimmed to 1–128 characters and `model`
@@ -375,7 +322,7 @@ host's [Routes](../../../app/backend/doric-host/README.md#routes) table.
     with `404 thread_not_found`; read, terminate and
     delete call the matching `runtime.threads/v1` method, and delete answers
     `active` with `409 thread_active`.
-- **Terminals** ([`src/host/routes/terminals.ts`](src/host/routes/terminals.ts)):
+- **Terminals** ([`src/host/api/operations/terminals.ts`](src/host/api/operations/terminals.ts)):
   `GET /projects/:id/terminals` answers `{ items }` from `terminal/v1.list`.
   `POST /threads/:id/terminals` takes optional `cols` and `rows` (integers
   1–1000; `422 invalid_terminal`) and answers `201` with the session, or
@@ -394,15 +341,17 @@ The events and their payloads are in the host's
 [Subscriptions](../../../app/backend/doric-host/README.md#subscriptions)
 sections.
 
-- **`/status`** has no middleware and no event: a connection only confirms
-  that the host is reachable
-  ([`src/host/sockets/status.ts`](src/host/sockets/status.ts)).
+- **`/status`** had no middleware and no event: a connection only confirmed
+  that the host is reachable. Its successor, `StatusService.Watch`, sends one
+  `ready` item (`statusWatch`,
+  [`src/host/process/watch.ts`](src/host/process/watch.ts)).
 - **Handshake.** A namespace middleware parses `socket.handshake.auth` only,
   never the query: `/threads` takes `{ threadId: UUID, afterSequence }`
   (a non-negative integer, coerced, default 0) and `/projects` takes
   `{ projectId: UUID }`. A handshake that fails is refused with
-  `Invalid thread subscription.` or `Invalid project subscription.`
-  ([`src/host/sockets/workspace.ts`](src/host/sockets/workspace.ts)). This
+  `Invalid thread subscription.` or `Invalid project subscription.`; the
+  `Watch` RPCs answer the same sentences as `invalid_input`
+  ([`src/host/api/violations.ts`](src/host/api/violations.ts)). This
   checks the subscription's shape; it authenticates no one.
 - **Subscribe first, then read.** On connection the socket is added to the
   subscribers of its Thread or Project, not yet ready, before any durable
@@ -440,8 +389,7 @@ sections.
   subscribed Project and closed when its last socket disconnects. A new
   `terminal/v1` provider reopens the stream of every subscribed Project; a
   provider that leaves closes them; a provider that throws while opening one
-  leaves it closed until the next provider
-  ([`src/host/sockets/terminal-feed.ts`](src/host/sockets/terminal-feed.ts)).
+  leaves it closed until the next provider.
 - **Failure.** A snapshot read that rejects sends `workspace:error` with the
   code `replay_failed` and the message `The snapshot could not be loaded.`,
   and disconnects the socket.
@@ -449,27 +397,27 @@ sections.
 
 ## Data and persistence
 
-The bundle persists nothing and keeps no file. Its only state is in memory and
-lives as long as the process: per socket, its readiness, its sequence cursor,
-its buffered events and notices; per Project, its open terminal stream
-([`src/host/sockets/workspace.ts`](src/host/sockets/workspace.ts),
-[`src/host/sockets/terminal-feed.ts`](src/host/sockets/terminal-feed.ts)).
+The bundle persists nothing and keeps no file. Its only state is in memory:
+the routed clients, each created at its first call and kept as long as the
+process ([`src/host/process/routed.ts`](src/host/process/routed.ts)), and, for
+as long as one `ProjectsService.Watch` call, the notices it holds until both
+snapshots arrived ([`src/host/process/watch.ts`](src/host/process/watch.ts)).
 
 ## Configuration and limits
 
 The bundle reads no setting and no environment variable. Its limits are the
-schemas above and the 100 KiB JSON body of `express.json()`. The largest
-Socket.IO message is the kernel's setting
-([How the host is built](../../../app/backend/doric-host/README.md#how-the-host-is-built)).
+`.proto` files' protovalidate rules, the operations' schemas above, the
+`ReadFile` chunks of at most 1,048,576 code units and the `ListThreads` and
+`ListEvents` pages under 3 MiB (`API_PAGE_MAX_BYTES`,
+[`src/host/process/service.ts`](src/host/process/service.ts)).
 
 ## The public API protos
 
 [`proto/doric/api/`](proto/doric/api) holds the eight contracts of the public
 API's target shape, `api.<resource>/v1` in the packages
 `doric.api.<resource>.v1` for `config`, `credentials`, `providers`, `host`,
-`projects`, `threads`, `terminals` and `status` (spec A60). `manifest.json`
-does not provide them yet: `transport` adds them to `provides` in phase 3.
-The target `generate-proto` writes their protobuf-es code into
+`projects`, `threads`, `terminals` and `status` (spec A60); `manifest.json`
+provides them since slice S62c1. The target `generate-proto` writes their protobuf-es code into
 `src/contracts/gen/`, which Git ignores, and `package.json` exports it as
 `./contracts/gen/*`; `@bufbuild/protobuf` is the dependency that code imports
 ([`project.json`](project.json), [`package.json`](package.json)).
@@ -479,9 +427,8 @@ The target `generate-proto` writes their protobuf-es code into
 [`src/host/process/`](src/host/process) serves the same operations as
 `doric.api.*` services. [`src/host/main.ts`](src/host/main.ts) runs it with
 `runBundle`, serving the eight services and the `onHostStartHook` handler;
-the kernel keeps mounting [`src/host/index.ts`](src/host/index.ts) (the
-Express routes and Socket.IO) until group F, and `provides` lists the eight
-`api.*/v1@1.0.0` contracts since S62c1.
+`provides` lists the eight `api.*/v1@1.0.0` contracts since S62c1. It is the
+bundle's only host entry since slice S69.
 
 - **`createTransportHost()`**
   ([`service.ts`](src/host/process/service.ts)) builds, with no I/O, the
@@ -532,26 +479,6 @@ Express routes and Socket.IO) until group F, and `provides` lists the eight
   `invalid_input`. `PutConfig` keeps protovalidate's message.
 
 `@connectrpc/connect` is a dependency of the package.
-
-## The `transport/kernel` entry
-
-`package.json` exports `./package.json`, `./contracts/gen/*` (above) and
-`./kernel` ([`src/kernel.ts`](src/kernel.ts)):
-
-- `createTransport(options)` returns the bundle as an `EmbeddedBundle`: an
-  inline manifest (id `transport`, version `0.0.0`, the description above,
-  no `provides`, `requires` equal to `transportRequires`, no `optional`), an
-  empty descriptor, and the host part described above. `options` holds `app`
-  (an Express app), `io` (a Socket.IO server), an optional `logger` (a pino
-  logger the code does not read) and an optional `features`, a function
-  returning the services the feature contracts are read from.
-- `transportRequires`: the nine `requires` entries of `manifest.json`.
-- The types `TransportServices`, `LeaseScope` (`{ projectId }` or
-  `{ threadId }`) and `ProjectScope` (`{ projectId }`).
-
-No other package imports `transport/kernel`: the host part imports
-`../kernel.js`, and the tests import `../src/kernel.js` and boot the bundle
-over fake providers ([`tests/support/host.ts`](tests/support/host.ts)).
 
 ## Build and test
 

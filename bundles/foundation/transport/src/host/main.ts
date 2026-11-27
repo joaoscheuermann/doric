@@ -1,4 +1,4 @@
-// src/host/main.ts — `transport`'s host part as a process (phase 3, S60); the kernel keeps ./index.ts until S62.
+// src/host/main.ts — `transport`'s host part as a process (phase 3, S60).
 // The eight `doric.api.*` services and the `onHostStartHook` handler, built into `dist/host/main.mjs`.
 
 import { HookHandlerService } from 'bundle/contracts/gen/doric/hooks/v1/hooks_pb.js';

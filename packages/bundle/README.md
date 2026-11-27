@@ -24,21 +24,21 @@ each section.
 
 ## Who uses it
 
-| Kind     | Users                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | Entries                                                           |
-| -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
-| Bundles  | Every bundle under [`/bundles`](../../bundles): its parts and its contracts module                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | `bundle/contracts`                                                |
-| Bundles  | Every bundle's tests, for example [`client/activation.test.ts`](../../bundles/runtime/runtime/tests/client/activation.test.ts) (`checkRecording`, `recordActivation`) and [`chat/tests/support/desktop.ts`](../../bundles/desktop/chat/tests/support/desktop.ts)                                                                                                                                                                                                                                                                                                                                                                                            | `bundle/testing`, `bundle/runtime`, `bundle`, `bundle/contracts`  |
-| Bundles  | Every bundle's Nx `build` target (see [Writing a bundle](#writing-a-bundle))                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | The build CLI                                                     |
-| Bundles  | The embedded foundation host parts [`host-config`](../../bundles/foundation/host-config/README.md) and [`transport`](../../bundles/foundation/transport/README.md): both import the type `EmbeddedBundle` from `bundle` and `bundle/contracts`; only `host-config` imports `bundle/runtime`, for `contractDocument`; since slice S67 [`postgres`](../../bundles/foundation/postgres/README.md) imports no `EmbeddedBundle` ([`configuration.ts`](../../bundles/foundation/host-config/src/host/configuration.ts), [`postgres.ts`](../../bundles/foundation/postgres/src/host/postgres.ts), [`kernel.ts`](../../bundles/foundation/transport/src/kernel.ts)) | `bundle` (types), `bundle/contracts`, `bundle/runtime`            |
-| Apps     | [`doric-host`](../../app/backend/doric-host/README.md) boots the platform with `startHostPlatform` and serves the public listener (`PLATFORM_VERSION`, exposure)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | `bundle`, `bundle/contracts`, `bundle/platform`, `bundle/runtime` |
-| Apps     | The desktop app [`doric`](../../app/desktop/doric/README.md) runs `desktopMain` generations and the window bridge, and serves `/schemas/` from the copy of `dist/schemas` the platform build makes ([`handler.ts`](../../app/desktop/doric/src/platform/protocol/handler.ts))                                                                                                                                                                                                                                                                                                                                                                               | `bundle/runtime`, `bundle/contracts`                              |
-| Apps     | The desktop platform build `app/desktop/doric-platform` imports `PLATFORM_ASSETS_VERSION`, bundles `src/contracts/index.ts` as the window's `bundle/contracts` module, and copies `packages/bundle/dist/schemas` by path into the desktop assets as `<out>/schemas/` ([`build.mjs`](../../app/desktop/doric-platform/build.mjs), [`packages.config.mjs`](../../app/desktop/doric-platform/packages.config.mjs)). Moving or renaming `dist/schemas` or `src/contracts/index.ts` breaks that build                                                                                                                                                            | `bundle/runtime`, `src/contracts/index.ts`, `dist/schemas`        |
-| Apps     | The renderer shell [`doric-renderer`](../../app/desktop/doric-renderer/README.md) imports `desktop/client`, which imports `bundle/contracts` and `bundle/runtime`; its webpack resolves with the `@org/source` condition, so the shell compiles this package's `src/`, not `dist/` ([`webpack.config.js`](../../app/desktop/doric-renderer/webpack.config.js), [`bootstrap.ts`](../../app/desktop/doric-renderer/src/bootstrap.ts))                                                                                                                                                                                                                         | `bundle/contracts`, `bundle/runtime` (through `desktop/client`)   |
-| Apps     | The desktop end-to-end tests `app/desktop/doric-e2e` ([`bridge.test.ts`](../../app/desktop/doric-e2e/tests/bridge.test.ts), [`harness.ts`](../../app/desktop/doric-e2e/tests/support/harness.ts))                                                                                                                                                                                                                                                                                                                                                                                                                                                           | `bundle/contracts`, `bundle/runtime`                              |
-| Apps     | The host end-to-end tests `app/backend/doric-host-e2e` declare `bundle` as a dependency and a TypeScript project reference, and import none of its entries ([`package.json`](../../app/backend/doric-host-e2e/package.json), [`tsconfig.json`](../../app/backend/doric-host-e2e/tsconfig.json))                                                                                                                                                                                                                                                                                                                                                             | None                                                              |
-| Packages | [`tool`](../tool/README.md) (`defineTool` over `tools/v1`), [`storage`](../storage/README.md) (in-memory foundation), [`desktop`](../desktop/README.md) (window bootstrap, elements)                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | `bundle/contracts`, `bundle/runtime`, `bundle`                    |
-| Scripts  | [`fake-host`](../../scripts/fake-host/README.md) stands in for the Doric host and serves the repository's staged bundles ([`bundles.mjs`](../../scripts/fake-host/bundles.mjs))                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | `bundle`, `bundle/runtime`                                        |
-| Tests    | The repository's boundary test [`boundaries.test.mjs`](../../tests/boundaries.test.mjs) reads the symbols of `packages/bundle/src/contracts/` by path and reports a bundle other than `core` that uses a `bundle/contracts` symbol without declaring its contract ([`boundaries.mjs`](../../tests/support/boundaries.mjs))                                                                                                                                                                                                                                                                                                                                  | `src/contracts/` (by path)                                        |
+| Kind     | Users                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | Entries                                                           |
+| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------- |
+| Bundles  | Every bundle under [`/bundles`](../../bundles): its parts and its contracts module                                                                                                                                                                                                                                                                                                                                                                                                               | `bundle/contracts`                                                |
+| Bundles  | Every bundle's tests, for example [`client/activation.test.ts`](../../bundles/runtime/runtime/tests/client/activation.test.ts) (`checkRecording`, `recordActivation`) and [`chat/tests/support/desktop.ts`](../../bundles/desktop/chat/tests/support/desktop.ts)                                                                                                                                                                                                                                 | `bundle/testing`, `bundle/runtime`, `bundle`, `bundle/contracts`  |
+| Bundles  | Every bundle's Nx `build` target (see [Writing a bundle](#writing-a-bundle))                                                                                                                                                                                                                                                                                                                                                                                                                     | The build CLI                                                     |
+| Bundles  | No bundle imports the type `EmbeddedBundle` any more: it is exported from `bundle` ([`catalog.ts`](src/loader/catalog.ts)) and used by this package's tests ([`tests/support/fixtures.ts`](tests/support/fixtures.ts)); `host-config` and `transport` stopped importing it with their kernel entries (slices S68a and S69)                                                                                                                                                                       | `bundle` (types)                                                  |
+| Apps     | [`doric-host`](../../app/backend/doric-host/README.md) boots the platform with `startHostPlatform` and serves the public listener (`PLATFORM_VERSION`, exposure)                                                                                                                                                                                                                                                                                                                                 | `bundle`, `bundle/contracts`, `bundle/platform`, `bundle/runtime` |
+| Apps     | The desktop app [`doric`](../../app/desktop/doric/README.md) runs `desktopMain` generations and the window bridge, and serves `/schemas/` from the copy of `dist/schemas` the platform build makes ([`handler.ts`](../../app/desktop/doric/src/platform/protocol/handler.ts))                                                                                                                                                                                                                    | `bundle/runtime`, `bundle/contracts`                              |
+| Apps     | The desktop platform build `app/desktop/doric-platform` imports `PLATFORM_ASSETS_VERSION`, bundles `src/contracts/index.ts` as the window's `bundle/contracts` module, and copies `packages/bundle/dist/schemas` by path into the desktop assets as `<out>/schemas/` ([`build.mjs`](../../app/desktop/doric-platform/build.mjs), [`packages.config.mjs`](../../app/desktop/doric-platform/packages.config.mjs)). Moving or renaming `dist/schemas` or `src/contracts/index.ts` breaks that build | `bundle/runtime`, `src/contracts/index.ts`, `dist/schemas`        |
+| Apps     | The renderer shell [`doric-renderer`](../../app/desktop/doric-renderer/README.md) imports `desktop/client`, which imports `bundle/contracts` and `bundle/runtime`; its webpack resolves with the `@org/source` condition, so the shell compiles this package's `src/`, not `dist/` ([`webpack.config.js`](../../app/desktop/doric-renderer/webpack.config.js), [`bootstrap.ts`](../../app/desktop/doric-renderer/src/bootstrap.ts))                                                              | `bundle/contracts`, `bundle/runtime` (through `desktop/client`)   |
+| Apps     | The desktop end-to-end tests `app/desktop/doric-e2e` ([`bridge.test.ts`](../../app/desktop/doric-e2e/tests/bridge.test.ts), [`harness.ts`](../../app/desktop/doric-e2e/tests/support/harness.ts))                                                                                                                                                                                                                                                                                                | `bundle/contracts`, `bundle/runtime`                              |
+| Apps     | The host end-to-end tests `app/backend/doric-host-e2e` declare `bundle` as a dependency and a TypeScript project reference, and import none of its entries ([`package.json`](../../app/backend/doric-host-e2e/package.json), [`tsconfig.json`](../../app/backend/doric-host-e2e/tsconfig.json))                                                                                                                                                                                                  | None                                                              |
+| Packages | [`tool`](../tool/README.md) (`defineTool` over `tools/v1`), [`storage`](../storage/README.md) (in-memory foundation), [`desktop`](../desktop/README.md) (window bootstrap, elements)                                                                                                                                                                                                                                                                                                             | `bundle/contracts`, `bundle/runtime`, `bundle`                    |
+| Scripts  | [`fake-host`](../../scripts/fake-host/README.md) stands in for the Doric host and serves the repository's staged bundles ([`bundles.mjs`](../../scripts/fake-host/bundles.mjs))                                                                                                                                                                                                                                                                                                                  | `bundle`, `bundle/runtime`                                        |
+| Tests    | The repository's boundary test [`boundaries.test.mjs`](../../tests/boundaries.test.mjs) reads the symbols of `packages/bundle/src/contracts/` by path and reports a bundle other than `core` that uses a `bundle/contracts` symbol without declaring its contract ([`boundaries.mjs`](../../tests/support/boundaries.mjs))                                                                                                                                                                       | `src/contracts/` (by path)                                        |
 
 No code imports the `bundle/externals` specifier: the package's own build reads
 [`externals.ts`](src/build/externals.ts) through a relative import
@@ -131,32 +131,65 @@ command, a host-only bundle included, and never for `stage` or `copy-md`
 
 ## Writing a bundle
 
-```ts
-import {
-  defineMethod,
-  defineService,
-  type HostContext,
-} from 'bundle/contracts';
-import { z } from 'zod';
+A host part is a process that serves the generated services of its `.proto`
+contracts. The contract is a `.proto` file under the bundle's `proto/`:
 
-export const greeter = defineService('greeter.api/v1', {
-  greet: defineMethod({
-    input: z.object({ name: z.string() }).strict(),
-    output: z.object({ text: z.string() }).strict(),
-    execute: ({ name }, call) => ({
-      text: `${name} from ${call.caller.bundleId}`,
-    }),
-  }),
-});
+```proto
+// proto/doric/greeter/v1/greeter.proto
+syntax = "proto3";
 
-export const activate = ({ services }: HostContext) => {
-  services.provide(greeter);
+package doric.greeter.v1;
+
+import "buf/validate/validate.proto";
+import "doric/platform/v1/options.proto";
+
+option (doric.platform.v1.contract) = {
+  id: "greeter/v1"
+  cardinality: CARDINALITY_ONE
+  environment: ENVIRONMENT_HOST
 };
+
+service GreeterService {
+  rpc Greet(GreetRequest) returns (GreetResponse);
+}
+
+message GreetRequest {
+  string name = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+message GreetResponse {
+  string text = 1;
+}
 ```
 
-This is `src/host/index.ts`, the bundle's host part. `manifest.json`, at the
-bundle's root, declares the bundle's identity, the platform range and the
-contracts it provides and requires:
+The project's `generate-proto` target writes its protobuf-es code into
+`src/contracts/gen/` (see [Package and project files](#package-and-project-files)),
+and `src/host/main.ts`, the bundle's host part, serves it with `runBundle`:
+
+```ts
+import { runBundle } from 'bundle/host';
+
+import { GreeterService } from '../contracts/gen/doric/greeter/v1/greeter_pb.js';
+
+runBundle({
+  services: [
+    [GreeterService, { greet: ({ name }) => ({ text: `Hello, ${name}` }) }],
+  ],
+  activate: () => undefined,
+});
+```
+
+The `services` list is static: the build reads it from the source, takes what
+the host part provides from it, and bundles `main.ts` into `dist/host/main.mjs`
+without importing it ([The rules the build checks](#the-rules-the-build-checks),
+[`runBundle`](#runbundle)); a request that breaks the `.proto`'s protovalidate
+rules is refused with `invalid_input` before the handler runs. The live bundles
+follow this shape, for example
+[`resources`](../../bundles/features/resources/src/host/main.ts) and
+[`screen-relay`](../../bundles/features/screen-relay/src/host/main.ts), which
+also passes `httpServer` for its manifest's `host.httpPrefix`.
+`manifest.json`, at the bundle's root, declares the bundle's identity, the
+platform range and the contracts it provides and requires:
 
 ```json
 {
@@ -164,26 +197,31 @@ contracts it provides and requires:
   "id": "greeter",
   "version": "1.0.0",
   "engines": { "doric": "^1.0.0" },
-  "provides": ["greeter.api/v1@1.0.0"],
+  "provides": ["greeter/v1@1.0.0"],
   "requires": []
 }
 ```
 
+A desktop or client part is `src/desktop/index.ts` or `src/client/index.ts`,
+which exports `activate` and receives a `DesktopContext` or `ClientContext`.
 The manifest's fields and rules are described in [The bundle
-manifest](../../docs/architecture/bundles/manifest.md); what `activate`
-receives in [Contexts and capabilities](../../docs/architecture/bundles/contexts.md);
+manifest](../../docs/architecture/bundles/manifest.md), including its `host`
+part (`httpPrefix`, `assets`); what `activate` receives in [Contexts and capabilities](../../docs/architecture/bundles/contexts.md);
 the `define*` family as a whole in [Contracts and the `define*`
 family](../../docs/architecture/bundles/contracts.md).
 
 ### The rules the build checks
 
-The build CLI imports each built part, calls its `activate` with a recording
-context, and compares what the part did with the manifest. A broken rule below
+The build CLI imports each built desktop and client part, calls its `activate`
+with a recording context, reads the host part's static `services` list, and
+compares what the part did with the manifest. A broken rule below
 fails the build with a `BuildError` whose message is quoted with the rule; the
 complete list of checks and outputs is in [Build tooling](#build-tooling).
 
-- A bundle has up to three parts, each in one environment: `dist/host/index.js`
-  runs in `host` and receives a `HostContext`, `dist/desktop/index.js` runs in
+- A bundle has up to three parts, each in one environment: the host part
+  (`dist/host/main.mjs`, from `src/host/main.ts`) runs in `host` as its own
+  process and is never imported by the build (since slice S69 a stale
+  `dist/host/index.js` is ignored), `dist/desktop/index.js` runs in
   `desktopMain` and receives a `DesktopContext`, and `dist/client/index.js`
   runs in `client` and receives a `ClientContext`; each context carries
   `services` ([`cli.ts`](src/build/cli.ts),
@@ -285,8 +323,7 @@ described in [Build tooling](#build-tooling).
 
 | Source                         | Output (below `dist/`)               | Built when                                             | Notes                                                                                                                                                                                              |
 | ------------------------------ | ------------------------------------ | ------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `src/host/index.ts`            | `host/index.js`                      | `tsconfig.json` includes it                            | Compiled by `tsc` in the `build` target; the host imports it                                                                                                                                       |
-| `src/host/**/*.md`             | `host/**/*.md`                       | The file exists                                        | Copied; templates the host part reads at import time                                                                                                                                               |
+| `src/host/**/*.md`             | `host/**/*.md`                       | The file exists                                        | Copied; templates the host part reads                                                                                                                                                              |
 | `src/desktop/index.ts`         | `desktop/index.js`                   | The file exists                                        | esbuild, Node 22, ESM                                                                                                                                                                              |
 | `src/client/index.ts`          | `client/index.js`                    | The file exists                                        | esbuild, browser ES2022, ESM; window import-map specifiers stay external                                                                                                                           |
 | `src/client/styles.css`        | `client/styles.css`                  | The source exists, or the client entry imports CSS     | Tailwind over the platform theme when the source exists, followed by the CSS esbuild extracted from the client's imports (Monaco, xterm); without the source the file holds only the extracted CSS |
@@ -1387,8 +1424,7 @@ semantics are in the provider's README (see above).
 
 `bundle/contracts` exports the ref and the interface of each `doric.*`
 contract, its types and its schemas
-([`platform.ts`](src/contracts/platform.ts),
-[`network.ts`](src/contracts/network.ts)). The platform provides them; a
+([`platform.ts`](src/contracts/platform.ts)). The platform provides them; a
 bundle uses them without listing them. Their full shapes are in [Contexts and
 capabilities](../../docs/architecture/bundles/contexts.md#shapes-of-the-platform-contracts).
 
@@ -1398,7 +1434,6 @@ capabilities](../../docs/architecture/bundles/contexts.md#shapes-of-the-platform
 | `doric.diagnostics/v1`   | `DoricDiagnosticsV1`   | `DoricDiagnostics`   | all                     |
 | `doric.bundle/v1`        | `DoricBundleV1`        | `DoricBundle`        | all                     |
 | `doric.log/v1`           | `DoricLogV1`           | `DoricLog`           | all                     |
-| `doric.network/v1`       | `DoricNetworkV1`       | `DoricNetwork`       | `host`                  |
 | `doric.generation/v1`    | `DoricGenerationV1`    | `DoricGeneration`    | `host`                  |
 | `doric.startup/v1`       | `DoricStartupV1`       | `DoricStartup`       | `host`                  |
 | `doric.windows/v1`       | `DoricWindowsV1`       | `DoricWindows`       | `desktopMain`           |
@@ -1450,8 +1485,8 @@ unquarantined ([`publish.ts`](src/platform/supervisor/publish.ts),
 [`supervisor.ts`](src/platform/supervisor/supervisor.ts)). When each is set is described in [The core
 bundle and quarantine](../../docs/architecture/bundles/core.md#quarantine).
 
-The other exports of [`platform.ts`](src/contracts/platform.ts) and
-[`network.ts`](src/contracts/network.ts) are the data of those contracts:
+The other exports of [`platform.ts`](src/contracts/platform.ts) are the data
+of those contracts:
 
 | Export                                                 | Type or value                                                                                                                                                                                                                                      |
 | ------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -1493,10 +1528,6 @@ The other exports of [`platform.ts`](src/contracts/platform.ts) and
 | `GenerationDescription`, `generationDescriptionSchema` | `{ generation: int; incarnation: int; state: GenerationState }`                                                                                                                                                                                    |
 | `PeerSignal`                                           | `{ topic: string` (1–128)`; payload?: unknown }`                                                                                                                                                                                                   |
 | `startupLevelSchema`                                   | `'debug' \| 'info' \| 'warn' \| 'error'`                                                                                                                                                                                                           |
-| `NetworkResources`                                     | `{ http: object; server: object` (the host's shared `http.Server`)`; sockets: object }`                                                                                                                                                            |
-
-`DoricNetwork.register` takes a `(resources: NetworkResources) => (() =>
-void) | undefined`; the listener type is not exported.
 
 ## `bundle/runtime`
 
@@ -2755,8 +2786,10 @@ types.
 ### `runBundle`
 
 Phase 2 of [`grpc-processes.md`](../../docs/designs/grpc-processes.md#10-the-typescript-sdk)
-adds the program of a host part that runs as its own process. No bundle uses it
-yet; the fixture bundles of the platform tests and the conformance suite do.
+adds the program of a host part that runs as its own process. Every bundle's
+host part runs through it from its `src/host/main.ts`, the only host entry
+since slices S67–S69; the fixture bundles of the platform tests and the
+conformance suite do too.
 
 ```ts
 function runBundle<const T extends readonly DescService[] = []>(
@@ -3411,14 +3444,19 @@ from the command line, a failure prints its message and sets exit code 1
 2. It validates each `src/skills/<dir>/SKILL.md` with `SkillSchema`
    (`Invalid skill "<path>": …`) and copies it to `dist/skills/`.
 3. It mirrors the Markdown below `src/host` into `dist/host`, as `copy-md`
-   does, because the host part reads those templates when it is imported.
+   does.
 4. It builds the desktop and client parts (below).
-5. It imports each built part (`host/index.js`, `desktop/index.js`,
-   `client/index.js`; never a frame, worker or chunk) and dry-activates it
+5. It imports each built part (`desktop/index.js` and `client/index.js`;
+   never a frame, worker or chunk) and dry-activates it
    against recording services. A client part is imported with a DOM shim
    ([`dom-shim.ts`](src/build/dom-shim.ts)): it may touch the DOM at import
    time only through `class … extends HTMLElement`. A part that fails to load
-   or exports no `activate` fails the build.
+   or exports no `activate` fails the build. The host part is never imported
+   or dry-activated (slice S69): a stale `dist/host/index.js` is ignored, and
+   what the host part provides comes from its static `services` list
+   ([`host-provides.ts`](src/build/host-provides.ts)), recorded in
+   `contracts.json` as a host-provides entry (`local: false`, no schema
+   document).
 6. It checks the recording against the manifest (below), then writes each
    contract's document to `dist/schemas/<id>.json`, `dist/contracts.json` and
    `dist/package.json` (`{ "type": "module" }`). A contract recorded in two

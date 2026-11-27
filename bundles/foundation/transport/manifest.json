@@ -3,7 +3,7 @@
   "id": "transport",
   "version": "0.0.2",
   "engines": { "doric": "^1.0.0" },
-  "description": "The host REST routes and Socket.IO namespaces.",
+  "description": "The host API: the doric.api.* Connect services.",
   "provides": [
     "api.config/v1@1.0.0",
     "api.credentials/v1@1.0.0",

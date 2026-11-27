@@ -162,7 +162,7 @@ const filesClientOf = (api: Partial<Files>): Client<typeof FilesService> => {
 
 /**
  * Services over fixed APIs. A value that is a function receives the call's
- * scope and returns the API for it (`services.use(FilesV1, { projectId })`);
+ * scope and returns the API for it (`services.use(ref, { projectId })`);
  * pass such APIs under `scoped`. A contract under `many` has one provider per
  * entry: `whenAvailable` calls back once for each, in the order given, with
  * its bundle id, and disposing the binding runs every cleanup.

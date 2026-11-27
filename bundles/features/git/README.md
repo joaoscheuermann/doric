@@ -74,12 +74,14 @@ takes every other `files.*` type with `import type`.
 ## Parts
 
 - **Contracts module** ([`src/contracts/index.ts`](src/contracts/index.ts),
-  [`src/contracts/reads.ts`](src/contracts/reads.ts)): the types, method
-  schemas and refs of `git.commands/v1` and `git.changes/v1`, the id and input
+  [`src/contracts/reads.ts`](src/contracts/reads.ts)): the types of
+  `git.commands/v1`, the types, method schemas and ref of `git.changes/v1`
+  (slice S69 removed `git.commands/v1`'s ref `GitCommandsV1` and method table
+  `gitMethods`), the id and input
   schema of `git.open-comparison/v1`, and the changed-file types the window
   reads. It writes its own schemas instead of importing the runtime's, because
   the client part loads it too. `git/contracts` exports:
-  - refs and method specs: `GitCommandsV1`, `gitMethods`, `GitChangesV1`,
+  - the ref and method specs of `git.changes/v1`: `GitChangesV1`,
     `gitChangesMethods`; the command id `OPEN_COMPARISON_COMMAND`
     (`'git.open-comparison/v1'`) with `openComparisonInput` and its type
     `OpenComparisonInput`;
@@ -94,10 +96,6 @@ takes every other `files.*` type with `import type`.
     `ProjectChangesResult = { status: 'ready'; changes: ProjectChanges } | { status: ProjectLeaseState; retryAfterSeconds?: number } | { status: 'invalid_path' | 'not_found' }`
     and `ProjectFileDiffResult`, the same with `{ status: 'ready'; diff: ProjectFileDiff }`,
     where `ProjectLeaseState` is `files`' `'missing' | 'pending' | 'expired' | 'unavailable'`.
-
-  Other bundles import `gitMethods` too: the transport's test host builds a
-  fake `git.commands/v1` from it
-  ([`bundles/foundation/transport/tests/support/host.ts`](../../foundation/transport/tests/support/host.ts)).
 
 - **Host part** ([`src/host/part.ts`](src/host/part.ts)): at activation it
   registers the `GIT` credential kind with `secrets/v1`, follows
@@ -186,13 +184,14 @@ how the stored identity reaches the sandbox.
 
 ## `git.commands/v1`
 
-`GitCommandsV1 = ref<Git>('git.commands/v1')`, version 1.1.0, provided by the
-host part ([`src/contracts/index.ts`](src/contracts/index.ts),
-[`src/host/commands.ts`](src/host/commands.ts)). The window reaches every method
-through the manifest's `desktopScope`. `status` and `branches` take the Thread id as a string; every other
-input is a strict object (an unknown field is refused). Outputs are loose
-objects (an extra field is accepted), except the `ready` value of `discard`,
-`{ discarded }`, which is strict.
+`Git` ([`src/contracts/index.ts`](src/contracts/index.ts)), version 1.1.0, is
+served by the host part as the generated `CommandsService` of
+[`proto/doric/git/commands/v1/commands.proto`](proto/doric/git/commands/v1/commands.proto)
+([`src/host/main.ts`](src/host/main.ts),
+[`src/host/commands.ts`](src/host/commands.ts)); its requests are checked by
+that file's protovalidate rules. The window reaches every method through the
+manifest's `desktopScope`. `status` and `branches` take the Thread id as a
+string.
 
 ### Types
 
@@ -324,11 +323,11 @@ where no answer is defined throws, and the caller receives a contract error.
 The host's REST routes call these methods: `GET /projects/:id/changes`,
 `GET /projects/:id/diff` and `GET /projects/:id/files/diff` the Project
 methods
-([`routes/projects.ts`](../../foundation/transport/src/host/routes/projects.ts)),
+([`operations/projects.ts`](../../foundation/transport/src/host/api/operations/projects.ts)),
 and `GET /threads/:id/git`, `GET /threads/:id/branches` and
 `POST /threads/:id/branches` the Thread methods `status`, `branches` and
 `switchBranch`
-([`routes/threads.ts`](../../foundation/transport/src/host/routes/threads.ts)).
+([`operations/threads.ts`](../../foundation/transport/src/host/api/operations/threads.ts)).
 
 ### `status`
 

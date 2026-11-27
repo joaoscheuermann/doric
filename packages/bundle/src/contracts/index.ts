@@ -98,11 +98,6 @@ export {
   traceparentHeader,
 } from './metadata.js';
 export {
-  type DoricNetwork,
-  DoricNetworkV1,
-  type NetworkResources,
-} from './network.js';
-export {
   AppHooksV1,
   type BundleDescription,
   type BundleState,

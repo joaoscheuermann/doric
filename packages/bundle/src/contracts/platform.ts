@@ -25,7 +25,6 @@ import {
 import type { Disposable } from './context.js';
 import { defineHook, definePlatformHooks, ref } from './define.js';
 import type { Environment } from './ids.js';
-import { networkMethods } from './network.js';
 import type { JsonObject } from './types.js';
 
 // Platform hooks ------------------------------------------------------------
@@ -1076,7 +1075,6 @@ export interface PlatformContractSpec {
 
 /** Method specifications of the `doric.*` services, by contract ID. */
 export const platformContracts = Object.freeze({
-  'doric.network/v1': { environments: ['host'], methods: networkMethods },
   // [S8-7] desktopMain and client have their own catalog and diagnostics.
   'doric.catalog/v1': {
     environments: ['host', 'desktopMain', 'client'],

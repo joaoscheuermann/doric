@@ -128,7 +128,7 @@ export type CreateOutcome =
   | { readonly status: 'failed'; readonly message: string };
 
 /**
- * The Project is `call.scope.projectId` (`services.use(FilesV1, { projectId })`).
+ * The Project is `call.scope.projectId`.
  * No method acquires a lease: a Project without one answers its lease state.
  */
 export interface Files {
@@ -164,85 +164,6 @@ export interface Files {
   ): Promise<LeaseOutcome<CreateOutcome>>;
 }
 
-const sandboxEntrySchema: z.ZodType<SandboxEntry, SandboxEntry> = z.looseObject(
-  {
-    name: z.string(),
-    path: z.string(),
-    type: z.enum(['directory', 'file']),
-    size: z.number().optional(),
-  },
-);
-
-const sandboxTreeNodeSchema: z.ZodType<SandboxTreeNode, SandboxTreeNode> =
-  z.looseObject({
-    name: z.string(),
-    path: z.string(),
-    type: z.enum(['directory', 'file']),
-    size: z.number().optional(),
-    get children() {
-      return z.array(sandboxTreeNodeSchema).optional();
-    },
-  });
-
-const leaseStates = z.looseObject({
-  status: z.enum(['pending', 'unavailable', 'expired', 'missing']),
-});
-
-const ready = <T extends z.ZodType>(value: T) =>
-  z.looseObject({ status: z.literal('ready'), value });
-
-const listingRefusal = z.looseObject({
-  status: z.enum(['not_found', 'not_directory', 'invalid_path']),
-});
-
-const directoryReadSchema = z.union([
-  z.looseObject({
-    status: z.literal('listed'),
-    path: z.string(),
-    entries: z.array(sandboxEntrySchema),
-  }),
-  listingRefusal,
-]);
-
-const treeReadSchema = z.union([
-  z.looseObject({
-    status: z.literal('listed'),
-    path: z.string(),
-    entries: z.array(sandboxTreeNodeSchema),
-  }),
-  listingRefusal,
-]);
-
-const directoriesReadSchema = z.looseObject({
-  status: z.literal('listed'),
-  directories: z.array(
-    z.union([
-      z.looseObject({
-        path: z.string(),
-        status: z.literal('listed'),
-        entries: z.array(sandboxEntrySchema),
-      }),
-      z.looseObject({
-        path: z.string(),
-        status: z.enum(['not_found', 'not_directory', 'invalid_path']),
-      }),
-    ]),
-  ),
-});
-
-const contentReadSchema = z.union([
-  z.looseObject({
-    status: z.literal('read'),
-    path: z.string(),
-    content: z.string(),
-    truncated: z.boolean(),
-    binary: z.boolean(),
-  }),
-  z.looseObject({ status: z.enum(['not_found', 'not_file', 'invalid_path']) }),
-]);
-
-const optionalPath = z.object({ path: z.string().optional() }).strict();
-
 export const createInputSchema = z
   .object({ directory: z.string(), name: z.string() })
   .strict();
@@ -257,56 +178,6 @@ export const createOutcomeSchema = z.union([
     .strict(),
   z.object({ status: z.literal('failed'), message: z.string() }).strict(),
 ]);
-
-const createOutput = z.union([
-  ready(createOutcomeSchema),
-  leaseStates,
-]) as z.ZodType<LeaseOutcome<CreateOutcome>, LeaseOutcome<CreateOutcome>>;
-
-export const filesMethods = {
-  directory: {
-    input: optionalPath,
-    output: z.union([ready(directoryReadSchema), leaseStates]) as z.ZodType<
-      LeaseOutcome<DirectoryRead>,
-      LeaseOutcome<DirectoryRead>
-    >,
-  },
-  tree: {
-    input: optionalPath,
-    output: z.union([ready(treeReadSchema), leaseStates]) as z.ZodType<
-      LeaseOutcome<TreeRead>,
-      LeaseOutcome<TreeRead>
-    >,
-  },
-  directories: {
-    input: z
-      .object({
-        paths: z.array(z.string()).min(1).max(DIRECTORIES_LIMIT),
-        root: z.string().optional(),
-      })
-      .strict(),
-    output: z.union([ready(directoriesReadSchema), leaseStates]) as z.ZodType<
-      LeaseOutcome<DirectoriesRead>,
-      LeaseOutcome<DirectoriesRead>
-    >,
-  },
-  content: {
-    input: z
-      .object({
-        path: z.string(),
-        encoding: z.enum(['utf8', 'base64']).optional(),
-      })
-      .strict(),
-    output: z.union([ready(contentReadSchema), leaseStates]) as z.ZodType<
-      LeaseOutcome<ContentRead>,
-      LeaseOutcome<ContentRead>
-    >,
-  },
-  createFile: { input: createInputSchema, output: createOutput },
-  createDirectory: { input: createInputSchema, output: createOutput },
-} as const;
-
-export const FilesV1 = ref<Files>('files/v1');
 
 // files.sandbox/v1 (client, local) -------------------------------------------
 

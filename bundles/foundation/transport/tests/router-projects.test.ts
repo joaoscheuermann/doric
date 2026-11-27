@@ -12,7 +12,13 @@ import test, { type TestContext } from 'node:test';
 
 import { type JsonValue, toBinary, toJson } from '@bufbuild/protobuf';
 import { Code } from '@connectrpc/connect';
-import { conflictError, encode, notFoundError } from 'runtime/contracts';
+import {
+  conflictError,
+  encode,
+  notFoundError,
+  type RestError,
+  restErrors,
+} from 'runtime/contracts';
 import {
   LeaseService,
   SshResponseSchema as LeaseSshResponseSchema,
@@ -38,9 +44,18 @@ import {
   TerminateProjectResponseSchema,
   UpdateProjectResponseSchema,
 } from '../src/contracts/gen/doric/api/projects/v1/projects_pb.js';
-import type { Fakes } from './support/host.js';
+import {
+  assertRouteRefusal,
+  assertRouteSuccess,
+  internalError,
+  routed,
+} from './support/route-answers.js';
 import { fakeOf, type Harness, harness } from './support/router.js';
-import { leaseFailure, routerFakes } from './support/router-fakes.js';
+import {
+  type Fakes,
+  leaseFailure,
+  routerFakes,
+} from './support/router-fakes.js';
 import {
   activated,
   assertMessage,
@@ -51,16 +66,11 @@ import {
   ready,
   refusalOf,
   sshAccess,
+  terminal,
   thread,
   threadId,
   workspaceFakes,
 } from './support/router-fixtures.js';
-import {
-  assertRefusalParity,
-  assertSuccessParity,
-  routeAnswer,
-  routed,
-} from './support/router-parity.js';
 
 const refused = (reason: string, message: string, code: Code): Refusal => ({
   reason,
@@ -431,14 +441,27 @@ void test('R-proj-2: a pending lease answers {pending: {retryAfterSeconds: 1}} o
 });
 
 void test('R-proj-2: missing, expired and unavailable leases answer the route refusals on every workspace read', async (t) => {
-  for (const status of ['missing', 'expired', 'unavailable'] as const) {
+  const leaseRefusals: readonly (readonly [string, RestError])[] = [
+    ['missing', notFoundError('project')],
+    [
+      'expired',
+      {
+        status: 410,
+        code: 'project_files_expired',
+        message: 'The Project file access has expired.',
+      },
+    ],
+    ['unavailable', conflictError('project', 'files_unavailable')],
+  ];
+
+  for (const [status, expected] of leaseRefusals) {
     for (const read of reads) {
       const fakes = answering(read.fake, read.method, { status });
 
-      await assertRefusalParity(
+      await assertRouteRefusal(
         t,
         fakes,
-        [`/projects/${projectId}/${routeOf(read.rpc)}`],
+        expected,
         read.call,
         `${read.rpc} ${status}`,
       );
@@ -446,40 +469,73 @@ void test('R-proj-2: missing, expired and unavailable leases answer the route re
   }
 });
 
-/** The route path of a unary workspace read, after `/projects/:id/`. */
-const routeOf = (rpc: string): string =>
-  ({
-    ListFiles: 'files?path=src',
-    GetTree: 'tree',
-    GetDiff: 'diff?path=src',
-    ListChanges: 'changes',
-    GetFileDiff: 'files/diff?repository=&path=a.ts',
-    GetProjectResources: 'resources',
-  })[rpc] ?? assert.fail(rpc);
+/** Today's path refusals of the workspace reads. */
+const pathNotFound = (message: string): RestError => ({
+  status: 404,
+  code: 'project_path_not_found',
+  message,
+});
+const invalidPath = (message: string): RestError => ({
+  status: 422,
+  code: 'invalid_project_path',
+  message,
+});
 
 void test("R-proj-2: each read status answers the route's reason and message", async (t) => {
+  const notFound = pathNotFound('The Project path was not found.');
+  const notDirectory = invalidPath('The Project path is not a directory.');
   const cases = [
-    ['ListFiles', 'files', 'directory', 'not_found'],
-    ['ListFiles', 'files', 'directory', 'not_directory'],
-    ['ListFiles', 'files', 'directory', 'invalid_path'],
-    ['GetTree', 'files', 'tree', 'not_found'],
-    ['GetTree', 'files', 'tree', 'not_directory'],
-    ['GetDiff', 'git', 'diff', 'not_found'],
-    ['GetDiff', 'git', 'diff', 'invalid_path'],
-    ['ListChanges', 'git', 'changes', 'not_found'],
-    ['ListChanges', 'git', 'changes', 'invalid_path'],
-    ['GetFileDiff', 'git', 'fileDiff', 'not_found'],
-    ['GetFileDiff', 'git', 'fileDiff', 'invalid_path'],
+    ['ListFiles', 'files', 'directory', 'not_found', notFound],
+    ['ListFiles', 'files', 'directory', 'not_directory', notDirectory],
+    ['ListFiles', 'files', 'directory', 'invalid_path', notDirectory],
+    ['GetTree', 'files', 'tree', 'not_found', notFound],
+    ['GetTree', 'files', 'tree', 'not_directory', notDirectory],
+    ['GetDiff', 'git', 'diff', 'not_found', notFound],
+    [
+      'GetDiff',
+      'git',
+      'diff',
+      'invalid_path',
+      invalidPath('The Project path is invalid.'),
+    ],
+    [
+      'ListChanges',
+      'git',
+      'changes',
+      'not_found',
+      pathNotFound('The Project path cannot be read.'),
+    ],
+    [
+      'ListChanges',
+      'git',
+      'changes',
+      'invalid_path',
+      invalidPath('The Project path cannot be read.'),
+    ],
+    [
+      'GetFileDiff',
+      'git',
+      'fileDiff',
+      'not_found',
+      pathNotFound('The changed file cannot be read.'),
+    ],
+    [
+      'GetFileDiff',
+      'git',
+      'fileDiff',
+      'invalid_path',
+      invalidPath('The changed file cannot be read.'),
+    ],
   ] as const;
 
-  for (const [rpc, fake, method, status] of cases) {
+  for (const [rpc, fake, method, status, expected] of cases) {
     const read = reads.find((entry) => entry.rpc === rpc);
 
     assert.ok(read !== undefined);
-    await assertRefusalParity(
+    await assertRouteRefusal(
       t,
       answering(fake, method, ready({ status })),
-      [`/projects/${projectId}/${routeOf(rpc)}`],
+      expected,
       read.call,
       `${rpc} ${status}`,
     );
@@ -682,12 +738,15 @@ void test('R-proj-4: a text over 1 MiB is split into chunks of at most 1,048,576
 });
 
 void test('R-proj-4: not_found and not_file end ReadFile with the route refusal before any item', async (t) => {
-  for (const status of ['not_found', 'not_file'] as const) {
+  for (const [status, expected] of [
+    ['not_found', pathNotFound('The Project path was not found.')],
+    ['not_file', invalidPath('The Project path is not a readable file.')],
+  ] as const) {
     const fakes = answering('files', 'content', ready({ status }));
-    await assertRefusalParity(
+    await assertRouteRefusal(
       t,
       fakes,
-      [`/projects/${projectId}/files/content?path=a.ts`],
+      expected,
       (h) => all(h.projects().readFile({ projectId, path: 'a.ts' })),
       `ReadFile ${status}`,
     );
@@ -788,31 +847,31 @@ void test("P1: each runtime outcome of the Project routes ends the RPC with the 
   const cases: readonly (readonly [
     string,
     Fakes,
-    readonly [string, string?, unknown?],
+    RestError | undefined,
     (h: Harness) => Promise<unknown>,
   ])[] = [
     [
       'project undefined',
       missing('project'),
-      [`/projects/${projectId}`],
+      restErrors.project(undefined),
       (h) => h.projects().getProject({ projectId }),
     ],
     [
       'renameProject undefined',
       missing('renameProject'),
-      [`/projects/${projectId}`, 'PATCH', { name: 'Name' }],
+      restErrors.project(undefined),
       (h) => h.projects().updateProject({ projectId, name: 'Name' }),
     ],
     [
       'setProjectColor undefined',
       missing('setProjectColor'),
-      [`/projects/${projectId}/color`, 'PATCH', { color: null }],
+      restErrors.project(undefined),
       (h) => h.projects().setProjectColor({ projectId }),
     ],
     [
       'terminateProject undefined',
       missing('terminateProject'),
-      [`/projects/${projectId}/terminate`, 'POST'],
+      restErrors.project(undefined),
       (h) => h.projects().terminateProject({ projectId }),
     ],
     ...(['missing', 'active'] as const).map(
@@ -823,7 +882,7 @@ void test("P1: each runtime outcome of the Project routes ends the RPC with the 
             ...workspaceFakes,
             runtime: { ...workspaceFakes.runtime, deleteProject: () => result },
           },
-          [`/projects/${projectId}`, 'DELETE'],
+          restErrors.deleteProject(result),
           (h: Harness) => h.projects().deleteProject({ projectId }),
         ] as const,
     ),
@@ -838,7 +897,7 @@ void test("P1: each runtime outcome of the Project routes ends the RPC with the 
               createThread: () => ({ status }),
             },
           },
-          [`/projects/${projectId}/threads`, 'POST', { name: 'Thread' }],
+          restErrors.createThread({ status }),
           (h: Harness) =>
             h.projects().createThread({ projectId, name: 'Thread' }),
         ] as const,
@@ -849,7 +908,7 @@ void test("P1: each runtime outcome of the Project routes ends the RPC with the 
         ...workspaceFakes,
         threads: { ...workspaceFakes.threads, threads: () => undefined },
       },
-      [`/projects/${projectId}/threads`],
+      restErrors.threads(undefined),
       (h) => h.projects().listThreads({ projectId }),
     ],
     [
@@ -863,23 +922,24 @@ void test("P1: each runtime outcome of the Project routes ends the RPC with the 
           },
         },
       },
-      [`/projects/${projectId}`],
+      internalError,
       (h) => h.projects().getProject({ projectId }),
     ],
   ];
 
-  for (const [name, fakes, route, call] of cases) {
-    await assertRefusalParity(t, fakes, route, call, name);
+  for (const [name, fakes, expected, call] of cases) {
+    await assertRouteRefusal(t, fakes, expected, call, name);
   }
 });
 
 void test("P2: one success per ProjectsService RPC answers the route's body under its wrapper", async (t) => {
   const asIs = (body: unknown) => body;
   const value = (body: unknown) => ({ value: body });
+  // Today's route bodies over `workspaceFakes`.
   const cases = [
     [
       'CreateProject',
-      ['/projects', 'POST', { name: 'Project' }],
+      { ...project, ssh: { href: `/projects/${projectId}/ssh` } },
       CreateProjectResponseSchema,
       (h: Harness) => h.projects().createProject({ name: 'Project' }),
       (body: unknown) => {
@@ -890,21 +950,21 @@ void test("P2: one success per ProjectsService RPC answers the route's body unde
     ],
     [
       'ListProjects',
-      ['/projects'],
+      { items: [project] },
       ListProjectsResponseSchema,
       (h: Harness) => h.projects().listProjects({}),
       asIs,
     ],
     [
       'GetProject',
-      [`/projects/${projectId}`],
+      project,
       GetProjectResponseSchema,
       (h: Harness) => h.projects().getProject({ projectId }),
       (body: unknown) => ({ project: body }),
     ],
     [
       'UpdateProject',
-      [`/projects/${projectId}`, 'PATCH', { name: 'Renamed' }],
+      { ...project, name: 'Renamed' },
       UpdateProjectResponseSchema,
       (h: Harness) =>
         h.projects().updateProject({ projectId, name: 'Renamed' }),
@@ -912,63 +972,78 @@ void test("P2: one success per ProjectsService RPC answers the route's body unde
     ],
     [
       'SetProjectColor',
-      [`/projects/${projectId}/color`, 'PATCH', { color: 'red' }],
+      { ...project, color: 'red' },
       SetProjectColorResponseSchema,
       (h: Harness) => h.projects().setProjectColor({ projectId, color: 'red' }),
       (body: unknown) => ({ project: body }),
     ],
     [
       'CreateThread',
-      [`/projects/${projectId}/threads`, 'POST', { name: 'Thread' }],
+      thread,
       CreateThreadResponseSchema,
       (h: Harness) => h.projects().createThread({ projectId, name: 'Thread' }),
       (body: unknown) => ({ thread: body }),
     ],
     [
       'ListThreads',
-      [`/projects/${projectId}/threads`],
+      { items: [thread] },
       ListThreadsResponseSchema,
       (h: Harness) => h.projects().listThreads({ projectId }),
       (body: unknown) => ({ threadPage: body }),
     ],
     [
       'GetProjectSsh',
-      [`/projects/${projectId}/ssh`],
+      { status: 'ready', vmId: 'vm-1', ssh: sshAccess, href: '/vms/vm-1/ssh' },
       GetProjectSshResponseSchema,
       (h: Harness) => h.projects().getProjectSsh({ projectId }),
       value,
     ],
     [
       'ListFiles',
-      [`/projects/${projectId}/files?path=src`],
+      {
+        path: 'src',
+        entries: [{ name: 'a.ts', path: 'src/a.ts', type: 'file' }],
+      },
       ListFilesResponseSchema,
       (h: Harness) => h.projects().listFiles({ projectId, path: 'src' }),
       value,
     ],
     [
       'GetTree',
-      [`/projects/${projectId}/tree`],
+      { path: '', entries: [] },
       GetTreeResponseSchema,
       (h: Harness) => h.projects().getTree({ projectId }),
       value,
     ],
     [
       'GetDiff',
-      [`/projects/${projectId}/diff?path=src`],
+      { path: 'src', repositories: [] },
       GetDiffResponseSchema,
       (h: Harness) => h.projects().getDiff({ projectId, path: 'src' }),
       value,
     ],
     [
       'ListChanges',
-      [`/projects/${projectId}/changes`],
+      { repositories: [] },
       ListChangesResponseSchema,
       (h: Harness) => h.projects().listChanges({ projectId }),
       value,
     ],
     [
       'GetFileDiff',
-      [`/projects/${projectId}/files/diff?repository=&path=a.ts`],
+      {
+        path: 'a.ts',
+        status: 'modified',
+        staged: false,
+        unstaged: true,
+        indexStatus: ' ',
+        worktreeStatus: 'M',
+        repository: '',
+        original: 'a',
+        modified: 'b',
+        binary: false,
+        truncated: false,
+      },
       GetFileDiffResponseSchema,
       (h: Harness) =>
         h.projects().getFileDiff({ projectId, repository: '', path: 'a.ts' }),
@@ -976,39 +1051,44 @@ void test("P2: one success per ProjectsService RPC answers the route's body unde
     ],
     [
       'GetProjectResources',
-      [`/projects/${projectId}/resources`],
+      {
+        status: 'ready',
+        at: '2026-01-01T00:00:00.000Z',
+        cpuCount: 2,
+        memoryUsedBytes: 1024,
+      },
       GetProjectResourcesResponseSchema,
       (h: Harness) => h.projects().getProjectResources({ projectId }),
       value,
     ],
     [
       'ListTerminals',
-      [`/projects/${projectId}/terminals`],
+      { items: [terminal] },
       ListTerminalsResponseSchema,
       (h: Harness) => h.projects().listTerminals({ projectId }),
       asIs,
     ],
     [
       'TerminateProject',
-      [`/projects/${projectId}/terminate`, 'POST'],
+      { ...project, state: 'cancelled' },
       TerminateProjectResponseSchema,
       (h: Harness) => h.projects().terminateProject({ projectId }),
       (body: unknown) => ({ project: body }),
     ],
     [
       'DeleteProject',
-      [`/projects/${projectId}`, 'DELETE'],
+      undefined,
       DeleteProjectResponseSchema,
       (h: Harness) => h.projects().deleteProject({ projectId }),
       () => ({}),
     ],
   ] as const;
 
-  for (const [rpc, route, schema, call, wrap] of cases) {
-    await assertSuccessParity(
+  for (const [rpc, body, schema, call, wrap] of cases) {
+    await assertRouteSuccess(
       t,
       workspaceFakes,
-      route,
+      body,
       schema,
       call as never,
       wrap,
@@ -1018,17 +1098,16 @@ void test("P2: one success per ProjectsService RPC answers the route's body unde
 });
 
 void test("P2: ReadFile streams the route's {path, content, truncated, binary} as head and content", async (t) => {
-  const route = await routeAnswer(workspaceFakes, [
-    `/projects/${projectId}/files/content?path=a.ts`,
-  ]);
-  const { content: text, ...rest } = route.body as {
-    content: string;
-    path: string;
+  // Today's `GET /projects/:id/files/content?path=a.ts` body over `workspaceFakes`.
+  const { content: text, ...rest } = {
+    path: 'a.ts',
+    content: 'hello',
+    truncated: false,
+    binary: false,
   };
   const h = await served(t);
   const items = await all(h.projects().readFile({ projectId, path: 'a.ts' }));
 
-  assert.equal(route.status, 200);
   assert.deepEqual(
     items.map((item) => toJson(ReadFileResponseSchema, item)),
     [{ head: { status: 'read', ...rest } }, { content: text }].map((item) =>

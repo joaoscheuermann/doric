@@ -118,7 +118,7 @@ void test('a member without local values is not local', () => {
 
 // Runtime documents match the build ---------------------------------------------
 
-const hostPart = `import { z } from ${JSON.stringify(zodUrl)};
+const desktopPart = `import { z } from ${JSON.stringify(zodUrl)};
 import { defineMethod, defineService } from ${JSON.stringify(contractsUrl)};
 export const api = defineService('drift.api/v1', {
   list: defineMethod({
@@ -141,7 +141,7 @@ void test('the document computed from a live definition equals the one the build
   await withRoot(async (root) => {
     const dir = await writeBundle(root, 'drift', {
       manifest: manifest('drift', { provides: ['drift.api/v1@1.0.0'] }),
-      files: { 'dist/host/index.js': hostPart },
+      files: { 'dist/desktop/index.js': desktopPart },
     });
 
     await buildBundle(dir);
@@ -153,11 +153,11 @@ void test('the document computed from a live definition equals the one the build
       ),
     ) as unknown;
     const { api } = (await import(
-      pathToFileURL(join(dir, 'dist', 'host', 'index.js')).href
+      pathToFileURL(join(dir, 'dist', 'desktop', 'index.js')).href
     )) as { api: AnyServiceDefinition };
     const live = contractDocument({
       id: api.id,
-      environment: 'host',
+      environment: 'desktopMain',
       cardinality: api.cardinality,
       kind: 'service',
       methods: api.methods,

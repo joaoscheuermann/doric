@@ -1,6 +1,6 @@
 // Shared fixtures of `transport`'s router tests (phase 3, S60c): the domain
-// values of `host-routes.test.ts` (what the kernel's fakes answer, and what
-// the router fakes answer once `encode`d into the generated messages), the
+// values the domain fakes answer (those of the removed `host-routes.test.ts`),
+// and what the router fakes answer once `encode`d into the generated messages, the
 // Doric refusal of a failed call and its gRPC code, and small helpers.
 
 import assert from 'node:assert/strict';

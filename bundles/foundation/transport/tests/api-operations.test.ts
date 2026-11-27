@@ -10,7 +10,6 @@ import { projectOperations } from '../src/host/api/operations/projects.js';
 import { terminalOperations } from '../src/host/api/operations/terminals.js';
 import { threadOperations } from '../src/host/api/operations/threads.js';
 import type { TransportPorts } from '../src/host/api/ports.js';
-import type { TransportServices } from '../src/host/services.js';
 
 /*
  * S60b K2 (contract s60 §2.6, §3): each route body, moved into an operation
@@ -53,12 +52,6 @@ const projectNotFound = refused(
   'project_not_found',
   'The project was not found.',
 );
-
-test('the kernel services are the ports (TransportServices is assignable to TransportPorts)', () => {
-  const services = {} as TransportServices;
-  const narrowed: TransportPorts = services;
-  assert.equal(narrowed, services);
-});
 
 /** Every Project read that answers the lease state, with the query its route reads. */
 const leaseReads = [
@@ -254,7 +247,7 @@ test('K2: DeleteProject answers 204, and refuses missing and active', async () =
   );
 });
 
-test('D1: an operation checks no path UUID (validateId stays Express middleware)', async () => {
+test('D1: an operation checks no path UUID', async () => {
   const seen: unknown[] = [];
   const operations = projectOperations(
     ports<ProjectPorts>({

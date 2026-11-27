@@ -407,10 +407,11 @@ starts that bundle disabled, and `ResetComposition` clears the overrides
 ([`src/lib/bundles/boot.ts`](src/lib/bundles/boot.ts)). Before S62c3 the kernel owned one Express app,
 one Node HTTP server and one Socket.IO server on it, and handed all three to
 the bundles as their network
-([`src/index.ts`](src/index.ts)); the `transport` bundle registers the REST
-routes and Socket.IO namespaces on them
-([`transport/src/host/index.ts`](../../../bundles/foundation/transport/src/host/index.ts)),
-and the `screen-relay` bundle its `/screen/<token>/` upgrades
+([`src/index.ts`](src/index.ts)); the `transport` bundle registered the REST
+routes and Socket.IO namespaces on them until slice S69 deleted them
+([`src/host/process/service.ts`](../../../bundles/foundation/transport/src/host/process/service.ts)),
+and the `screen-relay` bundle its `/screen/<token>/` upgrades, which it now
+serves on its own listener
 ([`screen-relay/src/host/relay.ts`](../../../bundles/features/screen-relay/src/host/relay.ts)).
 Two Socket.IO settings follow from that:
 
@@ -517,10 +518,10 @@ lives in; each bundle's README is the home of its contracts and behavior.
 
 In `bundles/foundation/`:
 
-- [`transport`](../../../bundles/foundation/transport/README.md) registers
-  every REST route and Socket.IO namespace on the kernel's listener through
-  `doric.network/v1`; the kernel registers no product route of its own, only
-  the [desktop bridge](#the-desktop-bridge).
+- [`transport`](../../../bundles/foundation/transport/README.md) serves the
+  `doric.api.*` services that the gateway exposes on the public listener; its
+  REST routes, Socket.IO namespaces and `doric.network/v1` registration were
+  deleted in slice S69.
 - [`postgres`](../../../bundles/foundation/postgres/README.md) provides
   `storage.backend/v1` and `secrets.backend/v1`, owns the Prisma schema and
   migrations under
@@ -819,15 +820,18 @@ The signal handlers:
 
 ### The desktop bridge
 
-The kernel's one Socket.IO namespace is `/doric/bridge`, on the same server
-(`src/lib/bridge/socket.ts`). The host creates one
-Socket.IO server and hands it both to the bridge and, as `sockets` of
-`doric.network/v1`, to the bundles ([`src/index.ts`](src/index.ts)), so
-`/doric/bridge` shares it with the namespaces `transport` opens there:
-`/status`, `/projects` and `/threads`
-([`transport/src/host/index.ts`](../../../bundles/foundation/transport/src/host/index.ts),
-[`sockets/status.ts`](../../../bundles/foundation/transport/src/host/sockets/status.ts),
-[`sockets/workspace.ts`](../../../bundles/foundation/transport/src/host/sockets/workspace.ts)).
+> Removed in slice S63b with `src/lib/bridge/{socket,catalog}.ts`: the desktop
+> reaches the host over Connect, through Electron main's `doric:connect` relay
+> ([`connect-relay.ts`](../../desktop/doric/src/platform/bridge/connect-relay.ts),
+> [`host/connect.ts`](../../desktop/doric/src/platform/host/connect.ts)). What
+> follows records the removed bridge; its rewrite belongs to phase 8 of
+> [the spec](../../../docs/designs/grpc-processes.md).
+
+The kernel's one Socket.IO namespace was `/doric/bridge`, on the same server
+(`src/lib/bridge/socket.ts`). The host created one Socket.IO server and handed
+it both to the bridge and, as `sockets` of `doric.network/v1` (removed in slice
+S69), to the bundles, so `/doric/bridge` shared it with the namespaces
+`transport` opened there: `/status`, `/projects` and `/threads`.
 Through the bridge the
 desktop calls the contracts of the host's bundles. Each message is emitted
 under its `kind` and carries the whole envelope message, whose shapes are
@@ -1121,17 +1125,26 @@ other operations treat a Project without one this way
 
 ## REST API
 
+> Slice S69 deleted `transport`'s REST routes and Socket.IO namespaces and
+> `screen-relay`'s kernel mount: the host serves the `doric.api.*` services
+> through the gateway, and `screen-relay` serves `/screen/` on its own
+> listener behind it. This section and [Socket.IO](#socketio) record the
+> removed surface; its refusal codes and messages are those the `doric.api.*`
+> operations still answer
+> ([`transport` README](../../../bundles/foundation/transport/README.md#rest-and-socketio-removed-slice-s69)).
+
 The [`transport`](../../../bundles/foundation/transport/README.md) bundle
-serves the REST API on the host's shared Express app, and the
-[`screen-relay`](../../../bundles/features/screen-relay/README.md) bundle adds
-one relayed path tree to the same app. No other bundle and nothing in the
-kernel registers an HTTP route
-([`host/app.ts`](../../../bundles/foundation/transport/src/host/app.ts),
-[`kernel.ts`](../../../bundles/foundation/transport/src/kernel.ts),
-[`screen-relay/src/host/index.ts`](../../../bundles/features/screen-relay/src/host/index.ts),
-[`src/index.ts`](src/index.ts)). The routes carry no authentication: who can
-reach the port is the only control
-([`routes/credentials.ts`](../../../bundles/foundation/transport/src/host/routes/credentials.ts)).
+served the REST API on the host's shared Express app, and the
+[`screen-relay`](../../../bundles/features/screen-relay/README.md) bundle added
+one relayed path tree to the same app; no other bundle and nothing in the
+kernel registered an HTTP route. Since S69 `transport` serves the
+`doric.api.*` services from its process entry
+([`main.ts`](../../../bundles/foundation/transport/src/host/main.ts)) and
+`screen-relay` serves `/screen/` from its own
+([`main.ts`](../../../bundles/features/screen-relay/src/host/main.ts)). Neither
+the routes nor the services carry authentication: who can reach the port is
+the only control
+([`operations/credentials.ts`](../../../bundles/foundation/transport/src/host/api/operations/credentials.ts)).
 The routes call the contracts of the bundles that own each resource, and
 those bundles' READMEs describe the behavior behind each answer: the
 [`runtime`](../../../bundles/runtime/runtime/README.md) for Projects, Threads,
@@ -1147,18 +1160,18 @@ prompts and replay, [`files`](../../../bundles/features/files/README.md) and
 Every path is served at the root of the host's port (default `3000`). A
 Project, Thread or credential `:id`, a `:promptId` and the page cursors are
 UUIDs
-([`routes/input.ts`](../../../bundles/foundation/transport/src/host/routes/input.ts));
+([`api/input.ts`](../../../bundles/foundation/transport/src/host/api/input.ts));
 a terminal `:id` and a VM `:id` are opaque strings whose form no route checks
-([`routes/terminals.ts`](../../../bundles/foundation/transport/src/host/routes/terminals.ts),
-[`routes/vms.ts`](../../../bundles/foundation/transport/src/host/routes/vms.ts)).
+([`operations/terminals.ts`](../../../bundles/foundation/transport/src/host/api/operations/terminals.ts),
+[`operations/host.ts`](../../../bundles/foundation/transport/src/host/api/operations/host.ts)).
 
 Configuration, credentials, providers, tools and the host machine
-([`routes/config.ts`](../../../bundles/foundation/transport/src/host/routes/config.ts),
-[`routes/credentials.ts`](../../../bundles/foundation/transport/src/host/routes/credentials.ts),
-[`routes/providers.ts`](../../../bundles/foundation/transport/src/host/routes/providers.ts),
-[`routes/tools.ts`](../../../bundles/foundation/transport/src/host/routes/tools.ts),
-[`routes/resources.ts`](../../../bundles/foundation/transport/src/host/routes/resources.ts),
-[`routes/vms.ts`](../../../bundles/foundation/transport/src/host/routes/vms.ts)):
+([`operations/config.ts`](../../../bundles/foundation/transport/src/host/api/operations/config.ts),
+[`operations/credentials.ts`](../../../bundles/foundation/transport/src/host/api/operations/credentials.ts),
+[`operations/providers.ts`](../../../bundles/foundation/transport/src/host/api/operations/providers.ts),
+[`operations/host.ts`](../../../bundles/foundation/transport/src/host/api/operations/host.ts),
+[`operations/host.ts`](../../../bundles/foundation/transport/src/host/api/operations/host.ts),
+[`operations/host.ts`](../../../bundles/foundation/transport/src/host/api/operations/host.ts)):
 
 | Method | Path                | Payload                                              | Success answer                               |
 | ------ | ------------------- | ---------------------------------------------------- | -------------------------------------------- |
@@ -1176,8 +1189,8 @@ Configuration, credentials, providers, tools and the host machine
 | GET    | `/vms/:id/ssh`      | `:id` is a VM id (any string)                        | 200 `{ vm, projectId, ssh }`                 |
 
 Projects and their workspace
-([`routes/projects.ts`](../../../bundles/foundation/transport/src/host/routes/projects.ts),
-[`routes/terminals.ts`](../../../bundles/foundation/transport/src/host/routes/terminals.ts)):
+([`operations/projects.ts`](../../../bundles/foundation/transport/src/host/api/operations/projects.ts),
+[`operations/terminals.ts`](../../../bundles/foundation/transport/src/host/api/operations/terminals.ts)):
 
 | Method | Path                          | Payload                                       | Success answer                                     |
 | ------ | ----------------------------- | --------------------------------------------- | -------------------------------------------------- |
@@ -1201,8 +1214,8 @@ Projects and their workspace
 | DELETE | `/projects/:id`               | —                                             | 204                                                |
 
 Threads
-([`routes/threads.ts`](../../../bundles/foundation/transport/src/host/routes/threads.ts),
-[`routes/terminals.ts`](../../../bundles/foundation/transport/src/host/routes/terminals.ts)):
+([`operations/threads.ts`](../../../bundles/foundation/transport/src/host/api/operations/threads.ts),
+[`operations/terminals.ts`](../../../bundles/foundation/transport/src/host/api/operations/terminals.ts)):
 
 | Method | Path                           | Payload                                               | Success answer                                                     |
 | ------ | ------------------------------ | ----------------------------------------------------- | ------------------------------------------------------------------ |
@@ -1229,7 +1242,7 @@ Threads
 | DELETE | `/threads/:id`                 | —                                                     | 204                                                                |
 
 Terminals
-([`routes/terminals.ts`](../../../bundles/foundation/transport/src/host/routes/terminals.ts)):
+([`operations/terminals.ts`](../../../bundles/foundation/transport/src/host/api/operations/terminals.ts)):
 
 | Method | Path                    | Payload                         | Success answer        |
 | ------ | ----------------------- | ------------------------------- | --------------------- |
@@ -1251,13 +1264,13 @@ The screen relay
   (100 KB). A body that is not valid JSON, or one over that size, answers
   `500 internal_error`; a request without a JSON content type reaches its
   route with no body
-  ([`host/app.ts`](../../../bundles/foundation/transport/src/host/app.ts),
-  [`host/errors.ts`](../../../bundles/foundation/transport/src/host/errors.ts)).
+  ([`process/service.ts`](../../../bundles/foundation/transport/src/host/process/service.ts),
+  [`api/answer.ts`](../../../bundles/foundation/transport/src/host/api/answer.ts)).
   Every body schema is strict: an unknown key answers the route's `422`.
 - **Errors.** A refusal answers `{ error: { code, message } }`. An unexpected
   failure of any route answers `500 { error: { code: 'internal_error',
 message: 'The request could not be completed.' } }` and never carries the
-  cause ([`host/errors.ts`](../../../bundles/foundation/transport/src/host/errors.ts)).
+  cause ([`api/answer.ts`](../../../bundles/foundation/transport/src/host/api/answer.ts)).
   A path no route serves answers Express's own `404` page.
 - **IDs.** A Project, Thread or credential `:id` that is not a UUID answers
   `400 invalid_project_id`, `invalid_thread_id` or `invalid_credential_id`; a
@@ -1266,13 +1279,13 @@ message: 'The request could not be completed.' } }` and never carries the
   `409 <kind>_<reason>` with `The <kind> cannot perform this operation.`,
   except `<kind>_storage_low`, whose message is `Execution paused: storage is
 low or unavailable. Free disk space above 10% and resume the queue.`
-  ([`routes/input.ts`](../../../bundles/foundation/transport/src/host/routes/input.ts),
+  ([`api/input.ts`](../../../bundles/foundation/transport/src/host/api/input.ts),
   [`contracts/rest-errors.ts`](../../../bundles/runtime/runtime/src/contracts/rest-errors.ts),
   [`contracts/model.ts`](../../../bundles/runtime/runtime/src/contracts/model.ts)).
   `GET /projects/:id/terminals` and `POST /threads/:id/terminals` are served
   by the terminal router, mounted before the Project and Thread routers, and
   do not test the form of `:id`
-  ([`host/app.ts`](../../../bundles/foundation/transport/src/host/app.ts)).
+  ([`process/service.ts`](../../../bundles/foundation/transport/src/host/process/service.ts)).
 - **Pages.** `GET /projects` and `GET /projects/:id/threads` answer
   `{ items, nextCursor? }`, newest first. `limit` is 1–100 (default 50), and
   `cursor` is the id of the last item of the previous page; an invalid
@@ -1282,7 +1295,7 @@ low or unavailable. Free disk space above 10% and resume the queue.`
   it, only the direct children of that Thread, and a cursor naming a Thread
   with another parent answers an empty page. Page size does not limit how
   many Projects or Threads exist
-  ([`routes/input.ts`](../../../bundles/foundation/transport/src/host/routes/input.ts),
+  ([`api/input.ts`](../../../bundles/foundation/transport/src/host/api/input.ts),
   [`store/projects.ts`](../../../bundles/runtime/runtime/src/host/store/projects.ts),
   [`store/threads.ts`](../../../bundles/runtime/runtime/src/host/store/threads.ts)).
 - **Names.** A Project or Thread name is trimmed, contains no NUL, and has 1–80
@@ -1311,8 +1324,8 @@ pinned? }`, where `origin` is `user` or `agent`, `result` is
 - **Caching.** Every answer of the REST routes carries
   `Cache-Control: no-store`: the terminal router, mounted first at the root,
   sets it on every request that passes through it
-  ([`routes/terminals.ts`](../../../bundles/foundation/transport/src/host/routes/terminals.ts),
-  [`host/app.ts`](../../../bundles/foundation/transport/src/host/app.ts)).
+  ([`operations/terminals.ts`](../../../bundles/foundation/transport/src/host/api/operations/terminals.ts),
+  [`process/service.ts`](../../../bundles/foundation/transport/src/host/process/service.ts)).
 - **Answers grow.** An answer may gain optional fields. A client ignores the
   fields it does not know.
 
@@ -1336,7 +1349,7 @@ each model `{ name, reasonings?, defaultEffort?, mandatory? }`), `models`
 the active one. It answers the stored `{ configuration, revision, updatedAt }`,
 so the `configuration` it answers is a body it accepts. Replacements run one
 at a time, in request order
-([`routes/config.ts`](../../../bundles/foundation/transport/src/host/routes/config.ts),
+([`operations/config.ts`](../../../bundles/foundation/transport/src/host/api/operations/config.ts),
 [`config/service.ts`](../../../bundles/foundation/host-config/src/host/config/service.ts)):
 
 1. A body the schema refuses, an unknown key included, answers
@@ -1364,7 +1377,7 @@ one that is already running.
 
 `GET /providers/kinds` answers `{ kinds }`: the provider kinds a provider
 bundle registers and advertises, as `models/v1` lists them
-([`routes/providers.ts`](../../../bundles/foundation/transport/src/host/routes/providers.ts),
+([`operations/providers.ts`](../../../bundles/foundation/transport/src/host/api/operations/providers.ts),
 [`models/service.ts`](../../../bundles/foundation/core/src/host/models/service.ts),
 [`basic/models.ts`](../../../packages/bundle/src/contracts/basic/models.ts)).
 A registered kind that is not advertised, such as `codex`
@@ -1392,7 +1405,7 @@ the provider is saved. The body is `{ kind, configuration }`, where
 `{ models }`, each `{ id, name?, reasonings, parameters, defaultEffort?,
 mandatory }`: the model's reasoning efforts, the request parameters it
 advertises, the effort it names as its default, and whether it pins reasoning
-on ([`routes/providers.ts`](../../../bundles/foundation/transport/src/host/routes/providers.ts),
+on ([`operations/providers.ts`](../../../bundles/foundation/transport/src/host/api/operations/providers.ts),
 [`basic/models.ts`](../../../packages/bundle/src/contracts/basic/models.ts)).
 
 - `422 invalid_provider` (`The provider values are invalid.`): the body is
@@ -1409,7 +1422,7 @@ read.`): the kind has no catalog, or the read failed.
 ### Credentials
 
 `/credentials` owns the credential store
-([`routes/credentials.ts`](../../../bundles/foundation/transport/src/host/routes/credentials.ts),
+([`operations/credentials.ts`](../../../bundles/foundation/transport/src/host/api/operations/credentials.ts),
 [`secrets/facade.ts`](../../../bundles/foundation/core/src/host/secrets/facade.ts),
 [`basic/secrets.ts`](../../../packages/bundle/src/contracts/basic/secrets.ts)).
 A credential description is `{ id, kind, name, username?, email?, hasSecret }`
@@ -1450,7 +1463,7 @@ credential does not match its kind.`).
   unknown kind it finds) carries that contract's message, such as `A GIT
 credential requires username, email and carries no other field.`, instead
   of `The credential does not match its kind.`
-  ([`routes/credentials.ts`](../../../bundles/foundation/transport/src/host/routes/credentials.ts),
+  ([`operations/credentials.ts`](../../../bundles/foundation/transport/src/host/api/operations/credentials.ts),
   [`basic/secrets.ts`](../../../packages/bundle/src/contracts/basic/secrets.ts)).
 - A `name` already used by a credential of the same kind answers
   `409 credential_name_taken`
@@ -1470,13 +1483,13 @@ secrets.`). [Persistence and security](#persistence-and-security) describes
   configuration fields the tool declares, each `{ key, label, kind, required,
 description?, placeholder?, default?, options?, advanced? }`. The read runs
   no tool
-  ([`routes/tools.ts`](../../../bundles/foundation/transport/src/host/routes/tools.ts),
+  ([`operations/host.ts`](../../../bundles/foundation/transport/src/host/api/operations/host.ts),
   [`types/tool.ts`](../../../packages/tool/src/lib/types/tool.ts)).
 - `GET /resources` reads the machine the host runs on and needs no Project:
   `{ at, cpuCount, cpuPercent?, loadAverage?, memoryTotalBytes,
 memoryUsedBytes, uptimeSeconds }`. `cpuPercent` is absent on the first
   reading of the process
-  ([`routes/resources.ts`](../../../bundles/foundation/transport/src/host/routes/resources.ts),
+  ([`operations/host.ts`](../../../bundles/foundation/transport/src/host/api/operations/host.ts),
   [`resources/src/contracts/index.ts`](../../../bundles/features/resources/src/contracts/index.ts)).
 - `GET /vms` answers the machines the sandbox provider runs, each
   `{ id, provider }` with `provider` `docker` or `firecracker`.
@@ -1484,7 +1497,7 @@ memoryUsedBytes, uptimeSeconds }`. `cpuPercent` is absent on the first
   `{ host, port, username: 'root', privateKey, knownHosts,
 hostKeyFingerprint }`; an unknown VM answers `404 vm_not_found`, and a VM
   without SSH access `409 vm_ssh_unavailable`
-  ([`routes/vms.ts`](../../../bundles/foundation/transport/src/host/routes/vms.ts),
+  ([`operations/host.ts`](../../../bundles/foundation/transport/src/host/api/operations/host.ts),
   [`contracts/sandbox.ts`](../../../bundles/runtime/runtime/src/contracts/sandbox.ts),
   [`contracts/runtime.ts`](../../../bundles/runtime/runtime/src/contracts/runtime.ts),
   [`types/sandbox.ts`](../../../packages/sandbox/src/lib/types/sandbox.ts)).
@@ -1524,8 +1537,8 @@ curl -X POST http://127.0.0.1:3000/projects/PROJECT_ID/terminate
 ### Request rules
 
 Each route turns the runtime's outcome into an answer as below
-([`routes/projects.ts`](../../../bundles/foundation/transport/src/host/routes/projects.ts),
-[`routes/threads.ts`](../../../bundles/foundation/transport/src/host/routes/threads.ts),
+([`operations/projects.ts`](../../../bundles/foundation/transport/src/host/api/operations/projects.ts),
+[`operations/threads.ts`](../../../bundles/foundation/transport/src/host/api/operations/threads.ts),
 [`contracts/rest-errors.ts`](../../../bundles/runtime/runtime/src/contracts/rest-errors.ts));
 the runtime's side of each outcome is in
 [`domain/service.ts`](../../../bundles/runtime/runtime/src/host/domain/service.ts)
@@ -1658,7 +1671,7 @@ lease and never acquire one. They share the lease answers:
 `202 { status: 'pending' }` with `Retry-After: 1` while the environment is
 pending, `410 project_files_expired` when the lease expired, and
 `409 project_files_unavailable` otherwise
-([`routes/projects.ts`](../../../bundles/foundation/transport/src/host/routes/projects.ts),
+([`operations/projects.ts`](../../../bundles/foundation/transport/src/host/api/operations/projects.ts),
 [`files/src/host/reads.ts`](../../../bundles/features/files/src/host/reads.ts)).
 
 - A `path` is at most 4096 characters without NUL, relative to the workspace
@@ -1719,7 +1732,7 @@ inside the workspace.`; one that names nothing answers it with `No such
 directory.`, and one that names a file with `The working directory must be
 a directory.`. A Thread without a runtime answers `409 thread_inactive`. A
   valid move answers the updated Thread
-  ([`routes/threads.ts`](../../../bundles/foundation/transport/src/host/routes/threads.ts)).
+  ([`operations/threads.ts`](../../../bundles/foundation/transport/src/host/api/operations/threads.ts)).
 - The Thread record carries the directory as `cwd` plus a cheap hint as
   `cwdRepo`: absent unless the directory's own root holds a `.git` marker,
   then `github` when that repository's `origin` points at github.com and
@@ -1806,7 +1819,7 @@ readable sandbox answers `409 thread_inactive`.
 ### The prompt queue
 
 The queue routes
-([`routes/threads.ts`](../../../bundles/foundation/transport/src/host/routes/threads.ts),
+([`operations/threads.ts`](../../../bundles/foundation/transport/src/host/api/operations/threads.ts),
 [`domain/service.ts`](../../../bundles/runtime/runtime/src/host/domain/service.ts),
 [`domain/runner.ts`](../../../bundles/runtime/runtime/src/host/domain/runner.ts)):
 
@@ -1853,7 +1866,7 @@ been saved.`), and `409 inactive` or `409 forbidden` (a Thread an agent
 
 `GET /threads/:id/events?afterSequence=N` answers `{ events, lastSequence }`:
 every event after the cursor, and the Thread's latest sequence
-([`routes/threads.ts`](../../../bundles/foundation/transport/src/host/routes/threads.ts),
+([`operations/threads.ts`](../../../bundles/foundation/transport/src/host/api/operations/threads.ts),
 [`domain/service.ts`](../../../bundles/runtime/runtime/src/host/domain/service.ts)).
 The cursor is exclusive and defaults to 0; one that is not a non-negative
 integer answers `400 invalid_event_cursor`. Sequence numbers are contiguous
@@ -1885,7 +1898,7 @@ it skips the discarded range, and a client drops its local events above
 
 The terminal sessions are the
 [`terminal`](../../../bundles/features/terminal/README.md) bundle's
-([`routes/terminals.ts`](../../../bundles/foundation/transport/src/host/routes/terminals.ts),
+([`operations/terminals.ts`](../../../bundles/foundation/transport/src/host/api/operations/terminals.ts),
 [`terminal/src/contracts/index.ts`](../../../bundles/features/terminal/src/contracts/index.ts)).
 A session is `{ id, projectId, threadId, origin, command, cwd, startedAt,
 timeoutMs, state, pty, name? }`, with `origin` `agent` or `user` and `state`
@@ -1921,7 +1934,7 @@ The `screen-relay` bundle relays every request under `/screen/<token>/` to
 the upstream the `screen` bundle exposed for that session token, HTTP
 requests and WebSocket upgrades alike
 ([`screen-relay/src/host/relay.ts`](../../../bundles/features/screen-relay/src/host/relay.ts),
-[`screen-relay/src/host/index.ts`](../../../bundles/features/screen-relay/src/host/index.ts)).
+[`screen-relay/src/host/part.ts`](../../../bundles/features/screen-relay/src/host/part.ts)).
 The path after the token and the query reach the upstream unchanged.
 
 - **HTTP.** The request and the upstream's answer pass with their
@@ -1962,12 +1975,18 @@ sends no credentials.
 
 ## Socket.IO
 
-The host serves Socket.IO 4 on the HTTP listener of the REST API, at the
+> Removed in slice S69 with `transport`'s `src/host/sockets/`: the `Watch`
+> streams of `doric.api.status/v1`, `doric.api.projects/v1` and
+> `doric.api.threads/v1` carry these events
+> ([`process/watch.ts`](../../../bundles/foundation/transport/src/host/process/watch.ts)).
+> What follows records the removed namespaces.
+
+The host served Socket.IO 4 on the HTTP listener of the REST API, at the
 default path `/socket.io/` ([`src/index.ts`](src/index.ts)). The
 [`transport`](../../../bundles/foundation/transport/README.md) bundle registers
 the namespaces `/status`, `/threads` and `/projects` on that server when it
 starts
-([`transport/src/kernel.ts`](../../../bundles/foundation/transport/src/kernel.ts));
+([`host/process/service.ts`](../../../bundles/foundation/transport/src/host/process/service.ts));
 the kernel's own namespace, `/doric/bridge`, is the
 [desktop bridge](#the-desktop-bridge). The server accepts a message of at most
 8,039,084 bytes, the base64 size of the largest image attachment the runtime
@@ -1977,8 +1996,8 @@ sends a larger one
 
 On `/status`, `/threads` and `/projects` every event flows from the host to
 the client; the host handles no event a client emits there
-([`sockets/status.ts`](../../../bundles/foundation/transport/src/host/sockets/status.ts),
-[`sockets/workspace.ts`](../../../bundles/foundation/transport/src/host/sockets/workspace.ts)).
+([`process/watch.ts`](../../../bundles/foundation/transport/src/host/process/watch.ts),
+[`process/watch.ts`](../../../bundles/foundation/transport/src/host/process/watch.ts)).
 A payload carries no version of its own; only the `type` of an event a bundle
 appends to a Thread's log names that event's version (`comments.added/v1`).
 A payload may gain optional fields and the log may carry new event types; a
@@ -2031,12 +2050,12 @@ and `offset` the UTF-16 offset after it
 Thread and those subscribed to its Project; the `project:*` and `terminal:*`
 events reach the sockets subscribed to the Project. A deletion notice leaves
 the connection open
-([`sockets/workspace.ts`](../../../bundles/foundation/transport/src/host/sockets/workspace.ts)).
+([`process/watch.ts`](../../../bundles/foundation/transport/src/host/process/watch.ts)).
 
 ### Subscriptions
 
 A namespace middleware reads `socket.handshake.auth`, never the query
-([`sockets/workspace.ts`](../../../bundles/foundation/transport/src/host/sockets/workspace.ts)):
+([`process/watch.ts`](../../../bundles/foundation/transport/src/host/process/watch.ts)):
 
 - `/status` has no middleware and takes no parameters.
 - `/threads` takes `auth: { threadId, afterSequence? }`: `threadId` is a
@@ -2075,8 +2094,8 @@ snapshot is already out, and a client reads the output it missed from
 `GET /terminals/:id?after=N` ([Terminals](#terminals)). The host keeps one
 terminal stream per Project while at least one socket subscribes to it and
 closes it with the last one
-([`sockets/workspace.ts`](../../../bundles/foundation/transport/src/host/sockets/workspace.ts),
-[`sockets/terminal-feed.ts`](../../../bundles/foundation/transport/src/host/sockets/terminal-feed.ts)).
+([`process/watch.ts`](../../../bundles/foundation/transport/src/host/process/watch.ts),
+[`process/watch.ts`](../../../bundles/foundation/transport/src/host/process/watch.ts)).
 
 When a snapshot read fails, the host emits `workspace:error` and disconnects
 the socket; the payload never carries the cause.
@@ -2679,16 +2698,16 @@ The API has no authentication. It listens on `DORIC_HOST` (default `0.0.0.0`)
 network ([`compose.yaml`](compose.yaml)), so every client that reaches the port
 has full access, including `GET /projects/:id/ssh`, `GET /vms/:id/ssh` and the
 Thread event [replay](#replay)
-([`routes/projects.ts`](../../../bundles/foundation/transport/src/host/routes/projects.ts),
-[`routes/vms.ts`](../../../bundles/foundation/transport/src/host/routes/vms.ts),
-[`routes/threads.ts`](../../../bundles/foundation/transport/src/host/routes/threads.ts)).
+([`operations/projects.ts`](../../../bundles/foundation/transport/src/host/api/operations/projects.ts),
+[`operations/host.ts`](../../../bundles/foundation/transport/src/host/api/operations/host.ts),
+[`operations/threads.ts`](../../../bundles/foundation/transport/src/host/api/operations/threads.ts)).
 Keep it on an isolated, trusted network. Secrets are kept only in the
 credential store: the [Credentials](#credentials) routes write them, and so do
 the Claude sign-in of `claude-login` (the `API_TOKEN` credential `Claude`,
 [`claude-login/src/host/login.ts`](../../../bundles/features/claude-login/src/host/login.ts))
 and an MCP server's OAuth sign-in (`MCP_TOKEN`). The configuration names
 credentials by id and never holds a secret
-([`routes/credentials.ts`](../../../bundles/foundation/transport/src/host/routes/credentials.ts)).
+([`operations/credentials.ts`](../../../bundles/foundation/transport/src/host/api/operations/credentials.ts)).
 
 ### Credentials
 
@@ -2821,9 +2840,9 @@ unset, and makes no database round trip
 - Recovery never starts on its own. Free space above 10%, then resume the
   queue (`POST /threads/:id/queue/resume`); while storage is still low, the
   resume answers `409 thread_storage_low` with that message
-  ([`routes/threads.ts`](../../../bundles/foundation/transport/src/host/routes/threads.ts),
+  ([`operations/threads.ts`](../../../bundles/foundation/transport/src/host/api/operations/threads.ts),
   whose `409`, code and message come from `conflict` in
-  [`routes/input.ts`](../../../bundles/foundation/transport/src/host/routes/input.ts);
+  [`api/input.ts`](../../../bundles/foundation/transport/src/host/api/input.ts);
   `resumeQueue` in [`domain/runner.ts`](../../../bundles/runtime/runtime/src/host/domain/runner.ts);
   [prompt control](../../../docs/features/prompt-control.md)).
 

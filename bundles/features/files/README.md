@@ -118,10 +118,13 @@ error.
 
 ### `files/v1` (host, 1.3.0)
 
-`Files`, referenced as `FilesV1`, provided by
-[`src/host/reads.ts`](src/host/reads.ts). The Project is `call.scope.projectId`
-(`services.use(FilesV1, { projectId })` on the host; the window binds the
-generated `FilesService` to it over Connect, `services.use(FilesService,
+`Files`, the TypeScript interface of the contract, which `transport`'s ports
+import; slice S69 removed its reference `FilesV1` and its method table
+`filesMethods`. The host part serves it as the generated `FilesService` of
+[`proto/doric/files/v1/files.proto`](proto/doric/files/v1/files.proto)
+([`src/host/service.ts`](src/host/service.ts), over
+[`src/host/reads.ts`](src/host/reads.ts)). The Project is `call.scope.projectId`
+(the window binds the generated `FilesService` to it over Connect, `services.use(FilesService,
 { projectId })`, slice S65d). The window reaches every method through the
 manifest's `desktopScope`, and each runs on the Project's current lease through
 `runtime.lease/v1.withLease`, which never acquires a lease:
@@ -453,7 +456,7 @@ From [`src/contracts/index.ts`](src/contracts/index.ts) and
 
 | Name                                                                                                                                                                      | What it is                                                                                         |
 | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
-| `Files`, `FilesV1`, `filesMethods`                                                                                                                                        | `files/v1`: interface, reference, method table                                                     |
+| `Files`                                                                                                                                                                   | `files/v1`: the interface (no reference or method table since slice S69)                           |
 | `DirectoryRead`, `TreeRead`, `DirectoriesInput`, `DirectoriesRead`, `DirectoryListingRead`, `ContentInput`, `ContentRead`, `CreateInput`, `CreateOutcome`, `LeaseOutcome` | The `files/v1` types; `LeaseOutcome` re-exported from `runtime/contracts`                          |
 | `createInputSchema`, `createOutcomeSchema`, `DIRECTORIES_LIMIT`                                                                                                           | The create schemas and the most paths one `directories` call takes (1,000)                         |
 | `FilesSandbox`, `FilesSandboxV1`, `filesSandboxMethods`, `TreeScope`, `TreeObservation`, `ReadState`, `ProjectTreeNode`                                                   | `files.sandbox/v1`                                                                                 |

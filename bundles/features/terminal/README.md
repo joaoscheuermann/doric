@@ -81,13 +81,18 @@ The bundle has no desktop part.
 ## The `terminal/v1` contract
 
 `terminal/v1` 1.2.0 is the interface `TerminalService`, referenced as
-`TerminalServiceV1`. `TerminalV1` references the same id typed with `run`
-only. Both are exported from
-[`src/contracts/index.ts`](src/contracts/index.ts), with the method schemas
-`terminalMethods` (`run`) and `terminalServiceMethods` (every method). The
-provider is [`src/host/provider.ts`](src/host/provider.ts). Each method takes an
-optional last argument `call`, the platform's call context; a method whose
-input fails its schema is refused by the platform with `invalid_input`.
+`TerminalServiceV1` and exported from
+[`src/contracts/index.ts`](src/contracts/index.ts) with the schemas of its
+types; no bundle imports the reference. Slice S69 removed the `run`-only
+reference `TerminalV1` and the method tables `terminalMethods` and
+`terminalServiceMethods`. The host part serves the contract as the generated
+`TerminalService` of
+[`proto/doric/terminal/v1/terminal.proto`](proto/doric/terminal/v1/terminal.proto)
+([`src/host/main.ts`](src/host/main.ts)); the provider is
+[`src/host/provider.ts`](src/host/provider.ts). Each method takes an optional
+last argument `call`, the platform's call context; a request that breaks the
+`.proto`'s protovalidate rules is refused by the platform with
+`invalid_input`.
 
 ### Types
 

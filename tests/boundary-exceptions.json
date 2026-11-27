@@ -40,6 +40,41 @@
       "target": "@bufbuild/protovalidate",
       "decision": "docs/designs/grpc-processes.md",
       "until": "S70"
+    },
+    {
+      "check": "dependencies",
+      "bundle": "transport",
+      "target": "@types/express",
+      "decision": "docs/designs/grpc-processes.md",
+      "until": "S70"
+    },
+    {
+      "check": "dependencies",
+      "bundle": "transport",
+      "target": "express",
+      "decision": "docs/designs/grpc-processes.md",
+      "until": "S70"
+    },
+    {
+      "check": "dependencies",
+      "bundle": "transport",
+      "target": "pino",
+      "decision": "docs/designs/grpc-processes.md",
+      "until": "S70"
+    },
+    {
+      "check": "dependencies",
+      "bundle": "transport",
+      "target": "socket.io",
+      "decision": "docs/designs/grpc-processes.md",
+      "until": "S70"
+    },
+    {
+      "check": "dependencies",
+      "bundle": "transport",
+      "target": "socket.io-client",
+      "decision": "docs/designs/grpc-processes.md",
+      "until": "S70"
     }
   ]
 }

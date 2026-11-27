@@ -1,8 +1,8 @@
 // `screen-relay`'s host part as a process (spec section 11, "The HTTP
 // prefix"; phase 3, slice S49): `screen.relay/v1` through the router and the
-// relay on its own loopback listener. Built into `dist/host/main.mjs`; the
-// running host keeps the kernel entry (`./index.ts`) until S62, which also
-// adds `host.httpPrefix: "/screen/"` to the manifest.
+// relay on its own loopback listener, which the gateway sends every `/screen/`
+// request to (`host.httpPrefix` in the manifest). Built into
+// `dist/host/main.mjs`, the bundle's only host entry.
 
 import { runBundle } from 'bundle/host';
 

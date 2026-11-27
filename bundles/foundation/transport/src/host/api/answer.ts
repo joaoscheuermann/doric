@@ -5,10 +5,7 @@ import {
   fromConnectError,
   isContractError,
 } from 'bundle/contracts';
-import type { Response } from 'express';
 import { decode, type RestError } from 'runtime/contracts';
-
-import { sendError } from '../errors.js';
 
 /** What a route reads from its request, as Express gives it. */
 export interface RouteInput {
@@ -32,32 +29,6 @@ export type ApiAnswer<T> =
     }
   | { readonly kind: 'pending' }
   | { readonly kind: 'refused'; readonly error: RestError };
-
-/** Writes `answer` as today's HTTP answer (the route sets `Cache-Control` itself, as today). Never throws. */
-export const sendAnswer = (
-  response: Response,
-  answer: ApiAnswer<unknown>,
-): void => {
-  switch (answer.kind) {
-    case 'pending':
-      response.set('Retry-After', '1').status(202).json({ status: 'pending' });
-      return;
-    case 'refused':
-      sendError(
-        response,
-        answer.error.status,
-        answer.error.code,
-        answer.error.message,
-      );
-      return;
-    case 'ok':
-      if (answer.status === 204) {
-        response.status(204).end();
-        return;
-      }
-      response.status(answer.status).json(answer.value);
-  }
-};
 
 /** The `ContractError` a refusal ends an RPC with: `new ContractError(error.code, error.message)`, no details. */
 export const apiError = (error: RestError): ContractError =>

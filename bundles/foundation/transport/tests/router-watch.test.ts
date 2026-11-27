@@ -6,8 +6,8 @@
 // snapshots first, notices held, early terminal output dropped); a source
 // reopened after a generation change (its second snapshot) ends the Watch
 // with UNAVAILABLE (Q4); a request breaking a rule answers `invalid_input` with
-// today's handshake refusal sentence (Q6). The items carry what today's
-// Socket.IO namespaces emit, compared on the same reads. Also `keptBefore`, the
+// today's handshake refusal sentence (Q6). The items carry the payloads the
+// removed Socket.IO namespaces emitted, stated per case. Also `keptBefore`, the
 // page cut of D6.
 
 import assert from 'node:assert/strict';
@@ -21,12 +21,10 @@ import {
 import { Code } from '@connectrpc/connect';
 import { ContractError } from 'bundle/contracts';
 import { encode } from 'runtime/contracts';
-import type { Socket } from 'socket.io-client';
 
 import { WatchResponseSchema as ProjectWatchResponseSchema } from '../src/contracts/gen/doric/api/projects/v1/projects_pb.js';
 import { WatchResponseSchema as ThreadWatchResponseSchema } from '../src/contracts/gen/doric/api/threads/v1/threads_pb.js';
 import { API_PAGE_MAX_BYTES, keptBefore } from '../src/host/process/watch.js';
-import { serve as serveKernel } from './support/host.js';
 import type { Harness } from './support/router.js';
 import { routerFakes, type Streams } from './support/router-fakes.js';
 import {
@@ -544,139 +542,6 @@ void test("Q6: a Watch request breaking a rule answers invalid_input with today'
     assert.deepEqual(await refusalOf(call()), expected, label);
   }
   assert.deepEqual(h.calls, []);
-});
-
-// Parity with today's Socket.IO namespaces -------------------------------------------
-
-/** The next `name` event of `socket`. */
-const next = <T = unknown>(socket: Socket, name: string): Promise<T> =>
-  new Promise((resolve, reject) => {
-    const timeout = setTimeout(() => {
-      socket.off(name, receive);
-      reject(new Error(`Timed out waiting for ${name}`));
-    }, 2000);
-    const receive = (value: T) => {
-      clearTimeout(timeout);
-      resolve(value);
-    };
-
-    socket.once(name, receive);
-  });
-
-/** The kernel with the reads both namespaces snapshot, and the terminal feed a case drives. */
-const kernel = async (t: TestContext) => {
-  const terminalListeners: ((item: unknown) => void)[] = [];
-  const host = await serveKernel({
-    runtime: {
-      project: () => project,
-      watch: () => ({ dispose: () => undefined }),
-    },
-    threads: {
-      storedThread: () => thread,
-      storedEventsAfter: ({ afterSequence }: { afterSequence: number }) =>
-        [threadEvent(1), threadEvent(2)].filter(
-          ({ sequence }) => sequence > afterSequence,
-        ),
-      projectThreads: () => [thread],
-    },
-    terminal: {
-      list: () => [terminal],
-      watchProject: (_id: string, listener: unknown) => {
-        terminalListeners.push((item) =>
-          typeof listener === 'function'
-            ? listener(item)
-            : (listener as { next(item: unknown): void }).next(item),
-        );
-
-        return { dispose: () => undefined };
-      },
-    },
-  });
-
-  t.after(host.close);
-
-  return {
-    host,
-    emit: (item: unknown) => {
-      for (const listener of terminalListeners) listener(item);
-    },
-  };
-};
-
-void test("parity: the Thread Watch's thread_snapshot is today's /threads thread:snapshot payload", async (t) => {
-  const { host } = await kernel(t);
-  const socket = host.connect('/threads', { threadId, afterSequence: 1 });
-
-  t.after(() => socket.close());
-  const payload = await next(socket, 'thread:snapshot');
-
-  const runtime = source();
-  const h = await watching(t, { watchThread: runtime.fake });
-  const stream = reader(h.threads().watch({ threadId, afterSequence: 1 }));
-
-  // runtime.threads/v1.WatchThread serves today's algorithm over the same reads.
-  runtime.push({ snapshot: payload as never });
-  assertItem(ThreadWatchResponseSchema, await stream.next(), {
-    threadSnapshot: payload,
-  });
-  assert.deepEqual(await runtime.opened, { threadId, afterSequence: 1 });
-});
-
-void test("parity: the Project Watch's first items are today's /projects project:snapshot and terminal:snapshot, then terminal:output", async (t) => {
-  const { host, emit } = await kernel(t);
-  const socket = host.connect('/projects', { projectId });
-
-  t.after(() => socket.close());
-  const projectPayload = next(socket, 'project:snapshot');
-  const terminalPayload = next(socket, 'terminal:snapshot');
-  const expectedProject = await projectPayload;
-  const expectedTerminals = await terminalPayload;
-  const outputPayload = next(socket, 'terminal:output');
-
-  emit({ kind: 'output', output: output('kept', 8) });
-  const expectedOutput = await outputPayload;
-
-  const { runtime, terminals, stream } = await projectWatch(t);
-
-  runtime.push(runtimeSnapshot);
-  terminals.push(terminalSnapshot);
-  assertItem(ProjectWatchResponseSchema, await stream.next(), {
-    projectSnapshot: expectedProject,
-  });
-  assertItem(ProjectWatchResponseSchema, await stream.next(), {
-    terminalSnapshot: expectedTerminals,
-  });
-  terminals.push({ output: output('kept', 8) });
-  assertItem(ProjectWatchResponseSchema, await stream.next(), {
-    terminalOutput: expectedOutput,
-  });
-});
-
-void test("parity (Q6): the Watch refusal's sentence is today's handshake connect_error message", async (t) => {
-  const { host } = await kernel(t);
-  const h = await watching(t, {});
-
-  for (const [namespace, auth, call] of [
-    [
-      '/projects',
-      { projectId: 'bad' },
-      () => reader(h.projects().watch({ projectId: 'bad' })).next(),
-    ],
-    [
-      '/threads',
-      { threadId, afterSequence: -1 },
-      () => reader(h.threads().watch({ threadId, afterSequence: -1 })).next(),
-    ],
-  ] as const) {
-    const socket = host.connect(namespace, auth);
-    const error = await next<Error>(socket, 'connect_error');
-
-    socket.close();
-    const refusal = await refusalOf(call());
-
-    assert.equal(refusal.message, error.message, namespace);
-    assert.equal(refusal.reason, 'invalid_input', namespace);
-  }
 });
 
 // keptBefore (D6) -----------------------------------------------------------------------

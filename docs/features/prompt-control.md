@@ -87,7 +87,9 @@ The runtime holds the queue, the dispatch gate and the steering ([`runtime` READ
 
 ### Over REST
 
-The `transport` bundle maps the operations onto `/threads`: `POST /:id/interrupt` → `pause`, `POST /:id/steer` → `steer`, `POST /:id/resume` → `resume`, `GET /:id/queue` → `queue`, `POST /:id/queue/resume` → `resumeQueue`, and `GET`, `PATCH` and `DELETE /:id/queue/:promptId` → `queuedPrompt`, `editQueued` and `removeQueued`. Queue reads are not cached. A refused steer answers `409 thread_inactive`, an agent Thread's `forbidden` included. The [`transport` README](../../bundles/foundation/transport/README.md) gives each body, status and error code ([bundles/foundation/transport/src/host/routes/threads.ts](../../bundles/foundation/transport/src/host/routes/threads.ts)).
+> **2026-11-27, slice S69:** `transport`'s REST routes and Socket.IO namespaces are removed; these operations answer over `doric.api.*` ([`ThreadsService`](../../bundles/foundation/transport/proto/doric/api/threads/v1/threads.proto) `Interrupt`, `Steer`, `Resume`, `GetQueue`, `ResumeQueue`, `GetQueuedPrompt`, `UpdateQueuedPrompt` and `DeleteQueuedPrompt`) with the same refusal codes and messages. The REST wording of this section is rewritten in phase 8 of [the spec](../designs/grpc-processes.md).
+
+The `transport` bundle maps the operations onto `/threads`: `POST /:id/interrupt` → `pause`, `POST /:id/steer` → `steer`, `POST /:id/resume` → `resume`, `GET /:id/queue` → `queue`, `POST /:id/queue/resume` → `resumeQueue`, and `GET`, `PATCH` and `DELETE /:id/queue/:promptId` → `queuedPrompt`, `editQueued` and `removeQueued`. Queue reads are not cached. A refused steer answers `409 thread_inactive`, an agent Thread's `forbidden` included. The [`transport` README](../../bundles/foundation/transport/README.md) gives each body, status and error code ([bundles/foundation/transport/src/host/api/operations/threads.ts](../../bundles/foundation/transport/src/host/api/operations/threads.ts)).
 
 ### In the window
 
@@ -100,3 +102,4 @@ The `transport` bundle maps the operations onto `/threads`: `POST /:id/interrupt
 ## Evolution
 
 - 2026-11-27: slice S68d of [the spec](../designs/grpc-processes.md) (version 6.51) deletes the kernel entry of `runtime`. Its envelope services (`src/host/services/{runtime,threads,workspace,lease,attachments}.ts`, `handover.ts`, `ports.ts`' `createPorts`) have only test importers until phase 6, so the links above point to the live process path (`src/host/rpc/*.ts`, `routed.ts`).
+- 2026-11-27: slice S69 of [the spec](../designs/grpc-processes.md) (version 6.52) deletes `transport`'s REST routes (`src/host/routes/`), Socket.IO namespaces (`src/host/sockets/`) and kernel entry (`src/kernel.ts`, `src/host/{index,app,errors,services}.ts`), `screen-relay`'s kernel entry and `doric.network/v1`. The links above that pointed at them now point at the `doric.api.*` operations that carry the same answers (`transport/src/host/api/operations/`, `api/input.ts`, `api/answer.ts`), the `Watch` streams (`process/watch.ts`) and the process host (`process/service.ts`); the routes and namespaces this doc names are no longer served.

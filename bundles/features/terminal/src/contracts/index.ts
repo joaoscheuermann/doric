@@ -1,10 +1,8 @@
 import {
   type CallArg,
   type Disposable,
-  disposableSchema,
   ref,
   type StreamListener,
-  streamListener,
 } from 'bundle/contracts';
 import type { OneofMapping } from 'runtime/contracts';
 import { z } from 'zod';
@@ -17,7 +15,7 @@ import { z } from 'zod';
  * 1.2.0 (UI redesign §4.4, A13): a session's reader-given `name` and
  * `rename`.
  * The `terminal` bundle provides it; until stage 10's host switch the
- * runtime's provisional provider serves `run` only (`TerminalV1`).
+ * runtime's provisional provider served `run` only.
  */
 
 /** A command registered with its owning Thread for its entire lifetime. */
@@ -281,52 +279,6 @@ export interface TerminalService extends Terminal {
     call?: CallArg,
   ): Disposable;
 }
-
-const terminalSizeSchema = z
-  .object({ cols: z.number().optional(), rows: z.number().optional() })
-  .strict();
-
-/** The 1.0.0 method: `run`. */
-export const terminalMethods = {
-  run: {
-    input: terminalInputSchema,
-    output: z.union([backgroundTerminalSchema, terminalResultSchema]),
-  },
-} as const;
-
-/** Every 1.2.0 method. */
-export const terminalServiceMethods = {
-  ...terminalMethods,
-  list: { input: z.string(), output: z.array(terminalSessionSchema) },
-  create: {
-    input: z.tuple([z.string(), terminalSizeSchema]),
-    output: terminalSessionSchema.optional(),
-  },
-  snapshot: {
-    input: z.tuple([z.string(), z.number()]),
-    output: terminalSnapshotSchema.optional(),
-  },
-  input: { input: z.tuple([z.string(), z.string()]), output: z.boolean() },
-  resize: {
-    input: z.tuple([z.string(), z.number(), z.number()]),
-    output: z.boolean(),
-  },
-  stop: { input: z.string(), output: z.boolean() },
-  rename: {
-    input: z.tuple([
-      z.string().min(1),
-      z.string().max(terminalNameLimit).nullable(),
-    ]),
-    output: z.boolean(),
-  },
-  watchProject: {
-    input: z.tuple([z.string(), streamListener(terminalWatchItemSchema)]),
-    output: disposableSchema,
-  },
-} as const;
-
-/** terminal/v1 as its 1.0.0 consumers and providers see it: `run` only. */
-export const TerminalV1 = ref<Terminal>('terminal/v1');
 
 /** terminal/v1 1.2.0, as the `terminal` bundle provides it. */
 export const TerminalServiceV1 = ref<TerminalService>('terminal/v1');

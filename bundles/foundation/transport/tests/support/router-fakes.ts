@@ -1,8 +1,8 @@
 // The router fakes of the generated services the routes call (S60c/d), driven
-// by the same domain fakes `./host.ts` serves the kernel with: each fake
+// by domain fakes (`Fakes`, one per consumed contract): each fake
 // decodes its request to today's arguments (`decode`), records it (its JSON,
 // scope and deadline), calls the domain method with them and the hop `Call`
-// last (as `./host.ts` does) and answers its value `encode`d into the response
+// last and answers its value `encode`d into the response
 // message. A domain method that throws fails the call with its error (a
 // `ContractError` keeps its code); a missing one fails `internal`. The three
 // workspace streams are served from `Streams` (proto JSON items).
@@ -177,9 +177,33 @@ import {
   ThreadResponseSchema as UsageThreadResponseSchema,
 } from 'usage/contracts/gen/doric/usage/v1/usage_pb.js';
 
-import type { Fake, Fakes } from './host.js';
 import { fakeOf, type Recorder } from './router.js';
 import { registeredKinds } from './router-fixtures.js';
+
+/** A domain method: the caller's arguments, then the hop `Call`. */
+// biome-ignore lint/suspicious/noExplicitAny: a fake answers whatever its case needs
+type FakeMethod = (...args: any[]) => unknown;
+export type Fake = Readonly<Record<string, FakeMethod>>;
+
+/** The domain fakes of the consumed contracts, by the port that calls them. */
+export interface Fakes {
+  readonly runtime?: Fake;
+  readonly threads?: Fake;
+  /** runtime.lease/v1: only `ssh` since the stage-10 host switch. */
+  readonly lease?: Fake;
+  /** The stage-10 feature bundles the routes call. */
+  readonly files?: Fake;
+  readonly git?: Fake;
+  readonly usage?: Fake;
+  readonly resources?: Fake;
+  /** terminal/v1 1.1.0. */
+  readonly terminal?: Fake;
+  readonly sandbox?: Fake;
+  readonly tools?: Fake;
+  readonly models?: Fake;
+  readonly secrets?: Fake;
+  readonly configuration?: Fake;
+}
 
 type Json = { readonly [key: string]: unknown };
 

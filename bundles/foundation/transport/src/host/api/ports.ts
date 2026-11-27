@@ -17,11 +17,23 @@ import type {
 import type { TerminalService } from 'terminal/contracts';
 import type { Usage } from 'usage/contracts';
 
-import type { LeaseScope, ProjectScope } from '../services.js';
+/** The scope one lease read binds: a Project's lease, or a Thread's. */
+export type LeaseScope =
+  | { readonly projectId: string }
+  | { readonly threadId: string };
 
 /**
- * The calls the routes make, with today's domain shapes. Today's `TransportServices` is assignable to it (the kernel
- * passes it unchanged); `routedTransportPorts` implements it over the router. A method resolves as the kernel's does
+ * The scope a Project read of a feature bundle binds. A type alias, not an
+ * interface: `CallScope` is `Readonly<Record<string, string>>`, which only an
+ * object type (not an interface) is assignable to.
+ */
+export type ProjectScope = {
+  readonly projectId: string;
+};
+
+/**
+ * The calls the routes make, with today's domain shapes. `routedTransportPorts` implements it over the router. A
+ * method resolves as the kernel's did
  * (`undefined` for a missing record, outcome unions as data) and rejects with the callee's `ContractError`.
  */
 export interface TransportPorts {

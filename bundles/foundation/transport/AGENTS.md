@@ -5,83 +5,42 @@ Apply these rules to `bundles/foundation/transport/`, after the root
 
 ## Function
 
-Keep this bundle to serving the host's REST routes and Socket.IO namespaces
-over other bundles' contracts, and add to it no data, storage, business rule,
-client part or contract of its own: what a route answers belongs to the bundle
-that owns the data, and the kernel's own namespace `/doric/bridge` belongs to
-the kernel.
+Keep this bundle to serving the `doric.api.*` services over other bundles'
+contracts, and add to it no data, storage, business rule, client part or
+contract of its own: what an RPC answers belongs to the bundle that owns the
+data. Its REST routes, Socket.IO namespaces and kernel entry were deleted in
+slice S69; add none back.
 
 ## Rules
 
-- Read [`README.md`](README.md) for what each router and namespace does before
+- Read [`README.md`](README.md) for what each service and operation does before
   adding to it.
-- Reach data only through a contract call on `TransportServices`
-  ([`src/host/services.ts`](src/host/services.ts)); never store a record,
-  cache an answer or keep any state but the socket subscriptions.
-- Resolve every contract at call time: add a contract to `TransportServices`
-  and build its stub in `createTransport` of [`src/kernel.ts`](src/kernel.ts),
-  as a `services.use` stub, a function that binds a call scope, or a `lazy`
-  stub; never call a contract of another bundle during activation: register
-  only through `doric.network/v1` and `HooksV1`, and reach a provider during
-  activation only through `whenAvailable`.
-- Declare under `requires` of [`manifest.json`](manifest.json) only a
-  contract of a bundle outside `bundles/features/`, and add the same entry to
-  `transportRequires` in [`src/kernel.ts`](src/kernel.ts), so the two lists
-  stay equal; declare a contract of a bundle under `bundles/features/` under
-  `optional` only, keep it out of `transportRequires`, and read it through
-  `features()`, so that the transport activates without that bundle.
-- Put a new route in the router of its resource under `src/host/routes/`,
-  or in a new router there that [`src/host/app.ts`](src/host/app.ts) mounts
-  before `handleHttpError`; keep the terminal router mounted first at the
-  root, since its `Cache-Control: no-store` covers every route after it.
-  Put the route body in an operation of `src/host/api/operations/` over
-  `TransportPorts`, returning an `ApiAnswer`; the handler only calls
-  `sendAnswer(response, await operations.x(routeInput(request)))`.
-- Answer every refusal with `sendError` of
-  [`src/host/errors.ts`](src/host/errors.ts), and use `validateId`, `missing`,
-  `conflict`, `pageInput` and `nameInput` of
-  [`src/host/routes/input.ts`](src/host/routes/input.ts) for Project, Thread
-  and credential ids, lists and names.
-- Validate every body with a strict `zod` schema, and answer an invalid one
-  with `422` and an `invalid_<thing>` code; only `PUT /config` hands its body
-  to its contract unchecked, because `host-config/v1` validates it.
-- Answer a contract outcome's own message where the contract gives one for
-  its caller, as `invalid_config`, the credential errors and `branch_refused`
-  do, but never the message of a thrown error that is not a contract
-  outcome: let it reach `handleHttpError`, and end a new router with
-  `router.use(handleHttpError)`.
-- When a route answers an outcome of a `runtime/contracts` method that
-  `restErrors` tabulates, answer what the table gives, and add the case to
-  [`tests/rest-errors.test.ts`](tests/rest-errors.test.ts).
+- Reach data only through `TransportPorts`
+  ([`src/host/api/ports.ts`](src/host/api/ports.ts)), which
+  `routedTransportPorts` builds over the router
+  ([`src/host/process/routed.ts`](src/host/process/routed.ts)); never store a
+  record or cache an answer.
+- Put an RPC body in an operation of
+  [`src/host/api/operations/`](src/host/api/operations) over `TransportPorts`,
+  returning an `ApiAnswer` ([`src/host/api/answer.ts`](src/host/api/answer.ts)),
+  and use `pageInput`, `nameInput`, `ok` and `refused` of
+  [`src/host/api/input.ts`](src/host/api/input.ts) for lists, names and
+  answers. `src/host/api/**` imports no `express`
+  ([`tests/host-build.test.ts`](tests/host-build.test.ts)).
+- Never answer the message of a thrown error that is not a contract outcome:
+  `apiFailure` turns it into `internal_error`.
+- When an operation answers an outcome of a `runtime/contracts` method that
+  `restErrors` tabulates, answer what the table gives.
 - Never answer a credential's secret: answer only what `secrets/v1` describes.
-- Set `Cache-Control: no-store` in every route that reads a workspace, a
-  lease, a queue, events, usage, Git, resources or a terminal, even though
-  the terminal router sets it.
-- Put a new socket event in
-  [`src/host/sockets/workspace.ts`](src/host/sockets/workspace.ts): subscribe
-  a socket before its durable read, send a lifecycle notice through `notify`
-  so it is buffered until the snapshot is sent, send `agent:event` only in an
-  unbroken run of sequences, and never buffer terminal output.
-- Add a new namespace to `socketNamespaces` of the startup log in
-  [`src/kernel.ts`](src/kernel.ts).
-- Read the `/threads` and `/projects` subscription only from
-  `socket.handshake.auth`, never from the query.
-- Open a `terminal/v1` stream only through the terminal feed of
-  [`src/host/sockets/terminal-feed.ts`](src/host/sockets/terminal-feed.ts),
-  one per subscribed Project.
-- Test a route or a namespace through `serve` of
-  [`tests/support/host.ts`](tests/support/host.ts), and add a member to
-  `Fakes` and a `fakeService` entry in `serve` there for each contract a new
-  route calls; put route tests in `tests/routes.test.ts` (Projects and
-  Threads) or `tests/host-routes.test.ts` (configuration, credentials,
-  providers, tools, VMs, terminals), socket tests in `tests/sockets.test.ts`,
-  and tests of the shared HTTP behavior in `tests/http-edges.test.ts`; add
-  each new optional feature contract to the list in
-  [`tests/resources-contract.test.ts`](tests/resources-contract.test.ts).
-- Update, in the same change, [`README.md`](README.md), the route and event
-  reference of the host's
-  [`README.md`](../../../app/backend/doric-host/README.md#rest-api), and the
-  feature doc the route belongs to:
+- Put a new stream item in the `Watch` streams of
+  [`src/host/process/watch.ts`](src/host/process/watch.ts).
+- Test an RPC through the router suites (`tests/router-*.test.ts`) over the
+  fakes of [`tests/support/router-fakes.ts`](tests/support/router-fakes.ts);
+  state the answer a removed route gave with
+  [`tests/support/route-answers.ts`](tests/support/route-answers.ts), and test
+  an operation in [`tests/api-operations.test.ts`](tests/api-operations.test.ts).
+- Update, in the same change, [`README.md`](README.md) and the feature doc the
+  RPC belongs to:
   [projects and threads](../../../docs/features/projects-and-threads.md),
   [credentials](../../../docs/features/credentials.md),
   [terminal](../../../docs/features/terminal.md),
@@ -92,9 +51,6 @@ the kernel.
 - Before adding an exception for this bundle, open
   [`tests/boundary-exceptions.json`](../../../tests/boundary-exceptions.json)
   and search it for `"bundle": "transport"`.
-- Try a change by building and staging it with
-  `npx nx run doric-host:build-bundles` and then restarting the host: the
-  bundle is `resident`, so a new generation does not replace it.
 
 ## Verify
 

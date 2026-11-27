@@ -1,10 +1,10 @@
 // `transport`'s small `doric.api.*` services through the router (phase 3,
 // S60c, contract s60 §2.10, §3.1–3.4, §3.7, §3.8, tests R0, R-config, R-cred,
 // R-prov, R-host, R-term, R-status, R-deadline, the start step of Q5, P1 for
-// these services — each refusal of `host-routes.test.ts` ends the RPC with the
-// route's code as reason, its message, and §5's gRPC code — and M1/M2 in
-// process). The harness is `./support/router.ts`; the fakes answer the domain
-// values of `host-routes.test.ts` (`./support/router-fakes.ts`).
+// these services — each refusal of the removed `host-routes.test.ts` ends the
+// RPC with the route's code as reason, its message, and §5's gRPC code, stated
+// per case — and M1/M2 in process). The harness is `./support/router.ts`; the
+// fakes answer that suite's domain values (`./support/router-fakes.ts`).
 
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
@@ -43,14 +43,13 @@ import {
 } from '../src/contracts/gen/doric/api/providers/v1/providers_pb.js';
 import { WatchResponseSchema } from '../src/contracts/gen/doric/api/status/v1/status_pb.js';
 import { GetTerminalResponseSchema } from '../src/contracts/gen/doric/api/terminals/v1/terminals_pb.js';
-import type { Fakes } from './support/host.js';
 import {
   API_SERVICES,
   type Harness,
   type HarnessOptions,
   harness,
 } from './support/router.js';
-import { routerFakes } from './support/router-fakes.js';
+import { type Fakes, routerFakes } from './support/router-fakes.js';
 import {
   access,
   activated,

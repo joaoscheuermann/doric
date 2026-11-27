@@ -115,10 +115,10 @@ void test('a failed build leaves no descriptors.binpb of an earlier build', asyn
     await buildBundle(dir);
     assert.equal(await exists(descriptorsPath(dir)), true);
 
-    // A host part without `activate` fails the dry activation.
+    // A desktop part without `activate` fails the dry activation.
     await writeBundle(root, 'demo', {
       manifest: manifest('demo'),
-      files: { 'dist/host/index.js': 'export const notActivate = 1;\n' },
+      files: { 'dist/desktop/index.js': 'export const notActivate = 1;\n' },
     });
 
     await assert.rejects(buildBundle(dir), BuildError);

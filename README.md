@@ -12,7 +12,9 @@ infrastructure you control.
 
 Doric has three applications and a set of bundles. The **host**
 ([`app/backend/doric-host`](app/backend/doric-host/README.md)) is a Node.js
-server: one HTTP listener carries its REST routes and Socket.IO namespaces
+server: one public listener carries the `doric.api.*` services of the
+`transport` bundle over Connect and gRPC (its REST routes and Socket.IO
+namespaces were deleted in slice S69)
 ([`src/index.ts`](app/backend/doric-host/src/index.ts)), and the `runtime`
 bundle queues and runs each Thread's prompts
 ([`runner.ts`](bundles/runtime/runtime/src/host/domain/runner.ts)) through the
@@ -28,7 +30,7 @@ desktop UI.
 
 > **No authentication.** The host has no login and no access control: anyone
 > who reaches its port can read every Project, change the settings and run
-> work ([`app.ts`](bundles/foundation/transport/src/host/app.ts)). The Compose
+> work ([`service.ts`](bundles/foundation/transport/src/host/process/service.ts)). The Compose
 > host of the [quick start](#quick-start) binds `0.0.0.0` on the host network,
 > so the API is on every interface of the machine, and `.env` cannot change
 > that ([`compose.yaml`](app/backend/doric-host/compose.yaml)). Run it locally
@@ -123,17 +125,17 @@ desktop UI.
   ([`workspace.ts`](packages/docker-sandbox/src/lib/workspace.ts),
   [`docker`](bundles/sandboxes/docker/README.md)).
 - **Integrate.** Other clients drive Projects, Threads and execution events
-  through the host's REST routes
-  ([`app.ts`](bundles/foundation/transport/src/host/app.ts)) and Socket.IO
-  namespaces
-  ([`workspace.ts`](bundles/foundation/transport/src/host/sockets/workspace.ts);
+  through the host's `doric.api.*` services over Connect or gRPC
+  ([`service.ts`](bundles/foundation/transport/src/host/process/service.ts)) and
+  their `Watch` streams
+  ([`watch.ts`](bundles/foundation/transport/src/host/process/watch.ts);
   [Host API](docs/features/host-api.md), the
-  [reference](app/backend/doric-host/README.md#rest-api)).
+  [protos](bundles/foundation/transport/README.md#the-public-api-protos)).
 
 ## How it works
 
 ```text
-┌──────────────────┐   Socket.IO bridge   ┌──────────────────────────┐
+┌──────────────────┐   Connect            ┌──────────────────────────┐
 │ Desktop app      │ ───────────────────▶ │ Doric host               │
 │ (Electron)       │   + screen relay     │ bundles + agent runtime  │
 └──────────────────┘                      └──┬──────────┬─────────┬──┘
@@ -179,23 +181,21 @@ desktop UI.
   desktop's recovery action "Disable a bundle", which accepts any enabled
   bundle but the core, adds the bundle to the `disabled` list of
   `composition.overrides.json` beside the composition, and Git ignores that
-  file ([`composition-actions.ts`](packages/bundle/src/process/composition-actions.ts),
+  file ([`composition-actions.ts`](packages/bundle/src/platform/composition-actions.ts),
   [`overrides.ts`](packages/bundle/src/loader/overrides.ts),
   [`.gitignore`](.gitignore)).
 - The **desktop app** connects to `DORIC_HOST_URL`, or `http://127.0.0.1:3000`
   when unset ([`main.ts`](app/desktop/doric/src/main.ts),
   [`connect.ts`](app/desktop/doric/src/platform/host/connect.ts)). It
-  calls no REST route: it reaches the host's services through the Socket.IO
-  namespace `/doric/bridge`, sending `call`, `cancel`, `subscribe` and
-  `unsubscribe`, which the host answers with `result`, `event` and `end`, and
-  follows its connection status through a second connection to the same
-  namespace ([`connect.ts`](app/desktop/doric/src/platform/host/connect.ts),
-  `socket.ts`,
-  [the desktop bridge](app/backend/doric-host/README.md#the-desktop-bridge)).
+  reaches the host's services over Connect: Electron main directly, each
+  window through main's `doric:connect` relay; main follows its connection
+  status through the `api.status/v1` `Watch`
+  ([`connect.ts`](app/desktop/doric/src/platform/host/connect.ts),
+  [`connect-relay.ts`](app/desktop/doric/src/platform/bridge/connect-relay.ts)).
   The sandbox's screen loads over HTTP and WebSocket from the host's relay
   under `/screen/<token>/`
   ([`relay.ts`](bundles/features/screen-relay/src/host/relay.ts)). The desktop
-  downloads the desktop parts of the bundles through the bridge and draws every
+  downloads the desktop parts of the bundles from the host and draws every
   window with them; the shell page it loads holds no product UI
   ([`doric-renderer`](app/desktop/doric-renderer/README.md)).
 - **Configuration** comes from environment variables. The host reads
@@ -373,10 +373,11 @@ names another path, so watch Docker Desktop's own disk space as well
 </details>
 
 In another terminal, check that the API answers
-([`projects.ts`](bundles/foundation/transport/src/host/routes/projects.ts)):
+([`projects.ts`](bundles/foundation/transport/src/host/api/operations/projects.ts)):
 
 ```sh
-curl --fail http://127.0.0.1:3000/projects
+curl --fail -H 'content-type: application/json' -d '{}' \
+  http://127.0.0.1:3000/doric.api.projects.v1.ProjectsService/ListProjects
 ```
 
 ### 3. Open the desktop app
@@ -813,7 +814,7 @@ Its options and the contracts it answers are in the
 | [Thread archive](docs/features/thread-archive.md)                         | Archiving, restoring and pinning a Thread, and the rules that archive on their own                                   |
 | [The workspace window](docs/features/ui-redesign.md)                      | The window's frame, sidebar, tabs, dashboard, side panel and account status                                          |
 | [Error messages](docs/features/error-messages.md)                         | The text of the errors the window shows                                                                              |
-| [Host API](docs/features/host-api.md)                                     | The host's REST routes and Socket.IO namespaces                                                                      |
+| [Host API](docs/features/host-api.md)                                     | The host's public `doric.api.*` services, and the REST routes and Socket.IO namespaces they replaced                 |
 | [Knowledge bundles](docs/features/knowledge-bundles.md)                   | Generating and searching Open Knowledge Format bundles                                                               |
 | [Bundle isolation](docs/features/bundle-isolation.md)                     | The boundary model: its rules, the manifest, the import paths between bundles, the CI checks and the exceptions file |
 | [Bundle processes](docs/features/bundle-processes.md)                     | The bundle process model: one process per bundle, `.proto` contracts, Rust, and the phase 0 measurements             |
@@ -821,7 +822,8 @@ Its options and the contracts it answers are in the
 ### Applications, scripts and tools
 
 - [Doric host](app/backend/doric-host/README.md): running and configuring the
-  host, its REST and Socket.IO reference, persistence and security.
+  host, the record of its removed REST and Socket.IO API, persistence and
+  security.
 - [Desktop app](app/desktop/doric/README.md): the Electron main process, its
   platform contracts and its packaging.
 - [Renderer shell](app/desktop/doric-renderer/README.md): the page every

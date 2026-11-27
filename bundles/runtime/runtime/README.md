@@ -1978,7 +1978,7 @@ default.model` and `thread.effort ?? default.effort` (`source: 'default'`); a
   truncates the history and appends `history.truncated`, then rejects with
   `TypeError('A non-empty prompt is required.')` and enqueues nothing. Only the
   REST route refuses an empty rewind prompt before the call
-  ([`routes/threads.ts`](../../foundation/transport/src/host/routes/threads.ts)).
+  ([`operations/threads.ts`](../../foundation/transport/src/host/api/operations/threads.ts)).
 - **Compact.** `compact` runs on an idle Thread only (`busy` otherwise) with a
   `promptId` of its own and no sandbox binding; it answers `not_supported` when
   the executor does not read the Thread's history format, and otherwise the

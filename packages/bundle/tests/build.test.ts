@@ -61,46 +61,46 @@ import {
 
 const zodUrl = import.meta.resolve('zod');
 
+// Since S69 the build dry-activates the desktopMain and client parts only. A
+// bundle's host contracts are host-provides entries (its static `services`
+// list and its own `.proto`s, below), and a `dist/host/index.js` an older
+// build left behind is never imported.
+
 const demoManifest = (
-  options: {
-    version?: string;
-    api?: string;
-    requires?: readonly string[];
-  } = {},
+  options: { version?: string; requires?: readonly string[] } = {},
 ) =>
   manifest('demo', {
     version: options.version ?? '1.0.0',
-    provides: [
-      `demo.api/v1@${options.api ?? '1.0.0'}`,
-      'demo.hooks/v1@1.0.0',
-      'demo.desk/v1@1.0.0',
-    ],
+    provides: ['demo.desk/v1@1.0.0'],
     requires: ['hooks/v1@^1.0.0', ...(options.requires ?? [])],
   });
 
-const hostPart = (
-  methods: string,
-) => `import { z } from ${JSON.stringify(zodUrl)};
-import { defineHook, defineHooks, defineMethod, defineService, HooksV1, LogV1 } from ${JSON.stringify(contractsUrl)};
-const api = defineService('demo.api/v1', { ${methods} });
+/**
+ * A kernel host part as builds before S69 dry-activated it: it provides
+ * `demo.api/v1` and defines `demo.hooks/v1`, neither of which
+ * `demoManifest` declares, so activating it would fail the build.
+ */
+const staleHostPart = `import { z } from ${JSON.stringify(zodUrl)};
+import { defineHook, defineHooks, defineMethod, defineService, HooksV1 } from ${JSON.stringify(contractsUrl)};
+const api = defineService('demo.api/v1', {
+  get: defineMethod({ input: z.object({ id: z.string() }).strict(), output: z.object({ n: z.number() }).strict(), execute: () => ({ n: 1 }) }),
+});
 const hooks = defineHooks('demo.hooks/v1', {
   onThingHook: defineHook({ kind: 'observe', input: z.object({ id: z.string() }).strict() }),
 });
 export const activate = ({ services }) => {
   services.provide(api);
   services.use(HooksV1).define(hooks);
-  if (globalThis.__demoUsesLog) services.use(LogV1).info('x');
 };
 `;
 
-const getMethod = `get: defineMethod({ input: z.object({ id: z.string() }).strict(), output: z.object({ n: z.number() }).strict(), execute: () => ({ n: 1 }) })`;
-
 const desktopPart = `import { z } from ${JSON.stringify(zodUrl)};
-import { defineMethod, defineService } from ${JSON.stringify(contractsUrl)};
+import { defineMethod, defineService, LogV1 } from ${JSON.stringify(contractsUrl)};
 export const activate = ({ services }) => {
   services.provide(defineService('demo.desk/v1', {
     ping: defineMethod({ input: z.tuple([]), output: z.literal('pong'), execute: () => 'pong' }),
   }));
+  if (globalThis.__demoUsesLog) services.use(LogV1).info('x');
 };
 `;
 
@@ -108,7 +108,6 @@ const writeDemo = (
   root: string,
   options: {
     manifest?: unknown;
-    host?: string;
     files?: Record<string, string>;
     directory?: string;
   } = {},
@@ -116,7 +115,6 @@ const writeDemo = (
   writeBundle(root, options.directory ?? 'demo', {
     manifest: options.manifest ?? demoManifest(),
     files: {
-      'dist/host/index.js': options.host ?? hostPart(getMethod),
       'dist/desktop/index.js': desktopPart,
       'src/skills/01-use/SKILL.md': skillSource('use-demo', {
         alwaysAvailable: true,
@@ -135,7 +133,7 @@ const exists = async (path: string) => {
   }
 };
 
-void test('the build records environments, writes the descriptor, schemas and skills', async () => {
+void test('the build records the desktopMain environment, writes the descriptor, schemas and skills', async () => {
   await withRoot(async (root) => {
     const dir = await writeDemo(root, {
       files: { 'dist/skills/stale/SKILL.md': skillSource('stale') },
@@ -149,11 +147,7 @@ void test('the build records environments, writes the descriptor, schemas and sk
         environment,
         cardinality,
       ]),
-      [
-        ['demo.api/v1', 'service', 'host', 'one'],
-        ['demo.hooks/v1', 'hooks', 'host', 'one'],
-        ['demo.desk/v1', 'service', 'desktopMain', 'one'],
-      ],
+      [['demo.desk/v1', 'service', 'desktopMain', 'one']],
     );
     assert.deepEqual(
       JSON.parse(await readFile(join(dir, 'dist', 'contracts.json'), 'utf8')),
@@ -162,15 +156,15 @@ void test('the build records environments, writes the descriptor, schemas and sk
 
     const schema = JSON.parse(
       await readFile(
-        join(dir, 'dist', 'schemas', 'demo.api', 'v1.json'),
+        join(dir, 'dist', 'schemas', 'demo.desk', 'v1.json'),
         'utf8',
       ),
     ) as { $id: string; $defs: Record<string, unknown> };
 
-    assert.equal(schema.$id, 'doric:contract/demo.api/v1');
+    assert.equal(schema.$id, 'doric:contract/demo.desk/v1');
     assert.deepEqual(Object.keys(schema.$defs).sort(), [
-      'get.input',
-      'get.output',
+      'ping.input',
+      'ping.output',
     ]);
     assert.equal(
       await exists(join(dir, 'dist', 'skills', '01-use', 'SKILL.md')),
@@ -190,6 +184,26 @@ void test('the build records environments, writes the descriptor, schemas and sk
   });
 });
 
+void test('S69: a stale dist/host/index.js is never dry-activated: what it provides, defines or lacks neither fails the build nor reaches contracts.json', async () => {
+  for (const host of [staleHostPart, 'export const notActivate = 1;\n']) {
+    await withRoot(async (root) => {
+      const dir = await writeDemo(root, {
+        files: { 'dist/host/index.js': host },
+      });
+      const { descriptor } = await buildBundle(dir);
+
+      assert.deepEqual(
+        descriptor.contracts.map(({ id, environment }) => [id, environment]),
+        [['demo.desk/v1', 'desktopMain']],
+      );
+      assert.equal(
+        await exists(join(dir, 'dist', 'schemas', 'demo.api', 'v1.json')),
+        false,
+      );
+    });
+  }
+});
+
 void test('the build fails on an undeclared use, an unrecorded provide or an invalid skill', async () => {
   await withRoot(async (root) => {
     const dir = await writeDemo(root);
@@ -206,12 +220,7 @@ void test('the build fails on an undeclared use, an unrecorded provide or an inv
   await withRoot(async (root) => {
     const dir = await writeDemo(root, {
       manifest: manifest('demo', {
-        provides: [
-          'demo.api/v1@1.0.0',
-          'demo.hooks/v1@1.0.0',
-          'demo.desk/v1@1.0.0',
-          'demo.ghost/v1@1.0.0',
-        ],
+        provides: ['demo.desk/v1@1.0.0', 'demo.ghost/v1@1.0.0'],
         requires: ['hooks/v1@^1.0.0'],
       }),
     });
@@ -245,7 +254,7 @@ void test('the build ignores a leftover contracts.published.json and writes none
 
     assert.deepEqual(
       descriptor.contracts.map(({ id }) => id),
-      ['demo.api/v1', 'demo.hooks/v1', 'demo.desk/v1'],
+      ['demo.desk/v1'],
     );
     assert.equal(
       await readFile(join(dir, 'contracts.published.json'), 'utf8'),
@@ -271,12 +280,9 @@ void test('the CLI has no baseline command; build and stage remain', async () =>
   });
 });
 
-void test('the build copies host Markdown into dist before the dry activation, replacing stale copies', async () => {
+void test('the build copies host Markdown into dist, replacing stale copies', async () => {
   await withRoot(async (root) => {
     const dir = await writeDemo(root, {
-      host: `import { readFileSync } from 'node:fs';
-readFileSync(new URL('./prompts/a.md', import.meta.url));
-${hostPart(getMethod)}`,
       files: {
         'src/host/prompts/a.md': 'A\n',
         'src/host/b.md': 'B\n',
@@ -292,7 +298,6 @@ ${hostPart(getMethod)}`,
     );
     assert.equal(await exists(join(dir, 'dist', 'host', 'b.md')), true);
     assert.equal(await exists(join(dir, 'dist', 'host', 'old.md')), false);
-    assert.equal(await exists(join(dir, 'dist', 'host', 'index.js')), true);
   });
 });
 
@@ -480,7 +485,7 @@ void test('staging replaces each bundle directory with its dist', async () => {
       true,
     );
     assert.equal(
-      await exists(join(destination, 'demo', 'host', 'index.js')),
+      await exists(join(destination, 'demo', 'desktop', 'index.js')),
       true,
     );
     assert.equal(
@@ -530,7 +535,7 @@ void test('stage --all stages every <group>/<id> with a manifest and skips the r
       ],
     );
     assert.equal(
-      await exists(join(destination, 'c', 'host', 'index.js')),
+      await exists(join(destination, 'c', 'desktop', 'index.js')),
       true,
     );
   });
@@ -649,32 +654,25 @@ const rejectsWithCode = async (
     return true;
   });
 
-void test('a v2 host part that provides a CLIENT contract fails with contract_environment', async () => {
+// A host part reaches the environment rule through its static `services`
+// list only (S69: no host dry activation); a CLIENT contract there fails
+// below ("a v2 host services list naming … of the CLIENT contract …").
+
+void test('a v1 and a v2 client part that provides a CLIENT contract build with it on client', async () => {
   await withRoot(async (root) => {
-    const dir = await writeBundle(root, 'demo', {
-      manifest: environmentManifest(2, ['ui/v1@1.0.0']),
-      files: { 'dist/host/index.js': providing('ui/v1') },
-    });
+    for (const manifestVersion of [1, 2] as const) {
+      const dir = await writeBundle(root, `v${manifestVersion}`, {
+        manifest: environmentManifest(manifestVersion, ['ui/v1@1.0.0']),
+        files: { 'dist/client/index.js': providing('ui/v1') },
+      });
+      const { descriptor } = await buildBundle(dir);
 
-    await rejectsWithCode(buildBundle(dir), 'contract_environment', [
-      'ui/v1',
-      'host',
-    ]);
-  });
-});
-
-void test('a v1 host part that provides a CLIENT contract still builds', async () => {
-  await withRoot(async (root) => {
-    const dir = await writeBundle(root, 'demo', {
-      manifest: environmentManifest(1, ['ui/v1@1.0.0']),
-      files: { 'dist/host/index.js': providing('ui/v1') },
-    });
-    const { descriptor } = await buildBundle(dir);
-
-    assert.deepEqual(
-      descriptor.contracts.map(({ id, environment }) => [id, environment]),
-      [['ui/v1', 'host']],
-    );
+      assert.deepEqual(
+        descriptor.contracts.map(({ id, environment }) => [id, environment]),
+        [['ui/v1', 'client']],
+        `version ${manifestVersion}`,
+      );
+    }
   });
 });
 
@@ -697,15 +695,14 @@ void test('a v2 host part builds with its HOST contract and a HOST handler servi
     const dir = await writeBundle(root, 'demo', {
       manifest: environmentManifest(2, ['tools/v1@1.0.0']),
       files: {
-        'dist/host/index.js': providing('tools/v1'),
         'src/host/main.ts': mainWith(
-          "import { ToolHandlerService } from '../contracts/gen/doric/tools/v1/tools_pb.js';",
-          ['[ToolHandlerService, {}]'],
+          "import { ToolHandlerService, ToolsService } from '../contracts/gen/doric/tools/v1/tools_pb.js';",
+          ['[ToolsService, {}]', '[ToolHandlerService, {}]'],
         ),
         // Stand-ins so esbuild resolves main.ts's imports; the build checks
         // the services list against the package's own generated tools.proto.
         'src/contracts/gen/doric/tools/v1/tools_pb.ts':
-          'export const ToolHandlerService = {};\n',
+          'export const ToolsService = {};\nexport const ToolHandlerService = {};\n',
         'node_modules/bundle/package.json': JSON.stringify({
           name: 'bundle',
           type: 'module',
@@ -732,9 +729,8 @@ for (const [contract, service, module] of [
   void test(`a v2 host services list naming ${service} of the CLIENT contract ${contract} fails with contract_environment`, async () => {
     await withRoot(async (root) => {
       const dir = await writeBundle(root, 'demo', {
-        manifest: environmentManifest(2, ['demo.api/v1@1.0.0']),
+        manifest: environmentManifest(2, []),
         files: {
-          'dist/host/index.js': providing('demo.api/v1'),
           'src/host/main.ts': mainWith(
             `import { ${service} } from '../contracts/gen/${module}';`,
             [`[${service}, {}]`],
@@ -754,9 +750,8 @@ for (const [contract, service, module] of [
 void test('a v2 host services list that is not static fails with services_not_static', async () => {
   await withRoot(async (root) => {
     const dir = await writeBundle(root, 'demo', {
-      manifest: environmentManifest(2, ['demo.api/v1@1.0.0']),
+      manifest: environmentManifest(2, []),
       files: {
-        'dist/host/index.js': providing('demo.api/v1'),
         'src/host/main.ts': `import { runBundle } from 'bundle';
 import { ToolHandlerService } from '../contracts/gen/doric/tools/v1/tools_pb.js';
 
@@ -776,9 +771,8 @@ runBundle({ services: list, activate: () => undefined });
 void test('a v2 host services entry naming no service of the index fails with services_not_static', async () => {
   await withRoot(async (root) => {
     const dir = await writeBundle(root, 'demo', {
-      manifest: environmentManifest(2, ['demo.api/v1@1.0.0']),
+      manifest: environmentManifest(2, []),
       files: {
-        'dist/host/index.js': providing('demo.api/v1'),
         'src/host/main.ts': mainWith(
           "import { MissingService } from '../contracts/gen/doric/tools/v1/tools_pb.js';",
           ['[MissingService, {}]'],
@@ -1172,14 +1166,11 @@ for (const manifestVersion of [1, 2] as const) {
 
 void test('a fixture whose main.ts serves a HOST contract provides does not list fails naming its line, in version 1 and version 2', async () => {
   await withRoot(async (root) => {
-    const files = {
-      'dist/host/index.js': providing('demo.api/v1'),
-      ...servingFiles([toolsService]),
-    };
+    const files = servingFiles([toolsService]);
 
     for (const manifestVersion of [1, 2] as const) {
       const dir = await writeBundle(root, `v${manifestVersion}`, {
-        manifest: environmentManifest(manifestVersion, ['demo.api/v1@1.0.0']),
+        manifest: environmentManifest(manifestVersion, []),
         files,
       });
 

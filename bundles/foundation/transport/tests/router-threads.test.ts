@@ -13,7 +13,12 @@ import test, { type TestContext } from 'node:test';
 import { type JsonValue, toBinary } from '@bufbuild/protobuf';
 import { Code } from '@connectrpc/connect';
 import { ContractError } from 'bundle/contracts';
-import { encode, notFoundError } from 'runtime/contracts';
+import {
+  encode,
+  notFoundError,
+  type RestError,
+  restErrors,
+} from 'runtime/contracts';
 
 import {
   CompactResponseSchema,
@@ -38,26 +43,26 @@ import {
   UpdateQueuedPromptResponseSchema,
   UpdateThreadResponseSchema,
 } from '../src/contracts/gen/doric/api/threads/v1/threads_pb.js';
-import type { Fakes } from './support/host.js';
+import {
+  assertRouteRefusal,
+  assertRouteSuccess,
+  internalError,
+  routed,
+} from './support/route-answers.js';
 import { type Harness, harness } from './support/router.js';
-import { routerFakes } from './support/router-fakes.js';
+import { type Fakes, routerFakes } from './support/router-fakes.js';
 import {
   assertMessage,
   first,
   promptId,
   type Refusal,
   refusalOf,
+  terminal,
   thread,
   threadEvent,
   threadId,
   workspaceFakes,
 } from './support/router-fixtures.js';
-import {
-  assertRefusalParity,
-  assertSuccessParity,
-  type Route,
-  routed,
-} from './support/router-parity.js';
 
 const refused = (reason: string, message: string, code: Code): Refusal => ({
   reason,
@@ -251,13 +256,18 @@ void test('R-thr: Compact answers the compaction; a failed one is compaction_fai
       tokensFreed: 100,
     },
   );
-  await assertRefusalParity(
+  await assertRouteRefusal(
     t,
     threadsAnswering('compact', () => ({
       status: 'failed',
       code: 'summarizer_failed',
     })),
-    [`/threads/${threadId}/compact`, 'POST'],
+    {
+      status: 502,
+      code: 'compaction_failed',
+      message:
+        'The compaction failed (summarizer_failed); the log carries the attempt.',
+    },
     (other) => other.threads().compact({ threadId }),
     'compact failed',
   );
@@ -371,10 +381,10 @@ void test('R-thr/Q8: DeleteThread answers {} for deleted and for an agent Thread
     await refusalOf(missing.threads().deleteThread({ threadId })),
     threadMissing,
   );
-  await assertRefusalParity(
+  await assertRouteRefusal(
     t,
     threadsAnswering('deleteThread', () => 'active'),
-    [`/threads/${threadId}`, 'DELETE'],
+    restErrors.deleteThread('active'),
     (h) => h.threads().deleteThread({ threadId }),
     'deleteThread active',
   );
@@ -497,11 +507,11 @@ void test('R-thr-events/Q3: a log runtime refuses as limit_exceeded passes throu
 
 // P1 / P2 ----------------------------------------------------------------------------
 
-/** The cases of `rest-errors.test.ts` for the Thread routes, plus the outcomes of §3.6 it does not list. */
+/** The cases of `rest-errors.test.ts` for the Thread routes, plus the outcomes of §3.6 it does not list, with today's refusal of each. */
 const refusalCases = (): readonly (readonly [
   string,
   Fakes,
-  Route,
+  RestError | undefined,
   (h: Harness) => Promise<unknown>,
   Code?,
 ])[] => {
@@ -512,37 +522,37 @@ const refusalCases = (): readonly (readonly [
     [
       'thread undefined',
       undefinedOf('thread'),
-      [`/threads/${threadId}`],
+      restErrors.thread(undefined),
       (h) => h.threads().getThread({ threadId }),
     ],
     [
       'renameThread undefined',
       undefinedOf('renameThread'),
-      [`/threads/${threadId}`, 'PATCH', { name: 'Name' }],
+      restErrors.thread(undefined),
       (h) => h.threads().updateThread({ threadId, name: 'Name' }),
     ],
     [
       'terminateThread undefined',
       undefinedOf('terminateThread'),
-      [`/threads/${threadId}/terminate`, 'POST'],
+      restErrors.thread(undefined),
       (h) => h.threads().terminateThread({ threadId }),
     ],
     [
       'queue undefined',
       undefinedOf('queue'),
-      [`/threads/${threadId}/queue`],
+      restErrors.thread(undefined),
       (h) => h.threads().getQueue({ threadId }),
     ],
     [
       'threadEvents undefined',
       undefinedOf('threadEvents'),
-      [`/threads/${threadId}/events`],
+      restErrors.thread(undefined),
       (h) => h.threads().listEvents({ threadId }),
     ],
     [
       'usage undefined',
       { ...workspaceFakes, usage: { thread: () => undefined } },
-      [`/threads/${threadId}/usage`],
+      restErrors.thread(undefined),
       (h) => h.threads().getUsage({ threadId }),
     ],
     ...(
@@ -558,7 +568,7 @@ const refusalCases = (): readonly (readonly [
         [
           `setThreadCwd ${JSON.stringify(result)}`,
           threadsAnswering('setThreadCwd', () => result),
-          [`/threads/${threadId}`, 'PATCH', { cwd: '/workspace/x' }],
+          restErrors.setThreadCwd(result),
           (h: Harness) =>
             h.threads().updateThread({ threadId, cwd: '/workspace/x' }),
         ] as const,
@@ -576,11 +586,7 @@ const refusalCases = (): readonly (readonly [
         [
           `setThreadExecution ${JSON.stringify(result)}`,
           threadsAnswering('setThreadExecution', () => result),
-          [
-            `/threads/${threadId}`,
-            'PATCH',
-            { providerId: 'openai', model: 'gpt-5', effort: 'high' },
-          ],
+          restErrors.setThreadExecution(result),
           (h: Harness) =>
             h.threads().updateThread({
               threadId,
@@ -595,7 +601,7 @@ const refusalCases = (): readonly (readonly [
         [
           `deleteThread ${result}`,
           threadsAnswering('deleteThread', () => result),
-          [`/threads/${threadId}`, 'DELETE'],
+          restErrors.deleteThread(result),
           (h: Harness) => h.threads().deleteThread({ threadId }),
         ] as const,
     ),
@@ -604,7 +610,7 @@ const refusalCases = (): readonly (readonly [
         [
           `prompt ${status}`,
           threadsAnswering('prompt', () => ({ status })),
-          [`/threads/${threadId}/prompt`, 'POST', { prompt: 'Hello' }],
+          restErrors.prompt({ status }),
           (h: Harness) => h.threads().prompt({ threadId, prompt: 'Hello' }),
         ] as const,
     ),
@@ -613,11 +619,7 @@ const refusalCases = (): readonly (readonly [
         [
           `steer ${status}`,
           threadsAnswering('steer', () => ({ status })),
-          [
-            `/threads/${threadId}/steer`,
-            'POST',
-            { prompt: 'Change course', promptId },
-          ],
+          restErrors.steer({ status }),
           (h: Harness) =>
             h.threads().steer({ threadId, prompt: 'Change course', promptId }),
         ] as const,
@@ -629,7 +631,7 @@ const refusalCases = (): readonly (readonly [
         [
           `resume ${status}`,
           threadsAnswering('resume', () => ({ status })),
-          [`/threads/${threadId}/resume`, 'POST', { promptId }],
+          restErrors.resume({ status }),
           (h: Harness) => h.threads().resume({ threadId, promptId }),
         ] as const,
     ),
@@ -638,11 +640,7 @@ const refusalCases = (): readonly (readonly [
         [
           `rewind ${status}`,
           threadsAnswering('rewind', () => ({ status })),
-          [
-            `/threads/${threadId}/rewind`,
-            'POST',
-            { promptId, prompt: 'Again' },
-          ],
+          restErrors.rewind({ status }),
           (h: Harness) =>
             h.threads().rewind({ threadId, promptId, prompt: 'Again' }),
         ] as const,
@@ -652,7 +650,7 @@ const refusalCases = (): readonly (readonly [
         [
           `pause ${result}`,
           threadsAnswering('pause', () => result),
-          [`/threads/${threadId}/interrupt`, 'POST', { promptId }],
+          restErrors.pause(result),
           (h: Harness) => h.threads().interrupt({ threadId, promptId }),
         ] as const,
     ),
@@ -663,7 +661,7 @@ const refusalCases = (): readonly (readonly [
         [
           `resumeQueue ${status}`,
           threadsAnswering('resumeQueue', () => ({ status })),
-          [`/threads/${threadId}/queue/resume`, 'POST'],
+          restErrors.resumeQueue({ status }),
           (h: Harness) => h.threads().resumeQueue({ threadId }),
         ] as const,
     ),
@@ -672,7 +670,7 @@ const refusalCases = (): readonly (readonly [
         [
           `removeQueued ${result}`,
           threadsAnswering('removeQueued', () => result),
-          [`/threads/${threadId}/queue/${promptId}`, 'DELETE'],
+          restErrors.removeQueued(result),
           (h: Harness) =>
             h.threads().deleteQueuedPrompt({ threadId, promptId }),
         ] as const,
@@ -680,7 +678,7 @@ const refusalCases = (): readonly (readonly [
     [
       'queuedPrompt undefined',
       undefinedOf('queuedPrompt'),
-      [`/threads/${threadId}/queue/${promptId}`],
+      restErrors.queuedPrompt(undefined),
       (h) => h.threads().getQueuedPrompt({ threadId, promptId }),
     ],
     ...(
@@ -697,11 +695,7 @@ const refusalCases = (): readonly (readonly [
         [
           `editQueued ${status}`,
           threadsAnswering('editQueued', () => ({ status })),
-          [
-            `/threads/${threadId}/queue/${promptId}`,
-            'PATCH',
-            { text: 'Edited', revision: 1 },
-          ],
+          restErrors.editQueued({ status }),
           (h: Harness) =>
             h.threads().updateQueuedPrompt({
               threadId,
@@ -728,11 +722,7 @@ const refusalCases = (): readonly (readonly [
             ...workspaceFakes,
             git: { ...workspaceFakes.git, switchBranch: () => result },
           },
-          [
-            `/threads/${threadId}/branches`,
-            'POST',
-            { branch: 'main', cwd: '/workspace' },
-          ],
+          restErrors.switchBranch(result),
           (h: Harness) =>
             h
               .threads()
@@ -745,7 +735,7 @@ const refusalCases = (): readonly (readonly [
         ...workspaceFakes,
         git: { ...workspaceFakes.git, status: () => ({ status: 'missing' }) },
       },
-      [`/threads/${threadId}/git`],
+      notFoundError('thread'),
       (h) => h.threads().getGit({ threadId }),
     ],
     [
@@ -754,7 +744,7 @@ const refusalCases = (): readonly (readonly [
         ...workspaceFakes,
         terminal: { ...workspaceFakes.terminal, create: () => undefined },
       },
-      [`/threads/${threadId}/terminals`, 'POST'],
+      restErrors.createTerminal(undefined),
       (h) => h.threads().createTerminal({ threadId }),
     ],
     [
@@ -763,13 +753,23 @@ const refusalCases = (): readonly (readonly [
         status: 'refused',
         reason: 'nothing_to_compact',
       })),
-      [`/threads/${threadId}/compact`, 'POST'],
+      {
+        status: 409,
+        code: 'compaction_refused',
+        message:
+          'Nothing condenses here: the recent conversation is already the smallest safe span.',
+      },
       (h) => h.threads().compact({ threadId }),
     ],
     [
       'compact busy',
       threadsAnswering('compact', () => ({ status: 'busy' })),
-      [`/threads/${threadId}/compact`, 'POST'],
+      {
+        status: 409,
+        code: 'thread_busy',
+        message:
+          'The Thread is running or has queued input and cannot be compacted now.',
+      },
       (h) => h.threads().compact({ threadId }),
     ],
     [
@@ -777,15 +777,15 @@ const refusalCases = (): readonly (readonly [
       threadsAnswering('thread', () => {
         throw new Error('secret provider credentials');
       }),
-      [`/threads/${threadId}`],
+      internalError,
       (h) => h.threads().getThread({ threadId }),
     ],
   ];
 };
 
 void test("P1: each runtime outcome of the Thread routes ends the RPC with the route's reason, message and §5 code", async (t) => {
-  for (const [name, fakes, route, call, code] of refusalCases()) {
-    await assertRefusalParity(t, fakes, route, call, name, code);
+  for (const [name, fakes, expected, call, code] of refusalCases()) {
+    await assertRouteRefusal(t, fakes, expected, call, name, code);
   }
 });
 
@@ -793,42 +793,39 @@ void test("P2: one success per ThreadsService RPC answers the route's body under
   const asIs = (body: unknown) => body;
   const ready = (body: unknown) => ({ status: 'ready', value: body });
   const empty = () => ({});
+  // Today's route bodies over `workspaceFakes`.
   const cases = [
     [
       'GetThread',
-      [`/threads/${threadId}`],
+      thread,
       GetThreadResponseSchema,
       (h: Harness) => h.threads().getThread({ threadId }),
       (body: unknown) => ({ thread: body }),
     ],
     [
       'UpdateThread',
-      [`/threads/${threadId}`, 'PATCH', { name: 'Renamed' }],
+      { ...thread, name: 'Renamed' },
       UpdateThreadResponseSchema,
       (h: Harness) => h.threads().updateThread({ threadId, name: 'Renamed' }),
       (body: unknown) => ({ thread: body }),
     ],
     [
       'GetGit',
-      [`/threads/${threadId}/git`],
+      { repo: false },
       GetGitResponseSchema,
       (h: Harness) => h.threads().getGit({ threadId }),
       ready,
     ],
     [
       'ListBranches',
-      [`/threads/${threadId}/branches`],
+      { branches: [] },
       ListBranchesResponseSchema,
       (h: Harness) => h.threads().listBranches({ threadId }),
       ready,
     ],
     [
       'CreateBranch',
-      [
-        `/threads/${threadId}/branches`,
-        'POST',
-        { branch: 'main', cwd: '/workspace' },
-      ],
+      { branches: [] },
       CreateBranchResponseSchema,
       (h: Harness) =>
         h
@@ -838,14 +835,14 @@ void test("P2: one success per ThreadsService RPC answers the route's body under
     ],
     [
       'Prompt',
-      [`/threads/${threadId}/prompt`, 'POST', { prompt: 'Hello' }],
+      { promptId },
       PromptResponseSchema,
       (h: Harness) => h.threads().prompt({ threadId, prompt: 'Hello' }),
       asIs,
     ],
     [
       'Steer',
-      [`/threads/${threadId}/steer`, 'POST', { prompt: 'Change', promptId }],
+      { status: 'steered', promptId },
       SteerResponseSchema,
       (h: Harness) =>
         h.threads().steer({ threadId, prompt: 'Change', promptId }),
@@ -853,14 +850,14 @@ void test("P2: one success per ThreadsService RPC answers the route's body under
     ],
     [
       'Resume',
-      [`/threads/${threadId}/resume`, 'POST', { promptId }],
+      thread,
       ResumeResponseSchema,
       (h: Harness) => h.threads().resume({ threadId, promptId }),
       (body: unknown) => ({ thread: body }),
     ],
     [
       'Rewind',
-      [`/threads/${threadId}/rewind`, 'POST', { promptId, prompt: 'Again' }],
+      { promptId },
       RewindResponseSchema,
       (h: Harness) =>
         h.threads().rewind({ threadId, promptId, prompt: 'Again' }),
@@ -868,60 +865,61 @@ void test("P2: one success per ThreadsService RPC answers the route's body under
     ],
     [
       'Compact',
-      [`/threads/${threadId}/compact`, 'POST'],
+      {
+        status: 'compacted',
+        condensedMessages: 4,
+        retainedMessages: 2,
+        tokensFreed: 100,
+      },
       CompactResponseSchema,
       (h: Harness) => h.threads().compact({ threadId }),
       asIs,
     ],
     [
       'Interrupt',
-      [`/threads/${threadId}/interrupt`, 'POST', { promptId }],
+      { status: 'interrupted' },
       InterruptResponseSchema,
       (h: Harness) => h.threads().interrupt({ threadId, promptId }),
       asIs,
     ],
     [
       'ListEvents',
-      [`/threads/${threadId}/events?afterSequence=0`],
+      { events: [threadEvent(1), threadEvent(2)], lastSequence: 2 },
       ListEventsResponseSchema,
       (h: Harness) => h.threads().listEvents({ threadId }),
       (body: unknown) => ({ threadEventLog: body }),
     ],
     [
       'GetUsage',
-      [`/threads/${threadId}/usage`],
+      workspaceFakes.usage.thread(),
       GetUsageResponseSchema,
       (h: Harness) => h.threads().getUsage({ threadId }),
       (body: unknown) => ({ threadUsage: body }),
     ],
     [
       'GetQueue',
-      [`/threads/${threadId}/queue`],
+      { revision: 1, paused: false, stopping: false, items: [] },
       GetQueueResponseSchema,
       (h: Harness) => h.threads().getQueue({ threadId }),
       (body: unknown) => ({ threadQueue: body }),
     ],
     [
       'ResumeQueue',
-      [`/threads/${threadId}/queue/resume`, 'POST'],
+      thread,
       ResumeQueueResponseSchema,
       (h: Harness) => h.threads().resumeQueue({ threadId }),
       (body: unknown) => ({ thread: body }),
     ],
     [
       'GetQueuedPrompt',
-      [`/threads/${threadId}/queue/${promptId}`],
+      { promptId, text: 'Queued', revision: 1, editable: true },
       GetQueuedPromptResponseSchema,
       (h: Harness) => h.threads().getQueuedPrompt({ threadId, promptId }),
       (body: unknown) => ({ queuedPrompt: body }),
     ],
     [
       'UpdateQueuedPrompt',
-      [
-        `/threads/${threadId}/queue/${promptId}`,
-        'PATCH',
-        { text: 'Edited', revision: 1 },
-      ],
+      { promptId, text: 'Edited', revision: 2, editable: true },
       UpdateQueuedPromptResponseSchema,
       (h: Harness) =>
         h.threads().updateQueuedPrompt({
@@ -934,14 +932,14 @@ void test("P2: one success per ThreadsService RPC answers the route's body under
     ],
     [
       'DeleteQueuedPrompt',
-      [`/threads/${threadId}/queue/${promptId}`, 'DELETE'],
+      undefined,
       DeleteQueuedPromptResponseSchema,
       (h: Harness) => h.threads().deleteQueuedPrompt({ threadId, promptId }),
       empty,
     ],
     [
       'CreateTerminal',
-      [`/threads/${threadId}/terminals`, 'POST', { cols: 80, rows: 24 }],
+      terminal,
       CreateTerminalResponseSchema,
       (h: Harness) =>
         h.threads().createTerminal({ threadId, cols: 80, rows: 24 }),
@@ -949,25 +947,25 @@ void test("P2: one success per ThreadsService RPC answers the route's body under
     ],
     [
       'TerminateThread',
-      [`/threads/${threadId}/terminate`, 'POST'],
+      { ...thread, state: 'cancelled' },
       TerminateThreadResponseSchema,
       (h: Harness) => h.threads().terminateThread({ threadId }),
       (body: unknown) => ({ thread: body }),
     ],
     [
       'DeleteThread',
-      [`/threads/${threadId}`, 'DELETE'],
+      undefined,
       DeleteThreadResponseSchema,
       (h: Harness) => h.threads().deleteThread({ threadId }),
       empty,
     ],
   ] as const;
 
-  for (const [rpc, route, schema, call, wrap] of cases) {
-    await assertSuccessParity(
+  for (const [rpc, body, schema, call, wrap] of cases) {
+    await assertRouteSuccess(
       t,
       workspaceFakes,
-      route,
+      body,
       schema,
       call as never,
       wrap,

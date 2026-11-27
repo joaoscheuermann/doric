@@ -34,8 +34,8 @@ the bundle that knows what they mean.
   workspace's visibility rules; `find` and `grep` filter only through
   `src/host/tools/visible-files.ts`. Never restate those rules in a tool or a
   read.
-- Add a `files/v1` method to `Files` and `filesMethods` in
-  `src/contracts/index.ts`, implement it in `src/host/reads.ts` (or, for a
+- Add a `files/v1` method to `proto/doric/files/v1/files.proto` and to `Files`
+  in `src/contracts/index.ts`, implement it in `src/host/reads.ts` (or, for a
   write, `src/host/writes.ts`), serve it in `src/host/lease.ts`, and run it
   only on the Project's current lease (`runOnProjectLease`), answering every expected failure as a
   status in its value. Call it from the window only through

@@ -38,11 +38,11 @@ through its own contracts.
 - Keep the stream rules of [`src/host/watch.ts`](src/host/watch.ts): a
   snapshot first on every subscribe, `updated` and `removed` items held until
   it, and output never buffered for a subscriber.
-- Never change the input or result of `run`: `TerminalV1` and the baseline
-  shapes of [`tests/host-parity.test.ts`](tests/host-parity.test.ts) pin
-  them. Add a new method only to `TerminalService` and
-  `terminalServiceMethods` in [`src/contracts/index.ts`](src/contracts/index.ts),
-  never to `Terminal` or `terminalMethods`.
+- Never change the input or result of `run`: the baseline shapes of
+  [`tests/host-parity.test.ts`](tests/host-parity.test.ts) pin them. Add a new
+  method only to `TerminalService` in
+  [`src/contracts/index.ts`](src/contracts/index.ts) and to
+  `proto/doric/terminal/v1/terminal.proto`, never to `Terminal`.
 - Add a method a window calls in four places in the same change: the
   interface and its schema in `src/contracts/index.ts`, its provider in
   `src/host/provider.ts` backed by the registry, its wrapper with argument

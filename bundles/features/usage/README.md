@@ -347,7 +347,7 @@ The host route `GET /threads/:id/usage` belongs to the `transport` bundle,
 which lists `usage/v1` under `optional`: it answers `usage/v1.thread` with
 `Cache-Control: no-store`, and 404 `thread_not_found` when the answer is
 `undefined`
-([`bundles/foundation/transport/src/host/routes/threads.ts`](../../foundation/transport/src/host/routes/threads.ts),
+([`bundles/foundation/transport/src/host/api/operations/threads.ts`](../../foundation/transport/src/host/api/operations/threads.ts),
 [`bundles/foundation/transport/README.md`](../../foundation/transport/README.md)).
 
 ### Stylesheet

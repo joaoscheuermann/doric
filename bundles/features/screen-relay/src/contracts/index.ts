@@ -2,12 +2,10 @@
 // the host already exposes.
 //
 // This contract belongs to the `screen-relay` bundle because serving it takes
-// the host's native listeners, and the platform hands those to a bundle only
-// when the composition runs it resident in the kernel process: `register`
-// takes a local listener and answers a local cleanup, and neither crosses the
-// envelope. The `screen` bundle runs in a generation — that is where
+// the part's own HTTP listener, which the gateway sends every `/screen/`
+// request to. The `screen` bundle runs in a generation — that is where
 // `runtime.lease/v1.withLease` can hand it a sandbox — so it publishes each
-// session's upstream here and mounts nothing itself.
+// session's upstream here and serves nothing itself.
 
 import { type CallArg, ref } from 'bundle/contracts';
 import { z } from 'zod';

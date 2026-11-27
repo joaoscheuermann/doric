@@ -21,9 +21,9 @@ import { buildBundle } from 'bundle';
 // `dist/host/main.mjs`, which imports `runBundle` from `bundle/host` and lists
 // the eight `doric.api.*` services then `hooks/v1`'s `HookHandlerService` as
 // the static `[Service, implementation]` literals the build reads, and passes
-// `invalidInput`. The kernel entry (`dist/host/index.js`, `dist/kernel.js`)
-// and the manifest stay as they were until S62. The process carries no
-// Express, Socket.IO or pino.
+// `invalidInput`. The manifest stays as it was; the kernel entries
+// (`dist/host/index.js`, `dist/kernel.js`) are gone (S69). The process carries
+// no Express, Socket.IO or pino.
 //
 // `buildBundle` rewrites `dist/`, which other test files read while they
 // run, so this file builds a copy of the bundle inside the package, where
@@ -160,7 +160,7 @@ const allowedPackage = (specifier: string): boolean =>
   specifier === '@connectrpc/connect' ||
   specifier === 'zod';
 
-void test('B1: the build bundles transport’s host part into a runnable main.mjs and keeps the kernel entries and the manifest', async (t) => {
+void test('B1: the build bundles transport’s host part into a runnable main.mjs and keeps the manifest', async (t) => {
   const copy = await copyBundle();
 
   t.after(() => rm(copy, { recursive: true, force: true }));
@@ -170,13 +170,14 @@ void test('B1: the build bundles transport’s host part into a runnable main.mj
   const main = join(copy, 'dist', 'host', 'main.mjs');
 
   assert.ok((await stat(main)).size > 0, 'dist/host/main.mjs is empty');
-  for (const kept of [
+  for (const gone of [
     join('dist', 'host', 'index.js'),
     join('dist', 'kernel.js'),
   ]) {
-    assert.ok(
-      (await stat(join(copy, kept))).size > 0,
-      `the kernel entry ${kept} is gone`,
+    await assert.rejects(
+      stat(join(copy, gone)),
+      { code: 'ENOENT' },
+      `the kernel entry ${gone} still exists`,
     );
   }
   assert.ok(
@@ -277,15 +278,12 @@ void test('B3: src/host/process and src/host/api import only bundle, the consume
       await readFile(file, 'utf8'),
     )) {
       if (specifier.startsWith('.')) continue;
-      if (
-        specifier === 'express' &&
-        typeOnly &&
-        relative.endsWith(join('api', 'answer.ts'))
-      ) {
-        continue;
-      }
 
-      assert.ok(allowedPackage(specifier), `${relative} imports ${specifier}`);
+      // S69: `api/answer.ts` loses `sendAnswer` and its `express` types.
+      assert.ok(
+        allowedPackage(specifier),
+        `${relative} imports ${specifier}${typeOnly ? ' (types)' : ''}`,
+      );
     }
   }
 });

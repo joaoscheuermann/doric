@@ -1,18 +1,16 @@
 // The screen relay: the HTTP + WebSocket forwarding of the Project screens,
-// mounted on the origin the host already exposes. The app embeds
+// reached on the origin the host already exposes. The app embeds
 // `/screen/<token>/` on that origin, and the relay forwards every request of
 // that token tree to the Project sandbox's xpra server — assets over plain
 // HTTP, the live stream over a WebSocket.
 //
-// The relay binds no server of its own. A loopback URL that only the host
-// machine can answer is exactly what breaks the product when the host runs on
-// a remote server while the app runs on a laptop: the app has to reach the
-// screen on the same origin it reaches the host on. `doric.network/v1` hands
-// the host's shared request router and `http.Server` to a bundle the
-// composition runs resident in the kernel — which is why this file belongs to
-// `screen-relay` and not to the generation-side `screen` — so the relay mounts
-// the token tree as a router middleware and its transparent upgrade handling
-// as a second `upgrade` listener.
+// The app never reaches a listener of its own. A loopback URL that only the
+// host machine can answer is exactly what breaks the product when the host
+// runs on a remote server while the app runs on a laptop: the app has to reach
+// the screen on the same origin it reaches the host on. The gateway sends every
+// request and upgrade under `/screen/` to this part's own listener (`serve`),
+// which is why this file belongs to `screen-relay` and not to the
+// generation-side `screen`.
 //
 // The WebSocket is forwarded transparently: the relay terminates the upgrade
 // with the browser and performs its own upgrade with xpra, both with the
@@ -26,7 +24,7 @@
 // token can watch and drive the screen. The token stays the capability; the
 // operator's network boundary (tunnel, reverse proxy, VPN) becomes the
 // control, consistent with the host's HTTP surface being unauthenticated by
-// design (see `bundles/foundation/transport/src/host/routes/credentials.ts`).
+// design (see `bundles/foundation/transport/src/host/api/operations/credentials.ts`).
 
 import {
   request as httpRequest,
@@ -39,42 +37,16 @@ import { connect, type Socket } from 'node:net';
 import type { ScreenRelayTarget } from '../contracts/index.js';
 
 /**
- * The host's shared request router, as this relay uses it: an Express-style
- * `use`, which the host passes as `NetworkResources.http`.
- */
-export interface ScreenRelayRouter {
-  use(
-    handler: (
-      request: IncomingMessage,
-      response: ServerResponse,
-      next: (error?: unknown) => void,
-    ) => void,
-  ): unknown;
-}
-
-/** The network resources the relay mounts on. */
-export interface ScreenRelayResources {
-  readonly http: object;
-  readonly server: object;
-}
-
-/**
  * The relay itself: the local face `screen.relay/v1` is defined over, plus its
- * native mount. The token argument comes first here because this is the object
+ * listener. The token argument comes first here because this is the object
  * the host part owns; the contract's single-object `expose` is what crosses
- * processes, and `service.ts` adapts one to the other.
+ * processes, and `rpc/relay.ts` adapts one to the other.
  */
 export interface ScreenRelayServer {
   /** Registers (or replaces) the upstream of one session token. */
   expose(token: string, target: ScreenRelayTarget): void;
   /** Drops a token; its requests answer 404 afterwards. */
   forget(token: string): void;
-  /**
-   * Mounts the relay on the host's shared router and `http.Server`. Returns a
-   * function that stops it answering; the router middleware cannot be removed
-   * once added, so the returned function flips the relay to pass-through.
-   */
-  mount(resources: ScreenRelayResources): () => void;
   /**
    * Serves the relay as the only handler of `server`: the part's own loopback
    * listener (`BundleDefinition.httpServer`), which the gateway sends every
@@ -83,12 +55,12 @@ export interface ScreenRelayServer {
    *
    * Accepts a plain `http.Server` with no `request` or `upgrade` listener of
    * its own; listening or not. From the call on:
-   * - a request under `/screen/<token>/` of an exposed token is forwarded as
-   *   `mount` forwards it (path after the token, query kept, `host` rewritten,
-   *   hop-by-hop headers dropped); an unreachable upstream answers 502;
+   * - a request under `/screen/<token>/` of an exposed token is forwarded
+   *   (path after the token, query kept, `host` rewritten, hop-by-hop headers
+   *   dropped); an unreachable upstream answers 502;
    * - any other request (an unknown token, `/screen`, a path outside the
    *   tree) answers 404 `No such screen.`, `text/plain`;
-   * - an upgrade of an exposed token is forwarded byte for byte, as `mount`'s;
+   * - an upgrade of an exposed token is forwarded byte for byte;
    *   any other upgrade gets `HTTP/1.1 404 Not Found` and its socket is
    *   closed (nothing else owns upgrades on this listener).
    *
@@ -155,13 +127,6 @@ export const relayTarget = (
 /** One resolved relay request. */
 type ResolvedScreen = NonNullable<ReturnType<typeof relayTarget>>;
 
-/** Whether a request path belongs to the relay's token tree. */
-const screenPath = (url: string | undefined): boolean => {
-  const pathname = new URL(url ?? '/', 'http://screen.invalid').pathname;
-
-  return pathname === '/screen' || pathname.startsWith(PREFIX);
-};
-
 const forwardHeaders = (
   headers: readonly string[],
   host: string,
@@ -190,7 +155,6 @@ const NOTHING_DROPPED: ReadonlySet<string> = new Set();
 export const createScreenRelay = (): ScreenRelayServer => {
   const sessions = new Map<string, ScreenRelayTarget>();
   const open = new Set<Socket>();
-  let mounted = false;
 
   const track = (socket: Socket): Socket => {
     open.add(socket);
@@ -332,79 +296,12 @@ export const createScreenRelay = (): ScreenRelayServer => {
     });
   };
 
-  const handleRequest = (
-    request: IncomingMessage,
-    response: ServerResponse,
-    next: (error?: unknown) => void,
-  ): void => {
-    if (!mounted) {
-      next();
-
-      return;
-    }
-
-    const resolved = relayTarget(request.url, sessions);
-
-    if (resolved === undefined) {
-      // Requests outside the token tree belong to the host's other routes;
-      // a `/screen/...` request the relay does not know answers 404.
-      if (!screenPath(request.url)) {
-        next();
-
-        return;
-      }
-
-      response.writeHead(404, { 'content-type': 'text/plain' });
-      response.end('No such screen.');
-
-      return;
-    }
-
-    proxyHttp(resolved, request, response);
-  };
-
-  const handleUpgrade = (
-    request: IncomingMessage,
-    socket: Socket,
-    head: Buffer,
-  ): void => {
-    if (!mounted) {
-      return;
-    }
-
-    const resolved = relayTarget(request.url, sessions);
-
-    if (resolved === undefined) {
-      if (screenPath(request.url)) {
-        answer(socket, 404, 'Not Found');
-      }
-
-      // Anything else is another upgrade protocol's business (Socket.IO).
-      return;
-    }
-
-    proxyUpgrade(resolved, request, socket, head);
-  };
-
   return {
     expose: (token, target) => {
       sessions.set(token, target);
     },
     forget: (token) => {
       sessions.delete(token);
-    },
-    mount: ({ http, server }) => {
-      mounted = true;
-      (http as ScreenRelayRouter).use(handleRequest);
-
-      const host = server as Server;
-
-      host.on('upgrade', handleUpgrade);
-
-      return () => {
-        mounted = false;
-        host.off('upgrade', handleUpgrade);
-      };
     },
     serve: (server) => {
       // The part's own listener: nothing sits behind the relay, so whatever
@@ -449,8 +346,6 @@ export const createScreenRelay = (): ScreenRelayServer => {
       };
     },
     dispose: () => {
-      mounted = false;
-
       for (const socket of [...open]) {
         socket.destroy();
       }

@@ -8,8 +8,8 @@ import {
 import { conflictError, notFoundError } from 'runtime/contracts';
 import { z } from 'zod';
 
-import { ok, refused } from '../../routes/input.js';
 import type { ApiAnswer, RouteInput } from '../answer.js';
+import { ok, refused } from '../input.js';
 import type { TransportPorts } from '../ports.js';
 
 type Op<V> = (input: RouteInput) => Promise<ApiAnswer<V>>;

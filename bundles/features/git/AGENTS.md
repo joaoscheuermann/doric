@@ -39,12 +39,11 @@ saving of configuration: each belongs to the bundle that owns that record.
   summary costs one command.
 - Return no file content and no patch from `changes`: only `fileDiff` reads
   file content, bounded by `CONTENT_LIMIT_BYTES` in `src/host/changes.ts`.
-- Add a method to `git.commands/v1` in both the `Git` interface and
-  `gitMethods` of `src/contracts/index.ts`, with `.strict()` on an object
-  input and `z.looseObject` for the objects of its output (the strict `ready`
-  value of `discard` is the one exception). Write every schema there;
-  never import a schema from `runtime/contracts` into `src/contracts/`,
-  because the client part loads that module too.
+- Add a method to `git.commands/v1` in
+  `proto/doric/git/commands/v1/commands.proto`, with its protovalidate rules,
+  and in the `Git` interface of `src/contracts/index.ts`. Never import a schema
+  from `runtime/contracts` into `src/contracts/`, because the client part loads
+  that module too.
 - Implement the method in `createGitCommands` of `src/host/commands.ts` over
   `GitCommandPorts`, and serve it in `src/host/part.ts` with its codec in
   `src/host/codec.ts`. Make it a Thread method (a `threadId` input, run on a

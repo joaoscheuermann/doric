@@ -1,6 +1,4 @@
 import assert from 'node:assert/strict';
-import { createServer, type Server } from 'node:http';
-import type { AddressInfo } from 'node:net';
 import test from 'node:test';
 
 import { create } from '@bufbuild/protobuf';
@@ -10,7 +8,6 @@ import {
   isContractError,
   toConnectError,
 } from 'bundle/contracts';
-import express from 'express';
 
 import {
   CreateThreadRequestSchema,
@@ -21,23 +18,21 @@ import {
   UpdateQueuedPromptRequestSchema,
 } from '../src/contracts/gen/doric/api/threads/v1/threads_pb.js';
 import {
-  type ApiAnswer,
   answerValue,
   apiError,
   apiFailure,
   routeInputOf,
-  sendAnswer,
 } from '../src/host/api/answer.js';
 import { projectOperations } from '../src/host/api/operations/projects.js';
 import { threadOperations } from '../src/host/api/operations/threads.js';
 import type { TransportPorts } from '../src/host/api/ports.js';
 
 /*
- * S60b: the shared answer of the route bodies (contract s60 §2.4). K2's HTTP
- * half (`sendAnswer` writes today's statuses, `Retry-After: 1` for pending)
- * through a real Express server; K3 (`routeInputOf` splits a request message
- * into today's params and query/body); and the RPC half (`apiError`,
- * `apiFailure`, `answerValue`) as D3 states it.
+ * S60b: the shared answer of the route bodies (contract s60 §2.4). K3
+ * (`routeInputOf` splits a request message into today's params and
+ * query/body); and the RPC half (`apiError`, `apiFailure`, `answerValue`) as
+ * D3 states it. K2's HTTP half (`sendAnswer`) left with the kernel routes
+ * (S69).
  */
 
 const projectId = '018f47d2-e3b1-7b4f-8b2c-1f5a7fdf1601';
@@ -45,92 +40,6 @@ const threadId = '018f47d2-e3b1-7b4f-8b2c-1f5a7fdf1602';
 const promptId = '018f47d2-e3b1-7b4f-8b2c-1f5a7fdf1603';
 
 const internalMessage = 'The request could not be completed.';
-
-/** Serves each answer under `/<index>` through `sendAnswer`, as a route would. */
-const answering = async (
-  answers: readonly ApiAnswer<unknown>[],
-): Promise<{ readonly url: string; close(): Promise<void> }> => {
-  const app = express();
-  app.get('/:index', (request, response) => {
-    sendAnswer(response, answers[Number(request.params.index)] as never);
-  });
-  const server: Server = createServer(app);
-  await new Promise<void>((resolve) => server.listen(0, resolve));
-  const { port } = server.address() as AddressInfo;
-  return {
-    url: `http://127.0.0.1:${port}`,
-    close: () =>
-      new Promise<void>((resolve, reject) =>
-        server.close((error) => (error ? reject(error) : resolve())),
-      ),
-  };
-};
-
-test('K2: sendAnswer writes 202 {status: pending} with Retry-After: 1 for a pending answer', async () => {
-  const host = await answering([{ kind: 'pending' }]);
-  try {
-    const response = await fetch(`${host.url}/0`);
-    assert.equal(response.status, 202);
-    assert.equal(response.headers.get('retry-after'), '1');
-    assert.deepEqual(await response.json(), { status: 'pending' });
-  } finally {
-    await host.close();
-  }
-});
-
-test("K2: sendAnswer writes an ok answer's value with its status", async () => {
-  const value = { id: projectId, name: 'Plan' };
-  const host = await answering([
-    { kind: 'ok', status: 200, value },
-    { kind: 'ok', status: 201, value },
-    { kind: 'ok', status: 202, value },
-  ]);
-  try {
-    for (const [index, status] of [200, 201, 202].entries()) {
-      const response = await fetch(`${host.url}/${index}`);
-      assert.equal(response.status, status);
-      assert.deepEqual(await response.json(), value);
-    }
-  } finally {
-    await host.close();
-  }
-});
-
-test('K2: sendAnswer writes 204 with no body', async () => {
-  const host = await answering([{ kind: 'ok', status: 204, value: undefined }]);
-  try {
-    const response = await fetch(`${host.url}/0`);
-    assert.equal(response.status, 204);
-    assert.equal(await response.text(), '');
-  } finally {
-    await host.close();
-  }
-});
-
-test("K2: sendAnswer writes a refusal as today's {error: {code, message}} with its status", async () => {
-  const host = await answering([
-    {
-      kind: 'refused',
-      error: {
-        status: 410,
-        code: 'project_files_expired',
-        message: 'The Project file access has expired.',
-      },
-    },
-  ]);
-  try {
-    const response = await fetch(`${host.url}/0`);
-    assert.equal(response.status, 410);
-    assert.deepEqual(await response.json(), {
-      error: {
-        code: 'project_files_expired',
-        message: 'The Project file access has expired.',
-      },
-    });
-  } finally {
-    await host.close();
-  }
-});
 
 test("D3: apiError is a ContractError with the refusal's code and message and no details", () => {
   const error = apiError({

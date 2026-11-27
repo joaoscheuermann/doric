@@ -11,8 +11,8 @@ publishes each one here.
 
 Feature docs: [Screen](../../../docs/features/screen.md) (the flow from a
 window's request to the live screen) and
-[Host API](../../../docs/features/host-api.md) (the host's shared listeners
-the relay mounts on).
+[Host API](../../../docs/features/host-api.md) (the gateway that forwards the
+`/screen/` prefix).
 
 ## Manifest
 
@@ -29,26 +29,26 @@ the relay mounts on).
 | `requires`        | none                                                                                                     |
 | `optional`        | `log/v1`, `secrets/v1`                                                                                   |
 
-The bundle has one part, the host part ([`src/host/index.ts`](src/host/index.ts)),
+The bundle has one part, the host part ([`src/host/part.ts`](src/host/part.ts)),
 and a contracts module ([`src/contracts/index.ts`](src/contracts/index.ts)),
 which [`package.json`](package.json) exports as `screen-relay/contracts`. It
 has no desktop part, no client part, no tool, no skill and no UI.
 
-The host's composition enables the bundle and lists it under `resident`, so
-its host part runs in the host's own process and not in a generation
-([`app/backend/doric-host/composition.json`](../../../app/backend/doric-host/composition.json)).
-It must run there: `doric.network/v1` hands the host's native listeners only
-to code in that process
-([`packages/bundle/src/contracts/network.ts`](../../../packages/bundle/src/contracts/network.ts),
-[`packages/bundle/src/process/network.ts`](../../../packages/bundle/src/process/network.ts),
-[process isolation](../../../docs/architecture/bundles/process-isolation.md)).
+The manifest declares `host.httpPrefix: "/screen/"`: the host part serves the
+relay on its own loopback listener and the gateway forwards every
+`/screen/<token>/…` request and upgrade to it with its path unchanged. Since
+slice S69 the bundle has no kernel entry and does not run in the host's
+process.
 
 ## Contract provided: `screen.relay/v1`
 
-Declared in [`src/contracts/index.ts`](src/contracts/index.ts) as the reference
+Version `1.1.0`. The host part serves it as the generated `RelayService` of
+[`proto/doric/screen/relay/v1/relay.proto`](proto/doric/screen/relay/v1/relay.proto)
+([`src/host/main.ts`](src/host/main.ts),
+[`src/host/rpc/relay.ts`](src/host/rpc/relay.ts)).
+[`src/contracts/index.ts`](src/contracts/index.ts) still exports the reference
 `ScreenRelayV1` over the interface `ScreenRelay`, with the method table
-`screenRelayMethods`, and provided by the host part through
-[`src/host/service.ts`](src/host/service.ts). Version `1.0.0`.
+`screenRelayMethods` and the schemas below; no bundle imports them.
 
 ```ts
 interface ScreenRelay {
@@ -57,7 +57,8 @@ interface ScreenRelay {
 }
 ```
 
-The input schemas are strict `zod` objects (an unknown field is refused):
+The exported input schemas are strict `zod` objects (an unknown field is
+refused):
 
 | Schema                    | Type                | Shape                                                                    |
 | ------------------------- | ------------------- | ------------------------------------------------------------------------ |
@@ -73,80 +74,53 @@ other two; the contract's methods do not take it directly.
   replaces it when the token is already registered. From then on, requests
   under `/screen/<token>/` are forwarded to `host:port`. It resolves with no
   value once the relay holds the token
-  ([`src/host/service.ts`](src/host/service.ts),
+  ([`src/host/part.ts`](src/host/part.ts),
   [`src/host/relay.ts`](src/host/relay.ts)).
 - **`forget({ token })`** drops the token. From then on, its requests and
   upgrades answer 404. Forgetting an unknown token does nothing. It does not
   close a WebSocket that is already relayed for that token
   ([`src/host/relay.ts`](src/host/relay.ts)).
 
-Both methods resolve once the change is made; the relay's own state changes
-synchronously. Both always resolve: neither method throws. Their only errors
-are the platform's: the platform refuses a call whose input fails the method's
-schema with the `ContractError` code `invalid_input` before the method runs,
-in the caller's process and again in the host's, and refuses a call with no
-active provider with `unavailable`
-([`packages/bundle/src/runtime/dispatch.ts`](../../../packages/bundle/src/runtime/dispatch.ts),
-[`packages/bundle/src/runtime/envelope/link.ts`](../../../packages/bundle/src/runtime/envelope/link.ts)).
+Both methods answer `{}` once the change is made; the relay's own state
+changes synchronously, and neither handler throws. Their only errors are the
+router's: a request that breaks `relay.proto`'s protovalidate rules (an empty
+`token` or `host`, or a `port` outside 1–65535) fails with `invalid_input`
+before the handler runs, and a call with no active provider answers
+`unavailable` ([`src/host/rpc/relay.ts`](src/host/rpc/relay.ts),
+[Over the router](#over-the-router)).
 
-The build writes the contract's JSON schema to `dist/schemas/screen.relay/v1.json`
-and its list to `dist/contracts.json`
+The build lists the contract in `dist/contracts.json` as a host-provides entry
+(`local: false`); it writes no `dist/schemas/`
 ([`packages/bundle/src/build/cli.ts`](../../../packages/bundle/src/build/cli.ts)).
 
 ## Contracts used
 
-- **`doric.network/v1`** (platform; needs no manifest entry). The host part
-  calls `register` once during activation and receives the host's shared
-  request router (`http`, Express-style) and its `http.Server` (`server`). It
-  does not use `sockets`. It keeps the returned `Disposable` and disposes it on
-  deactivation ([`src/host/index.ts`](src/host/index.ts),
-  [`packages/bundle/src/contracts/network.ts`](../../../packages/bundle/src/contracts/network.ts)).
-
-The bundle uses no other contract. Its only caller is the
+The bundle uses no contract. Its only caller is the
 [`screen`](../screen/README.md) bundle, which requires `screen.relay/v1` and
 calls `expose` and `forget`; when and with what token it calls them is
 described in its README and in [Screen](../../../docs/features/screen.md).
 
 ## Host part
 
-### Activation
+### The part
 
-`activate` ([`src/host/index.ts`](src/host/index.ts)):
+`createScreenRelayPart()` ([`src/host/part.ts`](src/host/part.ts)) builds,
+with no I/O:
 
-1. Creates one relay with `createScreenRelay()`
-   ([`src/host/relay.ts`](src/host/relay.ts)).
-2. Calls `doric.network/v1.register` with a listener that mounts the relay on
-   the `http` router and the `server` it receives.
-3. Provides `screen.relay/v1` over that relay
-   ([`src/host/service.ts`](src/host/service.ts)).
-4. Returns a cleanup that disposes the registration, which runs the
-   listener's cleanup and so unmounts the relay, and then disposes the relay
-   ([`packages/bundle/src/process/network.ts`](../../../packages/bundle/src/process/network.ts)).
+1. one relay with `createScreenRelay()`
+   ([`src/host/relay.ts`](src/host/relay.ts));
+2. a new `http.Server`, not listening, that `relay.serve` already serves: the
+   `httpServer` that [`src/host/main.ts`](src/host/main.ts) gives `runBundle`,
+   which binds it to `127.0.0.1:0` and reports the port to the platform;
+3. the `RelayService` implementation over the relay
+   ([`src/host/rpc/relay.ts`](src/host/rpc/relay.ts)), which `main.ts` lists
+   statically;
+4. `deactivate`, which detaches `serve` and disposes the relay.
 
-The relay binds no port and never calls `listen`: the host owns the address
-([`src/host/relay.ts`](src/host/relay.ts)).
-
-### Mounting
-
-`mount({ http, server })` ([`src/host/relay.ts`](src/host/relay.ts)):
-
-- calls `http.use(handler)` once, adding a request middleware to the host's
-  router, after the routes registered before it;
-- adds an `upgrade` listener to `server`, next to any other one (Socket.IO's);
-- returns an unmount function that removes the `upgrade` listener and turns
-  the middleware into a pass-through, since a router middleware cannot be
-  removed. A pass-through middleware calls `next()` for every request.
-
-The kernel activates its resident bundles one at a time in the catalog's
-order, and that order puts `screen-relay` before `transport`: neither
-provides a contract the core uses, `screen-relay` depends on no bundle, and
-bundles ready at the same time are taken by id. So the relay's middleware runs
-before the root `express.json()` that `transport` adds to the same router, and
-a request under `/screen/` reaches the relay with its body unread
-([`packages/bundle/src/runtime/catalog.ts`](../../../packages/bundle/src/runtime/catalog.ts),
-[`packages/bundle/src/process/partition.ts`](../../../packages/bundle/src/process/partition.ts),
-[`packages/bundle/src/runtime/activation.ts`](../../../packages/bundle/src/runtime/activation.ts),
-[`transport/src/host/app.ts`](../../foundation/transport/src/host/app.ts)).
+`ScreenRelayServer.serve(server)` makes the relay the only handler of that
+listener. Slice S69 removed the kernel path: `src/host/{index,service}.ts`,
+and from `relay.ts` `mount`, `mounted`, `handleRequest`, `handleUpgrade`,
+`screenPath`, `ScreenRelayRouter` and `ScreenRelayResources`.
 
 ### Token table
 
@@ -180,7 +154,7 @@ with `/screen/`.
 
 ### HTTP requests
 
-The middleware ([`src/host/relay.ts`](src/host/relay.ts)):
+The request handler ([`src/host/relay.ts`](src/host/relay.ts)):
 
 - **Known token:** forwards the request with Node's `http.request` to the
   upstream `host:port`, with the same method, the upstream path, and the
@@ -189,10 +163,10 @@ The middleware ([`src/host/relay.ts`](src/host/relay.ts)):
   headers are dropped and `host` is set to `<host>:<port>` of the upstream.
   The upstream's answer is returned with its status (502 when it has none),
   its headers minus the hop-by-hop ones, and its body streamed through.
-- **Unknown token, or a path in the tree with no token** (`/screen`,
-  `/screen/`): answers 404 with `content-type: text/plain` and the body
-  `No such screen.`, without reaching any upstream.
-- **Any other path:** calls `next()`, so the host's other routes answer it.
+- **Unknown token, a path in the tree with no token** (`/screen`,
+  `/screen/`), **or any other path:** answers 404 with
+  `content-type: text/plain` and the body `No such screen.`, without reaching
+  any upstream.
 
 The hop-by-hop headers are `connection`, `keep-alive`, `proxy-authenticate`,
 `proxy-authorization`, `te`, `trailer`, `transfer-encoding` and `upgrade`.
@@ -212,65 +186,42 @@ The `upgrade` listener ([`src/host/relay.ts`](src/host/relay.ts)):
   browser unchanged, and then pipes raw bytes in both directions. It parses
   and rewrites no frame, so the upstream's handshake answer, accept hash
   included, and every frame reach the other side as they were sent.
-- **Unknown token, or a path in the tree with no token:** writes
-  `HTTP/1.1 404 Not Found` with `connection: close` and `content-length: 0`,
-  then destroys the socket.
-- **Any other path:** does nothing, leaving the upgrade to the server's other
-  listeners, such as Socket.IO.
-
-The host's Socket.IO server is created with `destroyUpgrade: false`, so it
-does not end an upgrade outside its own path while the relay waits for xpra
-([`app/backend/doric-host/src/index.ts`](../../../app/backend/doric-host/src/index.ts)).
+- **Unknown token, a path in the tree with no token, or any other path:**
+  writes `HTTP/1.1 404 Not Found` with `connection: close` and
+  `content-length: 0`, then destroys the socket.
 
 ### Deactivation
 
-`dispose()` turns the middleware and the `upgrade` listener into pass-throughs
-and destroys every socket of a relayed upgrade still open, the browser's and
-the upstream's. It does not end HTTP requests in flight and does not clear the token table
-([`src/host/relay.ts`](src/host/relay.ts)). The cleanup of `activate` runs the
-unmount first, which removes the `upgrade` listener
-([`src/host/index.ts`](src/host/index.ts)).
+`dispose()` destroys every socket of a relayed upgrade still open, the
+browser's and the upstream's. It does not end HTTP requests in flight and does
+not clear the token table ([`src/host/relay.ts`](src/host/relay.ts)). The
+part's `deactivate` detaches `serve` first; the SDK closes `httpServer`
+afterwards ([`src/host/part.ts`](src/host/part.ts)).
 
-### Process entry (S49a)
+### Over the router
 
-The bundle also has a process entry, [`src/host/main.ts`](src/host/main.ts),
-built to `dist/host/main.mjs`, for the bundle-process runtime
-([bundle processes](../../../docs/features/bundle-processes.md)). It calls
-`runBundle` with `RelayService` (`screen.relay/v1`) listed statically and sets
-`BundleDefinition.httpServer`. The kernel entry stays until S62;
-since S62c1 the manifest has `host.httpPrefix: "/screen/"`. In this entry:
-
-- The relay serves its own loopback listener (`127.0.0.1:0`, the port reported
-  to the platform); the gateway forwards every `/screen/<token>/…` request and
-  upgrade with its path unchanged.
-- `ScreenRelayServer.serve(server)` makes the relay the only handler of that
-  listener: a known token is proxied as `mount` proxies it (an unreachable
-  upstream answers 502); anything else answers 404 `No such screen.`, and any
-  other upgrade gets a 404 and its socket is closed.
 - `Expose` and `Forget` are served over the router. A replayed `Expose` of the
   same token and upstream is idempotent; `screen` re-publishes its tokens
   through `registrations.track` (S49b), so a restarted relay gets them back.
 - `Expose` with an empty token or host, or a bad port, answers
   `invalid_input`; after stop, every RPC answers `unavailable`.
 - Open: when an old `screen` generation shuts down after the new one
-  re-exposed a token, its `Forget` can drop that token (as with the kernel
-  entry today).
+  re-exposed a token, its `Forget` can drop that token.
 
 ## Errors and failure behavior
 
 All in [`src/host/relay.ts`](src/host/relay.ts):
 
-| Case                                                                      | Result                                                                                                                                                                                                            |
-| ------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| HTTP upstream fails before answering                                      | 502, `content-type: text/plain`, body `The screen upstream is unavailable.`                                                                                                                                       |
-| HTTP upstream fails after its headers were sent                           | the response is ended with the body `The screen upstream is unavailable.` appended                                                                                                                                |
-| HTTP upstream request idle for 30 seconds                                 | the upstream request is destroyed, which answers as an upstream failure (502 when nothing was sent)                                                                                                               |
-| Upgrade upstream errors before its answer (refused, reset, unreachable)   | `HTTP/1.1 502 Bad Gateway` with `connection: close` and `content-length: 0`; the socket is destroyed                                                                                                              |
-| Upgrade upstream closes without an error before its answer                | the browser's socket is destroyed with nothing written                                                                                                                                                            |
-| Upgrade upstream fails or closes after its answer                         | the browser's socket is destroyed                                                                                                                                                                                 |
-| Browser's socket closes or fails during an upgrade                        | the upstream socket is destroyed                                                                                                                                                                                  |
-| Unknown token (HTTP / upgrade)                                            | 404 `No such screen.` / `HTTP/1.1 404 Not Found`                                                                                                                                                                  |
-| Request URL the URL parser rejects (for example `http://[`) while mounted | HTTP: the middleware throws `ERR_INVALID_URL` to the router, whose error handlers answer it. Upgrade: the `upgrade` listener throws `ERR_INVALID_URL` out of the server's `upgrade` event, and nothing catches it |
+| Case                                                                    | Result                                                                                               |
+| ----------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| HTTP upstream fails before answering                                    | 502, `content-type: text/plain`, body `The screen upstream is unavailable.`                          |
+| HTTP upstream fails after its headers were sent                         | the response is ended with the body `The screen upstream is unavailable.` appended                   |
+| HTTP upstream request idle for 30 seconds                               | the upstream request is destroyed, which answers as an upstream failure (502 when nothing was sent)  |
+| Upgrade upstream errors before its answer (refused, reset, unreachable) | `HTTP/1.1 502 Bad Gateway` with `connection: close` and `content-length: 0`; the socket is destroyed |
+| Upgrade upstream closes without an error before its answer              | the browser's socket is destroyed with nothing written                                               |
+| Upgrade upstream fails or closes after its answer                       | the browser's socket is destroyed                                                                    |
+| Browser's socket closes or fails during an upgrade                      | the upstream socket is destroyed                                                                     |
+| Unknown token (HTTP / upgrade)                                          | 404 `No such screen.` / `HTTP/1.1 404 Not Found`                                                     |
 
 The relay does not retry, log or report a failure to the `screen` bundle.
 
@@ -312,17 +263,16 @@ npx nx run bundle-screen-relay:build
 ([`project.json`](project.json)). `test` compiles `src/` and `tests/` to
 `dist-tests/` and runs them with `node --test`:
 
-- [`tests/relay.test.ts`](tests/relay.test.ts) drives `createScreenRelay` and
-  `relayTarget` through real sockets: a host listener with a minimal router, a
-  stub xpra upstream that echoes what it receives, path mapping, HTTP
-  forwarding, the WebSocket handshake and byte piping, the 404s, the
-  pass-through of other routes, a relayed upgrade that survives a second
-  `upgrade` listener with an Engine.IO-style destroy timer, `forget` and
-  unmounting.
-- [`tests/host.test.ts`](tests/host.test.ts) drives `activate` with a
-  services object that supplies `use(DoricNetworkV1)` and `provide`, checks the
-  single registration and the provided `screen.relay/v1`, and calls its
-  methods over a real listener.
+- [`tests/relay.test.ts`](tests/relay.test.ts) checks `relayTarget`'s path
+  mapping.
+- [`tests/router.test.ts`](tests/router.test.ts) (A1–A12 and the replayed
+  `Expose`) builds the part, binds its `httpServer`, and drives `Expose` and
+  `Forget` over the router against a stub xpra upstream: HTTP forwarding, the
+  WebSocket handshake and byte piping, the 404s and 502s, `invalid_input`, and
+  stopping the part.
+- [`tests/host-build.test.ts`](tests/host-build.test.ts) (A13, A14) builds the
+  bundle: `dist/host/main.mjs` runs, `dist/host/index.js` does not exist, and
+  `main.ts` lists `RelayService` statically.
 
 `npx nx run doric-host:build-bundles` builds every bundle and stages it for the
 host ([`app/backend/doric-host/project.json`](../../../app/backend/doric-host/project.json)).

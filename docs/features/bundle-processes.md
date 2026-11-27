@@ -628,7 +628,8 @@ no kernel entry and serve only through their process entries, and since S68a
 `host-config`, `claude-login`, `resources`, `usage`, `web`, `screen`,
 `comments` and `threads` have none either, since S68b neither have
 `files`, `git` and `terminal`, since S68c neither have `mcp`, `openui`
-and `papercraft`, and since S68d neither have `runtime` and `default`. The
+and `papercraft`, since S68d neither have `runtime` and `default`, and since
+S69 neither have `transport` and `screen-relay`, so no bundle has one. The
 parts the executor path uses work as follows. A thrown llms provider error crosses the router as
 `provider_error` and a thrown tool error as `tool_error`, both
 `FAILED_PRECONDITION` with every field of the error's data in
@@ -647,11 +648,16 @@ after a 5 s grace; a failure after the cancel answers `run_cancelled` or
 `compaction_cancelled`. The kernel entries stayed in use until S62; S67 deletes
 the kernel, the in-process host and the kernel entries of `core` and `postgres`,
 S68a those of the fourteen bundles above, S68b those of `files`, `git` and
-`terminal`, S68c those of `mcp`, `openui` and `papercraft`, and S68d those of
-`runtime` and `default`. `default`'s `assetText` answers only the texts its
+`terminal`, S68c those of `mcp`, `openui` and `papercraft`, S68d those of
+`runtime` and `default`, and S69 those of `transport` and `screen-relay`, with
+`doric.network/v1`. `default`'s `assetText` answers only the texts its
 host part installed at `activate` and reads no file.
 
-Since S62a the build also counts what a host part serves without recording it
+Since S69 the build never imports or dry-activates the host part: it
+dry-activates only the desktopMain and client parts, a stale
+`dist/host/index.js` is ignored, and `checkContractEnvironment` accepts a
+recorded provide of a `.proto` contract only from a client part providing a
+`CLIENT` contract. Since S62a the build also counts what a host part serves without recording it
 (`hostProvides`, `packages/bundle/src/build/host-provides.ts`): the `HOST` or
 `HOOKS` contract of each contract-role service in the part's static `services`
 list, and each `provides` id whose `.proto` marks a hooks, event, settings or
@@ -1919,3 +1925,37 @@ sandbox pool` then `Sandbox pool configured` with the `logSandboxPool`
   importers and stay. `runtime/tests/activation.test.ts` is deleted (its
   descriptor cases move to `descriptor.test.ts`), as is `event-sink.test.ts`'
   kernel sink case. No boundary exception is added.
+- 2026-11-27: phase 3, slice S69, of
+  [the spec](../designs/grpc-processes.md) (version 6.52): `transport`'s and
+  `screen-relay`'s kernel entries and `doric.network/v1` are deleted, and the
+  build no longer dry-activates the host part. `transport` loses
+  `src/kernel.ts`, `src/host/{index,app,errors,services}.ts`, `routes/`,
+  `sockets/`, `TransportServices`, and `sendAnswer` with its `express` import;
+  new `src/host/api/input.ts` holds `pageInput`, `nameInput`, `ok` and
+  `refused`, and `LeaseScope`/`ProjectScope` move to `api/ports.ts`.
+  `screen-relay` loses `src/host/{index,service}.ts` and, from `relay.ts`,
+  `ScreenRelayRouter`, `ScreenRelayResources`, `mount`, `mounted`,
+  `handleRequest`, `handleUpgrade` and `screenPath`; `serve` is unchanged.
+  `packages/bundle` loses `src/contracts/network.ts` (`DoricNetwork`,
+  `DoricNetworkV1`, `NetworkResources`) and its `platform.ts` entry; the build
+  (`cli.ts`) drops the host part from its dry-activated `parts`, ignores a
+  stale `dist/host/index.js`, and `checkContractEnvironment` loses its host
+  branch. Under X4, `TerminalV1`, `terminalMethods`, `terminalServiceMethods`,
+  `FilesV1`, `filesMethods`, `GitCommandsV1` and `gitMethods` are deleted.
+  Decisions: the dry-activation loop stays for desktopMain and client (the
+  plan deleted the dry-activation code); `idInput` is not moved to
+  `api/input.ts`, since nothing imports it; `rest-errors.test.ts` keeps its 4
+  cases of the `restErrors` table, which no other test covers;
+  `inventory-targets.test.ts` keeps `doric.network/v1` in
+  `REMOVED_WITHOUT_PROTO`, since the inventory's section C still names the id;
+  the router suites state each removed route's answer through
+  `tests/support/route-answers.ts` instead of comparing with the kernel at run
+  time. The unscheduled public contract exports without importers stay:
+  `ScreenRelayV1`/`screenRelayMethods`, `TerminalServiceV1` and `terminal`'s
+  exported schemas, `files`' `createInputSchema`/`createOutcomeSchema`,
+  `usage`'s `UsageV1`/`usageMethods` and `transport`'s
+  `CredentialCreateSchema`. Five boundary exceptions for `transport` until
+  S70: `@types/express`, `express`, `pino`, `socket.io` and
+  `socket.io-client`. Tests: `bundle-transport` 279 → 163,
+  `bundle-screen-relay` 25 → 16, `bundle` 1362 → 1362 (one case deleted, one
+  inverted case added).
