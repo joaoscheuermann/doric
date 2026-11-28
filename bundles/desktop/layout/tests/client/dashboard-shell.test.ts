@@ -72,7 +72,7 @@ for (const form of Object.keys(forms) as Form[]) {
 
     const content = single(rendered.root, 'div[data-slot="dashboard-content"]');
     assert.ok(
-      content.classList.contains('bg-sidebar'),
+      content.classList.contains('bg-window-frame'),
       `The content column is not on the sidebar canvas: ${content.className}`,
     );
     assert.equal(

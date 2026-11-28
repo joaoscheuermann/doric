@@ -37,6 +37,12 @@ export interface WindowChrome {
     readonly left: number;
     readonly right: number;
   };
+  /**
+   * The native material main put behind the window. `'glass'` is macOS's
+   * vibrancy under a transparent window: the page's frame lets it show
+   * through. Absent means `'none'`, an opaque window.
+   */
+  readonly material?: 'none' | 'glass';
 }
 
 export const windowChromeSchema = z
@@ -46,6 +52,7 @@ export const windowChromeSchema = z
     safeArea: z
       .object({ top: z.number(), left: z.number(), right: z.number() })
       .strict(),
+    material: z.enum(['none', 'glass']).optional(),
   })
   .strict();
 

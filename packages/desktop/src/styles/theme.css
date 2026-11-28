@@ -49,6 +49,30 @@
 }
 
 /*
+ * The window's frame: the sidebar column, the bars and the gutters around the
+ * inset cards, filled with `bg-window-frame`. In an opaque window it is the
+ * sidebar color. When main puts macOS's vibrancy behind the window, the shell
+ * marks the root `data-material="glass"` (chrome.ts): the frame layers turn
+ * transparent, so they never stack, and the root alone lays one tint of the
+ * sidebar color over the frosted desktop. The cards keep `--background`, and
+ * the fills that hide what scrolls under them keep `--sidebar`.
+ */
+@layer base {
+  :root {
+    --window-frame: var(--sidebar);
+  }
+
+  :root[data-material='glass'] {
+    --window-frame: transparent;
+    background-color: color-mix(in srgb, var(--sidebar) 60%, transparent);
+  }
+
+  :root[data-material='glass'] body {
+    background-color: transparent;
+  }
+}
+
+/*
  * Every chrome bar is the Papermache app bar's 40px height, stated once by
  * the tokens. A 28px control has 6px of air on each side.
  */

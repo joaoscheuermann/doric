@@ -89,7 +89,7 @@ export function SettingsWindow({
 }: SettingsWindowProps) {
   return (
     <SidebarProvider
-      className="h-svh min-h-0 flex-col overflow-hidden bg-sidebar"
+      className="h-svh min-h-0 flex-col overflow-hidden bg-window-frame"
       style={{ '--sidebar-width': '240px' } as CSSProperties}
     >
       <div

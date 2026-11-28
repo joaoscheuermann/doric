@@ -108,7 +108,10 @@ export function ProjectSidebarColumn({
 }) {
   const panes = useStackPanes();
   return (
-    <Sidebar collapsible="none" className="overflow-hidden font-normal">
+    <Sidebar
+      collapsible="none"
+      className="overflow-hidden bg-window-frame font-normal"
+    >
       {/* Not clipped: the search field's focus ring (3 px) reaches above the
           content's top edge, into the header's last 3 px. The Thread tree and
           the panes below bound their own overflow; 14 px below the last

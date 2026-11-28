@@ -1,6 +1,6 @@
 # Native window appearance
 
-- Status: living document. It describes the native appearance of Doric's windows as implemented on 2026-11-20.
+- Status: living document. It describes the native appearance of Doric's windows as implemented on 2026-11-28.
 
 ## Summary
 
@@ -49,7 +49,8 @@ Main reads `tokens.json` once ([`tokens.ts`](../../../app/desktop/doric/src/plat
 Main resolves the constructor options of a window from its appearance, the tokens, the platform and the primary display's work area ([`appearance.ts`](../../../app/desktop/doric/src/platform/windows/appearance.ts)):
 
 - **Size.** Width and height are clamped between a fixed minimum of 320×240 and the work area; without a `size`, the window is 800×600. `minWidth` and `minHeight` pass through.
-- **Background.** The `background` token's dark or light color, chosen by `nativeTheme.shouldUseDarkColors`. When the native theme changes, main sets every window's background to the `window` token's new color ([`main.ts`](../../../app/desktop/doric/src/main.ts)).
+- **Background.** The `background` token's dark or light color, chosen by `nativeTheme.shouldUseDarkColors`. When the native theme changes, main sets the background of every window that is not glass to the `window` token's new color ([`main.ts`](../../../app/desktop/doric/src/main.ts)).
+- **Material.** An app window on macOS is glass ([Glass](#glass)): its background is the transparent `#00000000` instead of the token's color, with `vibrancy: 'under-window'` and `visualEffectState: 'followWindow'`. A view window, and every window on Windows and Linux, has no material.
 - **Title bar.** `integrated` on macOS gives `titleBarStyle: 'hidden'` and puts the traffic lights at `x = insetX` (14) and `y = (titlebarHeight − size) / 2` (14), so they sit centered in a 40 px bar; main then keeps the window buttons visible. `none` gives `frame: false`. Otherwise Electron's default frame stays ([`native-windows.ts`](../../../app/desktop/doric/src/platform/windows/native-windows.ts)).
 
 The splash is a technical window with its own options: frameless, 610×487, not resizable, with rounded corners and the `window` background of the current theme ([`window.ts`](../../../app/desktop/doric/src/platform/splash/window.ts), [`app.ts`](../../../app/desktop/doric/src/platform/app.ts), [Splash and recovery](splash-and-recovery.md)).
@@ -62,11 +63,18 @@ Main describes the chrome it left to each app window (not to a view window) as `
 {
   "titleBar": "integrated",
   "height": 40,
-  "safeArea": { "top": 0, "left": 80, "right": 0 }
+  "safeArea": { "top": 0, "left": 80, "right": 0 },
+  "material": "glass"
 }
 ```
 
-`safeArea.left` is `reservedWidth`; it is 0 for `none` and while the window is in fullscreen, where macOS hides the window buttons and their space returns to the content. The value does not depend on the platform: it is 80 for a `native` window too, and on Windows and Linux, where no window buttons sit over the page; what a bar does with it is the bar's own rule ([The bars that read the safe area](#the-bars-that-read-the-safe-area)). The window gets the chrome in its description when the shell starts, and again in a `chrome` event each time it enters or leaves fullscreen ([`native-windows.ts`](../../../app/desktop/doric/src/platform/windows/native-windows.ts), [`app.ts`](../../../app/desktop/doric/src/platform/app.ts)). The shell writes `--doric-titlebar-height`, `--doric-safe-top`, `--doric-safe-left` and `--doric-safe-right` on the root element both times ([`chrome.ts`](../../../packages/desktop/src/client/chrome.ts), [`bootstrap.ts`](../../../packages/desktop/src/client/bootstrap.ts)).
+`safeArea.left` is `reservedWidth`; it is 0 for `none` and while the window is in fullscreen, where macOS hides the window buttons and their space returns to the content. The value does not depend on the platform: it is 80 for a `native` window too, and on Windows and Linux, where no window buttons sit over the page; what a bar does with it is the bar's own rule ([The bars that read the safe area](#the-bars-that-read-the-safe-area)). The window gets the chrome in its description when the shell starts, and again in a `chrome` event each time it enters or leaves fullscreen ([`native-windows.ts`](../../../app/desktop/doric/src/platform/windows/native-windows.ts), [`app.ts`](../../../app/desktop/doric/src/platform/app.ts)). The shell writes `--doric-titlebar-height`, `--doric-safe-top`, `--doric-safe-left` and `--doric-safe-right` on the root element, and the root's `data-material` attribute from `material` (`none` when the field is absent, as from an older main), both times ([`chrome.ts`](../../../packages/desktop/src/client/chrome.ts), [`bootstrap.ts`](../../../packages/desktop/src/client/bootstrap.ts)).
+
+## Glass
+
+A frosted-glass window lets the desktop behind it show through its frame, blurred. Main decides it: `materialFor(kind, platform)` is `'glass'` for an app window on macOS and `'none'` otherwise ([`appearance.ts`](../../../app/desktop/doric/src/platform/windows/appearance.ts)). A glass window is created transparent over macOS's `under-window` vibrancy, which dims with the window when it is not focused, and keeps its transparent background when the theme changes ([Native options](#native-options), [`main.ts`](../../../app/desktop/doric/src/main.ts)). The window's chrome carries `material: 'glass'` ([Safe area](#safe-area)).
+
+The page draws the rest. `desktop/ui`'s theme fills the window's frame (the sidebar column, the bars and the gutters around the inset cards) with `bg-window-frame`, whose `--window-frame` is `var(--sidebar)`. On a root marked `data-material="glass"`, `--window-frame` is `transparent` and `body` too, and the root alone is tinted with `--sidebar` at 60 %, so the frame's nested layers never stack into an opaque fill ([`theme.css`](../../../packages/desktop/src/styles/theme.css)). The frame layers are the layout's columns, its sidebars and the settings window's canvas ([`workspace-view.tsx`](../../../bundles/desktop/layout/src/client/views/workspace-view.tsx), [`workspace-layout.tsx`](../../../bundles/desktop/layout/src/client/components/templates/workspace-layout.tsx), [`project-sidebar.tsx`](../../../bundles/desktop/layout/src/client/components/organisms/project-sidebar.tsx), [`settings-window.tsx`](../../../bundles/desktop/settings/src/client/components/templates/settings-window.tsx)). The inset cards keep `--background`, and the fills that hide what scrolls under them (a tree's pinned marks, footers) keep the opaque `--sidebar`.
 
 ## The bars that read the safe area
 

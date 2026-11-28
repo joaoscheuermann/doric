@@ -409,6 +409,7 @@ export interface FakeDocument {
     appendChild(link: FakeLink): FakeLink;
   };
   readonly documentElement: {
+    readonly dataset: Record<string, string | undefined>;
     readonly style: {
       readonly values: Map<string, string>;
       setProperty(name: string, value: string): void;
@@ -431,6 +432,7 @@ export const fakeDocument = (): FakeDocument => {
       },
     },
     documentElement: {
+      dataset: {},
       style: {
         values,
         setProperty: (name, value) => {

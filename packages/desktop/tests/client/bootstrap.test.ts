@@ -82,8 +82,15 @@ void test('the chrome becomes CSS variables and follows chrome changes', async (
     '--doric-safe-right': '0px',
   });
 
-  desktop.changeChrome({ ...chrome, safeArea: { top: 4, left: 0, right: 12 } });
+  assert.equal(document.documentElement.dataset.material, 'none');
 
+  desktop.changeChrome({
+    ...chrome,
+    safeArea: { top: 4, left: 0, right: 12 },
+    material: 'glass',
+  });
+
+  assert.equal(document.documentElement.dataset.material, 'glass');
   assert.equal(values.get('--doric-safe-top'), '4px');
   assert.equal(values.get('--doric-safe-left'), '0px');
   assert.equal(values.get('--doric-safe-right'), '12px');

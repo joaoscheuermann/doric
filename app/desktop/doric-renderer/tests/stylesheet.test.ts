@@ -225,6 +225,34 @@ describe('window stylesheets', () => {
     }
   });
 
+  test('a glass window clears every frame layer and its body, and tints the root once', () => {
+    const declarations = (selector: string): Map<string, string> => {
+      const found = new Map<string, string>();
+      for (const rule of baseRules(theme)) {
+        if (!selectorList(rule).includes(selector)) continue;
+        rule.walkDecls((decl) => {
+          found.set(decl.prop, decl.value);
+        });
+      }
+      return found;
+    };
+
+    assert.equal(declarations(':root').get('--window-frame'), 'var(--sidebar)');
+
+    const glass = declarations(":root[data-material='glass']");
+    assert.equal(glass.get('--window-frame'), 'transparent');
+    assert.match(glass.get('background-color') ?? '', /var\(--sidebar\)/);
+
+    // More specific than the shell's `body` fill, so it wins in the same layer.
+    assert.equal(
+      declarations(":root[data-material='glass'] body").get('background-color'),
+      'transparent',
+    );
+    assert.ok(
+      baseRules(shell).some((rule) => selectorList(rule).includes('body')),
+    );
+  });
+
   test('the shell sets no text or heading weight of its own', () => {
     const bodies: postcss.Rule[] = [];
     const headingWeights: string[] = [];

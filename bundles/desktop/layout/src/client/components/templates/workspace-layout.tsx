@@ -92,7 +92,7 @@ export function WorkspaceLayout({
   return (
     <div
       data-slot="workspace-layout"
-      className="flex h-full min-h-0 flex-1 flex-col bg-sidebar"
+      className="flex h-full min-h-0 flex-1 flex-col bg-window-frame"
     >
       <ResizablePanelGroup
         orientation="horizontal"
