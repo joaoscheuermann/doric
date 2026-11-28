@@ -276,6 +276,19 @@ complete list of checks and outputs is in [Build tooling](#build-tooling).
   ([`cli.ts`](src/build/cli.ts), [`manifest.ts`](src/runtime/manifest.ts),
   [`provides`, `requires` and
   `optional`](../../docs/architecture/bundles/manifest.md#provides-requires-and-optional)).
+- The bundle's own descriptors (the `file_*` exports of `dist/contracts/gen`)
+  declare storage only for the bundle (since slice S79,
+  [`storage-declarations.ts`](src/build/storage-declarations.ts)). A storage
+  type whose namespace is not the bundle's id, a storage type `provides` does
+  not list, a stream entry whose prefix belongs to another bundle, or an index
+  field that does not resolve, by JSON names through singular messages, to a
+  singular scalar, enum, `google.protobuf.Timestamp`, `Duration` or wrapper
+  fails the build with one `BuildError` listing every problem, one line each:
+  `<file>: the storage type "<type>" of <message> is not of the bundle <id>.`,
+  `… is not declared in provides.`,
+  `<file>: the stream prefix "<prefix>" of <message> is not of the bundle <id>.`
+  or
+  `<file>: the field "<field>" of the index "<index>" of "<type>" is not a singular scalar, enum, Timestamp, Duration or wrapper reached through singular messages, by JSON names.`
 
 ### Package and project files
 

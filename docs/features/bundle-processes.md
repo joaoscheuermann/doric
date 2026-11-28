@@ -2,7 +2,7 @@
 
 - Status: `accepted` (phases 0–3 built; phase 3 closed by the owner's decision
   A75 with T8, AC3.6 and the host and desktop end-to-end tests on `postgres`
-  not run, see "Phase 3: what was not run"; phase 4 in progress, S72–S78d built, see
+  not run, see "Phase 3: what was not run"; phase 4 in progress, S72–S79 built, see
   "Phase 4"; phases 5–8 to come)
 
 ## Problem
@@ -1951,6 +1951,27 @@ S78d's verification: `doric-sqlite` lib 63 tests; `doric-storage` lib 228 and
 bin 13; clippy `-D warnings` and `cargo fmt --check` clean; `storage` TS 351
 pass, 0 fail.
 
+Slice S79 (spec version 6.70; S72–S78d committed in `8e106caf`, S79 not yet
+committed) adds the storage build check (A81, T4.27). `buildBundle` runs
+`checkStorageDeclarations` (`packages/bundle/src/build/storage-declarations.ts`,
+a port of `declarations.rs`) over the bundle's own descriptor files, right after
+`checkContractEnvironment`, and throws one `BuildError`, with no code (Q2), that
+lists every problem: a storage type of another namespace (C1), a storage type
+`provides` does not list (C2), a stream prefix of another bundle (C3), and an
+index field that is not a singular scalar, enum, `Timestamp`, `Duration` or
+wrapper reached through singular messages, matched by JSON name (C4). The same
+files feed `descriptors.binpb`. The engine's structural refusals are not
+repeated at the build (Q1). The run-time checks stay until the switch (F1):
+`core`'s `assertDefinitionOwnerIn` (`state.ts:151-182`), the facade's ownership
+check and the engine's `Register`. No bundle in the repository fails the check
+(F4).
+
+S79's verification: `build.test.js` 57 of 57, with T4.27's tests 1–10; the
+`packages/bundle` suite 1145 of 1155, the 10 failures outside the build code (8
+without `buf` on the host, 1 relative `composition.json` path, 1 flaky
+`testing/process` test that passes 22 of 22 alone); all 33 bundle projects
+build; biome clean.
+
 ## Evolution
 
 - 2026-11-22: phase 0 of
@@ -3280,3 +3301,10 @@ sandbox pool` then `Sandbox pool configured` with the `logSandboxPool`
   `DORIC_SQLITE_CACHE` no longer read; `foreign_write` and `data_version` kept
   unused (Q1); P1 and P2 added as two-engine regression tests (Q2); `kv.rs`
   keeps its cancel `select!` (Q3).
+- 2026-11-28: phase 4, slice S79, of
+  [the spec](../designs/grpc-processes.md) (version 6.70), not yet committed;
+  S72–S78d committed in `8e106caf`: the build refuses a bundle whose own
+  descriptors declare a storage type of another namespace or not in `provides`,
+  a stream prefix of another bundle, or an index field that cannot be indexed,
+  in one `BuildError` with no code (Q2); the engine's structural refusals are
+  not repeated (Q1); the run-time checks stay until the switch (F1).

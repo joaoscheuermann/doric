@@ -44,6 +44,7 @@ import {
   type RecordedContract,
   schemaPath,
 } from './schemas.js';
+import { checkStorageDeclarations } from './storage-declarations.js';
 
 /**
  * The codes of the build failures a caller tells apart (spec
@@ -549,6 +550,10 @@ export const checkContractEnvironment = (input: {
  * first, so a failed build leaves no stale one. `contracts.json` is still
  * written until phase 6.
  *
+ * Storage (A81, S79): after the environment check and before the host part,
+ * `checkStorageDeclarations` checks the storage types and stream entries of
+ * those same own files; any problem fails the build, one line per problem.
+ *
  * Host provides (A61, A63, A70): after the dry activation the build reads
  * the host part's static `services` and the build index, and
  * {@link hostProvides} answers what the host part provides beyond the
@@ -730,6 +735,17 @@ export const buildBundle = async (
     );
   }
 
+  const own = await exportedFiles(
+    (await generatedModules(join(root, 'dist', 'contracts', 'gen'))).map(
+      (path) => pathToFileURL(path).href,
+    ),
+  );
+  const storageProblems = checkStorageDeclarations({ manifest, files: own });
+
+  if (storageProblems.length > 0) {
+    throw new BuildError(storageProblems.join('\n'));
+  }
+
   if (!native) {
     const { buildHostPart } = await import('./host.js');
 
@@ -803,16 +819,7 @@ export const buildBundle = async (
     await writeFile(target, json(document));
   }
 
-  await writeFile(
-    join(dist, 'descriptors.binpb'),
-    descriptorSetBytes(
-      await exportedFiles(
-        (await generatedModules(join(root, 'dist', 'contracts', 'gen'))).map(
-          (path) => pathToFileURL(path).href,
-        ),
-      ),
-    ),
-  );
+  await writeFile(join(dist, 'descriptors.binpb'), descriptorSetBytes(own));
   await writeFile(join(dist, 'contracts.json'), json(descriptor));
   await writeFile(join(dist, 'package.json'), json({ type: 'module' }));
 

@@ -3,12 +3,24 @@ import { access, mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { create, setExtension, toBinary } from '@bufbuild/protobuf';
+import {
+  create,
+  fromBinary,
+  type MessageInitShape,
+  setExtension,
+  toBinary,
+} from '@bufbuild/protobuf';
 import { base64Encode } from '@bufbuild/protobuf/wire';
 import {
+  type DescriptorProto,
   DescriptorProtoSchema,
+  type FieldDescriptorProto,
+  FieldDescriptorProto_Label,
+  FieldDescriptorProto_Type,
+  FieldDescriptorProtoSchema,
   type FileDescriptorProto,
   FileDescriptorProtoSchema,
+  FileDescriptorSetSchema,
   FileOptionsSchema,
   MessageOptionsSchema,
 } from '@bufbuild/protobuf/wkt';
@@ -22,6 +34,11 @@ import {
   file_doric_platform_v1_options,
   HooksOptionSchema,
   hooks as hooksOption,
+  StorageIndexSchema,
+  StorageTypeOptionSchema,
+  StreamEntryOptionSchema,
+  storage_type as storageTypeOption,
+  stream_entry as streamEntryOption,
 } from 'bundle/contracts/gen/doric/platform/v1/options_pb.js';
 import { z } from 'zod';
 
@@ -1009,21 +1026,31 @@ const missing = async (path: string): Promise<boolean> =>
 /**
  * The source of a module as protoc-gen-es generates it for `proto`, as tsc
  * leaves it below a bundle's `dist/contracts/gen`: `file_<name>` hydrated
- * with `fileDesc`, importing the options file through this package's export.
+ * with `fileDesc`, importing the options file through this package's export
+ * and each of `dependencies` (`[exportName, specifier]`, such as
+ * `file_google_protobuf_timestamp` of `@bufbuild/protobuf/wkt`), in order.
  */
 const generatedModule = (
   exportName: string,
   proto: FileDescriptorProto,
+  dependencies: readonly (readonly [name: string, specifier: string])[] = [],
 ): string => `import { fileDesc } from ${JSON.stringify(
   import.meta.resolve('@bufbuild/protobuf/codegenv2'),
 )};
 import { file_doric_platform_v1_options } from ${JSON.stringify(
   import.meta.resolve('bundle/contracts/gen/doric/platform/v1/options_pb.js'),
 )};
-
+${dependencies
+  .map(
+    ([name, specifier]) =>
+      `import { ${name} } from ${JSON.stringify(import.meta.resolve(specifier))};\n`,
+  )
+  .join('')}
 export const ${exportName} = /*@__PURE__*/ fileDesc(${JSON.stringify(
   base64Encode(toBinary(FileDescriptorProtoSchema, proto)),
-)}, [file_doric_platform_v1_options]);
+)}, [file_doric_platform_v1_options${dependencies
+  .map(([name]) => `, ${name}`)
+  .join('')}]);
 `;
 
 /** `demo/hooks/v1/hooks.proto`: the hooks contract `demo.hooks/v1`, no service. */
@@ -1308,5 +1335,388 @@ void test('the catalog resolves a staged v1 fixture whose provides lists a serve
         ?.providers.map(({ bundleId }) => bundleId),
       ['demo'],
     );
+  });
+});
+
+// The storage build check (spec `docs/designs/grpc-processes.md`, "The
+// storage contract", "Build check", A81, T4.27; S79): the build refuses a
+// bundle whose own descriptors declare a storage type or a stream prefix of
+// another bundle, a storage type `provides` does not list, or an index field
+// that is not a singular scalar, enum, Timestamp, Duration or wrapper reached
+// through singular messages, by JSON names. Each fixture's `.proto` also
+// carries a file contract option of the storage type's id, so the host part
+// provides the listed id from its `.proto` ("provides declares" holds).
+
+const noteFile = 'demo/note/v1/note.proto';
+
+const field = (
+  init: MessageInitShape<typeof FieldDescriptorProtoSchema>,
+): FieldDescriptorProto =>
+  create(FieldDescriptorProtoSchema, {
+    label: FieldDescriptorProto_Label.OPTIONAL,
+    type: FieldDescriptorProto_Type.STRING,
+    ...init,
+  });
+
+/**
+ * `demo/note/v1/note.proto` (package `demo.note.v1`): the contract `contract`
+ * (HOST, ONE) whose message `Note` is the storage type `type` with `indexes`,
+ * and, when `streamPrefix` is set, a message `Entry` that is a stream entry of
+ * that prefix. `Note` has `id` (string), `tags` (repeated string), `labels`
+ * (map<string, string>), `meta` (`Meta { string a }`), `createdAt`
+ * (google.protobuf.Timestamp) and `created_key` (string, JSON `createdKey`).
+ */
+const noteProto = (options: {
+  readonly contract: string;
+  readonly type: string;
+  readonly indexes: readonly { name: string; fields: readonly string[] }[];
+  readonly streamPrefix?: string;
+}): FileDescriptorProto => {
+  const fileOptions = create(FileOptionsSchema);
+
+  setExtension(
+    fileOptions,
+    contractOption,
+    create(ContractOptionSchema, {
+      id: options.contract,
+      cardinality: Cardinality.ONE,
+      environment: Environment.HOST,
+    }),
+  );
+
+  const noteOptions = create(MessageOptionsSchema);
+
+  setExtension(
+    noteOptions,
+    storageTypeOption,
+    create(StorageTypeOptionSchema, {
+      type: options.type,
+      indexes: options.indexes.map(({ name, fields }) =>
+        create(StorageIndexSchema, { name, fields: [...fields] }),
+      ),
+    }),
+  );
+
+  const messages: DescriptorProto[] = [
+    create(DescriptorProtoSchema, {
+      name: 'Note',
+      field: [
+        field({ name: 'id', number: 1, jsonName: 'id' }),
+        field({
+          name: 'tags',
+          number: 2,
+          jsonName: 'tags',
+          label: FieldDescriptorProto_Label.REPEATED,
+        }),
+        field({
+          name: 'labels',
+          number: 3,
+          jsonName: 'labels',
+          label: FieldDescriptorProto_Label.REPEATED,
+          type: FieldDescriptorProto_Type.MESSAGE,
+          typeName: '.demo.note.v1.Note.LabelsEntry',
+        }),
+        field({
+          name: 'meta',
+          number: 4,
+          jsonName: 'meta',
+          type: FieldDescriptorProto_Type.MESSAGE,
+          typeName: '.demo.note.v1.Meta',
+        }),
+        field({
+          name: 'created_at',
+          number: 5,
+          jsonName: 'createdAt',
+          type: FieldDescriptorProto_Type.MESSAGE,
+          typeName: '.google.protobuf.Timestamp',
+        }),
+        field({ name: 'created_key', number: 6, jsonName: 'createdKey' }),
+      ],
+      nestedType: [
+        create(DescriptorProtoSchema, {
+          name: 'LabelsEntry',
+          field: [
+            field({ name: 'key', number: 1, jsonName: 'key' }),
+            field({ name: 'value', number: 2, jsonName: 'value' }),
+          ],
+          options: create(MessageOptionsSchema, { mapEntry: true }),
+        }),
+      ],
+      options: noteOptions,
+    }),
+    create(DescriptorProtoSchema, {
+      name: 'Meta',
+      field: [field({ name: 'a', number: 1, jsonName: 'a' })],
+    }),
+  ];
+
+  if (options.streamPrefix !== undefined) {
+    const entryOptions = create(MessageOptionsSchema);
+
+    setExtension(
+      entryOptions,
+      streamEntryOption,
+      create(StreamEntryOptionSchema, { prefix: options.streamPrefix }),
+    );
+    messages.push(
+      create(DescriptorProtoSchema, { name: 'Entry', options: entryOptions }),
+    );
+  }
+
+  return create(FileDescriptorProtoSchema, {
+    name: noteFile,
+    package: 'demo.note.v1',
+    syntax: 'proto3',
+    dependency: [
+      file_doric_platform_v1_options.proto.name,
+      'google/protobuf/timestamp.proto',
+    ],
+    messageType: messages,
+    options: fileOptions,
+  });
+};
+
+/** The bundle `demo` (manifest v2) listing `provides`, with `proto` as its one generated module. */
+const writeNoteBundle = (
+  root: string,
+  provides: readonly string[],
+  proto: FileDescriptorProto,
+): Promise<string> =>
+  writeBundle(root, 'demo', {
+    manifest: environmentManifest(2, provides),
+    files: {
+      'dist/contracts/gen/demo/note/v1/note_pb.js': generatedModule(
+        'file_demo_note_v1_note',
+        proto,
+        [['file_google_protobuf_timestamp', '@bufbuild/protobuf/wkt']],
+      ),
+    },
+  });
+
+/** The C4 message for index `index` of `type` and its field `path`. */
+const indexMessage = (path: string, index: string, type: string): string =>
+  `${noteFile}: the field "${path}" of the index "${index}" of "${type}" is not a singular scalar, enum, Timestamp, Duration or wrapper reached through singular messages, by JSON names.`;
+
+/** Asserts `buildBundle(dir)` throws a `BuildError` whose message includes each of `parts`. */
+const rejectsWith = async (
+  dir: string,
+  parts: readonly string[],
+): Promise<void> => {
+  await assert.rejects(buildBundle(dir), (error: unknown) => {
+    assert.ok(error instanceof BuildError, String(error));
+
+    for (const part of parts) {
+      assert.ok(error.message.includes(part), error.message);
+    }
+
+    return true;
+  });
+};
+
+void test('T4.27: a storage type of another bundle fails the build naming the type and the bundle', async () => {
+  await withRoot(async (root) => {
+    const dir = await writeNoteBundle(
+      root,
+      ['other.note/v1@1.0.0'],
+      noteProto({
+        contract: 'other.note/v1',
+        type: 'other.note/v1',
+        indexes: [],
+      }),
+    );
+
+    await rejectsWith(dir, [
+      'other.note/v1',
+      'not of the bundle demo',
+      `${noteFile}: the storage type "other.note/v1" of demo.note.v1.Note is not of the bundle demo.`,
+    ]);
+  });
+});
+
+void test('T4.27: a storage type provides does not list fails the build with "not declared in provides"', async () => {
+  await withRoot(async (root) => {
+    const dir = await writeNoteBundle(
+      root,
+      [],
+      noteProto({
+        contract: 'demo.note/v1',
+        type: 'demo.note/v1',
+        indexes: [],
+      }),
+    );
+
+    await rejectsWith(dir, [
+      'not declared in provides',
+      `${noteFile}: the storage type "demo.note/v1" of demo.note.v1.Note is not declared in provides.`,
+    ]);
+  });
+});
+
+void test('T4.27: a stream entry whose prefix is of another bundle fails the build naming the prefix', async () => {
+  await withRoot(async (root) => {
+    const dir = await writeNoteBundle(
+      root,
+      ['demo.note/v1@1.0.0'],
+      noteProto({
+        contract: 'demo.note/v1',
+        type: 'demo.note/v1',
+        indexes: [],
+        streamPrefix: 'other.events/',
+      }),
+    );
+
+    await rejectsWith(dir, [
+      'other.events/',
+      `${noteFile}: the stream prefix "other.events/" of demo.note.v1.Entry is not of the bundle demo.`,
+    ]);
+  });
+});
+
+void test('T4.27: an index on a repeated field fails the build naming the type, the index and the field', async () => {
+  await withRoot(async (root) => {
+    const dir = await writeNoteBundle(
+      root,
+      ['demo.note/v1@1.0.0'],
+      noteProto({
+        contract: 'demo.note/v1',
+        type: 'demo.note/v1',
+        indexes: [{ name: 'byTags', fields: ['tags'] }],
+      }),
+    );
+
+    await rejectsWith(dir, [
+      'demo.note/v1',
+      'byTags',
+      'tags',
+      indexMessage('tags', 'byTags', 'demo.note/v1'),
+    ]);
+  });
+});
+
+void test('T4.27: an index on a map field fails the build naming the field', async () => {
+  await withRoot(async (root) => {
+    const dir = await writeNoteBundle(
+      root,
+      ['demo.note/v1@1.0.0'],
+      noteProto({
+        contract: 'demo.note/v1',
+        type: 'demo.note/v1',
+        indexes: [{ name: 'byLabels', fields: ['labels'] }],
+      }),
+    );
+
+    await rejectsWith(dir, [
+      indexMessage('labels', 'byLabels', 'demo.note/v1'),
+    ]);
+  });
+});
+
+void test('T4.27: an index ending at a message that is not well known fails the build', async () => {
+  await withRoot(async (root) => {
+    const dir = await writeNoteBundle(
+      root,
+      ['demo.note/v1@1.0.0'],
+      noteProto({
+        contract: 'demo.note/v1',
+        type: 'demo.note/v1',
+        indexes: [{ name: 'byMeta', fields: ['meta'] }],
+      }),
+    );
+
+    await rejectsWith(dir, [indexMessage('meta', 'byMeta', 'demo.note/v1')]);
+  });
+});
+
+void test('T4.27: an index on a missing field fails the build naming it', async () => {
+  await withRoot(async (root) => {
+    const dir = await writeNoteBundle(
+      root,
+      ['demo.note/v1@1.0.0'],
+      noteProto({
+        contract: 'demo.note/v1',
+        type: 'demo.note/v1',
+        indexes: [{ name: 'byMissing', fields: ['missing'] }],
+      }),
+    );
+
+    await rejectsWith(dir, [
+      'missing',
+      indexMessage('missing', 'byMissing', 'demo.note/v1'),
+    ]);
+  });
+});
+
+void test('T4.27: an index naming a field by its proto name instead of its JSON name fails the build', async () => {
+  await withRoot(async (root) => {
+    const dir = await writeNoteBundle(
+      root,
+      ['demo.note/v1@1.0.0'],
+      noteProto({
+        contract: 'demo.note/v1',
+        type: 'demo.note/v1',
+        indexes: [{ name: 'byKey', fields: ['created_key'] }],
+      }),
+    );
+
+    await rejectsWith(dir, [
+      indexMessage('created_key', 'byKey', 'demo.note/v1'),
+    ]);
+  });
+});
+
+void test('T4.27: indexes on a Timestamp and on a nested scalar build, and descriptors.binpb holds the file', async () => {
+  await withRoot(async (root) => {
+    const dir = await writeNoteBundle(
+      root,
+      ['demo.note/v1@1.0.0'],
+      noteProto({
+        contract: 'demo.note/v1',
+        type: 'demo.note/v1',
+        indexes: [
+          { name: 'byCreated', fields: ['createdAt'] },
+          { name: 'byMetaA', fields: ['meta.a'] },
+        ],
+      }),
+    );
+
+    await buildBundle(dir);
+
+    const set = fromBinary(
+      FileDescriptorSetSchema,
+      await readFile(join(dir, 'dist', 'descriptors.binpb')),
+    );
+
+    assert.ok(
+      set.file.some(({ name }) => name === noteFile),
+      set.file.map(({ name }) => name).join(', '),
+    );
+  });
+});
+
+void test('T4.27: two problems fail the build once, with both lines in walk order', async () => {
+  await withRoot(async (root) => {
+    const dir = await writeNoteBundle(
+      root,
+      ['other.note/v1@1.0.0'],
+      noteProto({
+        contract: 'other.note/v1',
+        type: 'other.note/v1',
+        indexes: [{ name: 'byTags', fields: ['tags'] }],
+      }),
+    );
+    const owner = `${noteFile}: the storage type "other.note/v1" of demo.note.v1.Note is not of the bundle demo.`;
+    const index = indexMessage('tags', 'byTags', 'other.note/v1');
+
+    await assert.rejects(buildBundle(dir), (error: unknown) => {
+      assert.ok(error instanceof BuildError, String(error));
+
+      const lines = error.message.split('\n');
+
+      assert.ok(lines.includes(owner), error.message);
+      assert.ok(lines.includes(index), error.message);
+      assert.ok(lines.indexOf(owner) < lines.indexOf(index), error.message);
+
+      return true;
+    });
   });
 });
