@@ -1,8 +1,8 @@
 #![forbid(unsafe_code)]
 //! The engine bundle `sqlite` (spec `docs/designs/grpc-processes.md`, section
 //! 17, "The engine"): it provides `storage.kv/v1` over the one SQLite file
-//! `$DORIC_STORAGE_PATH/doric.sqlite3`, and `storage/v2`'s `Register`, `Commit`
-//! `Get` and `Query`; it decodes the values of indexed types with each bundle's
+//! `$DORIC_STORAGE_PATH/doric.sqlite3`, and `storage/v2`'s `Register`, `Commit`,
+//! `Get`, `Query` and `Read`; it decodes the values of indexed types with each bundle's
 //! descriptors, while the engine library reads no value.
 //!
 //! Every `storage.kv/v1` handler ([`kv`]) first refuses any caller but `doric`
@@ -27,9 +27,10 @@ use doric_storage::{
     documents, query,
     register::{self, Registrations},
     schema::Pools,
+    streams,
     v2::{
         CommitRequest, CommitResponse, GetRequest, GetResponse, QueryRequest, QueryResponse,
-        RegisterRequest, RegisterResponse,
+        ReadRequest, ReadResponse, RegisterRequest, RegisterResponse,
     },
 };
 use tokio_stream::{StreamExt, wrappers::ReceiverStream};
@@ -69,11 +70,11 @@ impl Bundle for Engine {
     /// Registers the three methods of `doric.storage.kv.v1.KvService`: `Get`
     /// and `Range`, server-streaming, and `Commit`, client-streaming; and
     /// `doric.storage.v2.StorageService`'s `Register`, unary, `Commit`,
-    /// client-streaming, and `Get` and `Query`, server-streaming.
+    /// client-streaming, and `Get`, `Query` and `Read`, server-streaming.
     fn services(&self) -> Services {
         let (get, range, commit) = (self.clone(), self.clone(), self.clone());
         let (register, documents, read) = (self.clone(), self.clone(), self.clone());
-        let pages = self.clone();
+        let (pages, entries) = (self.clone(), self.clone());
 
         Services::new()
             .server_stream(
@@ -112,6 +113,10 @@ impl Bundle for Engine {
             .server_stream(
                 "/doric.storage.v2.StorageService/Query",
                 move |call, request| pages.query_documents(call, request),
+            )
+            .server_stream(
+                "/doric.storage.v2.StorageService/Read",
+                move |call, request| entries.read_stream(call, request),
             )
     }
 
@@ -312,6 +317,33 @@ impl Engine {
             Err(error) => return kv::refused(error),
         };
         self.stream_read(move |txn, emit| query::page(txn, &bundle, &plan, emit))
+    }
+
+    /// Serves `storage/v2`'s `Read`: [`doric_storage::bundle`],
+    /// [`streams::check`] and [`Engine::store`], then, in a spawned task,
+    /// [`streams::read`] in one read
+    /// transaction, whose items it streams.
+    ///
+    /// # Errors
+    ///
+    /// The stream's one item is the first refusal of the three, and no
+    /// connection is touched; otherwise its last item is the error of the
+    /// read, after the items already emitted.
+    fn read_stream(
+        &self,
+        call: Call,
+        request: ReadRequest,
+    ) -> ReceiverStream<Result<ReadResponse, ContractError>> {
+        let checked = doric_storage::bundle(&call.caller).and_then(|bundle| {
+            let read = streams::check(bundle, &request)?;
+            self.store()?;
+            Ok((bundle.to_owned(), read))
+        });
+        let (bundle, read) = match checked {
+            Ok(checked) => checked,
+            Err(error) => return kv::refused(error),
+        };
+        self.stream_read(move |txn, emit| streams::read(txn, &bundle, &read, emit))
     }
 
     /// Runs `work` in one read transaction in a spawned task and streams the

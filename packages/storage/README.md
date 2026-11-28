@@ -25,10 +25,9 @@ before any call, else `limit_exceeded` with `details.limit` `"descriptorSet"`) a
 `commit`, `read`, `health`, `putBlob`, `getBlob` and `deleteBlob`. Values are
 checked against their type and protovalidate before they are written
 (`invalid_input` with `{type, id}` and the first violation), stored in chunks
-of at most 1 MiB, and a value that does not decode is `invalid_output`. Until
-S78 the engine refuses stream items (`invalid_input`, "Stream items are not
-supported."), and `read`, `health` and the blob methods answer
-`unknown_contract`. The client's own refusals, made before any call, are
+of at most 1 MiB, and a value that does not decode is `invalid_output`. Since
+S78a the engine applies stream items and serves `read`; until S78b `health`
+and the blob methods answer `unknown_contract`. The client's own refusals, made before any call, are
 `invalid_input`, and a call's signal or deadline makes it `cancelled` or
 `deadline_exceeded`; `limit_exceeded` (`"descriptorSet"`) comes only from
 `openStorage` and the registration that `TestEngine.storage` shares with it. `storage/testing` adds
@@ -52,18 +51,20 @@ and `fresh()`, a new engine for a case of generations, since `reset()` keeps
 the remembered highest generation; the kit closes it when the case ends.
 `openV2Harness(options?: V2HarnessOptions {name, openEngine})` answers a
 `V2HarnessHandle`, a `V2Harness` with `close()`, and `V2RunOptions` holds
-`name`, `cases`, `openEngine`, `skip` and `timeout`. Its 63 cases are 41
+`name`, `cases`, `openEngine`, `skip` and `timeout`. Its 64 cases are 58
 active ones, D1–D7, `T4.3-prefix` and `T4.3-16MiB` (`documents.ts`), R1–R3
 (`revisions.ts`), Q1–Q4 (`indexes.ts`), Q5, Q6 and T4.9 (`paging.ts`),
 Q7–Q10 and T4.23 (`keyed.ts`), C1, C4 and `not_owner` through raw clients
 (`concurrency.ts`), the document parts of X1, X2 and X5 (`failure.ts`), L2,
 `L2-bytes` and L3 (`limits.ts`, no L1), REG1–REG5 (`registration.ts`) and
-GEN1–GEN3 (`generations.ts`, each on `fresh()`), and 22 skipped ones, skipped
-with the reason `S78: streams` (`untilS78`) until S78 adds streams: C2, C3,
-`X1-streams`, X3, X4, `X5-streams`, P1 and P2; S1–S6 and `T4.3-event-3MiB`
-(`streams.ts`, an event of exactly 3,145,728 bytes round-trips and one byte
-more is `limit_exceeded`); B1–B5 and `T4.3-health` (`blobs.ts`); and
-`not_owner-streams` (`concurrency.ts`, run by `storage-instances.test.ts`). The cases also pin that a range bound of
+GEN1–GEN3 (`generations.ts`, each on `fresh()`), C2, C3, `X1-streams`, X3,
+X4, `X5-streams`, P1 and P2; S1–S6, `T4.3-event-3MiB` (`streams.ts`, an event
+of exactly 3,145,728 bytes round-trips and one byte more is `limit_exceeded`
+`"append"`) and `T4.3-prefix-records` (every new key of an append or a
+truncate starts with the bundle's prefix); and `not_owner-streams`
+(`concurrency.ts`, run by `storage-instances.test.ts`), all run since S78a;
+and 6 skipped ones, B1–B5 and `T4.3-health` (`blobs.ts`), skipped with the
+reason `S78: streams` (`untilS78`) until S78b. The cases also pin that a range bound of
 another kind is allowed, an empty type id is `invalid_input`, a no-field index
 lists every document in id order, a `Storage` registered without a type
 refuses a get of it with `invalid_input` before any call, and
@@ -1121,8 +1122,8 @@ path and file format; [`test-engine.test.ts`](tests/test-engine.test.ts),
 `openTestEngine`; [`kv-client.test.ts`](tests/kv-client.test.ts), `kvClient`;
 [`storage-client.test.ts`](tests/storage-client.test.ts), the `storage/v2`
 client through `openTestStorage`; and the v2 kit,
-[`storage.test.ts`](tests/storage.test.ts) (49 cases, 19 skipped),
-[`storage-instances.test.ts`](tests/storage-instances.test.ts) (6, 3 skipped)
+[`storage.test.ts`](tests/storage.test.ts) (50 cases, 6 skipped),
+[`storage-instances.test.ts`](tests/storage-instances.test.ts) (6)
 and [`registration.test.ts`](tests/registration.test.ts) (8).
 
 The other tests do not spawn it:

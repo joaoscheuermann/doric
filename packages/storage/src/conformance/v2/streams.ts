@@ -1,8 +1,8 @@
 /**
  * Streams over `storage/v2` (T4.3): v1's S1–S6 on binary events of the
  * run-time stream prefix `conformance.note.events/` (`streamFiles`), and
- * T4.3's 3 MiB event (`T4.3-event-3MiB`). The engine refuses stream items
- * and `Read` until S78, so every case is skipped with `untilS78`.
+ * T4.3's 3 MiB event (`T4.3-event-3MiB`), and T4.3's prefix check for
+ * stream records (`T4.3-prefix-records`).
  */
 import assert from 'node:assert/strict';
 
@@ -15,11 +15,10 @@ import {
   caseGroup,
   conformanceBundle,
   conformanceFiles,
-  untilS78,
   type V2Case,
   type V2Harness,
 } from './harness.js';
-import { isCode } from './support.js';
+import { isCode, storedKeys } from './support.js';
 
 const sequences = caseGroup('sequence with gaps');
 const stream = `${eventPrefix}t1`;
@@ -55,9 +54,23 @@ const marksFor = async (
 
 const empty = { entries: [], lastSequence: 0, truncations: [] };
 
+const decoder = new TextDecoder();
+
+/** The keys of `after` that `before` lacks, as text. */
+const added = (
+  before: readonly Uint8Array[],
+  after: readonly Uint8Array[],
+): string[] => {
+  const known = new Set(before.map((key) => Buffer.from(key).toString('hex')));
+
+  return after
+    .filter((key) => !known.has(Buffer.from(key).toString('hex')))
+    .map((key) => decoder.decode(key));
+};
+
 /**
  * The cases, in run order, group `sequence with gaps`: S1–S6, then
- * `T4.3-event-3MiB`, all with `skip: untilS78`.
+ * `T4.3-event-3MiB`, then `T4.3-prefix-records`. None is skipped.
  */
 export const streamCases: readonly V2Case[] = Object.freeze([
   sequences(
@@ -100,7 +113,6 @@ export const streamCases: readonly V2Case[] = Object.freeze([
         assert.equal(new Date(createdAt).toISOString(), createdAt);
       }
     },
-    { skip: untilS78 },
   ),
   sequences(
     'S2',
@@ -142,7 +154,6 @@ export const streamCases: readonly V2Case[] = Object.freeze([
         [[5, '5']],
       );
     },
-    { skip: untilS78 },
   ),
   sequences(
     'S3',
@@ -193,7 +204,6 @@ export const streamCases: readonly V2Case[] = Object.freeze([
       await storage.commit({ append: [{ stream, events: [event('8')] }] });
       assert.deepEqual(await entries(storage, stream), [[8, '8']]);
     },
-    { skip: untilS78 },
   ),
   sequences(
     'S4',
@@ -236,7 +246,6 @@ export const streamCases: readonly V2Case[] = Object.freeze([
       });
       assert.deepEqual(await marksFor(storage, 2, other), []);
     },
-    { skip: untilS78 },
   ),
   sequences(
     'S5',
@@ -271,7 +280,6 @@ export const streamCases: readonly V2Case[] = Object.freeze([
         isCode('invalid_input'),
       );
     },
-    { skip: untilS78 },
   ),
   sequences(
     'S6',
@@ -323,7 +331,6 @@ export const streamCases: readonly V2Case[] = Object.freeze([
       assert.deepEqual(restarted.truncations, []);
       assert.deepEqual(await entries(storage, stream), [[1, 'b']]);
     },
-    { skip: untilS78 },
   ),
   sequences(
     'T4.3-event-3MiB',
@@ -361,6 +368,30 @@ export const streamCases: readonly V2Case[] = Object.freeze([
         1,
       );
     },
-    { skip: untilS78, timeout: 300_000 },
+    { timeout: 300_000 },
+  ),
+  sequences(
+    'T4.3-prefix-records',
+    'every key an append or a truncate writes starts with its bundle prefix',
+    async (harness) => {
+      const { storage, event } = await opened(harness);
+      const before = await storedKeys(harness.engine.kv('doric'));
+
+      await storage.commit({
+        append: [{ stream, events: ['1', '2', '3'].map(event) }],
+      });
+      await storage.commit({ truncate: { stream, afterSequence: 1 } });
+
+      const written = added(
+        before,
+        await storedKeys(harness.engine.kv('doric')),
+      );
+
+      // A head, the entry kept and the truncation's mark, at least.
+      assert.ok(written.length >= 3, `${written.length} keys`);
+      for (const key of written) {
+        assert.ok(key.startsWith(`${conformanceBundle}/`), key);
+      }
+    },
   ),
 ]);

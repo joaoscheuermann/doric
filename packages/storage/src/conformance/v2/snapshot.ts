@@ -1,6 +1,5 @@
 /**
- * Snapshot plus cursor (T4.3): P1 and P2 append to streams, so both are
- * skipped with `untilS78` until S78 enables them.
+ * Snapshot plus cursor (T4.3): P1 and P2, which append to streams.
  */
 import assert from 'node:assert/strict';
 
@@ -19,7 +18,6 @@ import {
   caseGroup,
   conformanceBundle,
   conformanceFiles,
-  untilS78,
   type V2Case,
   type V2Harness,
 } from './harness.js';
@@ -71,7 +69,7 @@ const replay = async (storage: Storage, files: StreamFiles) => {
   return [...state.seen, ...rest.map(([, text]) => text)];
 };
 
-/** The cases, group `snapshot + cursor`: P1 and P2, both `skip: untilS78`. */
+/** The cases, group `snapshot + cursor`: P1 and P2. */
 export const snapshotCases: readonly V2Case[] = Object.freeze([
   snapshots(
     'P1',
@@ -115,7 +113,6 @@ export const snapshotCases: readonly V2Case[] = Object.freeze([
       ]);
       assert.equal((await current(writer, files)).revision, 1);
     },
-    { skip: untilS78 },
   ),
   snapshots(
     'P2',
@@ -195,6 +192,5 @@ export const snapshotCases: readonly V2Case[] = Object.freeze([
         (await entries(appender, stream)).map(([, text]) => text),
       );
     },
-    { skip: untilS78 },
   ),
 ]);

@@ -53,6 +53,7 @@ pub(super) fn plan(
         let (type_id, put) = match entry {
             Entry::Expect { type_id, .. } | Entry::Delete { type_id, .. } => (type_id, None),
             Entry::Put { type_id, id, value } => (type_id, Some((id, value))),
+            Entry::DropStream { .. } | Entry::Truncate { .. } | Entry::Append { .. } => continue,
         };
         let declaration = declared(txn, &mut declarations, bundle, type_id)?;
         if let Some((id, value)) = put {
@@ -65,8 +66,10 @@ pub(super) fn plan(
 
 /// Applies `items` in one write transaction, with the index keys of `plans`,
 /// recomputed for a put whose declaration changed since [`plan`], reading and
-/// writing headers through `headers` ([`Headers::begin`]); the cache takes
-/// the transaction's headers only once it has committed.
+/// writing headers through `headers` ([`Headers::begin`]), then its stream
+/// items ([`super::streams::write`]), each entry with the puts' `updated_at`
+/// as `created_at`; the cache takes the transaction's headers and stream
+/// heads only once it has committed.
 ///
 /// # Errors
 ///
@@ -126,6 +129,7 @@ pub(super) fn write(
         }
     }
 
+    let updated_at = iso(clock.tick(clock.now()));
     for entry in &items.entries {
         let Entry::Delete { type_id, id } = entry else {
             continue;
@@ -143,10 +147,10 @@ pub(super) fn write(
         }
     }
 
-    let updated_at = iso(clock.tick(clock.now()));
     for (put, plan) in puts.into_iter().zip(&plans) {
         put_one(txn, &mut staged, bundle, put, &plan.keys, &updated_at)?;
     }
+    super::streams::write(txn, &mut staged, bundle, &items.entries, &updated_at)?;
     staged.finish(txn);
     Ok(())
 }

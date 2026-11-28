@@ -75,7 +75,7 @@ export interface StoragePage<M extends Message = Message> {
   readonly nextCursor: string | null;
 }
 
-/** A read of a stream's entries after `afterSequence`. Refused until S78. */
+/** A read of a stream's entries after `afterSequence`. */
 export interface StreamRead {
   /** `<owner>.<family>/<key>`, a prefix the client's files declare. */
   readonly stream: string;
@@ -124,7 +124,7 @@ export interface DocumentPut extends DocumentKey {
   readonly value: Message;
 }
 
-/** Events a commit appends to one stream. Refused until S78. */
+/** Events a commit appends to one stream. */
 export interface StreamAppend {
   readonly stream: string;
   /** The stream's `lastSequence` the append expects; absent checks none. */
@@ -140,23 +140,20 @@ export interface StreamAppend {
 
 /**
  * One atomic batch: it applies in this order, all or nothing, in one
- * transaction: expect, delete, put, dropStreams, truncate, append. Until
- * S78, a batch with any of `dropStreams`, `truncate` or `append` is refused
- * by the engine with `invalid_input`, message `Stream items are not
- * supported.`, and changes nothing.
+ * transaction: expect, delete, put, dropStreams, truncate, append.
  */
 export interface CommitBatch {
   readonly expect?: readonly ExpectedRevision[];
   readonly put?: readonly DocumentPut[];
   readonly delete?: readonly DocumentKey[];
   /**
-   * Removes whole streams, entries and marks. Refused until S78. A stream
+   * Removes whole streams, entries and marks. A stream
    * whose prefix the client's files declare no message for is
    * `invalid_input` before any call.
    */
   readonly dropStreams?: readonly string[];
   /**
-   * Removes a stream's entries above `afterSequence`. Refused until S78. A
+   * Removes a stream's entries above `afterSequence`. A
    * stream the client's files declare no message for is `invalid_input`
    * before any call.
    */
@@ -164,7 +161,7 @@ export interface CommitBatch {
     readonly stream: string;
     readonly afterSequence: number;
   };
-  /** Refused until S78. */
+  /** Events to append, each stream's after its last sequence. */
   readonly append?: readonly StreamAppend[];
 }
 
@@ -206,8 +203,8 @@ export interface StorageHealth {
  * `invalid_input`. A value the engine answers that does not decode with its
  * message is `invalid_output` with `details` `{ type, id }`.
  *
- * Until S78 the engine does not serve `Read`, `Health`, `PutBlob`, `GetBlob`
- * or `DeleteBlob`: `read`, `health`, `putBlob`, `getBlob` and `deleteBlob`
+ * Until S78 the engine does not serve `Health`, `PutBlob`, `GetBlob` or
+ * `DeleteBlob`: `health`, `putBlob`, `getBlob` and `deleteBlob`
  * reject with `unknown_contract` (gRPC UNIMPLEMENTED), message `This bundle
  * does not serve /doric.storage.v2.StorageService/<Method>.`.
  */
@@ -230,7 +227,7 @@ export interface Storage {
     query: StorageQuery,
     call?: CallArg,
   ): Promise<StoragePage<M>>;
-  /** One page of a stream. Rejects with `unknown_contract` until S78. */
+  /** One page of a stream. */
   read<M extends Message>(
     request: StreamRead,
     call?: CallArg,

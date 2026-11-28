@@ -29,11 +29,9 @@ export const conformanceFiles: readonly DescFile[] = Object.freeze([
 ]);
 
 /**
- * The skip reason of every case that needs streams, which the engine
- * refuses until S78 (S77b1's PF1): the stream cases S1–S6, the snapshot
- * cases P1 and P2, C2, C3, B1–B5, `T4.3-event-3MiB`, `T4.3-health`,
- * `not_owner-streams` and the stream parts of X1 and X3–X5. S78 enables
- * them by removing it.
+ * The skip reason of every case that needs blobs or health, which the
+ * engine refuses until S78b (S77b1's PF1): B1–B5 and `T4.3-health`. S78b
+ * enables them by removing it.
  */
 export const untilS78 = 'S78: streams';
 

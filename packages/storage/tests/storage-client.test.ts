@@ -4,7 +4,7 @@
 // fields, the client validates before any call, a value that does not decode
 // is `invalid_output` in the client and, for a type with indexes,
 // `invalid_input` in the engine, records stay under the bundle's prefix, and
-// the stream and blob methods stay refused until S78 (T4.3's client cases).
+// health and the blob methods stay refused until S78b (T4.3's client cases).
 
 import assert from 'node:assert/strict';
 import { after, before, beforeEach, describe, test } from 'node:test';
@@ -279,38 +279,10 @@ describe('the storage/v2 client over openTestStorage', {
     );
   });
 
-  test('CL13: stream items are refused by the engine with invalid_input', async () => {
-    const message = 'Stream items are not supported.';
-    const stream = 'conformance.feed/one';
-
-    await assert.rejects(
-      storage().commit({
-        append: [{ stream, events: [create(feed.event, { text: 'e' })] }],
-      }),
-      refusedWith('invalid_input', message),
-    );
-    await assert.rejects(
-      storage().commit({ truncate: { stream, afterSequence: 0 } }),
-      refusedWith('invalid_input', message),
-    );
-    await assert.rejects(
-      storage().commit({ dropStreams: [stream] }),
-      refusedWith('invalid_input', message),
-    );
-  });
-
-  test('CL13: read, health and putBlob are unknown_contract until S78', async () => {
+  test('CL13: health and putBlob are unknown_contract until S78b', async () => {
     const unserved = (method: string): string =>
       `This bundle does not serve /doric.storage.v2.StorageService/${method}.`;
 
-    await assert.rejects(
-      storage().read({
-        stream: 'conformance.feed/one',
-        afterSequence: 0,
-        limit: 1,
-      }),
-      refusedWith('unknown_contract', unserved('Read')),
-    );
     await assert.rejects(
       storage().health(),
       refusedWith('unknown_contract', unserved('Health')),

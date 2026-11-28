@@ -1,7 +1,7 @@
 /**
  * Commit failure over `storage/v2` (T4.3): the document parts of X1, X2
  * and X5, X2 without `invalid_index_value`, which `Commit` cannot reach
- * (PF7); and the stream parts of X1 and X3–X5, skipped with `untilS78`.
+ * (PF7); and the stream parts of X1 and X3–X5.
  */
 import assert from 'node:assert/strict';
 
@@ -23,7 +23,6 @@ import {
   caseGroup,
   conformanceBundle,
   conformanceFiles,
-  untilS78,
   type V2Case,
   type V2Harness,
 } from './harness.js';
@@ -117,7 +116,7 @@ const withStreams = async (
 
 /**
  * The cases, in run order, group `commit failure`: X1, X2, X5, then
- * `X1-streams`, X3, X4 and `X5-streams` with `skip: untilS78`.
+ * `X1-streams`, X3, X4 and `X5-streams`.
  */
 export const failureCases: readonly V2Case[] = Object.freeze([
   failures(
@@ -193,7 +192,6 @@ export const failureCases: readonly V2Case[] = Object.freeze([
           },
         ],
       ]),
-    { skip: untilS78 },
   ),
   failures(
     'X3',
@@ -229,7 +227,6 @@ export const failureCases: readonly V2Case[] = Object.freeze([
           },
         ],
       ]),
-    { skip: untilS78 },
   ),
   failures(
     'X4',
@@ -276,7 +273,7 @@ export const failureCases: readonly V2Case[] = Object.freeze([
           },
         ],
       ]),
-    { skip: untilS78, timeout: 300_000 },
+    { timeout: 300_000 },
   ),
   failures(
     'X5-streams',
@@ -301,6 +298,5 @@ export const failureCases: readonly V2Case[] = Object.freeze([
           },
         ],
       ]),
-    { skip: untilS78 },
   ),
 ]);

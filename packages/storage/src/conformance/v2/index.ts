@@ -45,8 +45,8 @@ export {
 
 /**
  * The cases of `storage.test.ts` (T4.3, T4.9, T4.23), in run order:
- * documents, queries, snapshot, failure, limits, then streams and blobs
- * and health, both skipped with `untilS78`.
+ * documents, queries, snapshot, failure, limits, streams, then blobs
+ * and health, skipped with `untilS78`.
  */
 export const storageV2Cases: readonly V2Case[] = Object.freeze([
   ...documentCases,

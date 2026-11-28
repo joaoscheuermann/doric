@@ -61,6 +61,74 @@ async fn a_valid_set_before_activation_is_unavailable() {
     assert_eq!(code_of(result), "unavailable");
 }
 
+/// The items of the `Read` stream of `engine` for `request` from `bundle_id`.
+async fn read_items(
+    engine: &Engine,
+    bundle_id: &str,
+    request: ReadRequest,
+) -> Vec<Result<ReadResponse, ContractError>> {
+    engine
+        .read_stream(call_from(bundle_id), request)
+        .collect()
+        .await
+}
+
+fn read_request(stream: &str) -> ReadRequest {
+    ReadRequest {
+        stream_read: Some(doric_storage::v2::StreamRead {
+            stream: stream.to_owned(),
+            after_sequence: 0.0,
+            limit: 1,
+        }),
+    }
+}
+
+#[tokio::test]
+async fn a_valid_read_before_activation_is_unavailable() {
+    let items = read_items(&Engine::default(), "a", read_request("a.s/k")).await;
+
+    assert_eq!(items.len(), 1);
+    assert_eq!(
+        code_of(items.into_iter().next().expect("one item")),
+        "unavailable"
+    );
+}
+
+#[tokio::test]
+async fn a_read_is_checked_before_the_store() {
+    for (bundle_id, stream, code) in [
+        ("doric", "a.s/k", "not_owner"),
+        ("a", "b.s/k", "not_owner"),
+        ("a", "a.s/", "invalid_stream"),
+    ] {
+        let items = read_items(&Engine::default(), bundle_id, read_request(stream)).await;
+
+        assert_eq!(items.len(), 1, "{stream}");
+        assert_eq!(code_of(items.into_iter().next().expect("one item")), code);
+    }
+}
+
+#[tokio::test]
+async fn a_read_on_the_open_store_answers_the_page_of_an_absent_stream() {
+    let (_dir, store) = open_temp();
+    let engine = Engine::default();
+    assert!(engine.store.set(store).is_ok(), "the store is set once");
+
+    let items = read_items(&engine, "a", read_request("a.s/k")).await;
+
+    assert_eq!(
+        items,
+        vec![Ok(ReadResponse {
+            item: Some(doric_storage::v2::read_response::Item::Page(
+                doric_storage::v2::StreamPage {
+                    last_sequence: 0.0,
+                    truncations: Vec::new(),
+                }
+            )),
+        })]
+    );
+}
+
 #[tokio::test]
 async fn a_valid_set_registers_on_the_open_store() {
     let (_dir, store) = open_temp();

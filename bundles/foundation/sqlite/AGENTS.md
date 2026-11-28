@@ -35,7 +35,7 @@ the engine, `test-engine.test.ts` (T4.20) `openTestEngine` and
 `kv-client.test.ts` the `kvClient` adapter, `storage-client.test.ts` the
 `storage/v2` client, `storage.test.ts`, `storage-instances.test.ts` and
 `registration.test.ts` the `storage/v2` conformance kit, which exercises every
-`storage/v2` handler (its stream cases skipped until S78); `sqlite:test` runs the unit tests of both crates; `storage:test-heavy` runs the kit's heavy cases, the commits of
+`storage/v2` handler (its blob and health cases skipped until S78b); `sqlite:test` runs the unit tests of both crates; `storage:test-heavy` runs the kit's heavy cases, the commits of
 200,001 items, which take minutes; `storage:bench-rk27` builds the release binary
 (`sqlite:compile:production`) and runs RK27's write-stall measurements over
 `testEngineBinary('release')`, report-only (not a test). `index-parity.test.ts` (T4.23), in
@@ -91,7 +91,7 @@ to the bundle that registers its descriptors.
 - Make every `KvEngine::write` of `doric-storage` call `Headers::begin` first,
   whether it touches document headers or not: `transact` stores
   `data_version` after every write, so a write that skips it hides a foreign
-  write from the next one (RK38). S78's head-only appends and S87's `Import`
+  write from the next one (RK38). S78a's appends and S87's `Import`
   follow this rule too. Read and write headers through its `Staged` overlay,
   stage changes with `put` and `forget`, call `finish` only on success, and
   keep `Get` and `Query` off the cache. The exception is `Register`'s backfill

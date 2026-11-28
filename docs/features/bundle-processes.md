@@ -1845,6 +1845,28 @@ bin tests; `cargo test`, clippy `-D warnings` and `cargo fmt --check` pass;
 `storage` 347 tests, 325 pass, 22 skipped; `storage:bench-rk27` exits 0 with
 the confirming run under "Phase 4: write stalls".
 
+Slice S78a (spec version 6.65; S72–S77c2 committed in `8c1dcd15`, S78a not yet
+committed) builds streams in `doric-storage`; S78 is split into S78a (streams),
+S78b (blobs and health) and S78c (`Watch`). `Commit` applies `drop_stream`,
+`truncate`, `append` and `event` after the puts, in the same transaction, all
+or none; the refusal "Stream items are not supported." (Q-B) is gone. `Read`
+is routed: one read transaction per call, the key scan first, then each entry.
+The stream heads are cached in the one LRU (`Cached`), under the same rules as
+the document headers. `layout.proto` gains `StreamHead`, `StreamEntryHeader`
+and `TruncationMark`. Decisions: an event over 3,145,728 bytes is
+`limit_exceeded` with `details.limit` `"append"` (Q1); the 10,000 items count
+`expect`, `put`, `delete`, `drop_stream`, `truncate` and each event, not
+`append` or `chunk` (Q2); Q3 fixes `Watch`'s content for S78c. The messages of
+`invalid_stream` and `sequence_conflict` are copied from the TypeScript ones,
+and those of a read or truncate past the end from the in-memory backend. The 16
+`untilS78` stream cases run and `T4.3-prefix-records` is added; only B1–B5 and
+`T4.3-health` stay skipped.
+
+S78a's verification: `doric-sqlite` 63 tests, `doric-storage` 210 lib and 14
+bin tests; clippy `-D warnings` and `cargo fmt --check` clean, in the `rust`
+1.100.0 image; `storage` 347 tests, 341 pass, 0 fail, 6 skipped; `biome` clean
+on the changed files (15 errors predate it, in untouched files).
+
 ## Evolution
 
 - 2026-11-22: phase 0 of
@@ -3146,3 +3168,8 @@ sandbox pool` then `Sandbox pool configured` with the `logSandboxPool`
   `commitItems`, 200,000, are unchanged. `format:check` failed on
   `kv-client.test.ts` and `kv-file.test.ts`, committed in `2fd8cbb7`, which the
   coordinator formatted; 18 other biome format failures predate S72.
+- 2026-11-28: phase 4, slice S78a, of
+  [the spec](../designs/grpc-processes.md) (version 6.65), not yet committed:
+  streams in `doric-storage` (`Commit`'s stream items, `Read`, the stream heads
+  in the cache); Q-B removed; Q1 (`"append"` limit) and Q2 (the item count)
+  decided; 16 stream cases unskipped and `T4.3-prefix-records` added.

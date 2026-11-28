@@ -18,6 +18,7 @@ pub mod layout;
 pub mod query;
 pub mod register;
 pub mod schema;
+pub mod streams;
 #[cfg(test)]
 mod testing;
 

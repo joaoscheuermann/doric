@@ -40,3 +40,33 @@ message DocumentHeader {
   // When the document was last written, ISO-8601 in UTC.
   string updated_at = 6;
 }
+
+// A stream's counter, under ("stream.head", stream); absent for a stream never
+// appended to or dropped, whose lastSequence is 0.
+message StreamHead {
+  // The stream's last sequence; it never decreases, even after a truncation.
+  uint32 last_sequence = 1;
+}
+
+// A stream entry without its value's later chunks, under
+// ("stream.entry", stream, sequence).
+message StreamEntryHeader {
+  // When the entry was committed, ISO-8601 in UTC.
+  string created_at = 1;
+  // The size of the whole event, in bytes.
+  uint32 value_size = 2;
+  // The number of ("stream.chunk", stream, sequence, n) records; 0 when
+  // `chunk` holds the whole event.
+  uint32 chunk_count = 3;
+  // The event's first 983,040 bytes.
+  bytes chunk = 4;
+}
+
+// A truncation of a stream, under ("stream.mark", stream) followed by the
+// commit's position.
+message TruncationMark {
+  // Entries above this sequence were removed.
+  uint32 after_sequence = 1;
+  // The stream's last sequence when the truncation committed.
+  uint32 at_sequence = 2;
+}

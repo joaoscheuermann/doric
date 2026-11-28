@@ -6,7 +6,10 @@
 //! key holds a document's values, and [`index`] may refuse it.
 
 use doric_bundle::ContractError;
-pub use records::{DocumentHeader, IndexDeclaration, TypeDeclaration};
+pub use records::{
+    DocumentHeader, IndexDeclaration, StreamEntryHeader, StreamHead, TruncationMark,
+    TypeDeclaration,
+};
 
 use crate::keys::{self, Element};
 
@@ -165,6 +168,76 @@ pub fn under(bundle: &str, tuple: &[&str]) -> doric_sqlite::KeyRange {
         start,
         ..doric_sqlite::KeyRange::default()
     }
+}
+
+/// `<bundle>/("stream.head", stream)`: the key of the stream's
+/// [`StreamHead`].
+///
+/// It sorts under [`under`]`(bundle, &["stream.head"])`, and two different
+/// streams give two different keys.
+pub fn head(bundle: &str, stream: &str) -> Vec<u8> {
+    key(bundle, &["stream.head", stream])
+}
+
+/// `<bundle>/("stream.entry", stream, sequence)`, `sequence` a number
+/// element: the key of the entry's [`StreamEntryHeader`].
+///
+/// The entries of one stream sort by `sequence`, under
+/// [`under`]`(bundle, &["stream.entry", stream])`.
+pub fn entry(bundle: &str, stream: &str, sequence: u32) -> Vec<u8> {
+    numbered(bundle, "stream.entry", stream, &[sequence])
+}
+
+/// `<bundle>/("stream.chunk", stream, sequence, n)`, `sequence` and `n`
+/// number elements: the key of the entry's `n`th chunk after its header's,
+/// for `n` from 1 to the header's `chunk_count`.
+///
+/// The chunks of one entry sort by `n`, under
+/// [`under`]`(bundle, &["stream.chunk", stream])`.
+pub fn entry_chunk(bundle: &str, stream: &str, sequence: u32, n: u32) -> Vec<u8> {
+    numbered(bundle, "stream.chunk", stream, &[sequence, n])
+}
+
+/// `<bundle>/("stream.mark", stream)` followed by `position`, a whole number
+/// below 2^53, as 8 bytes big-endian: the key of the [`TruncationMark`] the
+/// commit at `position` wrote.
+///
+/// The marks of one stream sort by position, under
+/// [`under`]`(bundle, &["stream.mark", stream])`.
+pub fn mark(bundle: &str, stream: &str, position: f64) -> Vec<u8> {
+    // A position is a whole number below 2^53, which converts exactly.
+    let position = position as u64;
+    [
+        key(bundle, &["stream.mark", stream]),
+        position.to_be_bytes().to_vec(),
+    ]
+    .concat()
+}
+
+/// The keys of `kind` (`"stream.entry"` or `"stream.chunk"`) of `stream`
+/// under `bundle`'s prefix whose sequence is `sequence` or more, in key
+/// order, up to the end of the stream's keys of that kind.
+pub fn entries_from(
+    bundle: &str,
+    kind: &str,
+    stream: &str,
+    sequence: u32,
+) -> doric_sqlite::KeyRange {
+    doric_sqlite::KeyRange {
+        start: numbered(bundle, kind, stream, &[sequence]),
+        end: end(&key(bundle, &[kind, stream])),
+        ..doric_sqlite::KeyRange::default()
+    }
+}
+
+/// `bundle/` followed by the tuple `(kind, stream, …numbers)`.
+fn numbered(bundle: &str, kind: &str, stream: &str, numbers: &[u32]) -> Vec<u8> {
+    let mut tuple = vec![
+        Element::String(kind.to_owned()),
+        Element::String(stream.to_owned()),
+    ];
+    tuple.extend(numbers.iter().map(|&n| Element::Number(f64::from(n))));
+    keys::key(bundle, &tuple).expect("a tuple of strings and whole numbers always encodes")
 }
 
 /// `start` followed by `0xFF`: above every key whose tuple extends `start`'s,

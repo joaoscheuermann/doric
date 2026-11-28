@@ -1,9 +1,9 @@
 /**
  * Concurrency over two instances of one bundle on one engine (T4.8):
  * C1 and C4, and an instance of another bundle refused `not_owner`
- * through `V2Harness.raw` (PF5); C2 and C3 append to streams and are
- * skipped with `untilS78`, as is `not_owner-streams`, the same refusal for
- * every stream call on conformance's stream prefix.
+ * through `V2Harness.raw` (PF5); C2 and C3, which append to streams, and
+ * `not_owner-streams`, the same refusal for every stream call on
+ * conformance's stream prefix.
  */
 import assert from 'node:assert/strict';
 
@@ -32,7 +32,6 @@ import {
   caseGroup,
   conformanceBundle,
   conformanceFiles,
-  untilS78,
   type V2Case,
   type V2Harness,
 } from './harness.js';
@@ -55,9 +54,8 @@ const pair = async (
 };
 
 /**
- * The cases, in run order, group `concurrency`: C1–C4, C2 and C3 with
- * `skip: untilS78`, then `not_owner`, then `not_owner-streams` with
- * `skip: untilS78`.
+ * The cases, in run order, group `concurrency`: C1–C4, then `not_owner`,
+ * then `not_owner-streams`.
  */
 export const concurrencyCases: readonly V2Case[] = Object.freeze([
   concurrency(
@@ -138,7 +136,6 @@ export const concurrencyCases: readonly V2Case[] = Object.freeze([
         [2, `e${winner}`],
       ]);
     },
-    { skip: untilS78 },
   ),
   concurrency(
     'C3',
@@ -173,7 +170,6 @@ export const concurrencyCases: readonly V2Case[] = Object.freeze([
         50,
       );
     },
-    { skip: untilS78 },
   ),
   concurrency(
     'C4',
@@ -367,6 +363,5 @@ export const concurrencyCases: readonly V2Case[] = Object.freeze([
       );
       assert.deepEqual(await entries(storage, stream), [[1, 'mine']]);
     },
-    { skip: untilS78 },
   ),
 ]);

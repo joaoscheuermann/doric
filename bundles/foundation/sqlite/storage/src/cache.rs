@@ -19,7 +19,11 @@ use std::{
 use doric_bundle::ContractError;
 use doric_sqlite::{ReadTxn, WriteTxn, refusal};
 
-use crate::{documents::decode_header, layout::DocumentHeader};
+use crate::{
+    documents::decode_header,
+    layout::{DocumentHeader, StreamHead},
+    streams::decoded,
+};
 
 /// The most bytes the bundle's cache holds, 64 MiB, counted as
 /// [`ENTRY_BYTES`] describes.
@@ -87,12 +91,20 @@ pub struct Headers {
     entries: Arc<Mutex<Lru>>,
 }
 
+/// One entry of a [`Headers`]: a document's header, or a stream's last
+/// sequence under its head key ([`crate::layout::head`]).
+#[derive(Debug, Clone)]
+enum Cached {
+    Document(Header),
+    Head(u32),
+}
+
 /// The entries of a [`Headers`] and their recency; its fields are the
 /// implementation's.
 #[derive(Debug, Default)]
 struct Lru {
-    /// Each cached header and the tick of its last use.
-    entries: HashMap<Vec<u8>, (Header, u64)>,
+    /// Each cached entry and the tick of its last use.
+    entries: HashMap<Vec<u8>, (Cached, u64)>,
     /// The keys by the tick of their last use, the least recent first.
     recency: BTreeMap<u64, Vec<u8>>,
     /// The tick of the next use.
@@ -105,9 +117,14 @@ struct Lru {
 }
 
 impl Lru {
-    /// What the entry of `key` with `header` counts.
-    fn cost(key: &[u8], header: &Header) -> usize {
-        key.len() + header.index_keys.iter().map(Vec::len).sum::<usize>() + ENTRY_BYTES
+    /// What the entry of `key` with `cached` counts: a head, its key and
+    /// [`ENTRY_BYTES`].
+    fn cost(key: &[u8], cached: &Cached) -> usize {
+        let index_keys = match cached {
+            Cached::Document(header) => header.index_keys.iter().map(Vec::len).sum::<usize>(),
+            Cached::Head(_) => 0,
+        };
+        key.len() + index_keys + ENTRY_BYTES
     }
 
     /// The next tick.
@@ -117,8 +134,8 @@ impl Lru {
         tick
     }
 
-    /// The cached header of `key`, now the most recently used.
-    fn get(&mut self, key: &[u8]) -> Option<Header> {
+    /// The cached entry of `key`, now the most recently used.
+    fn get(&mut self, key: &[u8]) -> Option<Cached> {
         let tick = self.next_tick();
         let (header, used) = self.entries.get_mut(key)?;
         let key = self.recency.remove(used).expect("every entry has a tick");
@@ -138,7 +155,7 @@ impl Lru {
     /// Caches `header` as the most recently used entry of `key`, evicting the
     /// least recently used entries to stay within `bound`; an entry larger
     /// than `bound` is not cached.
-    fn insert(&mut self, bound: usize, key: Vec<u8>, header: Header) {
+    fn insert(&mut self, bound: usize, key: Vec<u8>, header: Cached) {
         self.remove(&key);
         let cost = Self::cost(&key, &header);
         if cost > bound {
@@ -301,8 +318,8 @@ impl Drop for Suspension {
 #[derive(Debug)]
 pub struct Staged {
     headers: Headers,
-    staged: BTreeMap<Vec<u8>, Option<Header>>,
-    clean: BTreeMap<Vec<u8>, Header>,
+    staged: BTreeMap<Vec<u8>, Option<Cached>>,
+    clean: BTreeMap<Vec<u8>, Cached>,
 }
 
 impl Staged {
@@ -324,34 +341,76 @@ impl Staged {
         txn: &mut dyn ReadTxn,
         key: &[u8],
     ) -> Result<Option<Header>, ContractError> {
-        let forgotten = match self.staged.get(key) {
-            Some(Some(header)) => return Ok(Some(header.clone())),
-            Some(None) => true,
-            None => false,
-        };
-        if !forgotten {
-            if let Some(header) = self.clean.get(key) {
-                return Ok(Some(header.clone()));
-            }
-            if let Some(header) = self.headers.lock().get(key) {
-                return Ok(Some(header));
-            }
+        if let Some(Cached::Document(header)) = self.overlaid(key) {
+            return Ok(Some(header));
         }
         let Some((value, _)) = txn.get(key)? else {
             return Ok(None);
         };
         let header = Header::from(decode_header(&value)?);
-        if !forgotten {
-            self.clean.insert(key.to_vec(), header.clone());
-        }
+        self.keep_clean(key, Cached::Document(header.clone()));
         Ok(Some(header))
+    }
+
+    /// The entry of `key` this transaction staged, else, for a key it did not
+    /// forget, its clean read or the cached entry; `None` sends the read to
+    /// SQLite.
+    fn overlaid(&self, key: &[u8]) -> Option<Cached> {
+        match self.staged.get(key) {
+            Some(staged) => staged.clone(),
+            None => self
+                .clean
+                .get(key)
+                .cloned()
+                .or_else(|| self.headers.lock().get(key)),
+        }
+    }
+
+    /// Keeps `cached`, read from SQLite, as the clean read of `key`, unless
+    /// the transaction forgot `key`.
+    fn keep_clean(&mut self, key: &[u8], cached: Cached) {
+        if !self.staged.contains_key(key) {
+            self.clean.insert(key.to_vec(), cached);
+        }
+    }
+
+    /// The last sequence of the stream whose head key is `key`
+    /// ([`crate::layout::head`]), as this transaction sees it: the head it
+    /// put, else, for a key it did not forget, the cached head, else the
+    /// stored [`crate::layout::StreamHead`] read from `txn`; 0 for an absent
+    /// stream, which is never kept. A head read from `txn` is kept as a clean
+    /// read, as [`Staged::header`] keeps a header.
+    ///
+    /// # Errors
+    ///
+    /// `internal` for a stored head that does not decode; the errors of
+    /// [`ReadTxn::get`]. The overlay is unchanged.
+    pub fn head(&mut self, txn: &mut dyn ReadTxn, key: &[u8]) -> Result<u32, ContractError> {
+        if let Some(Cached::Head(last_sequence)) = self.overlaid(key) {
+            return Ok(last_sequence);
+        }
+        let Some((value, _)) = txn.get(key)? else {
+            return Ok(0);
+        };
+        let head = decoded::<StreamHead>(&value, "head")?;
+        self.keep_clean(key, Cached::Head(head.last_sequence));
+        Ok(head.last_sequence)
+    }
+
+    /// Stages `last_sequence` as the head of the stream whose head key is
+    /// `key`, which the transaction has written; later reads of `key` in this
+    /// transaction answer it. [`Staged::forget`] removes a head as it removes
+    /// a header.
+    pub fn put_head(&mut self, key: Vec<u8>, last_sequence: u32) {
+        self.clean.remove(&key);
+        self.staged.insert(key, Some(Cached::Head(last_sequence)));
     }
 
     /// Stages `header` as the header of `key`, which the transaction has
     /// written; later reads of `key` in this transaction answer it.
     pub fn put(&mut self, key: Vec<u8>, header: Header) {
         self.clean.remove(&key);
-        self.staged.insert(key, Some(header));
+        self.staged.insert(key, Some(Cached::Document(header)));
     }
 
     /// Stages that `key` leaves the cache, for a header the transaction

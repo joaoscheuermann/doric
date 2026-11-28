@@ -1,8 +1,9 @@
 //! `storage/v2.Commit` for documents (spec "The storage contract", "Commit"):
 //! the items of one call, checked as they arrive and before any I/O
-//! ([`Batch`]), then applied all or none ([`apply`]). Stream items wait for
-//! S78 and are refused.
+//! ([`Batch`]), then applied all or none ([`apply`]), stream items after the
+//! documents ([`streams`]).
 
+mod streams;
 pub(crate) mod transaction;
 
 use std::{
@@ -20,20 +21,25 @@ use crate::{
     cache::Headers,
     layout,
     schema::Pools,
+    streams::{checked, whole_sequence},
     v2::{CommitRequest, commit_request::Item},
 };
 
-/// The most items of one batch, `expect`, `put` and `delete` (`details.limit`
-/// `"batch"`); `chunk` items do not count.
+/// The most items of one batch, `expect`, `put`, `delete`, `drop_stream`,
+/// `truncate` and `event` (`details.limit` `"batch"`); `chunk` and `append`
+/// items do not count.
 pub const ITEMS: usize = 10_000;
-/// The most bytes of all the values of one batch, the sum of its chunks
-/// (`details.limit` `"batch"`).
+/// The most bytes of all the values of one batch, the sum of its chunks and
+/// events (`details.limit` `"batch"`).
 pub const BATCH_BYTES: usize = 67_108_864;
 /// The most bytes of one document's value, the sum of its put's chunks
 /// (`details.limit` `"document"`).
 pub const DOCUMENT_BYTES: usize = 16_777_216;
 /// The most bytes of one `chunk` item.
 pub const PART_BYTES: usize = 1_048_576;
+/// The most bytes of one appended event, its `event` item and the chunks
+/// after it (`details.limit` `"append"`).
+pub const APPEND_BYTES: usize = 3_145_728;
 
 /// The items of one `Commit` call for the bundle `bundle`, taken one by one as
 /// they arrive ([`Batch::push`]); each is checked before the next is read, and
@@ -41,6 +47,7 @@ pub const PART_BYTES: usize = 1_048_576;
 #[derive(Debug)]
 pub struct Batch {
     items: Items,
+    count: usize,
     bytes: usize,
 }
 
@@ -54,7 +61,7 @@ pub struct Items {
     entries: Vec<Entry>,
 }
 
-/// One item of [`Items`].
+/// One item of [`Items`]; an append holds its events.
 #[derive(Debug, Clone)]
 enum Entry {
     Expect {
@@ -71,6 +78,18 @@ enum Entry {
         type_id: String,
         id: String,
     },
+    DropStream {
+        stream: String,
+    },
+    Truncate {
+        stream: String,
+        after: u32,
+    },
+    Append {
+        stream: String,
+        expected: Option<u32>,
+        events: Vec<Vec<u8>>,
+    },
 }
 
 impl Batch {
@@ -82,13 +101,15 @@ impl Batch {
                 bundle: bundle.to_owned(),
                 entries: Vec::new(),
             },
+            count: 0,
             bytes: 0,
         }
     }
 
     /// Takes `request`, the next item of the call. A `chunk` appends its bytes
-    /// to the value of the put before it; a put with no chunk has an empty
-    /// value.
+    /// to the value of the put or the event before it; a put with no chunk
+    /// has an empty value. An `event` is the next event of the append before
+    /// it.
     ///
     /// # Errors
     ///
@@ -96,23 +117,26 @@ impl Batch {
     /// dropped, and nothing has been written:
     ///
     /// 1. `invalid_input` for an item with no case set;
-    /// 2. `invalid_input`, message `Stream items are not supported.`, for
-    ///    `drop_stream`, `truncate`, `append` and `event`;
-    /// 3. `invalid_input` for a `chunk` that follows no `put` (the first item,
-    ///    or one after an `expect` or a `delete`);
-    /// 4. `invalid_input` for a `chunk` of 0 bytes or over [`PART_BYTES`];
+    /// 2. `invalid_input`, message `An append needs at least one event.`
+    ///    (detail `stream`), for an item other than `event` after an `append`;
+    /// 3. `invalid_input` for an `event` that follows no `append` or event,
+    ///    and for a `chunk` that follows no `put` or event;
+    /// 4. `invalid_input` for a `chunk` or `event` of 0 bytes or over
+    ///    [`PART_BYTES`];
     /// 5. for an `expect`, `put` or `delete`, the errors of
     ///    [`crate::layout::checked`] with the batch's bundle as owner: the
     ///    type's length, then its namespace (`not_owner`), then the id's
-    ///    length;
-    /// 6. `invalid_input` for an `expect` whose revision is not a whole number
-    ///    from 0 to `u32::MAX` (0 expects the document absent);
-    /// 7. `limit_exceeded` (`details.limit` `"batch"`) for the item after the
-    ///    [`ITEMS`]th;
-    /// 8. for a `chunk`, `limit_exceeded` (`details.limit` `"document"`) when
-    ///    its put's value would pass [`DOCUMENT_BYTES`], then
-    ///    (`details.limit` `"batch"`) when the batch's values would pass
-    ///    [`BATCH_BYTES`].
+    ///    length; for a `drop_stream`, `truncate` or `append`, the errors of
+    ///    [`crate::streams::checked`];
+    /// 6. `invalid_input` for an `expect` whose revision, a `truncate`'s
+    ///    `after_sequence` or an `append`'s `expected_sequence` that is not a
+    ///    whole number from 0 to `u32::MAX`; then for a second `truncate`;
+    /// 7. `limit_exceeded` (`details.limit` `"batch"`) for the counted item
+    ///    after the [`ITEMS`]th;
+    /// 8. for a `chunk` or `event`, `limit_exceeded` (`details.limit`
+    ///    `"document"`) when its put's value would pass [`DOCUMENT_BYTES`], or
+    ///    (`"append"`) its event [`APPEND_BYTES`], then (`"batch"`) when the
+    ///    batch's values would pass [`BATCH_BYTES`].
     pub fn push(&mut self, request: CommitRequest) -> Result<(), ContractError> {
         let Some(item) = request.item else {
             return Err(ContractError::new(
@@ -120,14 +144,44 @@ impl Batch {
                 "A batch item has no case set.",
             ));
         };
+        if !matches!(item, Item::Event(_)) {
+            self.no_empty_append()?;
+        }
         let entry = match item {
-            Item::DropStream(_) | Item::Truncate(_) | Item::Append(_) | Item::Event(_) => {
-                return Err(ContractError::new(
-                    "invalid_input",
-                    "Stream items are not supported.",
-                ));
+            Item::Chunk(bytes) => return self.append(bytes, false),
+            Item::Event(bytes) => return self.append(bytes, true),
+            Item::DropStream(stream) => {
+                checked(&self.items.bundle, &stream)?;
+                Entry::DropStream { stream }
             }
-            Item::Chunk(bytes) => return self.append(bytes),
+            Item::Truncate(truncate) => {
+                checked(&self.items.bundle, &truncate.stream)?;
+                let after = whole_sequence(truncate.after_sequence, "afterSequence")?;
+                let mut entries = self.items.entries.iter();
+                if entries.any(|entry| matches!(entry, Entry::Truncate { .. })) {
+                    return Err(ContractError::new(
+                        "invalid_input",
+                        "A batch holds at most one truncate.",
+                    ));
+                }
+                Entry::Truncate {
+                    stream: truncate.stream,
+                    after,
+                }
+            }
+            Item::Append(append) => {
+                checked(&self.items.bundle, &append.stream)?;
+                let expected = append
+                    .expected_sequence
+                    .map(|expected| whole_sequence(expected, "expectedSequence"))
+                    .transpose()?;
+                self.items.entries.push(Entry::Append {
+                    stream: append.stream,
+                    expected,
+                    events: Vec::new(),
+                });
+                return Ok(());
+            }
             Item::Expect(expect) => {
                 layout::checked(&self.items.bundle, &expect.r#type, &expect.id)?;
                 Entry::Expect {
@@ -152,7 +206,14 @@ impl Batch {
                 }
             }
         };
-        if self.items.entries.len() >= ITEMS {
+        self.count()?;
+        self.items.entries.push(entry);
+        Ok(())
+    }
+
+    /// Counts one more item toward [`ITEMS`].
+    fn count(&mut self) -> Result<(), ContractError> {
+        if self.count >= ITEMS {
             return Err(refusal(
                 "limit_exceeded",
                 format!("A batch holds at most {ITEMS} items."),
@@ -160,33 +221,74 @@ impl Batch {
                 "batch".into(),
             ));
         }
-        self.items.entries.push(entry);
+        self.count += 1;
         Ok(())
     }
 
-    /// Appends the `chunk` item `bytes` to the value of the put before it.
-    fn append(&mut self, bytes: Vec<u8>) -> Result<(), ContractError> {
-        let Some(Entry::Put { value, .. }) = self.items.entries.last_mut() else {
+    /// Refuses a batch whose last item is an `append` with no event.
+    fn no_empty_append(&self) -> Result<(), ContractError> {
+        match self.items.entries.last() {
+            Some(Entry::Append { stream, events, .. }) if events.is_empty() => Err(refusal(
+                "invalid_input",
+                "An append needs at least one event.",
+                "stream",
+                stream.as_str().into(),
+            )),
+            _ => Ok(()),
+        }
+    }
+
+    /// Takes `bytes`: with `event`, the first part of the next event of the
+    /// append before it; otherwise the next part of the value of the put or
+    /// the event before it.
+    fn append(&mut self, bytes: Vec<u8>, event: bool) -> Result<(), ContractError> {
+        let (kind, follows) = if event {
+            ("An event", "an append or its events")
+        } else {
+            ("A chunk", "a put or an event")
+        };
+        let Some((limit, name, bound)) = (match self.items.entries.last() {
+            Some(Entry::Put { .. }) if !event => {
+                Some((DOCUMENT_BYTES, "A document's value", "document"))
+            }
+            Some(Entry::Append { events, .. }) if event || !events.is_empty() => {
+                Some((APPEND_BYTES, "An event", "append"))
+            }
+            _ => None,
+        }) else {
             return Err(ContractError::new(
                 "invalid_input",
-                "A chunk must follow a put or its chunks.",
+                format!("{kind} must follow {follows}."),
             ));
         };
         if bytes.is_empty() || bytes.len() > PART_BYTES {
             return Err(ContractError::new(
                 "invalid_input",
                 format!(
-                    "A chunk holds 1 to {PART_BYTES} bytes; this one holds {}.",
+                    "{kind} holds 1 to {PART_BYTES} bytes; this one holds {}.",
                     bytes.len()
                 ),
             ));
         }
-        if value.len() + bytes.len() > DOCUMENT_BYTES {
+        if event {
+            self.count()?;
+        }
+        let value = match self.items.entries.last_mut() {
+            Some(Entry::Put { value, .. }) => value,
+            Some(Entry::Append { events, .. }) => {
+                if event {
+                    events.push(Vec::new());
+                }
+                events.last_mut().expect("an event to extend")
+            }
+            _ => unreachable!("the target is checked above"),
+        };
+        if value.len() + bytes.len() > limit {
             return Err(refusal(
                 "limit_exceeded",
-                format!("A document's value holds at most {DOCUMENT_BYTES} bytes."),
+                format!("{name} holds at most {limit} bytes."),
                 "limit",
-                "document".into(),
+                bound.into(),
             ));
         }
         if self.bytes + bytes.len() > BATCH_BYTES {
@@ -206,8 +308,11 @@ impl Batch {
     ///
     /// # Errors
     ///
-    /// `invalid_input` for a batch of no item.
+    /// `invalid_input` for a batch of no item, and for one that ends with an
+    /// `append` with no event (message `An append needs at least one
+    /// event.`, detail `stream`).
     pub fn finish(self) -> Result<Items, ContractError> {
+        self.no_empty_append()?;
         if self.items.entries.is_empty() {
             return Err(ContractError::new(
                 "invalid_input",
@@ -246,6 +351,10 @@ impl Batch {
 ///   `updated_at` [`iso`]`(clock.tick(clock.now()))`, one value for the whole
 ///   commit, never below the value of an earlier commit of this process.
 ///
+/// Then the stream items ([`streams`]): the drops, the truncate, the appends,
+/// each entry taking the commit's `updated_at` as `createdAt`, and the
+/// truncate's mark, at the stream's last sequence after the appends.
+///
 /// The write transaction reads and writes headers through `headers`
 /// ([`Headers::begin`] first): it reads a header from the cache when it holds
 /// one, from SQLite otherwise, and the cache holds, once the commit has
@@ -266,7 +375,11 @@ impl Batch {
 /// actual}`) for the first expect that does not hold; then
 /// `unique_conflict` (details `{type, index}`) for the first put whose key
 /// of a unique index another document holds at that moment, after the
-/// batch's deletes and earlier puts. `internal` for a stored declaration,
+/// batch's deletes and earlier puts; then `invalid_input` (details `{stream,
+/// afterSequence, lastSequence}`) for a truncate past its stream's last
+/// sequence, and `sequence_conflict` (details `{stream, expected, actual}`)
+/// for the first append whose expected sequence does not hold. `internal`
+/// for a stored declaration,
 /// schema or header that does not decode, and the errors of
 /// [`KvEngine::read`] and [`KvEngine::write`].
 pub async fn apply<E: KvEngine>(

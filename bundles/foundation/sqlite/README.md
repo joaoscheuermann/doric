@@ -329,9 +329,8 @@ successful activation, then `apply` on the store.
 `Commit` (`commit.rs`, `commit/transaction.rs`) checks in this order:
 
 1. `not_owner`: the caller `doric`.
-2. Per item, as it arrives: an item with no case set; a stream item
-   (`Stream items are not supported.`, until S78); a chunk with no put before
-   it; a chunk outside 1 byte to 1 MiB; the type's length, its namespace
+2. Per item, as it arrives: an item with no case set; an event with no
+   append before it; a chunk with no put or event before it; a chunk outside 1 byte to 1 MiB; the type's length, its namespace
    (`not_owner`), the id's length; an expected revision not a whole number in
    0..=u32::MAX; then `limit_exceeded` `"batch"` for the item count, and for a
    chunk `"document"`, then `"batch"`.
@@ -508,7 +507,7 @@ and the `storage/v2` conformance kit
 ([`storage.test.ts`](../../../packages/storage/tests/storage.test.ts),
 [`storage-instances.test.ts`](../../../packages/storage/tests/storage-instances.test.ts),
 [`registration.test.ts`](../../../packages/storage/tests/registration.test.ts)),
-whose stream cases are skipped until S78.
+whose blob and health cases are skipped until S78b.
 The golden file
 [`storage/tests/fixtures/index-keys.json`](storage/tests/fixtures/index-keys.json)
 holds 18 tuples with their bytes, the four platform keys (`layout`,
@@ -555,6 +554,9 @@ the binary `doric-sqlite` and the library `doric_sqlite`.
   release binary).
 - S77c2 (done): the `rebuild` limit lowered to 100,000 documents on S77c's
   measurement.
-- S78: `storage/v2`'s streams, blobs and health.
+- S78a (done): `storage/v2`'s streams: `Commit`'s stream items, `Read`, and
+  the stream heads in the cache.
+- S78b: blobs and health.
+- S78c: `Watch`.
 - S84: `sqlite` in the composition.
 - S88: read-only mode, with the inspection tool; the spec records the deferral.

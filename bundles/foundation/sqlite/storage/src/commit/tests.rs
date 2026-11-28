@@ -1,5 +1,6 @@
 //! S77a3a: `Commit`'s checks as the items arrive (C1–C11), the clock (C24),
-//! and, in [`apply`] and [`conflicts`], the batch applied to a store.
+//! and, in [`apply`] and [`conflicts`], the batch applied to a store; S78a:
+//! the checks of stream items (R2).
 
 mod apply;
 mod conflicts;
@@ -13,7 +14,7 @@ use super::*;
 use crate::{
     documents,
     layout::{self, DocumentHeader},
-    testing::{NOTE, detail_str},
+    testing::{NOTE, PLAIN, detail_str},
     v2::{
         DocumentKey, ExpectedRevision, GetRequest, StreamAppend, StreamTruncate,
         commit_request::Item, get_response,
@@ -172,26 +173,203 @@ async fn probe(engine: &SqliteEngine) -> f64 {
         .1
 }
 
+fn append(stream: &str, expected: Option<f64>) -> CommitRequest {
+    request(Item::Append(StreamAppend {
+        stream: stream.to_owned(),
+        expected_sequence: expected,
+    }))
+}
+
+fn event(bytes: &[u8]) -> CommitRequest {
+    request(Item::Event(bytes.to_vec()))
+}
+
+fn truncate(stream: &str, after: f64) -> CommitRequest {
+    request(Item::Truncate(StreamTruncate {
+        stream: stream.to_owned(),
+        after_sequence: after,
+    }))
+}
+
+fn drop_stream(stream: &str) -> CommitRequest {
+    request(Item::DropStream(stream.to_owned()))
+}
+
+/// An event of `len` bytes: an `event` item of at most [`PART_BYTES`], then
+/// `chunk` items.
+fn sized_event(len: usize) -> Vec<CommitRequest> {
+    let value = vec![7_u8; len];
+    let mut parts = value.chunks(PART_BYTES);
+    let mut requests = vec![event(parts.next().expect("a first part"))];
+    requests.extend(parts.map(chunk));
+    requests
+}
+
 #[test]
-fn each_stream_item_is_refused() {
-    let items = [
-        Item::DropStream("a.s/v1".to_owned()),
-        Item::Truncate(StreamTruncate {
-            stream: "a.s/v1".to_owned(),
-            after_sequence: 1.0,
-        }),
-        Item::Append(StreamAppend {
-            stream: "a.s/v1".to_owned(),
-            expected_sequence: None,
-        }),
-        Item::Event(b"e".to_vec()),
+fn each_stream_item_is_taken() {
+    let items = batch(vec![
+        drop_stream("a.s/v1"),
+        truncate("a.s/v2", 1.0),
+        append("a.s/v1", None),
+        event(b"e"),
+        chunk(b"more"),
+        event(b"f"),
+        append("a.s/v3", Some(2.0)),
+        event(b"g"),
+    ]);
+
+    assert!(items.is_ok(), "{items:?}");
+}
+
+#[test]
+fn an_event_that_follows_no_append_is_invalid_input() {
+    let batches = [
+        vec![event(b"e")],
+        vec![put(NOTE, "n1"), event(b"e")],
+        vec![truncate("a.s/v1", 0.0), event(b"e")],
+        vec![drop_stream("a.s/v1"), event(b"e")],
     ];
-    for item in items {
-        let error = refused(vec![request(item)]);
+    for requests in batches {
+        assert_eq!(refused(requests).code, "invalid_input");
+    }
+    assert!(batch(vec![append("a.s/v1", None), event(b"e")]).is_ok());
+}
+
+#[test]
+fn a_chunk_after_an_event_extends_it_and_after_an_append_is_invalid_input() {
+    assert!(batch(vec![append("a.s/v1", None), event(b"e"), chunk(b"f")]).is_ok());
+
+    let error = refused(vec![append("a.s/v1", None), chunk(b"f")]);
+    assert_eq!(error.code, "invalid_input");
+}
+
+#[test]
+fn an_event_of_no_byte_or_over_1_mib_is_invalid_input() {
+    for bytes in [Vec::new(), vec![0; PART_BYTES + 1]] {
+        let error = refused(vec![append("a.s/v1", None), event(&bytes)]);
+
+        assert_eq!(error.code, "invalid_input", "{} bytes", bytes.len());
+    }
+    for bytes in [vec![0; 1], vec![0; PART_BYTES]] {
+        let taken = batch(vec![append("a.s/v1", None), event(&bytes)]);
+
+        assert!(taken.is_ok(), "{} bytes: {taken:?}", bytes.len());
+    }
+}
+
+#[test]
+fn a_second_truncate_in_one_batch_is_invalid_input() {
+    for second in ["a.s/v1", "a.s/v2"] {
+        let error = refused(vec![truncate("a.s/v1", 0.0), truncate(second, 0.0)]);
+
+        assert_eq!(error.code, "invalid_input", "{second}");
+    }
+    assert!(batch(vec![truncate("a.s/v1", 0.0), drop_stream("a.s/v2")]).is_ok());
+}
+
+#[test]
+fn a_sequence_that_is_not_a_whole_number_of_32_bits_is_invalid_input() {
+    for sequence in [1.5, -1.0, f64::NAN, f64::from(u32::MAX) + 1.0] {
+        let truncated = refused(vec![truncate("a.s/v1", sequence)]);
+        let appended = refused(vec![append("a.s/v1", Some(sequence)), event(b"e")]);
+
+        assert_eq!(truncated.code, "invalid_input", "truncate {sequence}");
+        assert_eq!(appended.code, "invalid_input", "append {sequence}");
+    }
+    assert!(batch(vec![truncate("a.s/v1", f64::from(u32::MAX))]).is_ok());
+}
+
+#[test]
+fn each_stream_item_checks_its_stream_id() {
+    let items = |stream: &str| {
+        vec![
+            vec![drop_stream(stream)],
+            vec![truncate(stream, 0.0)],
+            vec![append(stream, None), event(b"e")],
+        ]
+    };
+    for requests in items("b.s/v1") {
+        let error = refused(requests);
+
+        assert_eq!(error.code, "not_owner");
+        assert_eq!(detail_str(&error, "stream").as_deref(), Some("b.s/v1"));
+    }
+    for requests in items("a.s/") {
+        assert_eq!(refused(requests).code, "invalid_stream");
+    }
+}
+
+#[test]
+fn an_event_of_3_mib_is_taken_and_one_byte_more_is_limit_exceeded_for_the_append() {
+    let mut largest = vec![append("a.s/v1", None)];
+    largest.extend(sized_event(APPEND_BYTES));
+    assert!(batch(largest).is_ok());
+
+    let mut over = vec![append("a.s/v1", None)];
+    over.extend(sized_event(APPEND_BYTES + 1));
+    let error = refused(over);
+
+    assert_eq!(error.code, "limit_exceeded");
+    assert_eq!(limit(&error).as_deref(), Some("append"));
+}
+
+#[test]
+fn events_count_toward_the_batch_limits_and_appends_do_not() {
+    let mut batch = Batch::new("a");
+    batch.push(append("a.s/v1", None)).expect("the append");
+    for n in 0..ITEMS {
+        batch
+            .push(event(b"e"))
+            .unwrap_or_else(|error| panic!("event {n}: {error:?}"));
+    }
+    batch
+        .push(append("a.s/v2", None))
+        .expect("an append does not count");
+
+    let error = batch
+        .push(event(b"e"))
+        .expect_err("the item after the 10000th");
+
+    assert_eq!(error.code, "limit_exceeded");
+    assert_eq!(limit(&error).as_deref(), Some("batch"));
+}
+
+#[test]
+fn the_bytes_of_events_count_toward_the_batch() {
+    let mut requests = Vec::new();
+    for n in 0..4 {
+        requests.extend(put_value(PLAIN, &format!("p{n}"), &vec![1; DOCUMENT_BYTES]));
+    }
+    requests.extend([append("a.s/v1", None), event(b"e")]);
+
+    let error = refused(requests);
+
+    assert_eq!(error.code, "limit_exceeded");
+    assert_eq!(limit(&error).as_deref(), Some("batch"));
+}
+
+#[test]
+fn an_append_with_no_event_is_invalid_input() {
+    let followed = [
+        put(PLAIN, "p1"),
+        expect(PLAIN, "p1", 0.0),
+        delete(PLAIN, "p1"),
+        drop_stream("a.s/v2"),
+        truncate("a.s/v2", 0.0),
+        append("a.s/v2", None),
+    ];
+    for next in followed {
+        let error = refused(vec![append("a.s/v1", None), next]);
 
         assert_eq!(error.code, "invalid_input");
-        assert_eq!(error.message, "Stream items are not supported.");
+        assert_eq!(error.message, "An append needs at least one event.");
+        assert_eq!(detail_str(&error, "stream").as_deref(), Some("a.s/v1"));
     }
+
+    let error = refused(vec![put(PLAIN, "p1"), append("a.s/v1", None)]);
+    assert_eq!(error.code, "invalid_input");
+    assert_eq!(error.message, "An append needs at least one event.");
+    assert_eq!(detail_str(&error, "stream").as_deref(), Some("a.s/v1"));
 }
 
 #[test]
