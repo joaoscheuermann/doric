@@ -34,7 +34,6 @@ export {
   conformanceFiles,
   openV2Engine,
   openV2Harness,
-  untilS78,
   type V2Case,
   type V2CaseOptions,
   type V2Engine,
@@ -46,7 +45,7 @@ export {
 /**
  * The cases of `storage.test.ts` (T4.3, T4.9, T4.23), in run order:
  * documents, queries, snapshot, failure, limits, streams, then blobs
- * and health, skipped with `untilS78`.
+ * and health.
  */
 export const storageV2Cases: readonly V2Case[] = Object.freeze([
   ...documentCases,

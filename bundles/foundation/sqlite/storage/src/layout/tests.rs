@@ -192,3 +192,33 @@ fn an_index_key_of_2049_bytes_is_limit_exceeded_and_2048_pass() {
     assert_eq!(error.code, "limit_exceeded");
     assert_eq!(detail(&error, "limit").as_deref(), Some("indexKey"));
 }
+
+// S78b: the blob keys (R9).
+
+const HASH: &str = "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+
+#[test]
+fn the_blob_and_blob_chunk_keys_are_their_tuples_under_the_prefix() {
+    assert_eq!(blob("a", HASH), key("a", &["blob", HASH]));
+    assert_eq!(
+        blob_chunk("a", HASH, 2),
+        keys::key(
+            "a",
+            &[string("blob.chunk"), string(HASH), Element::Number(2.0)]
+        )
+        .expect("a key")
+    );
+}
+
+#[test]
+fn a_blobs_chunks_sort_by_n_outside_the_blob_headers() {
+    let headers = under("a", &["blob"]);
+    let chunks = under("a", &["blob.chunk", HASH]);
+
+    assert!(blob_chunk("a", HASH, 2) < blob_chunk("a", HASH, 10));
+    assert!(contains(&headers, &blob("a", HASH)));
+    assert!(contains(&chunks, &blob_chunk("a", HASH, 1)));
+    assert!(!contains(&headers, &blob_chunk("a", HASH, 1)));
+    assert!(!contains(&chunks, &blob("a", HASH)));
+    assert!(!contains(&headers, &blob("b", HASH)));
+}

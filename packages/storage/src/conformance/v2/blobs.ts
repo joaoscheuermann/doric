@@ -1,16 +1,15 @@
 /**
  * Blobs and health over `storage/v2` (T4.3): v1's B1–B5 on bytes, where
  * v1 took and answered base64 text, and `T4.3-health`, v1's H1 on
- * `StorageHealth`. The engine does not serve `PutBlob`, `GetBlob`,
- * `DeleteBlob` or `Health` until S78, so every case is skipped with
- * `untilS78`. Not ported: B1's "blobs are not commits", read from v1's
- * feed position, which `Storage` does not expose; B2's malformed base64,
- * which bytes cannot be; H2, since `Storage` has no `identity()`.
+ * `StorageHealth`, served by the engine since S78b. Not ported: B1's
+ * "blobs are not commits", read from v1's feed position, which `Storage`
+ * does not expose; B2's malformed base64, which bytes cannot be; H2, since
+ * `Storage` has no `identity()`.
  */
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 
-import { caseGroup, untilS78, type V2Case } from './harness.js';
+import { caseGroup, type V2Case } from './harness.js';
 
 const blobs = caseGroup('blobs');
 const health = caseGroup('health');
@@ -51,7 +50,7 @@ async function* piecesOf(
 
 /**
  * The cases, in run order: group `blobs`, B1–B5, then group `health`,
- * `T4.3-health`, all with `skip: untilS78`.
+ * `T4.3-health`.
  */
 export const blobCases: readonly V2Case[] = Object.freeze([
   blobs(
@@ -75,7 +74,6 @@ export const blobCases: readonly V2Case[] = Object.freeze([
         Buffer.alloc(0),
       );
     },
-    { skip: untilS78 },
   ),
   blobs(
     'B2',
@@ -93,7 +91,6 @@ export const blobCases: readonly V2Case[] = Object.freeze([
       // The same bytes in pieces are the same blob.
       assert.deepEqual(await storage.putBlob(piecesOf(bytes, 100)), { hash });
     },
-    { skip: untilS78 },
   ),
   blobs(
     'B3',
@@ -108,27 +105,21 @@ export const blobCases: readonly V2Case[] = Object.freeze([
       assert.equal(await storage.getBlob('md5:abc'), undefined);
       assert.equal(await storage.getBlob(''), undefined);
     },
-    { skip: untilS78 },
   ),
-  blobs(
-    'B4',
-    'a blob of several megabytes round trips',
-    async (harness) => {
-      const storage = await harness.open();
-      const bytes = Uint8Array.from(
-        { length: 6 * 1024 * 1024 },
-        (_, index) => (index * 31) % 256,
-      );
-      const { hash } = await storage.putBlob(bytes);
+  blobs('B4', 'a blob of several megabytes round trips', async (harness) => {
+    const storage = await harness.open();
+    const bytes = Uint8Array.from(
+      { length: 6 * 1024 * 1024 },
+      (_, index) => (index * 31) % 256,
+    );
+    const { hash } = await storage.putBlob(bytes);
 
-      assert.equal(hash, sha256(bytes));
-      assert.ok(
-        (await joined(await storage.getBlob(hash)))?.equals(bytes),
-        'the blob reads back byte for byte',
-      );
-    },
-    { skip: untilS78 },
-  ),
+    assert.equal(hash, sha256(bytes));
+    assert.ok(
+      (await joined(await storage.getBlob(hash)))?.equals(bytes),
+      'the blob reads back byte for byte',
+    );
+  }),
   blobs(
     'B5',
     'deleteBlob removes a blob, and an unknown hash is a no-op',
@@ -147,7 +138,6 @@ export const blobCases: readonly V2Case[] = Object.freeze([
         Buffer.from('kept', 'utf8'),
       );
     },
-    { skip: untilS78 },
   ),
   health(
     'T4.3-health',
@@ -176,6 +166,5 @@ export const blobCases: readonly V2Case[] = Object.freeze([
           report.disk.availableBlocks <= report.disk.blocks,
       );
     },
-    { skip: untilS78 },
   ),
 ]);

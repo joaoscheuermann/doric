@@ -1,8 +1,8 @@
 //! S77a4b: the header cache. Here its setting (H10, H11) and its header
 //! (H12); in [`writes`], `Commit` and `Register` through one cache (H1, H2,
-//! H5–H9, H13); in [`engines`], two engines on one file (H3, H4); in
-//! [`suspension`], S77b1's suspension of the cache (S1); in [`heads`],
-//! S78a's stream heads (R6–R8).
+//! H5–H9, H13); in [`engines`], two engines on one file (H3, H4) and S78b's
+//! blob writes after another engine's (R11); in [`suspension`], S77b1's
+//! suspension of the cache (S1); in [`heads`], S78a's stream heads (R6–R8).
 
 mod engines;
 mod heads;

@@ -1,7 +1,7 @@
 /**
  * Descriptor files the `storage/v2` cases build at run time (test support,
  * OQ10): the shapes `withIndexes` cannot make. A stream prefix with its
- * event and a fold document for the stream cases (skipped until S78), a
+ * event and a fold document for the stream cases, a
  * type of another bundle, the declarations `Register` refuses, and the
  * conformance file with a message left out. Each is a `DescFile` as
  * `protoc-gen-es` would generate it, importing

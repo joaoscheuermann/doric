@@ -3,8 +3,8 @@
 // `sqlite` engine bundle: values round-trip in chunks with their unknown
 // fields, the client validates before any call, a value that does not decode
 // is `invalid_output` in the client and, for a type with indexes,
-// `invalid_input` in the engine, records stay under the bundle's prefix, and
-// health and the blob methods stay refused until S78b (T4.3's client cases).
+// `invalid_input` in the engine, and records stay under the bundle's prefix
+// (T4.3's client cases).
 
 import assert from 'node:assert/strict';
 import { after, before, beforeEach, describe, test } from 'node:test';
@@ -12,7 +12,7 @@ import { after, before, beforeEach, describe, test } from 'node:test';
 import { create, equals, fromBinary, toBinary } from '@bufbuild/protobuf';
 import { FileDescriptorSetSchema } from '@bufbuild/protobuf/wkt';
 import { type Client, ConnectError } from '@connectrpc/connect';
-import { closure, fromConnectError, isContractError } from 'bundle/contracts';
+import { closure, fromConnectError } from 'bundle/contracts';
 import {
   CommitRequestSchema,
   type StorageService,
@@ -66,19 +66,6 @@ const keysOf = async (kv: Kv): Promise<string[]> =>
   (await rangeAll(kv, { ...everything, limit: 1000 })).map((entry) =>
     latin1(entry.key),
   );
-
-/** A `ContractError` of `code` with exactly `message`. */
-const refusedWith =
-  (code: string, message: string) =>
-  (error: unknown): boolean => {
-    assert.ok(isContractError(error), `expected ${code}, got ${String(error)}`);
-    assert.deepEqual(
-      { code: error.code, message: error.message },
-      { code, message },
-    );
-
-    return true;
-  };
 
 /** A `ConnectError` carrying the `ContractError` of `code`. */
 const connectRefusal =
@@ -276,20 +263,6 @@ describe('the storage/v2 client over openTestStorage', {
     assert.deepEqual(
       outside.filter((key) => !key.startsWith('conformance/')),
       [],
-    );
-  });
-
-  test('CL13: health and putBlob are unknown_contract until S78b', async () => {
-    const unserved = (method: string): string =>
-      `This bundle does not serve /doric.storage.v2.StorageService/${method}.`;
-
-    await assert.rejects(
-      storage().health(),
-      refusedWith('unknown_contract', unserved('Health')),
-    );
-    await assert.rejects(
-      storage().putBlob(Uint8Array.of(1, 2, 3)),
-      refusedWith('unknown_contract', unserved('PutBlob')),
     );
   });
 });

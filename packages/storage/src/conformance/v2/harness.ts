@@ -29,13 +29,6 @@ export const conformanceFiles: readonly DescFile[] = Object.freeze([
 ]);
 
 /**
- * The skip reason of every case that needs blobs or health, which the
- * engine refuses until S78b (S77b1's PF1): B1–B5 and `T4.3-health`. S78b
- * enables them by removing it.
- */
-export const untilS78 = 'S78: streams';
-
-/**
  * A spawned engine as the kit uses it: a `TestEngine` that also hands out
  * raw `storage/v2` clients, so a case can send a call the `Storage` client
  * refuses before any I/O, such as a type of another namespace (PF5).
@@ -91,7 +84,7 @@ export interface V2Harness {
 
 /** How a case is registered with `node:test`. */
 export interface V2CaseOptions {
-  /** Registers the case as skipped with this reason, e.g. `untilS78`. */
+  /** Registers the case as skipped with this reason. */
   readonly skip?: string;
   /** The time limit of the case in milliseconds; the run's when absent. */
   readonly timeout?: number;

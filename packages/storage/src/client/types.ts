@@ -242,27 +242,18 @@ export interface Storage {
    * nothing.
    */
   commit(batch: CommitBatch, call?: CallArg): Promise<CommitResult>;
-  /** The engine's measurements. Rejects with `unknown_contract` until S78. */
+  /** The engine's measurements. */
   health(call?: CallArg): Promise<StorageHealth>;
-  /**
-   * Stores `bytes` and answers `sha256:<hex>` of them. Rejects with
-   * `unknown_contract` until S78.
-   */
+  /** Stores `bytes` and answers `sha256:<hex>` of them. */
   putBlob(
     bytes: Uint8Array | AsyncIterable<Uint8Array>,
     call?: CallArg,
   ): Promise<{ readonly hash: string }>;
-  /**
-   * The blob's bytes in chunks, or `undefined` when it is absent. Rejects
-   * with `unknown_contract` until S78.
-   */
+  /** The blob's bytes in chunks, or `undefined` when it is absent. */
   getBlob(
     hash: string,
     call?: CallArg,
   ): Promise<AsyncIterable<Uint8Array> | undefined>;
-  /**
-   * Removes the blob; an absent or malformed hash is a no-op. Rejects with
-   * `unknown_contract` until S78.
-   */
+  /** Removes the blob; an absent or malformed hash is a no-op. */
   deleteBlob(hash: string, call?: CallArg): Promise<void>;
 }

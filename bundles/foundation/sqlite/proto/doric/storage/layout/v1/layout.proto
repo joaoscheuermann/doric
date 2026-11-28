@@ -70,3 +70,15 @@ message TruncationMark {
   // The stream's last sequence when the truncation committed.
   uint32 at_sequence = 2;
 }
+
+// A blob without its later chunks, under ("blob", hash), `hash` the
+// `sha256:<hex>` of its bytes.
+message BlobHeader {
+  // The size of the whole blob, in bytes.
+  uint32 size = 1;
+  // The number of ("blob.chunk", hash, n) records; 0 when `chunk` holds the
+  // whole blob.
+  uint32 chunk_count = 2;
+  // The blob's first 983,040 bytes.
+  bytes chunk = 3;
+}

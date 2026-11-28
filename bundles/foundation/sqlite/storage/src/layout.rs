@@ -7,7 +7,7 @@
 
 use doric_bundle::ContractError;
 pub use records::{
-    DocumentHeader, IndexDeclaration, StreamEntryHeader, StreamHead, TruncationMark,
+    BlobHeader, DocumentHeader, IndexDeclaration, StreamEntryHeader, StreamHead, TruncationMark,
     TypeDeclaration,
 };
 
@@ -228,6 +228,26 @@ pub fn entries_from(
         end: end(&key(bundle, &[kind, stream])),
         ..doric_sqlite::KeyRange::default()
     }
+}
+
+/// `<bundle>/("blob", hash)`: the key of the blob's [`BlobHeader`], `hash`
+/// its `sha256:<hex>`.
+///
+/// It sorts under [`under`]`(bundle, &["blob"])`, and two different hashes
+/// give two different keys.
+pub fn blob(bundle: &str, hash: &str) -> Vec<u8> {
+    key(bundle, &["blob", hash])
+}
+
+/// `<bundle>/("blob.chunk", hash, n)`, `n` a number element: the key of the
+/// blob's `n`th chunk after its header's, for `n` from 1 to the header's
+/// `chunk_count`.
+///
+/// The chunks of one blob sort by `n`, under
+/// [`under`]`(bundle, &["blob.chunk", hash])`, and outside
+/// [`under`]`(bundle, &["blob"])`.
+pub fn blob_chunk(bundle: &str, hash: &str, n: u32) -> Vec<u8> {
+    numbered(bundle, "blob.chunk", hash, &[n])
 }
 
 /// `bundle/` followed by the tuple `(kind, stream, …numbers)`.

@@ -10,9 +10,11 @@
 
 use doric_bundle::{Caller, ContractError};
 
+pub mod blobs;
 pub mod cache;
 pub mod commit;
 pub mod documents;
+pub mod health;
 pub mod keys;
 pub mod layout;
 pub mod query;

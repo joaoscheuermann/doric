@@ -12,6 +12,7 @@ edition = "2024"
 
 [workspace.dependencies]
 base64 = "0.22.1"
+nix = { version = "0.32.0", features = ["fs"] }
 prost = "0.14.6"
 prost-reflect = { version = "0.16.5", features = ["serde"] }
 prost-types = "0.14.6"

@@ -372,7 +372,7 @@ export const streamCases: readonly V2Case[] = Object.freeze([
   ),
   sequences(
     'T4.3-prefix-records',
-    'every key an append or a truncate writes starts with its bundle prefix',
+    'every key an append, a truncate or a putBlob writes starts with its bundle prefix',
     async (harness) => {
       const { storage, event } = await opened(harness);
       const before = await storedKeys(harness.engine.kv('doric'));
@@ -381,14 +381,21 @@ export const streamCases: readonly V2Case[] = Object.freeze([
         append: [{ stream, events: ['1', '2', '3'].map(event) }],
       });
       await storage.commit({ truncate: { stream, afterSequence: 1 } });
+      // One byte over a record's 983,040: a header and one chunk record.
+      await storage.putBlob(new Uint8Array(983_041).fill(7));
 
       const written = added(
         before,
         await storedKeys(harness.engine.kv('doric')),
       );
 
-      // A head, the entry kept and the truncation's mark, at least.
-      assert.ok(written.length >= 3, `${written.length} keys`);
+      // A head, the entry kept, the truncation's mark, the blob's header and
+      // its chunk, at least.
+      assert.ok(written.length >= 5, `${written.length} keys`);
+      assert.ok(
+        written.some((key) => key.includes('blob')),
+        'the blob wrote its keys',
+      );
       for (const key of written) {
         assert.ok(key.startsWith(`${conformanceBundle}/`), key);
       }

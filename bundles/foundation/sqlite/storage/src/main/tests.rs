@@ -185,3 +185,109 @@ async fn a_cache_setting_of_0_activates_with_no_cache() {
     assert_eq!(engine.headers().bound(), 0);
     engine.stop().await;
 }
+
+// S78b: `Health` and the blob methods before activation, and `Health` after
+// it (R14).
+
+const UNKNOWN_HASH: &str =
+    "sha256:0000000000000000000000000000000000000000000000000000000000000000";
+
+/// The one chunk `[1, 2, 3]` of a `PutBlob` stream.
+fn blob_chunks() -> impl Stream<Item = Result<PutBlobRequest, ContractError>> + Unpin + Send {
+    tokio_stream::iter(vec![Ok(PutBlobRequest {
+        chunk: vec![1, 2, 3],
+    })])
+}
+
+/// The code of the one item of the `GetBlob` stream of `engine` for
+/// `UNKNOWN_HASH` from `bundle_id`.
+async fn get_blob_code(engine: &Engine, bundle_id: &str) -> String {
+    let items: Vec<_> = engine
+        .get_blob(
+            call_from(bundle_id),
+            GetBlobRequest {
+                hash: UNKNOWN_HASH.to_owned(),
+            },
+        )
+        .collect()
+        .await;
+    assert_eq!(items.len(), 1, "{bundle_id}");
+    code_of(items.into_iter().next().expect("one item"))
+}
+
+#[tokio::test]
+async fn health_and_the_blob_methods_before_activation_are_unavailable() {
+    let engine = Engine::default();
+
+    assert_eq!(
+        code_of(engine.health(call_from("a"), HealthRequest {}).await),
+        "unavailable"
+    );
+    assert_eq!(
+        code_of(engine.put_blob(call_from("a"), blob_chunks()).await),
+        "unavailable"
+    );
+    assert_eq!(get_blob_code(&engine, "a").await, "unavailable");
+    assert_eq!(
+        code_of(
+            engine
+                .delete_blob(
+                    call_from("a"),
+                    DeleteBlobRequest {
+                        hash: UNKNOWN_HASH.to_owned(),
+                    },
+                )
+                .await
+        ),
+        "unavailable"
+    );
+}
+
+#[tokio::test]
+async fn the_platform_is_not_owner_of_health_and_the_blob_methods_before_the_store() {
+    let engine = Engine::default();
+
+    assert_eq!(
+        code_of(engine.health(call_from("doric"), HealthRequest {}).await),
+        "not_owner"
+    );
+    assert_eq!(
+        code_of(engine.put_blob(call_from("doric"), blob_chunks()).await),
+        "not_owner"
+    );
+    assert_eq!(get_blob_code(&engine, "doric").await, "not_owner");
+    assert_eq!(
+        code_of(
+            engine
+                .delete_blob(
+                    call_from("doric"),
+                    DeleteBlobRequest {
+                        hash: UNKNOWN_HASH.to_owned(),
+                    },
+                )
+                .await
+        ),
+        "not_owner"
+    );
+}
+
+#[tokio::test]
+async fn health_after_activation_measures_the_storage_path() {
+    let dir = TempDir::new();
+    let engine = Engine::default();
+    engine
+        .activate_from(Some(dir.path().into()), None)
+        .await
+        .expect("the activation succeeds");
+
+    let response = engine
+        .health(call_from("a"), HealthRequest {})
+        .await
+        .expect("health answers");
+
+    let health = response.storage_health.expect("a storage health");
+    assert_eq!(health.status, "ok");
+    assert!(health.writable);
+    assert!(health.disk.is_some(), "a measured disk");
+    engine.stop().await;
+}

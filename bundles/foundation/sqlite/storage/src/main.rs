@@ -2,8 +2,9 @@
 //! The engine bundle `sqlite` (spec `docs/designs/grpc-processes.md`, section
 //! 17, "The engine"): it provides `storage.kv/v1` over the one SQLite file
 //! `$DORIC_STORAGE_PATH/doric.sqlite3`, and `storage/v2`'s `Register`, `Commit`,
-//! `Get`, `Query` and `Read`; it decodes the values of indexed types with each bundle's
-//! descriptors, while the engine library reads no value.
+//! `Get`, `Query`, `Read`, `PutBlob`, `GetBlob`, `DeleteBlob` and `Health`; it
+//! decodes the values of indexed types with each bundle's descriptors, while
+//! the engine library reads no value.
 //!
 //! Every `storage.kv/v1` handler ([`kv`]) first refuses any caller but `doric`
 //! (`not_owner`), then checks the counts, then each key's prefix and size
@@ -13,7 +14,6 @@
 
 use std::{
     ffi::OsString,
-    ops::ControlFlow,
     path::PathBuf,
     process::ExitCode,
     sync::{Arc, OnceLock},
@@ -22,18 +22,21 @@ use std::{
 use doric_bundle::{Bundle, Call, ContractError, Level, Requests, Services};
 use doric_sqlite::SqliteEngine;
 use doric_storage::{
+    blobs::{self, Upload},
     cache::{CACHE_VARIABLE, Headers},
     commit::{self, Batch},
-    documents, query,
+    documents, health, query,
     register::{self, Registrations},
     schema::Pools,
     streams,
     v2::{
-        CommitRequest, CommitResponse, GetRequest, GetResponse, QueryRequest, QueryResponse,
-        ReadRequest, ReadResponse, RegisterRequest, RegisterResponse,
+        CommitRequest, CommitResponse, DeleteBlobRequest, DeleteBlobResponse, GetBlobRequest,
+        GetBlobResponse, GetRequest, GetResponse, HealthRequest, HealthResponse, PutBlobRequest,
+        PutBlobResponse, QueryRequest, QueryResponse, ReadRequest, ReadResponse, RegisterRequest,
+        RegisterResponse,
     },
 };
-use tokio_stream::{StreamExt, wrappers::ReceiverStream};
+use tokio_stream::{Stream, StreamExt, wrappers::ReceiverStream};
 
 mod kv;
 
@@ -60,21 +63,24 @@ struct Engine {
     /// `Commit` writes through; set once, by the activation that sets the
     /// store ([`Engine::headers`]).
     headers: Arc<OnceLock<Headers>>,
+    /// The storage directory, `DORIC_STORAGE_PATH`; set once, by the
+    /// activation that sets the store.
+    dir: Arc<OnceLock<PathBuf>>,
 }
-
-/// The most items a `storage/v2` `Get` or `Query` holds before its reader
-/// waits for the caller.
-const ANSWERS: usize = 16;
 
 impl Bundle for Engine {
     /// Registers the three methods of `doric.storage.kv.v1.KvService`: `Get`
     /// and `Range`, server-streaming, and `Commit`, client-streaming; and
     /// `doric.storage.v2.StorageService`'s `Register`, unary, `Commit`,
-    /// client-streaming, and `Get`, `Query` and `Read`, server-streaming.
+    /// client-streaming, `Get`, `Query` and `Read`, server-streaming,
+    /// `PutBlob`, client-streaming, `GetBlob`, server-streaming, and
+    /// `DeleteBlob` and `Health`, unary.
     fn services(&self) -> Services {
         let (get, range, commit) = (self.clone(), self.clone(), self.clone());
         let (register, documents, read) = (self.clone(), self.clone(), self.clone());
         let (pages, entries) = (self.clone(), self.clone());
+        let (health, put_blob) = (self.clone(), self.clone());
+        let (get_blob, delete_blob) = (self.clone(), self.clone());
 
         Services::new()
             .server_stream(
@@ -117,6 +123,31 @@ impl Bundle for Engine {
             .server_stream(
                 "/doric.storage.v2.StorageService/Read",
                 move |call, request| entries.read_stream(call, request),
+            )
+            .client_stream(
+                "/doric.storage.v2.StorageService/PutBlob",
+                move |call, requests| {
+                    let put_blob = put_blob.clone();
+                    async move { put_blob.put_blob(call, requests).await }
+                },
+            )
+            .server_stream(
+                "/doric.storage.v2.StorageService/GetBlob",
+                move |call, request| get_blob.get_blob(call, request),
+            )
+            .unary(
+                "/doric.storage.v2.StorageService/DeleteBlob",
+                move |call, request| {
+                    let delete_blob = delete_blob.clone();
+                    async move { delete_blob.delete_blob(call, request).await }
+                },
+            )
+            .unary(
+                "/doric.storage.v2.StorageService/Health",
+                move |call, request| {
+                    let health = health.clone();
+                    async move { health.health(call, request).await }
+                },
             )
     }
 
@@ -169,7 +200,8 @@ impl Engine {
         let dir = storage_path
             .filter(|path| !path.is_empty())
             .map_or_else(|| PathBuf::from("."), PathBuf::from);
-        let store = tokio::task::spawn_blocking(move || doric_sqlite::open(&dir))
+        let opened = dir.clone();
+        let store = tokio::task::spawn_blocking(move || doric_sqlite::open(&opened))
             .await
             .map_err(|error| {
                 ContractError::new("internal", format!("The open failed: {error}."))
@@ -182,6 +214,7 @@ impl Engine {
         // A second activation keeps the first cache and store, so the store
         // it opened is closed.
         let _ = self.headers.set(headers);
+        let _ = self.dir.set(dir);
         if let Err(store) = self.store.set(store) {
             store.close().await;
         }
@@ -346,40 +379,111 @@ impl Engine {
         self.stream_read(move |txn, emit| streams::read(txn, &bundle, &read, emit))
     }
 
-    /// Runs `work` in one read transaction in a spawned task and streams the
-    /// items it emits; a gone caller breaks `work`, and the read's error, if
-    /// any, is the stream's last item.
-    fn stream_read<R: Send + 'static>(
+    /// Serves `storage/v2`'s `Health`: [`doric_storage::bundle`], then
+    /// [`Engine::store`], then [`health::measure`](doric_storage::health::measure)
+    /// of the activation's `DORIC_STORAGE_PATH`.
+    ///
+    /// # Errors
+    ///
+    /// The refusal of `bundle`, then `unavailable` before activation.
+    async fn health(
         &self,
-        work: impl FnOnce(
-            &mut dyn doric_sqlite::ReadTxn,
-            &mut dyn FnMut(R) -> ControlFlow<()>,
-        ) -> Result<(), ContractError>
-        + Send
-        + 'static,
-    ) -> ReceiverStream<Result<R, ContractError>> {
-        let (answers, stream) = tokio::sync::mpsc::channel(ANSWERS);
-        let store = Arc::clone(&self.store);
-        tokio::spawn(async move {
-            let Some(store) = store.get() else { return };
-            let emitter = answers.clone();
-            let read = doric_sqlite::KvEngine::read(store, move |txn| {
-                work(
-                    txn,
-                    &mut |response| match emitter.blocking_send(Ok(response)) {
-                        Ok(()) => ControlFlow::Continue(()),
-                        Err(_) => ControlFlow::Break(()),
-                    },
-                )
-            });
-            if let Err(error) = read.await {
-                // A caller that is gone takes no error.
-                let _ = answers.send(Err(error)).await;
-            }
+        call: Call,
+        request: HealthRequest,
+    ) -> Result<HealthResponse, ContractError> {
+        let _ = request;
+        doric_storage::bundle(&call.caller)?;
+        self.store()?;
+        let dir = self
+            .dir
+            .get()
+            .cloned()
+            .unwrap_or_else(|| PathBuf::from("."));
+        let storage_health = tokio::task::spawn_blocking(move || health::measure(&dir))
+            .await
+            .map_err(|error| {
+                ContractError::new("internal", format!("The measure failed: {error}."))
+            })?;
+        Ok(HealthResponse {
+            storage_health: Some(storage_health),
+        })
+    }
+
+    /// Serves `storage/v2`'s `PutBlob`: [`doric_storage::bundle`], then each
+    /// chunk into an [`Upload`](doric_storage::blobs::Upload) as it arrives,
+    /// then, once the stream ends, [`Engine::store`] and
+    /// [`blobs::put`](doric_storage::blobs::put); answers the blob's hash.
+    ///
+    /// # Errors
+    ///
+    /// The refusal of `bundle` before any chunk is read; the first refusal
+    /// of the upload, or an `Err` item, at once, and nothing is written; then
+    /// `unavailable` before activation, and the errors of `put`.
+    async fn put_blob(
+        &self,
+        call: Call,
+        mut requests: impl Stream<Item = Result<PutBlobRequest, ContractError>> + Unpin + Send,
+    ) -> Result<PutBlobResponse, ContractError> {
+        let bundle = doric_storage::bundle(&call.caller)?;
+        let mut upload = Upload::new();
+        while let Some(request) = requests.next().await {
+            upload.push(request?.chunk)?;
+        }
+        // A cancelled call ends its stream early: what arrived is not the
+        // whole blob.
+        if call.cancelled.is_cancelled() {
+            return Err(kv::cancelled());
+        }
+        let hash = blobs::put(self.store()?, self.headers(), bundle, upload).await?;
+        Ok(PutBlobResponse { hash })
+    }
+
+    /// Serves `storage/v2`'s `GetBlob`: [`doric_storage::bundle`] and
+    /// [`Engine::store`], then, in a spawned task,
+    /// [`blobs::get`](doric_storage::blobs::get) in one read transaction,
+    /// whose items it streams.
+    ///
+    /// # Errors
+    ///
+    /// The stream's one item is the first refusal of the two, and no
+    /// connection is touched; otherwise its last item is the error of the
+    /// read, after the items already emitted.
+    fn get_blob(
+        &self,
+        call: Call,
+        request: GetBlobRequest,
+    ) -> ReceiverStream<Result<GetBlobResponse, ContractError>> {
+        let checked = doric_storage::bundle(&call.caller).and_then(|bundle| {
+            self.store()?;
+            Ok(bundle.to_owned())
         });
-        ReceiverStream::new(stream)
+        let bundle = match checked {
+            Ok(bundle) => bundle,
+            Err(error) => return kv::refused(error),
+        };
+        self.stream_read(move |txn, emit| blobs::get(txn, &bundle, &request.hash, emit))
+    }
+
+    /// Serves `storage/v2`'s `DeleteBlob`: [`doric_storage::bundle`], then
+    /// [`Engine::store`], then [`blobs::delete`](doric_storage::blobs::delete).
+    ///
+    /// # Errors
+    ///
+    /// The refusal of `bundle`, then `unavailable` before activation, then
+    /// the errors of `delete`.
+    async fn delete_blob(
+        &self,
+        call: Call,
+        request: DeleteBlobRequest,
+    ) -> Result<DeleteBlobResponse, ContractError> {
+        let bundle = doric_storage::bundle(&call.caller)?;
+        blobs::delete(self.store()?, self.headers(), bundle, &request.hash).await?;
+        Ok(DeleteBlobResponse {})
     }
 }
+
+#[path = "main/reads.rs"]
+mod reads;
 
 #[cfg(test)]
 #[path = "testing.rs"]
@@ -387,7 +491,8 @@ impl Engine {
 mod testing;
 
 /// S77a2: the `Register` handler's order of checks (T4.24); S77a4b: the
-/// activation's cache setting.
+/// activation's cache setting; S78b: `Health` and the blob methods before
+/// activation.
 #[cfg(test)]
 #[path = "main/tests.rs"]
 mod tests;

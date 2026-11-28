@@ -6,8 +6,8 @@
 // for is `invalid_input` before any call"; `storage.proto`'s `CommitRequest`:
 // an append is followed by its events, each an `event` item with the first
 // chunk of the event's binary, at most 1 MiB and at least 1 byte, and `chunk`
-// items with the rest). The engine refuses stream items until S78, so these
-// cases read the items at the client's boundary, on a recording router.
+// items with the rest). These cases read the items at the client's
+// boundary, on a recording router.
 
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';

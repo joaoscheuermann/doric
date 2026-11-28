@@ -2,7 +2,7 @@
 
 - Status: `accepted` (phases 0–3 built; phase 3 closed by the owner's decision
   A75 with T8, AC3.6 and the host and desktop end-to-end tests on `postgres`
-  not run, see "Phase 3: what was not run"; phase 4 in progress, S72–S77c2 built, see
+  not run, see "Phase 3: what was not run"; phase 4 in progress, S72–S78b built, see
   "Phase 4"; phases 5–8 to come)
 
 ## Problem
@@ -1754,8 +1754,8 @@ Slice S77b2 (spec version 6.63) completes S77b with the `storage/v2`
 conformance kit in `packages/storage/src/conformance/v2/`, not exported; the
 v1 kit in `src/conformance/` is unchanged.
 
-- `harness.ts`: `conformanceBundle` (`'conformance'`), `conformanceFiles`,
-  `untilS78 = 'S78: streams'`; `V2Engine`, a `TestEngine` plus
+- `harness.ts`: `conformanceBundle` (`'conformance'`), `conformanceFiles`;
+  `V2Engine`, a `TestEngine` plus
   `raw(caller, generation)`; `V2Harness` with
   `open(bundleId?, files?, generation?)`, `raw`, `reset` and `fresh()`, a new
   engine for the generation cases, since `reset()` keeps the remembered highest
@@ -1845,8 +1845,7 @@ bin tests; `cargo test`, clippy `-D warnings` and `cargo fmt --check` pass;
 `storage` 347 tests, 325 pass, 22 skipped; `storage:bench-rk27` exits 0 with
 the confirming run under "Phase 4: write stalls".
 
-Slice S78a (spec version 6.65; S72–S77c2 committed in `8c1dcd15`, S78a not yet
-committed) builds streams in `doric-storage`; S78 is split into S78a (streams),
+Slice S78a (spec version 6.65; S72–S78a committed in `3dddad79`) builds streams in `doric-storage`; S78 is split into S78a (streams),
 S78b (blobs and health) and S78c (`Watch`). `Commit` applies `drop_stream`,
 `truncate`, `append` and `event` after the puts, in the same transaction, all
 or none; the refusal "Stream items are not supported." (Q-B) is gone. `Read`
@@ -1866,6 +1865,29 @@ S78a's verification: `doric-sqlite` 63 tests, `doric-storage` 210 lib and 14
 bin tests; clippy `-D warnings` and `cargo fmt --check` clean, in the `rust`
 1.100.0 image; `storage` 347 tests, 341 pass, 0 fail, 6 skipped; `biome` clean
 on the changed files (15 errors predate it, in untouched files).
+
+Slice S78b (spec version 6.66; S72–S78a committed in `3dddad79`, S78b not yet
+committed) builds blobs and health in `doric-storage`. `PutBlob` is a client
+stream of at most 33,554,432 bytes; one byte more is `limit_exceeded` with
+`details.limit` `"blob"` (S78a's Q1). It is idempotent, keyed
+`sha256:<64 lowercase hex>` under the bundle's prefix, and writes a
+`BlobHeader {size, chunk_count, chunk}` and then `blob.chunk` records of
+`CHUNK_BYTES`. `GetBlob` answers `head {found}` and then the chunks, from one
+read transaction; a malformed or unknown hash is `found: false`. `DeleteBlob`
+clears the blob; a malformed or unknown hash is a no-op. Every blob write calls
+`Headers::begin` first (RK38). `Health` comes from `statvfs` (`nix` 0.32.0) on
+`DORIC_STORAGE_PATH`: `ok`, writable, with the disk's `blocks` and
+`availableBlocks`; when `statvfs` fails, `unavailable`, not writable, with the
+reason `storage_unmeasurable`. Before activation every method answers
+`unavailable`. `stream_read` and `ANSWERS` move to the new
+`storage/src/main/reads.rs`, which keeps `main.rs` under 500 lines; `Cargo.lock`
+gains `nix` and `cfg_aliases`. In the kit, `untilS78` is deleted, B1–B5 and
+`T4.3-health` run, and `T4.3-prefix-records` also puts a blob; CL13, the last
+boundary test, is deleted.
+
+S78b's verification: `doric-sqlite` 63 tests, `doric-storage` 231 lib and 17
+bin tests; clippy `-D warnings` and `cargo fmt --check` clean, in the `rust`
+1.100.0 image; `storage` 346 tests, 346 pass, none skipped.
 
 ## Evolution
 
@@ -3173,3 +3195,8 @@ sandbox pool` then `Sandbox pool configured` with the `logSandboxPool`
   streams in `doric-storage` (`Commit`'s stream items, `Read`, the stream heads
   in the cache); Q-B removed; Q1 (`"append"` limit) and Q2 (the item count)
   decided; 16 stream cases unskipped and `T4.3-prefix-records` added.
+- 2026-11-28: phase 4, slice S78b, of
+  [the spec](../designs/grpc-processes.md) (version 6.66), not yet committed;
+  S72–S78a committed in `3dddad79`: blobs (`PutBlob`, `GetBlob`, `DeleteBlob`)
+  and `Health` in `doric-storage`; every method `unavailable` before
+  activation; `untilS78` and CL13 deleted; no case of the kit is skipped.
