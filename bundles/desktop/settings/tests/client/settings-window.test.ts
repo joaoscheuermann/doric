@@ -951,6 +951,100 @@ test('while a save is pending the tiles are disabled and the selection moves onl
   assert.ok(tiles(window).every((entry) => !entry.disabled));
 });
 
+// Platform 1.12.0: `doric.appearance/v1` also answers and saves `glass`, the
+// frosted-glass window frame, which the section shows as a switch.
+
+/** The Frosted glass switch, or undefined when the section draws none. */
+const glassSwitch = (window: SettingsWindow) => {
+  // The section's only switch; Base UI puts the id on its hidden input.
+  const element = window.document.querySelector<HTMLElement>('[role="switch"]');
+  if (element === null) return undefined;
+  return {
+    element,
+    checked: element.getAttribute('aria-checked') === 'true',
+    disabled:
+      element.hasAttribute('disabled') ||
+      element.getAttribute('aria-disabled') === 'true' ||
+      element.hasAttribute('data-disabled'),
+  };
+};
+
+test('an app that answers no glass shows no Frosted glass switch', async () => {
+  const window = await openAppearance({ get: () => ({ theme: 'dark' }) });
+
+  assert.equal(glassSwitch(window), undefined);
+  assert.doesNotMatch(text(window), /Frosted glass/);
+});
+
+test('the Frosted glass switch shows the saved choice and saves a toggle only through glass', async () => {
+  const saved: unknown[] = [];
+  const window = await openAppearance({
+    get: () => ({ theme: 'dark', glass: { enabled: true, supported: true } }),
+    set: (input) => {
+      saved.push(input);
+      return undefined;
+    },
+  });
+
+  assert.match(text(window), /Frosted glass/);
+  assert.deepEqual(
+    {
+      checked: glassSwitch(window)?.checked,
+      disabled: glassSwitch(window)?.disabled,
+    },
+    { checked: true, disabled: false },
+  );
+
+  glassSwitch(window)?.element.click();
+  await settle(20);
+
+  assert.deepEqual(saved, [{ glass: false }]);
+  assert.equal(glassSwitch(window)?.checked, false);
+  assert.deepEqual(checkedTile(window), ['Dark (default)']);
+});
+
+test('a failed glass save says so and keeps the switch where it was', async () => {
+  const window = await openAppearance({
+    get: () => ({ theme: 'dark', glass: { enabled: false, supported: true } }),
+    set: refused('Could not save the appearance.'),
+  });
+
+  glassSwitch(window)?.element.click();
+  await settle(20);
+
+  assert.match(text(window), /Could not save the appearance\. Try again\./);
+  assert.equal(glassSwitch(window)?.checked, false);
+  assert.equal(glassSwitch(window)?.disabled, false);
+});
+
+test('on a system that cannot draw glass the switch is off, disabled and says why', async () => {
+  const saved: unknown[] = [];
+  const window = await openAppearance({
+    get: () => ({ theme: 'dark', glass: { enabled: true, supported: false } }),
+    set: (input) => {
+      saved.push(input);
+      return undefined;
+    },
+  });
+
+  assert.deepEqual(
+    {
+      checked: glassSwitch(window)?.checked,
+      disabled: glassSwitch(window)?.disabled,
+    },
+    { checked: false, disabled: true },
+  );
+  assert.match(
+    text(window),
+    /Needs macOS or Windows 11 version 22H2 or later\./,
+  );
+
+  glassSwitch(window)?.element.click();
+  await settle(20);
+
+  assert.deepEqual(saved, []);
+});
+
 // error-messages.md §5.2: the settings window's failure surfaces.
 //
 // - T-24: a failed tool catalog read is a block notice whose Retry reads the

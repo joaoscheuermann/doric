@@ -2137,7 +2137,7 @@ release, as npm does ([`semver.ts`](src/runtime/semver.ts)).
 ### Platform version
 
 ```ts
-const PLATFORM_VERSION = '1.11.0'; // what engines.doric ranges are checked against; every doric.* provider's version
+const PLATFORM_VERSION = '1.12.0'; // what engines.doric ranges are checked against; every doric.* provider's version
 const PLATFORM_ASSETS_VERSION = '1.0.0'; // the version segment of the platform folders and URLs
 ```
 

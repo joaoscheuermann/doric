@@ -1,11 +1,12 @@
-// `doric.appearance/v1`: the window asks main for the theme preference and
-// saves a new one through `doric.shell/v1` (`appearanceGet`, `appearanceSet`).
-// Main checks the theme again, writes `appearance.json` and repaints every
-// window; the window itself holds no preference.
+// `doric.appearance/v1`: the window asks main for the appearance preference
+// (the theme and the frosted glass) and saves a new one through
+// `doric.shell/v1` (`appearanceGet`, `appearanceSet`). Main checks the input
+// again, writes `appearance.json` and shows it in every window; the window
+// itself holds no preference.
 
 import {
+  type DoricAppearance,
   DoricAppearanceV1,
-  type DoricTheme,
   defineMethod,
 } from 'bundle/contracts';
 import {
@@ -30,15 +31,15 @@ export const provideAppearance = (
         input: get.input,
         output: get.output,
         execute: async () =>
-          (await shellCall(desktop, 'appearanceGet', {})) as {
-            readonly theme: DoricTheme;
-          },
+          (await shellCall(desktop, 'appearanceGet', {})) as Awaited<
+            ReturnType<DoricAppearance['get']>
+          >,
       }),
       set: defineMethod({
         input: set.input,
         output: set.output,
-        execute: async ({ theme }: { readonly theme: DoricTheme }) => {
-          await shellCall(desktop, 'appearanceSet', { theme });
+        execute: async (input: Parameters<DoricAppearance['set']>[0]) => {
+          await shellCall(desktop, 'appearanceSet', input);
         },
       }),
     }),

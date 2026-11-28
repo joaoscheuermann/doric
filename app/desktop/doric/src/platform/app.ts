@@ -106,7 +106,7 @@ import {
 } from './splash/window';
 import { DesktopState, WindowPaths } from './state';
 import { loadWindowTokens, type WindowTokens } from './tokens';
-import { chromeFor, materialFor } from './windows/appearance';
+import { chromeFor, glassSupported, materialFor } from './windows/appearance';
 import { CloseAnswers } from './windows/close';
 import { NativeWindows } from './windows/native-windows';
 import { type WindowEntry, WindowRegistry } from './windows/registry';
@@ -296,6 +296,8 @@ export class DesktopPlatform {
         ? {}
         : { flushDeadlineMs: options.flushDeadlineMs }),
       ...(options.platform === undefined ? {} : { platform: options.platform }),
+      // The store opens in `prepare`; no window exists before it.
+      glass: () => this.#appearance?.glass() ?? true,
       events: {
         created: (entry) => this.#created?.(entry),
         closed: (entry) => {
@@ -396,6 +398,17 @@ export class DesktopPlatform {
                 nativeTheme.themeSource = source;
               },
             }),
+      appearanceGlass: () => ({
+        enabled: this.#appearance?.glass() ?? true,
+        supported: glassSupported(this.options.platform ?? process.platform),
+      }),
+      appearanceSetGlass: async (enabled) => {
+        if (this.#appearance === undefined) {
+          throw new Error('The appearance store is not open.');
+        }
+        await this.#appearance.setGlass(enabled);
+        this.windows.applyMaterial();
+      },
     });
     const host = this.host;
 
@@ -480,7 +493,12 @@ export class DesktopPlatform {
       entry?.appearance.titleBar ?? 'none',
       this.tokens,
       entry?.window.isFullScreen(),
-      materialFor(entry?.kind, this.options.platform ?? process.platform),
+      materialFor(
+        entry?.kind,
+        this.options.platform ?? process.platform,
+        undefined,
+        this.#appearance?.glass() ?? true,
+      ),
     );
   }
 

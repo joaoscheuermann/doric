@@ -839,15 +839,39 @@ export type DoricTheme = z.output<typeof doricThemeSchema>;
  * `services.whenAvailable` and omits what needs it.
  */
 export interface DoricAppearance {
-  /** The saved preference (`dark` when none is saved or it is unreadable). */
-  get(call?: CallArg): Promise<{ readonly theme: DoricTheme }>;
   /**
-   * Saves the preference and only then repaints every window in it. Rejects
-   * `invalid_input` for a value outside the three themes and `unavailable`
-   * when the file cannot be written; the saved preference is then unchanged.
+   * The saved preference (`dark` when none is saved or it is unreadable).
+   * From platform 1.12.0 it also answers `glass`: whether the frosted-glass
+   * window frame is on (`true` when none is saved), and whether this system
+   * can draw it at all (macOS, Windows 11 22H2 or later). An older app
+   * answers no `glass`.
    */
-  set(input: { readonly theme: DoricTheme }, call?: CallArg): Promise<void>;
+  get(call?: CallArg): Promise<{
+    readonly theme: DoricTheme;
+    readonly glass?: DoricGlass;
+  }>;
+  /**
+   * Saves the fields given, at least one, and only then shows them in every
+   * window: a theme repaints every window, `glass` turns the frosted frame
+   * on or off in every app window (platform 1.12.0). Rejects `invalid_input`
+   * for an empty input or a value outside the schema, and `unavailable` when
+   * the file cannot be written; the saved preference is then unchanged.
+   */
+  set(
+    input: { readonly theme?: DoricTheme; readonly glass?: boolean },
+    call?: CallArg,
+  ): Promise<void>;
 }
+
+/** The frosted-glass window frame: the saved choice, and whether it can be shown. */
+export interface DoricGlass {
+  readonly enabled: boolean;
+  readonly supported: boolean;
+}
+
+const doricGlassSchema = z
+  .object({ enabled: z.boolean(), supported: z.boolean() })
+  .strict();
 
 /**
  * A unit of work a generation keeps running until it is disposed. The owner
@@ -1198,10 +1222,24 @@ export const platformContracts = Object.freeze({
     methods: {
       get: {
         input: noInput,
-        output: z.object({ theme: doricThemeSchema }).strict(),
+        output: z
+          .object({
+            theme: doricThemeSchema,
+            glass: doricGlassSchema.optional(),
+          })
+          .strict(),
       },
       set: {
-        input: z.object({ theme: doricThemeSchema }).strict(),
+        input: z
+          .object({
+            theme: doricThemeSchema.optional(),
+            glass: z.boolean().optional(),
+          })
+          .strict()
+          .refine(
+            (input) => input.theme !== undefined || input.glass !== undefined,
+            { message: 'Give a theme, glass, or both.' },
+          ),
         output: z.void(),
       },
     },

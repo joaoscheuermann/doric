@@ -18,8 +18,8 @@ import {
   windowCatalog,
 } from './support/fixtures.js';
 
-void test('doric.appearance/v1 reaches main through doric.shell/v1 for a bundle that does not require it (T-4.1.7)', async () => {
-  let read: { readonly theme: string } | undefined;
+void test('doric.appearance/v1 reaches main through doric.shell/v1 for a bundle that does not require it, glass included (T-4.1.7)', async () => {
+  let read: unknown;
   const bundles: readonly ClientBundle[] = [
     {
       id: 'settings',
@@ -30,6 +30,7 @@ void test('doric.appearance/v1 reaches main through doric.shell/v1 for a bundle 
 
         read = await appearance.get();
         await appearance.set({ theme: 'light' });
+        await appearance.set({ glass: false });
       },
     },
   ];
@@ -50,7 +51,7 @@ void test('doric.appearance/v1 reaches main through doric.shell/v1 for a bundle 
           ok: true as const,
           output:
             envelope.method === 'appearanceGet'
-              ? { theme: 'system' }
+              ? { theme: 'system', glass: { enabled: true, supported: true } }
               : undefined,
         };
       }
@@ -68,9 +69,13 @@ void test('doric.appearance/v1 reaches main through doric.shell/v1 for a bundle 
   });
   await settle();
 
-  assert.deepEqual(read, { theme: 'system' });
+  assert.deepEqual(read, {
+    theme: 'system',
+    glass: { enabled: true, supported: true },
+  });
   assert.deepEqual(shell, [
     { method: 'appearanceGet', input: {} },
     { method: 'appearanceSet', input: { theme: 'light' } },
+    { method: 'appearanceSet', input: { glass: false } },
   ]);
 });

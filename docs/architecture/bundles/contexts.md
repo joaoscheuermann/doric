@@ -326,9 +326,17 @@ interface DoricBrowser {
 
 // doric.appearance/v1 (client)
 interface DoricAppearance {
-  get(call?: CallArg): Promise<{ readonly theme: 'dark' | 'light' | 'system' }>;
+  get(call?: CallArg): Promise<{
+    readonly theme: 'dark' | 'light' | 'system';
+    // From platform 1.12.0.
+    readonly glass?: { readonly enabled: boolean; readonly supported: boolean };
+  }>;
   set(
-    input: { readonly theme: 'dark' | 'light' | 'system' },
+    // At least one field; `glass` from platform 1.12.0.
+    input: {
+      readonly theme?: 'dark' | 'light' | 'system';
+      readonly glass?: boolean;
+    },
     call?: CallArg,
   ): Promise<void>;
 }
@@ -350,7 +358,7 @@ What each one does:
 - **`doric.elements/v1`** defines custom element tags with their owner and gives each element its `services` ([Lifetimes](#lifetimes)). Every method throws `not_owner` for a caller other than the active provider of `ui/v1`. `define` throws `registration_conflict` when the tag is already defined, through this contract or otherwise, and `unavailable` in a window without a custom element registry; disposing its `Disposable` cannot undefine the tag, which stays taken and has no owner from then on. `owner` answers `undefined` when the tag has no owner, or when its owning bundle is quarantined or no longer active. `attach` throws `unavailable` when the element's tag has no active owner. `attach` of an element already attached and `release` of an element not attached do nothing ([`elements.ts`](../../../packages/desktop/src/client/elements.ts)).
 - **`doric.connection/v1`** answers with the status of the host connection, `disconnected` until the desktop process reports the first one; a listener is called on every change and not with the current value ([`connection.ts`](../../../packages/desktop/src/client/connection.ts)).
 - **`doric.browser/v1`** opens an `https:` URL in the system browser, the one way out of a window. A value that is not an absolute `https:` URL of at most 8192 characters is refused with `invalid_input` in the window, and the desktop process checks the URL again before it opens it ([`platform.ts`](../../../packages/bundle/src/contracts/platform.ts), [`browser.ts`](../../../packages/desktop/src/client/browser.ts), [`dispatcher.ts`](../../../app/desktop/doric/src/platform/bridge/dispatcher.ts)).
-- **`doric.appearance/v1`** reads and saves the theme preference of every window, `dark` when none is saved or it is unreadable. The desktop process keeps it in `userData/doric/appearance.json` as `{ "theme": … }`, reads the file once when the app prepares, holds the value in memory, and writes the file atomically on each `set` ([`appearance-store.ts`](../../../app/desktop/doric/src/platform/appearance-store.ts), [`app.ts`](../../../app/desktop/doric/src/platform/app.ts), [desktop app README](../../../app/desktop/doric/README.md#theme)). `set` saves and then repaints every window; it rejects `invalid_input` for a value outside the three themes and `unavailable` when the preference cannot be written, and the saved preference is then unchanged ([`appearance.ts`](../../../app/desktop/doric/src/platform/appearance.ts), [`appearance-store.ts`](../../../app/desktop/doric/src/platform/appearance-store.ts), [`packages/desktop/src/client/appearance.ts`](../../../packages/desktop/src/client/appearance.ts)).
+- **`doric.appearance/v1`** reads and saves the appearance preference of every window: the theme, `dark` when none is saved or it is unreadable, and, from platform 1.12.0, `glass`, whether app windows have the frosted-glass frame (on when none is saved), answered with whether the system can draw it (macOS, Windows 11 22H2 or later; [Glass](window-appearance.md#glass)). The desktop process keeps it in `userData/doric/appearance.json` as `{ "theme": …, "glass": … }`, reads the file once when the app prepares, holds the value in memory, and writes the file atomically on each `set` ([`appearance-store.ts`](../../../app/desktop/doric/src/platform/appearance-store.ts), [`app.ts`](../../../app/desktop/doric/src/platform/app.ts), [desktop app README](../../../app/desktop/doric/README.md#theme)). `set` saves the fields it is given, at least one, and then shows them: a theme repaints every window, and `glass` puts or removes the backdrop behind every open app window; it rejects `invalid_input` for an empty input or a value outside its schema and `unavailable` when the preference cannot be written, and the saved preference is then unchanged ([`appearance.ts`](../../../app/desktop/doric/src/platform/appearance.ts), [`appearance-store.ts`](../../../app/desktop/doric/src/platform/appearance-store.ts), [`packages/desktop/src/client/appearance.ts`](../../../packages/desktop/src/client/appearance.ts)).
 
 ## The platform as a consumer
 

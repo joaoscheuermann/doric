@@ -29,7 +29,7 @@ Feature docs that describe this bundle's behavior across bundles:
 
 [`manifest.json`](manifest.json):
 
-- `id`: `settings`; `version`: `1.12.2`; `engines.doric`: `^1.9.0`;
+- `id`: `settings`; `version`: `1.13.0`; `engines.doric`: `^1.9.0`;
   `description`: "The settings window."
 - `provides`: `settings.config/v1@1.1.0`, `settings.models/v1@1.0.0`.
 - `requires`: `hooks/v1@^1.0.0`, `ui/v1@^1.0.0`, `navigation/v1@^1.0.0`,
@@ -326,8 +326,10 @@ Directly:
 - `hooks/v1` with `doric.window.hooks/v1`: `onFlushHook` settles a pending save
   as the window closes
   ([`src/client/hooks/use-config-autosave.ts`](src/client/hooks/use-config-autosave.ts)).
-- `doric.appearance/v1`, the app's theme preference: `get()` and
-  `set({ theme })`, `theme` one of `dark`, `light`, `system`
+- `doric.appearance/v1`, the app's appearance preference: `get()`, which
+  answers `{ theme, glass? }`, and `set({ theme?, glass? })`, `theme` one of
+  `dark`, `light`, `system`; an app before platform 1.12.0 answers no
+  `glass`
   ([`src/client/api/appearance.ts`](src/client/api/appearance.ts); the
   contract is described in
   [window appearance](../../../docs/architecture/bundles/window-appearance.md)).
@@ -410,7 +412,11 @@ Each section has a description the search matches, in
   read or a save runs, and the selection moves only once the app saved it.
   Arrow keys move along the group and choose. A failed read shows "Could not
   read the appearance."; a failed save shows "Could not save the appearance.
-  Try again." The theme is not part of the host configuration.
+  Try again." When the app answers `glass` (platform 1.12.0), a "Frosted
+  glass" switch follows the tiles: on and off it saves `set({ glass })`, and
+  it moves only once the app saved it; on a system that cannot draw glass it
+  is off and disabled and reads "Needs macOS or Windows 11 version 22H2 or
+  later." The theme and the glass are not part of the host configuration.
 - **Providers:** a table of the configured providers (id, kind, address, model
   count, actions Edit and Remove provider), with a name filter, paging and an
   Add provider control, disabled while the host declares no kind. The address

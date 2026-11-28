@@ -12,7 +12,7 @@ Which version a change takes follows the [rules by contract type](#rules-by-cont
 
 | What     | Where it is declared                                                                  | Example                 |
 | -------- | ------------------------------------------------------------------------------------- | ----------------------- |
-| Platform | `PLATFORM_VERSION` in [`version.ts`](../../../packages/bundle/src/runtime/version.ts) | `1.11.0`                |
+| Platform | `PLATFORM_VERSION` in [`version.ts`](../../../packages/bundle/src/runtime/version.ts) | `1.12.0`                |
 | Bundle   | `version` in the bundle's `manifest.json`                                             | `git` `1.3.0`           |
 | Contract | The entry under `provides` of the bundle that provides it, `<id>/v<major>@<version>`  | `git.commands/v1@1.1.0` |
 

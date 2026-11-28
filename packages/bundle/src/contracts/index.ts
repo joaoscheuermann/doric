@@ -131,6 +131,7 @@ export {
   DoricElementsV1,
   type DoricGeneration,
   DoricGenerationV1,
+  type DoricGlass,
   type DoricLog,
   DoricLogV1,
   type DoricMenus,
