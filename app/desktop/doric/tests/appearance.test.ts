@@ -9,8 +9,11 @@ import { splashWindowOptions } from '../src/platform/splash/window';
 import { loadWindowTokens } from '../src/platform/tokens';
 import {
   chromeFor,
+  glassSupported,
+  type MaterialTarget,
   materialFor,
   nativeOptions,
+  setWindowMaterial,
 } from '../src/platform/windows/appearance';
 
 const tokensPath = resolve('packages/desktop/dist/tokens.json');
@@ -36,7 +39,7 @@ const webPreferences = {
 };
 
 describe('native window options', () => {
-  test('the workspace window is transparent glass over the vibrancy on macOS', () => {
+  test('the workspace window is transparent glass over the sidebar vibrancy on macOS', () => {
     assert.deepEqual(
       nativeOptions(workspace, tokens, 'darwin', screen, preload),
       {
@@ -46,7 +49,7 @@ describe('native window options', () => {
         minHeight: 640,
         show: false,
         backgroundColor: '#00000000',
-        vibrancy: 'under-window',
+        vibrancy: 'sidebar',
         visualEffectState: 'followWindow',
         titleBarStyle: 'hidden',
         trafficLightPosition: { x: 14, y: 14 },
@@ -55,11 +58,33 @@ describe('native window options', () => {
     );
   });
 
-  test('the workspace window uses the system dark background on Linux and Windows', () => {
-    assert.equal(
-      nativeOptions(workspace, tokens, 'win32', screen, preload).vibrancy,
-      undefined,
+  test('the workspace window is transparent glass over acrylic on Windows 11 22H2 and later', () => {
+    const options = nativeOptions(
+      workspace,
+      tokens,
+      'win32',
+      screen,
+      preload,
+      true,
+      '10.0.26200',
     );
+    assert.equal(options.backgroundColor, '#00000000');
+    assert.equal(options.backgroundMaterial, 'acrylic');
+    assert.equal(options.vibrancy, undefined);
+  });
+
+  test('the workspace window uses the system dark background on Linux and older Windows', () => {
+    const older = nativeOptions(
+      workspace,
+      tokens,
+      'win32',
+      screen,
+      preload,
+      true,
+      '10.0.19045',
+    );
+    assert.equal(older.backgroundColor, '#1c1a17');
+    assert.equal(older.backgroundMaterial, undefined);
     assert.deepEqual(
       nativeOptions(workspace, tokens, 'linux', screen, preload),
       {
@@ -92,7 +117,7 @@ describe('native window options', () => {
         minHeight: 520,
         show: false,
         backgroundColor: '#00000000',
-        vibrancy: 'under-window',
+        vibrancy: 'sidebar',
         visualEffectState: 'followWindow',
         titleBarStyle: 'hidden',
         trafficLightPosition: { x: 14, y: 14 },
@@ -180,12 +205,20 @@ describe('native window options', () => {
 });
 
 describe('window chrome', () => {
-  test('tells an app window on macOS, and only it, that it is glass', () => {
-    assert.equal(materialFor('path', 'darwin'), 'glass');
-    assert.equal(materialFor('view', 'darwin'), 'none');
-    assert.equal(materialFor(undefined, 'darwin'), 'none');
-    assert.equal(materialFor('path', 'win32'), 'none');
-    assert.equal(materialFor('path', 'linux'), 'none');
+  test('tells an app window on macOS and Windows 11 22H2+, and only it, that it is glass', () => {
+    assert.equal(materialFor('path', 'darwin', '25.0.0'), 'glass');
+    assert.equal(materialFor('view', 'darwin', '25.0.0'), 'none');
+    assert.equal(materialFor(undefined, 'darwin', '25.0.0'), 'none');
+    assert.equal(materialFor('path', 'win32', '10.0.22621'), 'glass');
+    assert.equal(materialFor('path', 'win32', '10.0.26200'), 'glass');
+    assert.equal(materialFor('view', 'win32', '10.0.26200'), 'none');
+    assert.equal(materialFor('path', 'win32', '10.0.22000'), 'none');
+    assert.equal(materialFor('path', 'win32', '10.0.19045'), 'none');
+    assert.equal(materialFor('path', 'linux', '6.8.0'), 'none');
+    assert.equal(glassSupported('darwin', '25.0.0'), true);
+    assert.equal(glassSupported('win32', '10.0.22621'), true);
+    assert.equal(glassSupported('win32', '10.0.22000'), false);
+    assert.equal(glassSupported('linux', '6.8.0'), false);
     assert.equal(
       chromeFor('integrated', tokens, false, 'glass').material,
       'glass',
@@ -229,5 +262,79 @@ describe('window chrome', () => {
     const source = JSON.parse(readFileSync(tokensPath, 'utf8'));
 
     assert.deepEqual(tokens.variables(), resolvedVariables(source));
+  });
+});
+
+describe('the glass preference', () => {
+  test('a window the user turned glass off for is opaque, even where glass can be drawn', () => {
+    assert.equal(materialFor('path', 'darwin', '25.0.0', false), 'none');
+    assert.equal(materialFor('path', 'win32', '10.0.26200', false), 'none');
+
+    const off = nativeOptions(
+      workspace,
+      tokens,
+      'win32',
+      screen,
+      preload,
+      true,
+      '10.0.26200',
+      false,
+    );
+    assert.equal(off.backgroundColor, '#1c1a17');
+    assert.equal(off.backgroundMaterial, undefined);
+    assert.equal(
+      nativeOptions(
+        workspace,
+        tokens,
+        'darwin',
+        screen,
+        preload,
+        true,
+        '25.0.0',
+        false,
+      ).vibrancy,
+      undefined,
+    );
+  });
+
+  /** A window that records the material calls made on it, in order. */
+  const recorder = () => {
+    const calls: string[] = [];
+    const window: MaterialTarget = {
+      setBackgroundColor: (color) => {
+        calls.push(`color ${color}`);
+      },
+      setVibrancy: (type) => {
+        calls.push(`vibrancy ${type}`);
+      },
+      setBackgroundMaterial: (material) => {
+        calls.push(`material ${material}`);
+      },
+    };
+    return { calls, window };
+  };
+
+  test('turning glass on puts the backdrop in before the window turns clear', () => {
+    const mac = recorder();
+    setWindowMaterial(mac.window, 'glass', 'darwin', '#1c1a17');
+    assert.deepEqual(mac.calls, ['vibrancy sidebar', 'color #00000000']);
+
+    const windows = recorder();
+    setWindowMaterial(windows.window, 'glass', 'win32', '#1c1a17');
+    assert.deepEqual(windows.calls, ['material acrylic', 'color #00000000']);
+  });
+
+  test('turning glass off paints the window opaque before the backdrop goes', () => {
+    const mac = recorder();
+    setWindowMaterial(mac.window, 'none', 'darwin', '#fbf8f2');
+    assert.deepEqual(mac.calls, ['color #fbf8f2', 'vibrancy null']);
+
+    const windows = recorder();
+    setWindowMaterial(windows.window, 'none', 'win32', '#1c1a17');
+    assert.deepEqual(windows.calls, ['color #1c1a17', 'material none']);
+
+    const linux = recorder();
+    setWindowMaterial(linux.window, 'none', 'linux', '#1c1a17');
+    assert.deepEqual(linux.calls, ['color #1c1a17']);
   });
 });

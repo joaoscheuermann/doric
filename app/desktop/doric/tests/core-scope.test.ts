@@ -232,6 +232,8 @@ beforeEach(() => {
     openExternal: async () => undefined,
     appearanceGet: () => 'dark',
     appearanceSet: async () => undefined,
+    appearanceGlass: () => ({ enabled: true, supported: true }),
+    appearanceSetGlass: async () => undefined,
   });
 });
 

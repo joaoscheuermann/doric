@@ -51,25 +51,102 @@
 /*
  * The window's frame: the sidebar column, the bars and the gutters around the
  * inset cards, filled with `bg-window-frame`. In an opaque window it is the
- * sidebar color. When main puts macOS's vibrancy behind the window, the shell
- * marks the root `data-material="glass"` (chrome.ts): the frame layers turn
- * transparent, so they never stack, and the root alone lays one tint of the
- * sidebar color over the frosted desktop. The cards keep `--background`, and
- * the fills that hide what scrolls under them keep `--sidebar`.
+ * sidebar color.
  */
 @layer base {
   :root {
     --window-frame: var(--sidebar);
   }
+}
 
-  :root[data-material='glass'] {
-    --window-frame: transparent;
-    background-color: color-mix(in srgb, var(--sidebar) 60%, transparent);
-  }
+/*
+ * A glass window. When main puts the system's frosted backdrop behind the
+ * window (macOS's vibrancy, Windows' acrylic), the shell marks the root
+ * `data-material="glass"` (chrome.ts). The frame layers turn transparent, so
+ * they never stack, and the root alone lays one `--glass-tint` over the
+ * frosted desktop: the light sidebar color at 55 %, the dark background at
+ * 45 %. Both glass colors derive from the palette here, not in the tokens,
+ * which hold the Figma palette value for value.
+ *
+ * The solid fills of controls, selections and lines were picked for an opaque
+ * frame; over glass they read as flat slabs. Here each becomes the foreground
+ * at the alpha that gives the same contrast over `--background`, so it tints
+ * whatever lies under it: the glass in the frame, the card inside a card. A
+ * raised control (`--secondary`, `--paper-control`) takes `--glass-raised`:
+ * white at 65 % in light, the foreground at 12 % in dark.
+ * The cards keep `--background`, overlays keep `--popover`, and the fills
+ * that hide what scrolls under them keep `--sidebar`.
+ *
+ * Unlayered, like the generated `tokens.css`, so these beat its `.dark` and
+ * media-query values by specificity.
+ */
+:root[data-material='glass'] {
+  --glass-tint: color-mix(in srgb, var(--sidebar) 55%, transparent);
+  --glass-raised: color-mix(in srgb, white 65%, transparent);
+  --window-frame: transparent;
+  --secondary: var(--glass-raised);
+  --paper-control: var(--glass-raised);
+  --paper-control-pressed: color-mix(
+    in srgb,
+    var(--foreground) 12%,
+    transparent
+  );
+  --paper-control-border: color-mix(
+    in srgb,
+    var(--foreground) 10%,
+    transparent
+  );
+  --muted: color-mix(in srgb, var(--foreground) 7%, transparent);
+  --accent: color-mix(in srgb, var(--foreground) 11%, transparent);
+  --sidebar-accent: color-mix(in srgb, var(--foreground) 9%, transparent);
+  --paper-panel-highlight-1: color-mix(
+    in srgb,
+    var(--foreground) 7%,
+    transparent
+  );
+  --paper-panel-highlight-2: color-mix(
+    in srgb,
+    var(--foreground) 11%,
+    transparent
+  );
+  --paper-thumbnail-selected: color-mix(
+    in srgb,
+    var(--foreground) 10%,
+    transparent
+  );
+  --border: color-mix(in srgb, var(--foreground) 12%, transparent);
+  --sidebar-border: color-mix(in srgb, var(--foreground) 12%, transparent);
+  --paper-separator: color-mix(in srgb, var(--foreground) 12%, transparent);
+  --paper-separator-highlight: color-mix(
+    in srgb,
+    var(--foreground) 16%,
+    transparent
+  );
+  --input: color-mix(in srgb, var(--foreground) 18%, transparent);
+  background-color: var(--glass-tint);
+}
 
-  :root[data-material='glass'] body {
-    background-color: transparent;
-  }
+/* The renderer keeps `.dark` on the root equal to the color scheme (scheme.ts). */
+:root.dark[data-material='glass'] {
+  --glass-tint: color-mix(in srgb, var(--background) 45%, transparent);
+  --glass-raised: color-mix(in srgb, var(--foreground) 12%, transparent);
+}
+
+/*
+ * A tree row's pinned mark (file-tree.tsx, and the git bundle's changes tree)
+ * hides the name scrolled under it with an opaque `--sidebar` backing. Over
+ * glass that backing is a dark slab, so it turns clear: the row's own fill
+ * shows through it, and a blur of what lies under it (the page only, never
+ * the desktop) still hides a long name.
+ */
+:root[data-material='glass'] [data-slot='tree-row-mark'] > div {
+  background-color: transparent;
+  background-image: none;
+  backdrop-filter: blur(8px);
+}
+
+:root[data-material='glass'] body {
+  background-color: transparent;
 }
 
 /*

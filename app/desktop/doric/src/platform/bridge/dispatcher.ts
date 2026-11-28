@@ -7,6 +7,7 @@
 import {
   browserUrlSchema,
   ContractError,
+  type DoricGlass,
   type JsonObject,
   toContractError,
 } from 'bundle/contracts';
@@ -117,6 +118,17 @@ export interface DispatcherDeps {
    * window; rejects when it cannot be saved, which leaves both unchanged.
    */
   readonly appearanceSet: (theme: ThemeSource) => Promise<void>;
+  /**
+   * `doric.appearance/v1` get: the saved `glass` choice and whether this
+   * system can draw it.
+   */
+  readonly appearanceGlass: () => DoricGlass;
+  /**
+   * `doric.appearance/v1` set: saves the `glass` choice, then shows it in
+   * every app window; rejects when it cannot be saved, which leaves both
+   * unchanged.
+   */
+  readonly appearanceSetGlass: (enabled: boolean) => Promise<void>;
   readonly now?: () => number;
 }
 
@@ -879,15 +891,21 @@ export class Dispatcher {
           return ok(undefined);
         }
         case 'appearanceGet':
-          return ok({ theme: this.#deps.appearanceGet() });
+          return ok({
+            theme: this.#deps.appearanceGet(),
+            glass: this.#deps.appearanceGlass(),
+          });
         case 'appearanceSet': {
           // Checked here with the contract's strict schema: main decides.
-          const { theme } = platformContracts[
+          const { theme, glass } = platformContracts[
             'doric.appearance/v1'
           ].methods.set.input.parse(envelope.input);
 
           try {
-            await this.#deps.appearanceSet(theme);
+            if (theme !== undefined) await this.#deps.appearanceSet(theme);
+            if (glass !== undefined) {
+              await this.#deps.appearanceSetGlass(glass);
+            }
           } catch (error) {
             this.#deps.log.error({ error }, 'Saving the appearance failed');
             throw new ContractError(

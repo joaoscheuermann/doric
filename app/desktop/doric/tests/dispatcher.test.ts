@@ -226,6 +226,10 @@ let heldTheme: ThemeSource;
 let savedThemes: ThemeSource[];
 /** What the `appearanceSet` dependency does with a theme. */
 let saveTheme: (theme: ThemeSource) => Promise<void>;
+/** The glass the `appearanceGlass` dependency answers. */
+let heldGlass: { enabled: boolean; supported: boolean };
+/** Every glass choice the `appearanceSetGlass` dependency was called with. */
+let savedGlass: boolean[];
 
 /** The `/status` monitor's surface: a status and its change listeners. */
 const statusSource = (initial: 'connected' | 'disconnected') => {
@@ -272,6 +276,8 @@ beforeEach(() => {
   heldTheme = 'dark';
   savedThemes = [];
   saveTheme = async () => undefined;
+  heldGlass = { enabled: true, supported: true };
+  savedGlass = [];
 
   const resolution = resolveDistribution(catalog, 1);
 
@@ -388,6 +394,10 @@ beforeEach(() => {
       savedThemes.push(theme);
 
       return saveTheme(theme);
+    },
+    appearanceGlass: () => heldGlass,
+    appearanceSetGlass: async (enabled) => {
+      savedGlass.push(enabled);
     },
   });
 });
@@ -752,8 +762,36 @@ describe('desktop IPC dispatcher', () => {
 
     assert.deepEqual(await appearanceCall('w-get', 'appearanceGet', {}), {
       ok: true,
-      output: { theme: 'system' },
+      output: { theme: 'system', glass: { enabled: true, supported: true } },
     });
+  });
+
+  test('a window saves a glass choice alone or with a theme, and an empty change reaches nothing', async () => {
+    await describeWindow();
+
+    const alone = await appearanceCall('w-glass', 'appearanceSet', {
+      glass: false,
+    });
+    const both = await appearanceCall('w-both', 'appearanceSet', {
+      theme: 'light',
+      glass: true,
+    });
+    const refused = await Promise.all(
+      [{}, { glass: 'yes' }].map((input, index) =>
+        appearanceCall(`w-glass-refused-${index}`, 'appearanceSet', input),
+      ),
+    );
+
+    assert.deepEqual(alone, { ok: true, output: undefined });
+    assert.deepEqual(both, { ok: true, output: undefined });
+    for (const result of refused) {
+      assert.equal(
+        (result as { error?: { code: string } }).error?.code,
+        'invalid_input',
+      );
+    }
+    assert.deepEqual(savedGlass, [false, true]);
+    assert.deepEqual(savedThemes, ['light']);
   });
 
   test('a window saves a theme main checks first, and nothing else reaches the store (T-4.1.6)', async () => {
@@ -777,6 +815,7 @@ describe('desktop IPC dispatcher', () => {
       );
     }
     assert.deepEqual(savedThemes, ['light']);
+    assert.deepEqual(savedGlass, []);
   });
 
   test('a theme main cannot save fails unavailable (T-4.1.8)', async () => {

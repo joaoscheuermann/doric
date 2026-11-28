@@ -74,6 +74,7 @@ describe('the appearance store', () => {
     assert.equal((await AppearanceStore.open(paths.appearance)).get(), 'light');
     assert.deepEqual(JSON.parse(await readFile(paths.appearance, 'utf8')), {
       theme: 'light',
+      glass: true,
     });
     assert.equal(await readFile(paths.state, 'utf8'), state);
   });
@@ -90,5 +91,39 @@ describe('the appearance store', () => {
 
     await assert.rejects(store.set('system'));
     assert.equal(store.get(), 'light');
+    await assert.rejects(store.setGlass(false));
+    assert.equal(store.glass(), true);
+  });
+
+  test('glass reads as on when no file or a file from before glass holds it', async () => {
+    for (const content of [undefined, JSON.stringify({ theme: 'light' })]) {
+      const { paths } = await profile();
+
+      if (content !== undefined) {
+        await writeFile(paths.appearance, content);
+      }
+
+      assert.equal(
+        (await AppearanceStore.open(paths.appearance)).glass(),
+        true,
+        String(content),
+      );
+    }
+  });
+
+  test('a saved glass choice keeps the theme and is what a new open reads', async () => {
+    const { paths } = await profile();
+    const store = await AppearanceStore.open(paths.appearance);
+
+    await store.set('light');
+    await store.setGlass(false);
+
+    const reopened = await AppearanceStore.open(paths.appearance);
+    assert.equal(reopened.glass(), false);
+    assert.equal(reopened.get(), 'light');
+    assert.deepEqual(JSON.parse(await readFile(paths.appearance, 'utf8')), {
+      theme: 'light',
+      glass: false,
+    });
   });
 });

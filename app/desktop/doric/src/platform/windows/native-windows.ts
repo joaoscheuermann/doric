@@ -34,6 +34,8 @@ import {
   materialFor,
   nativeOptions,
   type ParsedAppearance,
+  setWindowMaterial,
+  type WindowMaterial,
   windowOptions,
 } from './appearance';
 import { type CloseAnswers, installCloseProtocol } from './close';
@@ -68,6 +70,11 @@ export interface NativeWindowsOptions {
   readonly log: PlatformLog;
   readonly events?: NativeWindowEvents;
   readonly platform?: NodeJS.Platform;
+  /**
+   * The saved `glass` preference (`doric.appearance/v1`), read each time an
+   * app window is created or its chrome is sent; absent means on.
+   */
+  readonly glass?: () => boolean;
   /** Test seam for the close protocol's flush deadline. */
   readonly flushDeadlineMs?: number;
 }
@@ -111,6 +118,48 @@ export class NativeWindows {
 
   get registry(): WindowRegistry {
     return this.#options.registry;
+  }
+
+  /** The material of an app window on `platform`, from the saved preference. */
+  #material(platform: NodeJS.Platform): WindowMaterial {
+    return materialFor(
+      'path',
+      platform,
+      undefined,
+      this.#options.glass?.() ?? true,
+    );
+  }
+
+  /**
+   * Shows the saved `glass` preference in every open app window: puts its
+   * material behind it ({@link setWindowMaterial}) and sends it a `chrome`
+   * event with that material, so its shell marks the root. A view window has
+   * no material and is left alone.
+   */
+  applyMaterial(): void {
+    const platform = this.#options.platform ?? process.platform;
+    const material = this.#material(platform);
+    const opaque = this.#options.tokens.color(
+      'window',
+      nativeTheme.shouldUseDarkColors,
+    );
+
+    for (const entry of this.#options.registry.all()) {
+      if (entry.kind !== 'path') continue;
+      const window = entry.window as BrowserWindow;
+
+      if (window.isDestroyed()) continue;
+      setWindowMaterial(window, material, platform, opaque);
+      push(entry.contents, {
+        type: 'chrome',
+        chrome: chromeFor(
+          entry.appearance.titleBar,
+          this.#options.tokens,
+          window.isFullScreen(),
+          material,
+        ),
+      });
+    }
   }
 
   /**
@@ -492,6 +541,8 @@ export class NativeWindows {
         screen.getPrimaryDisplay().workAreaSize,
         preload,
         nativeTheme.shouldUseDarkColors,
+        undefined,
+        this.#options.glass?.() ?? true,
       ),
     );
     const contents = window.webContents;
@@ -563,7 +614,7 @@ export class NativeWindows {
           appearance.titleBar,
           tokens,
           window.isFullScreen(),
-          materialFor('path', platform),
+          this.#material(platform),
         ),
       });
 

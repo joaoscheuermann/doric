@@ -1,3 +1,4 @@
+import type { DoricGlass } from 'bundle/contracts';
 import { useState } from 'react';
 
 import { SettingsAppearance } from '../../../src/client/components/organisms/settings-appearance.js';
@@ -8,6 +9,7 @@ import { sectionFrame } from '../../support/frames.js';
 function Section(
   answers: {
     readonly theme?: 'dark' | 'light' | 'system';
+    readonly glass?: DoricGlass;
     readonly get?: StoryAnswer;
     readonly set?: StoryAnswer;
   } = {},
@@ -27,6 +29,20 @@ export const DarkSelected = { render: () => <Section theme="dark" /> };
 export const LightSelected = { render: () => <Section theme="light" /> };
 
 export const SystemSelected = { render: () => <Section theme="system" /> };
+
+/** An app of platform 1.12.0 with glass on: the Frosted glass switch shows. */
+export const GlassOn = {
+  render: () => <Section glass={{ enabled: true, supported: true }} />,
+};
+
+export const GlassOff = {
+  render: () => <Section glass={{ enabled: false, supported: true }} />,
+};
+
+/** A system that cannot draw glass: the switch is off, disabled, and says why. */
+export const GlassUnsupported = {
+  render: () => <Section glass={{ enabled: true, supported: false }} />,
+};
 
 /** While `get()` is pending: every tile disabled, none selected. */
 export const Reading = { render: () => <Section get="pending" /> };

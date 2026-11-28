@@ -226,31 +226,90 @@ describe('window stylesheets', () => {
   });
 
   test('a glass window clears every frame layer and its body, and tints the root once', () => {
-    const declarations = (selector: string): Map<string, string> => {
+    const declarations = (rules: postcss.Rule[]): Map<string, string> => {
       const found = new Map<string, string>();
-      for (const rule of baseRules(theme)) {
-        if (!selectorList(rule).includes(selector)) continue;
+      for (const rule of rules) {
         rule.walkDecls((decl) => {
           found.set(decl.prop, decl.value);
         });
       }
       return found;
     };
+    const glassRule = (selector: string): postcss.Rule[] => {
+      const rule = unlayered(theme, selector);
+      return rule === undefined ? [] : [rule];
+    };
 
-    assert.equal(declarations(':root').get('--window-frame'), 'var(--sidebar)');
-
-    const glass = declarations(":root[data-material='glass']");
-    assert.equal(glass.get('--window-frame'), 'transparent');
-    assert.match(glass.get('background-color') ?? '', /var\(--sidebar\)/);
-
-    // More specific than the shell's `body` fill, so it wins in the same layer.
     assert.equal(
-      declarations(":root[data-material='glass'] body").get('background-color'),
+      declarations(
+        baseRules(theme).filter((rule) => selectorList(rule).includes(':root')),
+      ).get('--window-frame'),
+      'var(--sidebar)',
+    );
+
+    // Unlayered, like the generated tokens, so it beats their `.dark` values.
+    const glass = declarations(glassRule(":root[data-material='glass']"));
+    assert.equal(glass.get('--window-frame'), 'transparent');
+    assert.equal(glass.get('background-color'), 'var(--glass-tint)');
+
+    // Unlayered, it wins over the shell's `body` fill in the `base` layer.
+    assert.equal(
+      declarations(glassRule(":root[data-material='glass'] body")).get(
+        'background-color',
+      ),
       'transparent',
     );
     assert.ok(
       baseRules(shell).some((rule) => selectorList(rule).includes('body')),
     );
+  });
+
+  test('a glass window turns the solid fills and lines into foreground tints', () => {
+    const rule = unlayered(theme, ":root[data-material='glass']");
+    assert.ok(rule);
+    const value = (prop: string): string | undefined => {
+      let found: string | undefined;
+      rule.walkDecls(prop, (decl) => {
+        found = decl.value.replace(/\s+/g, ' ');
+      });
+      return found;
+    };
+
+    assert.equal(value('--secondary'), 'var(--glass-raised)');
+    assert.equal(value('--paper-control'), 'var(--glass-raised)');
+    for (const prop of [
+      '--muted',
+      '--accent',
+      '--sidebar-accent',
+      '--border',
+      '--sidebar-border',
+      '--input',
+    ]) {
+      assert.match(
+        value(prop) ?? '',
+        /^color-mix\(in srgb, var\(--foreground\) \d+%, transparent\)$/,
+        prop,
+      );
+    }
+    // The cards, the overlays and the occluding fills stay opaque.
+    for (const prop of ['--background', '--popover', '--sidebar']) {
+      assert.equal(value(prop), undefined, prop);
+    }
+  });
+
+  test("a glass window clears a tree row's pinned mark and blurs what lies under it", () => {
+    const mark = unlayered(
+      theme,
+      ":root[data-material='glass'] [data-slot='tree-row-mark'] > div",
+    );
+    assert.ok(mark);
+    const found = new Map<string, string>();
+    mark.walkDecls((decl) => {
+      found.set(decl.prop, decl.value);
+    });
+    assert.equal(found.get('background-color'), 'transparent');
+    assert.equal(found.get('background-image'), 'none');
+    assert.equal(found.get('backdrop-filter'), 'blur(8px)');
   });
 
   test('the shell sets no text or heading weight of its own', () => {

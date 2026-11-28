@@ -1,6 +1,8 @@
 // A window's visual intent (window-appearance.md) as Electron constructor
 // options, plus the chrome and safe area its shell applies.
 
+import { release as osRelease } from 'node:os';
+
 import type { windowAppearanceSchema } from 'bundle/contracts';
 import type { WindowChrome } from 'desktop/protocol';
 import type { z } from 'zod';
@@ -29,16 +31,87 @@ export type WindowMaterial = NonNullable<WindowChrome['material']>;
 export const GLASS_BACKGROUND = '#00000000';
 
 /**
- * An app window on macOS is glass: main puts the `under-window` vibrancy
- * behind its page, so the window's frame shows a frosted desktop. A view
- * window shows a page of the host that knows nothing of the material, and
- * the other platforms keep an opaque window.
+ * The first Windows build whose windows take a system-drawn backdrop
+ * (`backgroundMaterial`): Windows 11 22H2. An older Windows ignores the
+ * option, so a transparent window there would show no frosted desktop.
+ */
+export const WINDOWS_BACKDROP_BUILD = 22621;
+
+/**
+ * Whether the system can draw a frosted backdrop behind a window: macOS, and
+ * Windows 11 22H2 or later. `release` is `os.release()`, whose third part is
+ * the Windows build.
+ */
+export const glassSupported = (
+  platform: NodeJS.Platform,
+  release: string = osRelease(),
+): boolean => {
+  if (platform === 'darwin') return true;
+  if (platform !== 'win32') return false;
+  const build = Number(release.split('.')[2]);
+  return Number.isInteger(build) && build >= WINDOWS_BACKDROP_BUILD;
+};
+
+/**
+ * An app window is glass when the user keeps it on (`enabled`, the saved
+ * `glass` preference) and the system can draw it ({@link glassSupported}):
+ * main puts the system's frosted backdrop (macOS's `sidebar` vibrancy,
+ * Windows' acrylic) behind its page, so the window's frame shows a blurred
+ * desktop. A view window shows a page of the host that knows nothing of the
+ * material, and every other window stays opaque.
  */
 export const materialFor = (
   kind: 'path' | 'view' | undefined,
   platform: NodeJS.Platform,
+  release: string = osRelease(),
+  enabled = true,
 ): WindowMaterial =>
-  kind === 'path' && platform === 'darwin' ? 'glass' : 'none';
+  kind === 'path' && enabled && glassSupported(platform, release)
+    ? 'glass'
+    : 'none';
+
+/** The calls that change the material of a window already open. */
+export type MaterialTarget = Pick<
+  Electron.BrowserWindow,
+  'setBackgroundColor' | 'setVibrancy' | 'setBackgroundMaterial'
+>;
+
+/**
+ * Puts `material` behind an open window, as {@link nativeOptions} would have
+ * created it: glass makes it transparent over the system's backdrop; `none`
+ * removes the backdrop and paints it `opaque` (the `window` token's color in
+ * the current theme). The backdrop goes in before the color turns clear and
+ * out after it turns opaque, so the window never shows a bare transparent
+ * frame.
+ */
+export const setWindowMaterial = (
+  window: MaterialTarget,
+  material: WindowMaterial,
+  platform: NodeJS.Platform,
+  opaque: string,
+): void => {
+  if (material === 'glass') {
+    if (platform === 'darwin') window.setVibrancy('sidebar');
+    else if (platform === 'win32') window.setBackgroundMaterial('acrylic');
+    window.setBackgroundColor(GLASS_BACKGROUND);
+    return;
+  }
+  window.setBackgroundColor(opaque);
+  if (platform === 'darwin') window.setVibrancy(null);
+  else if (platform === 'win32') window.setBackgroundMaterial('none');
+};
+
+/** The native options that put the frosted backdrop behind a glass window. */
+const glassOptions = (
+  platform: NodeJS.Platform,
+): Electron.BrowserWindowConstructorOptions =>
+  platform === 'darwin'
+    ? {
+        backgroundColor: GLASS_BACKGROUND,
+        vibrancy: 'sidebar',
+        visualEffectState: 'followWindow',
+      }
+    : { backgroundColor: GLASS_BACKGROUND, backgroundMaterial: 'acrylic' };
 
 const clamp = (value: number, minimum: number, maximum: number): number =>
   Math.max(minimum, Math.min(value, maximum));
@@ -95,8 +168,9 @@ export const windowOptions = (
 
 /**
  * The constructor options of an app window with this appearance and its
- * preload. On macOS it is glass ({@link materialFor}): transparent, over the
- * `under-window` vibrancy, which follows the window's active state.
+ * preload. A glass window ({@link materialFor}) is transparent over the
+ * frosted backdrop: on macOS the `sidebar` vibrancy, which follows the
+ * window's active state; on Windows the acrylic backdrop.
  */
 export const nativeOptions = (
   appearance: ParsedAppearance,
@@ -105,14 +179,12 @@ export const nativeOptions = (
   workArea: WorkArea,
   preload: string,
   dark = true,
+  release: string = osRelease(),
+  glass = true,
 ): Electron.BrowserWindowConstructorOptions => ({
   ...windowOptions(appearance, tokens, platform, workArea, dark),
-  ...(materialFor('path', platform) === 'glass'
-    ? {
-        backgroundColor: GLASS_BACKGROUND,
-        vibrancy: 'under-window' as const,
-        visualEffectState: 'followWindow' as const,
-      }
+  ...(materialFor('path', platform, release, glass) === 'glass'
+    ? glassOptions(platform)
     : {}),
   webPreferences: {
     contextIsolation: true,

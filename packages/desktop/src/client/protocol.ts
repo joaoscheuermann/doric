@@ -38,8 +38,9 @@ export interface WindowChrome {
     readonly right: number;
   };
   /**
-   * The native material main put behind the window. `'glass'` is macOS's
-   * vibrancy under a transparent window: the page's frame lets it show
+   * The native material main put behind the window. `'glass'` is the system's
+   * frosted backdrop (macOS's vibrancy, Windows' acrylic) under a
+   * transparent window: the page's frame lets it show
    * through. Absent means `'none'`, an opaque window.
    */
   readonly material?: 'none' | 'glass';

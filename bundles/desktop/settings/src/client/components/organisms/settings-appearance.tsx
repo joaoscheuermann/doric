@@ -1,5 +1,14 @@
-import type { DoricAppearance } from 'bundle/contracts';
-import { Field, FieldError, FieldGroup, FieldLabel } from 'desktop/ui/field';
+import type { DoricAppearance, DoricGlass } from 'bundle/contracts';
+import {
+  Field,
+  FieldContent,
+  FieldDescription,
+  FieldError,
+  FieldGroup,
+  FieldLabel,
+  FieldSeparator,
+} from 'desktop/ui/field';
+import { Switch } from 'desktop/ui/switch';
 import { type KeyboardEvent, useEffect, useRef, useState } from 'react';
 
 import { type Theme, themes } from '../../api/appearance.js';
@@ -18,9 +27,12 @@ const steps: Readonly<Record<string, -1 | 1>> = {
 
 /**
  * The Appearance section (`65:13666`): the Theme field's three tiles in a
- * row. It reads the theme each time it mounts; while a read or a save is
- * pending the tiles are disabled, and the selected tile moves only once the
- * app saved the choice (§4.1). The app repaints every window itself.
+ * row, then, when the app answers `glass` (platform 1.12.0), a "Frosted glass"
+ * switch. It reads the preference each time it mounts; while a read or a save
+ * is pending the tiles and the switch are disabled, and each moves only once
+ * the app saved the choice (§4.1). The app repaints every window itself. On a
+ * system that cannot draw the glass the switch shows off and disabled, and
+ * says why.
  */
 export function SettingsAppearance({
   appearance,
@@ -28,6 +40,7 @@ export function SettingsAppearance({
   readonly appearance: DoricAppearance;
 }) {
   const [theme, setTheme] = useState<Theme>();
+  const [glass, setGlass] = useState<DoricGlass>();
   const [busy, setBusy] = useState(true);
   const [message, setMessage] = useState<string>();
   const mounted = useRef(true);
@@ -43,7 +56,9 @@ export function SettingsAppearance({
       .get()
       .then(
         (answer) => {
-          if (mounted.current) setTheme(answer.theme);
+          if (!mounted.current) return;
+          setTheme(answer.theme);
+          setGlass(answer.glass);
         },
         () => {
           if (mounted.current) setMessage(READ_FAILED);
@@ -66,6 +81,26 @@ export function SettingsAppearance({
         () => {
           if (!mounted.current) return;
           setTheme(next);
+          setMessage(undefined);
+        },
+        () => {
+          if (mounted.current) setMessage(SAVE_FAILED);
+        },
+      )
+      .finally(() => {
+        if (mounted.current) setBusy(false);
+      });
+  };
+
+  const toggleGlass = (enabled: boolean): void => {
+    if (busy || glass === undefined || !glass.supported) return;
+    setBusy(true);
+    contract.current
+      .set({ glass: enabled })
+      .then(
+        () => {
+          if (!mounted.current) return;
+          setGlass({ ...glass, enabled });
           setMessage(undefined);
         },
         () => {
@@ -115,8 +150,29 @@ export function SettingsAppearance({
             />
           ))}
         </div>
-        {message !== undefined && <FieldError>{message}</FieldError>}
       </Field>
+      {glass !== undefined && (
+        <>
+          <FieldSeparator />
+          <Field orientation="horizontal" data-disabled={!glass.supported}>
+            <FieldContent>
+              <FieldLabel htmlFor="appearance-glass">Frosted glass</FieldLabel>
+              <FieldDescription>
+                {glass.supported
+                  ? 'Shows the desktop behind the window, blurred, around the sidebar and the bars.'
+                  : 'Needs macOS or Windows 11 version 22H2 or later.'}
+              </FieldDescription>
+            </FieldContent>
+            <Switch
+              id="appearance-glass"
+              checked={glass.supported && glass.enabled}
+              disabled={busy || !glass.supported}
+              onCheckedChange={toggleGlass}
+            />
+          </Field>
+        </>
+      )}
+      {message !== undefined && <FieldError>{message}</FieldError>}
     </FieldGroup>
   );
 }

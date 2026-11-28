@@ -9,9 +9,10 @@
  * `desktop/ui/error-notice`; 1.8.0: `desktop/ui/element-host`; 1.9.0:
  * `desktop/ui/model-icon`, `desktop/ui/choice-list`; 1.10.0:
  * `desktop/ui/collapsible-block`; 1.11.0: `site` in the kind descriptor of
- * `models/v1` and `models.provider/v1`).
+ * `models/v1` and `models.provider/v1`; 1.12.0: `glass` in
+ * `doric.appearance/v1`).
  */
-export const PLATFORM_VERSION = '1.11.0';
+export const PLATFORM_VERSION = '1.12.0';
 
 /**
  * The version segment of the platform folders and URLs (`desktop@<v>`,
