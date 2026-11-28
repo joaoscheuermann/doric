@@ -23,6 +23,7 @@ pub mod schema;
 pub mod streams;
 #[cfg(test)]
 mod testing;
+pub mod watch;
 
 /// The generated messages of `doric.storage.v2`.
 #[allow(clippy::all)]

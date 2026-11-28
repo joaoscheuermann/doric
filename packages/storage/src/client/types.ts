@@ -186,6 +186,35 @@ export interface StorageHealth {
 }
 
 /**
+ * What `Storage.watch` follows, each by exact id: storage types and streams
+ * of the bundle's own namespace. Absent lists are empty; an empty request is
+ * valid and receives nothing.
+ */
+export interface StorageWatch {
+  readonly types?: readonly string[];
+  readonly streams?: readonly string[];
+}
+
+/**
+ * One commit of the bundle that touched a watched type or stream: its
+ * position, and, of what it touched, only the watched entries, each once in
+ * its last state. A put lists its document's new revision with `deleted`
+ * false, a delete revision 0 with `deleted` true; an append, a truncate or a
+ * drop lists its stream's `lastSequence` after the commit, 0 when dropped.
+ * An `expect` is not listed.
+ */
+export interface StorageChange {
+  readonly position: number;
+  readonly documents: readonly {
+    type: string;
+    id: string;
+    revision: number;
+    deleted: boolean;
+  }[];
+  readonly streams: readonly { stream: string; lastSequence: number }[];
+}
+
+/**
  * `storage/v2` as a bundle sees it, every call made as the bundle the
  * transport stamps (the router, or `storage/testing`'s test process), under
  * that bundle's prefix only. Opened by `openStorage`, which registered the
@@ -256,4 +285,16 @@ export interface Storage {
   ): Promise<AsyncIterable<Uint8Array> | undefined>;
   /** Removes the blob; an absent or malformed hash is a no-op. */
   deleteBlob(hash: string, call?: CallArg): Promise<void>;
+  /**
+   * The live changes of `request`'s types and streams: one `StorageChange`
+   * per later commit of the bundle that touches one of them, from the moment
+   * the engine takes the call; nothing is replayed. A type or stream the
+   * client's files declare no message for is `invalid_input` before any
+   * call. The engine refuses a type or stream of another namespace with
+   * `not_owner`, and ends a watcher that falls 1,024 changes behind with
+   * `unavailable`, message `Watch fell behind.`. A `ConnectError` while
+   * iterating rejects as its `ContractError` (`clientFailure`); ending the
+   * iteration ends the call.
+   */
+  watch(request: StorageWatch, call?: CallArg): AsyncIterable<StorageChange>;
 }

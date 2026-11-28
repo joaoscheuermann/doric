@@ -2,7 +2,7 @@
 
 - Status: `accepted` (phases 0–3 built; phase 3 closed by the owner's decision
   A75 with T8, AC3.6 and the host and desktop end-to-end tests on `postgres`
-  not run, see "Phase 3: what was not run"; phase 4 in progress, S72–S78b built, see
+  not run, see "Phase 3: what was not run"; phase 4 in progress, S72–S78c built, see
   "Phase 4"; phases 5–8 to come)
 
 ## Problem
@@ -1889,6 +1889,35 @@ S78b's verification: `doric-sqlite` 63 tests, `doric-storage` 231 lib and 17
 bin tests; clippy `-D warnings` and `cargo fmt --check` clean, in the `rust`
 1.100.0 image; `storage` 346 tests, 346 pass, none skipped.
 
+Slice S78c (spec version 6.67; S72–S78b committed in `bfd5d257`, S78c not yet
+committed) builds `Watch` (T4.26), which completes S78. The owner keeps `Watch` (A83, on Q37); S78c was built before that answer. `storage/v2` gains
+`rpc Watch` and `WatchRequest`, `WatchResponse`, `WatchDocument` and
+`WatchStream`, as additions only. In `storage/src/watch.rs` each subscriber has
+a bounded buffer of 1,024; when it is full the subscriber is dropped and its
+stream ends with `unavailable` `Watch fell behind.`. The checks refuse `doric`,
+then a type or stream of another namespace (`not_owner`), then a malformed
+stream (`invalid_stream`). The writer publishes through `txn.on_commit`, so
+only after `COMMIT`; a rollback publishes nothing. A response has one entry per
+key in its last state (Q3): a delete has revision 0 and `deleted` true, a drop
+has `lastSequence` 0, and `expect` is not listed. The coordinator decided that
+a response lists only the entries the watcher named, and that a commit touching
+none of them sends no response. The handler is in `storage/src/main/watch.rs`;
+`query_documents` moves to `main/reads.rs`. The client's
+`Storage.watch(request, call?)` gives an `AsyncIterable<StorageChange>` and the
+package exports `StorageWatch` and `StorageChange`; a type or stream with no
+message is `invalid_input` on the first step, before any call. The mapping is in
+`client/watch.ts`, where a `ConnectError` goes through `clientFailure`. The
+router's `initialCallCredit` is 16, so a client that does not read can see up
+to 1,024 + 16 responses before the end. Known gaps: a client cannot tell when
+its subscription is live, so the tests sync on a marker commit; what open
+watchers do at `Stop` is unverified.
+
+S78c's verification: `doric-sqlite` 63 tests, `doric-storage` 252 lib and 17
+bin tests; clippy `-D warnings` and `cargo fmt --check` clean, in the `rust`
+1.100.0 image; `storage` 351 pass, 0 fail, `watch.test.ts` 5 of 5;
+`basic-contracts` 6 of 6. `nx run bundle:test` was not run, since the sandbox
+has no host cargo.
+
 ## Evolution
 
 - 2026-11-22: phase 0 of
@@ -3200,3 +3229,13 @@ sandbox pool` then `Sandbox pool configured` with the `logSandboxPool`
   S72–S78a committed in `3dddad79`: blobs (`PutBlob`, `GetBlob`, `DeleteBlob`)
   and `Health` in `doric-storage`; every method `unavailable` before
   activation; `untilS78` and CL13 deleted; no case of the kit is skipped.
+- 2026-11-28: phase 4, slice S78c, of
+  [the spec](../designs/grpc-processes.md) (version 6.67), not yet committed;
+  S72–S78b committed in `bfd5d257`: `Watch` in `doric-storage` and
+  `Storage.watch` in the client; a response lists only the named entries; S78
+  complete.
+- 2026-11-28: owner answers A83–A85 in
+  [the spec](../designs/grpc-processes.md) (version 6.68): `Watch` is kept
+  (A83, Q37); the header and stream-head cache is removed now by the new slice
+  S78d, not yet built, which revokes A80 and leaves S90 measuring the uncached
+  path only (A84, Q38); A10 holds and S82 drops no variable (A85, Q39).

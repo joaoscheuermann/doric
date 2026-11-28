@@ -22,12 +22,17 @@ Since slice S77b1 the package root also exports the `storage/v2` client
 (`src/client/`): `openStorage(context, files)` registers the bundle's
 descriptor files once (a descriptor set of at most 2,097,152 bytes, checked
 before any call, else `limit_exceeded` with `details.limit` `"descriptorSet"`) and answers a `Storage` with `get`, `query`,
-`commit`, `read`, `health`, `putBlob`, `getBlob` and `deleteBlob`. Values are
+`commit`, `read`, `health`, `putBlob`, `getBlob`, `deleteBlob` and `watch`. Values are
 checked against their type and protovalidate before they are written
 (`invalid_input` with `{type, id}` and the first violation), stored in chunks
 of at most 1 MiB, and a value that does not decode is `invalid_output`. Since
 S78a the engine applies stream items and serves `read`, and since S78b
-`health` and the blob methods; before activation every method answers
+`health` and the blob methods, and since S78c `watch` (`src/client/watch.ts`):
+`watch(request, call?)` gives an `AsyncIterable<StorageChange>` (the types
+`StorageWatch` and `StorageChange` are exported), one change per commit that
+touches a named type or stream, listing only the named entries; a type or
+stream with no message is `invalid_input` on the first step, and a watcher
+that falls behind its buffer of 1,024 ends with `unavailable`; before activation every method answers
 `unavailable`. The client's own refusals, made before any call, are
 `invalid_input`, and a call's signal or deadline makes it `cancelled` or
 `deadline_exceeded`; `limit_exceeded` (`"descriptorSet"`) comes only from
@@ -1123,7 +1128,8 @@ path and file format; [`test-engine.test.ts`](tests/test-engine.test.ts),
 client through `openTestStorage`; and the v2 kit,
 [`storage.test.ts`](tests/storage.test.ts) (50 cases),
 [`storage-instances.test.ts`](tests/storage-instances.test.ts) (6)
-and [`registration.test.ts`](tests/registration.test.ts) (8).
+and [`registration.test.ts`](tests/registration.test.ts) (8); and
+[`watch.test.ts`](tests/watch.test.ts) (5), `watch`.
 
 The other tests do not spawn it:
 [`storage-client-items.test.ts`](tests/storage-client-items.test.ts), the

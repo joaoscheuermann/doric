@@ -71,6 +71,7 @@ async fn commit(engine: &SqliteEngine, puts: &[(String, Vec<u8>)], deletes: &[&s
         &Clock::default(),
         &Pools::default(),
         &crate::cache::Headers::default(),
+        &crate::watch::Watchers::default(),
         items,
     )
     .await

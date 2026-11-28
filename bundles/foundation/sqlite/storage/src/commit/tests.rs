@@ -93,6 +93,7 @@ async fn commit_with(
         clock,
         &Pools::default(),
         &crate::cache::Headers::default(),
+        &crate::watch::Watchers::default(),
         items,
     )
     .await
@@ -513,4 +514,275 @@ fn the_clock_never_goes_back() {
 fn iso_writes_as_javascript_does() {
     assert_eq!(iso(0), "1970-01-01T00:00:00.000Z");
     assert_eq!(iso(951_782_400_000), "2000-02-29T00:00:00.000Z");
+}
+
+// S78c: what a commit publishes to its bundle's watchers (R13, Q3).
+
+const WATCHED: &str = "a.s/k";
+
+/// A watcher of `a`'s [`PLAIN`] documents and the stream [`WATCHED`].
+fn watch_plain(
+    watchers: &crate::watch::Watchers,
+) -> impl tokio_stream::Stream<Item = Result<crate::v2::WatchResponse, ContractError>> + Unpin {
+    Box::pin(watchers.subscribe(
+        "a",
+        crate::v2::WatchRequest {
+            types: vec![PLAIN.to_owned()],
+            streams: vec![WATCHED.to_owned()],
+        },
+    ))
+}
+
+/// `requests` checked as one batch of `a`, then applied with `watchers`.
+async fn commit_watched(
+    engine: &SqliteEngine,
+    watchers: &crate::watch::Watchers,
+    requests: Vec<CommitRequest>,
+) -> Result<f64, ContractError> {
+    let items = batch(requests).expect("the batch is valid");
+    apply(
+        engine,
+        &Clock::default(),
+        &Pools::default(),
+        &crate::cache::Headers::default(),
+        watchers,
+        items,
+    )
+    .await
+}
+
+/// The next response of `watch`, its documents and streams sorted by key;
+/// it fails the test when none is ready within 5 s.
+async fn published<S>(watch: &mut S) -> crate::v2::WatchResponse
+where
+    S: tokio_stream::Stream<Item = Result<crate::v2::WatchResponse, ContractError>> + Unpin,
+{
+    let next = tokio_stream::StreamExt::next(watch);
+    let mut response = tokio::time::timeout(std::time::Duration::from_secs(5), next)
+        .await
+        .expect("a response within 5 s")
+        .expect("the watch has not ended")
+        .expect("the watch has not failed");
+    response
+        .documents
+        .sort_by(|a, b| (&a.r#type, &a.id).cmp(&(&b.r#type, &b.id)));
+    response.streams.sort_by(|a, b| a.stream.cmp(&b.stream));
+    response
+}
+
+fn watched_document(id: &str, revision: f64, deleted: bool) -> crate::v2::WatchDocument {
+    crate::v2::WatchDocument {
+        r#type: PLAIN.to_owned(),
+        id: id.to_owned(),
+        revision,
+        deleted,
+    }
+}
+
+fn watched_stream(last_sequence: f64) -> crate::v2::WatchStream {
+    crate::v2::WatchStream {
+        stream: WATCHED.to_owned(),
+        last_sequence,
+    }
+}
+
+#[tokio::test]
+async fn a_commit_publishes_its_position_puts_and_appends_once_it_has_committed() {
+    let (_dir, engine) = crate::testing::documents_store().await;
+    let watchers = crate::watch::Watchers::default();
+    let mut watch = watch_plain(&watchers);
+    let mut requests = vec![put(PLAIN, "p1"), chunk(b"v")];
+    requests.extend(put_value(NOTE, "n1", &crate::testing::note("T1", "x")));
+    requests.extend([append(WATCHED, None), event(b"e"), event(b"f")]);
+    requests.extend([append("a.s/other", None), event(b"g")]);
+
+    let position = commit_watched(&engine, &watchers, requests)
+        .await
+        .expect("the batch commits");
+
+    assert_eq!(
+        published(&mut watch).await,
+        crate::v2::WatchResponse {
+            position,
+            documents: vec![watched_document("p1", 1.0, false)],
+            streams: vec![watched_stream(2.0)],
+        }
+    );
+}
+
+#[tokio::test]
+async fn a_rolled_back_batch_publishes_nothing() {
+    let (_dir, engine) = crate::testing::documents_store().await;
+    let watchers = crate::watch::Watchers::default();
+    let mut watch = watch_plain(&watchers);
+    commit_watched(&engine, &watchers, vec![put(PLAIN, "p1"), chunk(b"v")])
+        .await
+        .expect("p1 at revision 1");
+    published(&mut watch).await;
+
+    let refused = commit_watched(
+        &engine,
+        &watchers,
+        vec![
+            expect(PLAIN, "p1", 2.0),
+            put(PLAIN, "p2"),
+            chunk(b"w"),
+            append(WATCHED, None),
+            event(b"e"),
+        ],
+    )
+    .await
+    .expect_err("p1 is at revision 1");
+    assert_eq!(refused.code, "revision_conflict");
+    let position = commit_watched(&engine, &watchers, vec![put(PLAIN, "p3"), chunk(b"x")])
+        .await
+        .expect("p3 commits");
+
+    let next = published(&mut watch).await;
+    assert_eq!(next.position, position);
+    assert_eq!(next.documents, vec![watched_document("p3", 1.0, false)]);
+    assert_eq!(next.streams, vec![]);
+}
+
+#[tokio::test]
+async fn a_delete_is_listed_with_revision_0_and_deleted_even_of_an_absent_document() {
+    let (_dir, engine) = crate::testing::documents_store().await;
+    let watchers = crate::watch::Watchers::default();
+    commit_watched(&engine, &watchers, vec![put(PLAIN, "p1"), chunk(b"v")])
+        .await
+        .expect("p1 commits");
+    let mut watch = watch_plain(&watchers);
+
+    let position = commit_watched(
+        &engine,
+        &watchers,
+        vec![delete(PLAIN, "p1"), delete(PLAIN, "p9")],
+    )
+    .await
+    .expect("the deletes commit");
+
+    assert_eq!(
+        published(&mut watch).await,
+        crate::v2::WatchResponse {
+            position,
+            documents: vec![
+                watched_document("p1", 0.0, true),
+                watched_document("p9", 0.0, true),
+            ],
+            streams: vec![],
+        }
+    );
+}
+
+#[tokio::test]
+async fn each_key_is_listed_once_in_its_last_state() {
+    let (_dir, engine) = crate::testing::documents_store().await;
+    let watchers = crate::watch::Watchers::default();
+    let mut watch = watch_plain(&watchers);
+
+    // Two puts of one id: the second takes the first's revision plus 1; two
+    // appends to one stream continue each other.
+    commit_watched(
+        &engine,
+        &watchers,
+        vec![
+            put(PLAIN, "p1"),
+            chunk(b"v"),
+            put(PLAIN, "p1"),
+            chunk(b"w"),
+            append(WATCHED, None),
+            event(b"e"),
+            append(WATCHED, None),
+            event(b"f"),
+            event(b"g"),
+        ],
+    )
+    .await
+    .expect("the batch commits");
+    let first = published(&mut watch).await;
+    assert_eq!(first.documents, vec![watched_document("p1", 2.0, false)]);
+    assert_eq!(first.streams, vec![watched_stream(3.0)]);
+
+    // A delete then a put of one id: the put applies last and restarts at 1.
+    commit_watched(
+        &engine,
+        &watchers,
+        vec![delete(PLAIN, "p1"), put(PLAIN, "p1"), chunk(b"x")],
+    )
+    .await
+    .expect("the batch commits");
+    let second = published(&mut watch).await;
+    assert_eq!(second.documents, vec![watched_document("p1", 1.0, false)]);
+}
+
+#[tokio::test]
+async fn a_truncate_lists_the_kept_last_sequence_and_a_drop_lists_0() {
+    let (_dir, engine) = crate::testing::documents_store().await;
+    let watchers = crate::watch::Watchers::default();
+    commit_watched(
+        &engine,
+        &watchers,
+        vec![append(WATCHED, None), event(b"e"), event(b"f"), event(b"g")],
+    )
+    .await
+    .expect("three entries");
+    let mut watch = watch_plain(&watchers);
+
+    let truncated = commit_watched(&engine, &watchers, vec![truncate(WATCHED, 1.0)])
+        .await
+        .expect("the truncate commits");
+    let dropped = commit_watched(&engine, &watchers, vec![drop_stream(WATCHED)])
+        .await
+        .expect("the drop commits");
+
+    assert_eq!(
+        published(&mut watch).await,
+        crate::v2::WatchResponse {
+            position: truncated,
+            documents: vec![],
+            streams: vec![watched_stream(3.0)],
+        }
+    );
+    assert_eq!(
+        published(&mut watch).await,
+        crate::v2::WatchResponse {
+            position: dropped,
+            documents: vec![],
+            streams: vec![watched_stream(0.0)],
+        }
+    );
+}
+
+#[tokio::test]
+async fn an_expect_is_not_listed_and_a_commit_of_other_types_publishes_nothing() {
+    let (_dir, engine) = crate::testing::documents_store().await;
+    let watchers = crate::watch::Watchers::default();
+    commit_watched(&engine, &watchers, vec![put(PLAIN, "p1"), chunk(b"v")])
+        .await
+        .expect("p1 commits");
+    let mut watch = watch_plain(&watchers);
+
+    commit_watched(
+        &engine,
+        &watchers,
+        vec![expect(PLAIN, "p1", 1.0), put(PLAIN, "p2"), chunk(b"w")],
+    )
+    .await
+    .expect("the expect holds");
+    assert_eq!(
+        published(&mut watch).await.documents,
+        vec![watched_document("p2", 1.0, false)]
+    );
+
+    let mut others = vec![expect(PLAIN, "p1", 1.0)];
+    others.extend(put_value(NOTE, "n1", &crate::testing::note("T1", "x")));
+    others.extend([append("a.s/other", None), event(b"e")]);
+    commit_watched(&engine, &watchers, others)
+        .await
+        .expect("the batch commits");
+    let marker = commit_watched(&engine, &watchers, vec![put(PLAIN, "p3"), chunk(b"x")])
+        .await
+        .expect("the marker commits");
+
+    assert_eq!(published(&mut watch).await.position, marker);
 }

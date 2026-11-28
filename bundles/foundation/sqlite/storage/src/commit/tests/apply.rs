@@ -307,6 +307,7 @@ async fn the_index_keys_follow_the_declaration_stored_when_the_batch_applies() {
         &Clock::default(),
         &Pools::default(),
         &crate::cache::Headers::default(),
+        &crate::watch::Watchers::default(),
         items,
     )
     .await

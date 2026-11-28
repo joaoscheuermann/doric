@@ -87,6 +87,7 @@ async fn commit(
         &Clock::default(),
         &Pools::default(),
         &Headers::default(),
+        &crate::watch::Watchers::default(),
         items,
     )
     .await

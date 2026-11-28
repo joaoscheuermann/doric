@@ -75,7 +75,15 @@ async fn commit(
         batch.push(request).expect("the item is valid");
     }
     let items = batch.finish().expect("the batch is valid");
-    commit::apply(engine, &Clock::default(), &Pools::default(), headers, items).await
+    commit::apply(
+        engine,
+        &Clock::default(),
+        &Pools::default(),
+        headers,
+        &crate::watch::Watchers::default(),
+        items,
+    )
+    .await
 }
 
 /// A `storage.kv/v1` commit of a `doric/` key on `engine`'s writer.

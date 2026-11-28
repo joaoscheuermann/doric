@@ -35,7 +35,7 @@ the engine, `test-engine.test.ts` (T4.20) `openTestEngine` and
 `kv-client.test.ts` the `kvClient` adapter, `storage-client.test.ts` the
 `storage/v2` client, `storage.test.ts`, `storage-instances.test.ts` and
 `registration.test.ts` the `storage/v2` conformance kit, which exercises every
-`storage/v2` handler, none skipped; `sqlite:test` runs the unit tests of both crates; `storage:test-heavy` runs the kit's heavy cases, the commits of
+`storage/v2` handler, none skipped, and `watch.test.ts` (T4.26) `Watch`; `sqlite:test` runs the unit tests of both crates; `storage:test-heavy` runs the kit's heavy cases, the commits of
 200,001 items, which take minutes; `storage:bench-rk27` builds the release binary
 (`sqlite:compile:production`) and runs RK27's write-stall measurements over
 `testEngineBinary('release')`, report-only (not a test). `index-parity.test.ts` (T4.23), in
@@ -52,7 +52,8 @@ index-key encoding (`storage/src/keys.rs`) and serves `storage/v2`'s
 `Get` (`storage/src/documents.rs`, S77a3a) and `Query` (`storage/src/query.rs`,
 S77a3b), `Read` (`storage/src/streams.rs`, S78a), and `PutBlob`, `GetBlob`,
 `DeleteBlob` (`storage/src/blobs.rs`) and `Health` (`storage/src/health.rs`,
-S78b). It keeps the writer's cache of document headers and stream heads
+S78b), and `Watch` (`storage/src/watch.rs`, `storage/src/main/watch.rs`,
+S78c). It keeps the writer's cache of document headers and stream heads
 (`storage/src/cache.rs`, A80, S77a4b, S78a), which `DORIC_SQLITE_CACHE` turns on or
 off.
 Add to it no slot, route or record type of its own; what a record means belongs

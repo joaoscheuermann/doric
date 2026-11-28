@@ -1,7 +1,7 @@
 //! The two transactions of [`super::apply`]: the read that computes each put's
 //! index keys ([`plan`]), and the write that applies the batch ([`write`]).
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use doric_bundle::ContractError;
 use doric_sqlite::{ReadTxn, WriteTxn};
@@ -14,6 +14,8 @@ use crate::{
     layout::{self, CHUNK_BYTES, DocumentHeader, TypeDeclaration},
     register::stored_declaration,
     schema::{self, Pools},
+    v2::{WatchDocument, WatchStream},
+    watch::{Change, Watchers},
 };
 
 /// A put's declaration as the read found it, and the index keys computed with
@@ -79,6 +81,7 @@ pub(super) fn write(
     clock: &Clock,
     pools: &Pools,
     headers: &Headers,
+    watchers: &Watchers,
     items: &Items,
     mut plans: Vec<Plan>,
 ) -> Result<(), ContractError> {
@@ -151,8 +154,64 @@ pub(super) fn write(
         put_one(txn, &mut staged, bundle, put, &plan.keys, &updated_at)?;
     }
     super::streams::write(txn, &mut staged, bundle, &items.entries, &updated_at)?;
+    let change = change(txn, &mut staged, bundle, &items.entries)?;
     staged.finish(txn);
+    let (watchers, bundle) = (watchers.clone(), bundle.clone());
+    txn.on_commit(Box::new(move || watchers.publish(&bundle, &change)));
     Ok(())
+}
+
+/// What the applied `entries` changed (Q3), at the transaction's position:
+/// each document a put or a delete named and each stream a drop, a truncate or
+/// an append named, once, in the order first named, in its state as `staged`
+/// sees it after the batch.
+///
+/// # Errors
+///
+/// The errors of [`Staged::header`] and [`Staged::head`].
+fn change(
+    txn: &mut dyn WriteTxn,
+    staged: &mut Staged,
+    bundle: &str,
+    entries: &[Entry],
+) -> Result<Change, ContractError> {
+    let mut change = Change {
+        position: txn.position(),
+        ..Change::default()
+    };
+    let (mut documents, mut streams) = (BTreeSet::new(), BTreeSet::new());
+    for entry in entries {
+        match entry {
+            Entry::Put { type_id, id, .. } | Entry::Delete { type_id, id } => {
+                if !documents.insert((type_id, id)) {
+                    continue;
+                }
+                let header = staged.header(txn, &layout::document(bundle, type_id, id))?;
+                change.documents.push(WatchDocument {
+                    r#type: type_id.clone(),
+                    id: id.clone(),
+                    revision: header
+                        .as_ref()
+                        .map_or(0.0, |header| f64::from(header.revision)),
+                    deleted: header.is_none(),
+                });
+            }
+            Entry::DropStream { stream }
+            | Entry::Truncate { stream, .. }
+            | Entry::Append { stream, .. } => {
+                if !streams.insert(stream) {
+                    continue;
+                }
+                let last = staged.head(txn, &layout::head(bundle, stream))?;
+                change.streams.push(WatchStream {
+                    stream: stream.clone(),
+                    last_sequence: f64::from(last),
+                });
+            }
+            Entry::Expect { .. } => {}
+        }
+    }
+    Ok(change)
 }
 
 /// Writes the put `put` with its index keys `keys`: its header, its chunks

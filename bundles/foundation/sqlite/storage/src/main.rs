@@ -2,9 +2,9 @@
 //! The engine bundle `sqlite` (spec `docs/designs/grpc-processes.md`, section
 //! 17, "The engine"): it provides `storage.kv/v1` over the one SQLite file
 //! `$DORIC_STORAGE_PATH/doric.sqlite3`, and `storage/v2`'s `Register`, `Commit`,
-//! `Get`, `Query`, `Read`, `PutBlob`, `GetBlob`, `DeleteBlob` and `Health`; it
-//! decodes the values of indexed types with each bundle's descriptors, while
-//! the engine library reads no value.
+//! `Get`, `Query`, `Read`, `PutBlob`, `GetBlob`, `DeleteBlob`, `Health` and
+//! `Watch`; it decodes the values of indexed types with each bundle's
+//! descriptors, while the engine library reads no value.
 //!
 //! Every `storage.kv/v1` handler ([`kv`]) first refuses any caller but `doric`
 //! (`not_owner`), then checks the counts, then each key's prefix and size
@@ -25,16 +25,16 @@ use doric_storage::{
     blobs::{self, Upload},
     cache::{CACHE_VARIABLE, Headers},
     commit::{self, Batch},
-    documents, health, query,
+    documents, health,
     register::{self, Registrations},
     schema::Pools,
     streams,
     v2::{
         CommitRequest, CommitResponse, DeleteBlobRequest, DeleteBlobResponse, GetBlobRequest,
         GetBlobResponse, GetRequest, GetResponse, HealthRequest, HealthResponse, PutBlobRequest,
-        PutBlobResponse, QueryRequest, QueryResponse, ReadRequest, ReadResponse, RegisterRequest,
-        RegisterResponse,
+        PutBlobResponse, ReadRequest, ReadResponse, RegisterRequest, RegisterResponse,
     },
+    watch::Watchers,
 };
 use tokio_stream::{Stream, StreamExt, wrappers::ReceiverStream};
 
@@ -66,6 +66,9 @@ struct Engine {
     /// The storage directory, `DORIC_STORAGE_PATH`; set once, by the
     /// activation that sets the store.
     dir: Arc<OnceLock<PathBuf>>,
+    /// The watchers of every bundle, which each `storage/v2` commit publishes
+    /// to once it commits.
+    watchers: Watchers,
 }
 
 impl Bundle for Engine {
@@ -73,14 +76,14 @@ impl Bundle for Engine {
     /// and `Range`, server-streaming, and `Commit`, client-streaming; and
     /// `doric.storage.v2.StorageService`'s `Register`, unary, `Commit`,
     /// client-streaming, `Get`, `Query` and `Read`, server-streaming,
-    /// `PutBlob`, client-streaming, `GetBlob`, server-streaming, and
-    /// `DeleteBlob` and `Health`, unary.
+    /// `PutBlob`, client-streaming, `GetBlob`, server-streaming, `DeleteBlob`
+    /// and `Health`, unary, and `Watch`, server-streaming.
     fn services(&self) -> Services {
         let (get, range, commit) = (self.clone(), self.clone(), self.clone());
         let (register, documents, read) = (self.clone(), self.clone(), self.clone());
         let (pages, entries) = (self.clone(), self.clone());
         let (health, put_blob) = (self.clone(), self.clone());
-        let (get_blob, delete_blob) = (self.clone(), self.clone());
+        let (get_blob, delete_blob, watch) = (self.clone(), self.clone(), self.clone());
 
         Services::new()
             .server_stream(
@@ -148,6 +151,10 @@ impl Bundle for Engine {
                     let health = health.clone();
                     async move { health.health(call, request).await }
                 },
+            )
+            .server_stream(
+                "/doric.storage.v2.StorageService/Watch",
+                move |call, request| watch.watch(call, request),
             )
     }
 
@@ -294,7 +301,7 @@ impl Engine {
         tokio::select! {
             biased;
             () = call.cancelled.cancelled() => Err(kv::cancelled()),
-            position = commit::apply(store, &self.clock, &self.pools, self.headers(), items) => {
+            position = commit::apply(store, &self.clock, &self.pools, self.headers(), &self.watchers, items) => {
                 Ok(CommitResponse { position: position? })
             }
         }
@@ -324,32 +331,6 @@ impl Engine {
             Err(error) => return kv::refused(error),
         };
         self.stream_read(move |txn, emit| documents::get(txn, &bundle, &request, emit))
-    }
-
-    /// Serves `storage/v2`'s `Query`: [`doric_storage::bundle`],
-    /// [`query::check`] and [`Engine::store`], then, in a spawned task,
-    /// [`query::page`] in one read transaction, whose items it streams.
-    ///
-    /// # Errors
-    ///
-    /// The stream's one item is the first refusal of the three, and no
-    /// connection is touched; otherwise its last item is the error of the
-    /// read, after the items already emitted.
-    fn query_documents(
-        &self,
-        call: Call,
-        request: QueryRequest,
-    ) -> ReceiverStream<Result<QueryResponse, ContractError>> {
-        let checked = doric_storage::bundle(&call.caller).and_then(|bundle| {
-            let plan = query::check(bundle, &request)?;
-            self.store()?;
-            Ok((bundle.to_owned(), plan))
-        });
-        let (bundle, plan) = match checked {
-            Ok(checked) => checked,
-            Err(error) => return kv::refused(error),
-        };
-        self.stream_read(move |txn, emit| query::page(txn, &bundle, &plan, emit))
     }
 
     /// Serves `storage/v2`'s `Read`: [`doric_storage::bundle`],
@@ -484,6 +465,8 @@ impl Engine {
 
 #[path = "main/reads.rs"]
 mod reads;
+#[path = "main/watch.rs"]
+mod watch;
 
 #[cfg(test)]
 #[path = "testing.rs"]

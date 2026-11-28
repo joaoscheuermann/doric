@@ -94,7 +94,7 @@ void test('storage/v2 is a basic host contract of cardinality one with no envelo
   );
 });
 
-void test('storage/v2 serves exactly its nine methods, in order, and a query page holds only its cursor', () => {
+void test('storage/v2 serves exactly its ten methods, in order, Watch last, and a query page holds only its cursor', () => {
   assert.deepEqual(
     StorageService.methods.map(({ name }) => name),
     [
@@ -107,6 +107,7 @@ void test('storage/v2 serves exactly its nine methods, in order, and a query pag
       'PutBlob',
       'GetBlob',
       'DeleteBlob',
+      'Watch',
     ],
   );
   assert.deepEqual(

@@ -54,6 +54,8 @@ service StorageService {
   rpc GetBlob(GetBlobRequest) returns (stream GetBlobResponse);
   // Removes a blob; an unknown or malformed hash is a no-op.
   rpc DeleteBlob(DeleteBlobRequest) returns (DeleteBlobResponse);
+  // Live changes of the caller's named types and streams: one response per commit that touches them.
+  rpc Watch(WatchRequest) returns (stream WatchResponse);
 }
 
 // The caller's storage descriptors.
@@ -468,3 +470,41 @@ message DeleteBlobRequest {
 
 // The blob is gone, or was never stored.
 message DeleteBlobResponse {}
+
+// Asks the live changes of the caller's types and streams; an empty request receives nothing.
+message WatchRequest {
+  // The storage types to watch, by exact id.
+  repeated string types = 1;
+  // The streams to watch, by exact id.
+  repeated string streams = 2;
+}
+
+// One commit that touched a watched type or stream.
+message WatchResponse {
+  // The commit's position.
+  double position = 1;
+  // Each watched document the commit put or deleted, in its last state.
+  repeated WatchDocument documents = 2;
+  // Each watched stream the commit dropped, truncated or appended to.
+  repeated WatchStream streams = 3;
+}
+
+// A document a commit put or deleted.
+message WatchDocument {
+  // The storage type.
+  string type = 1;
+  // The document's id within the type.
+  string id = 2;
+  // The document's revision after the commit; 0 when deleted.
+  double revision = 3;
+  // Whether the commit deleted the document.
+  bool deleted = 4;
+}
+
+// A stream a commit dropped, truncated or appended to.
+message WatchStream {
+  // The stream.
+  string stream = 1;
+  // The stream's last sequence after the commit; 0 when dropped.
+  double last_sequence = 2;
+}

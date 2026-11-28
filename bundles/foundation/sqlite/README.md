@@ -10,7 +10,7 @@ SQLite file, through `rusqlite` 0.43.0 with SQLite bundled, and only to the
 caller `doric`, the platform. It holds all of storage (A79): the engine
 `doric-sqlite` reads no value, and `doric-storage` decodes values with each
 bundle's descriptors (`storage/src/schema.rs`), owns the index-key encoding
-(`storage/src/keys.rs`) and serves `storage/v2`'s `Register` (S77a2), `Commit` and `Get` (S77a3a), `Query` (S77a3b), `Read` and `Commit`'s stream items (S78a), and `PutBlob`, `GetBlob`, `DeleteBlob` and `Health` (S78b), and keeps the writer's cache of document headers and stream heads (A80, S77a4b, S78a), which `DORIC_SQLITE_CACHE` turns on or off. It is section
+(`storage/src/keys.rs`) and serves `storage/v2`'s `Register` (S77a2), `Commit` and `Get` (S77a3a), `Query` (S77a3b), `Read` and `Commit`'s stream items (S78a), and `PutBlob`, `GetBlob`, `DeleteBlob` and `Health` (S78b), and `Watch` (S78c), and keeps the writer's cache of document headers and stream heads (A80, S77a4b, S78a), which `DORIC_SQLITE_CACHE` turns on or off. It is section
 17, "The engine", of
 [`docs/designs/grpc-processes.md`](../../../docs/designs/grpc-processes.md);
 see [`docs/features/bundle-processes.md`](../../../docs/features/bundle-processes.md),
@@ -34,7 +34,10 @@ see [`docs/features/bundle-processes.md`](../../../docs/features/bundle-processe
   `unavailable` before activation; `storage/src/main/reads.rs` holds
   `stream_read` and `ANSWERS`, `storage/src/blobs.rs` the blobs and
   `storage/src/health.rs` `Health`, from `statvfs` on `DORIC_STORAGE_PATH`.
-  `Watch` is not served (S78c).
+  `storage/src/watch.rs` holds `Watch`'s subscribers (a buffer of 1,024 each;
+  one that falls behind ends with `unavailable`), published after `COMMIT`, and
+  `storage/src/main/watch.rs` its handler; `query_documents` is in
+  `main/reads.rs` (S78c).
 - [`proto/doric/storage/layout/v1/layout.proto`](proto/doric/storage/layout/v1/layout.proto),
   package `doric.storage.layout.v1`: `TypeDeclaration`, `IndexDeclaration` and
   `DocumentHeader`, `StreamHead`, `StreamEntryHeader`, `TruncationMark` and
@@ -512,6 +515,7 @@ and the `storage/v2` conformance kit
 ([`storage.test.ts`](../../../packages/storage/tests/storage.test.ts),
 [`storage-instances.test.ts`](../../../packages/storage/tests/storage-instances.test.ts),
 [`registration.test.ts`](../../../packages/storage/tests/registration.test.ts)),
+`Watch` by [`watch.test.ts`](../../../packages/storage/tests/watch.test.ts),
 none of whose cases is skipped (50, 6 and 8).
 The golden file
 [`storage/tests/fixtures/index-keys.json`](storage/tests/fixtures/index-keys.json)
@@ -562,6 +566,6 @@ the binary `doric-sqlite` and the library `doric_sqlite`.
 - S78a (done): `storage/v2`'s streams: `Commit`'s stream items, `Read`, and
   the stream heads in the cache.
 - S78b (done): blobs and health.
-- S78c: `Watch`.
+- S78c (done): `Watch`; S78 is done.
 - S84: `sqlite` in the composition.
 - S88: read-only mode, with the inspection tool; the spec records the deferral.

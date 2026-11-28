@@ -23,6 +23,7 @@ use crate::{
     schema::Pools,
     streams::{checked, whole_sequence},
     v2::{CommitRequest, commit_request::Item},
+    watch::Watchers,
 };
 
 /// The most items of one batch, `expect`, `put`, `delete`, `drop_stream`,
@@ -362,6 +363,11 @@ impl Batch {
 /// deleted document; an error leaves the cache as it was. The answer and the
 /// stored state are the same with any bound, 0 included.
 ///
+/// Once `COMMIT` succeeds, and before it answers, the writer publishes the
+/// commit's [`crate::watch::Change`] to `watchers`
+/// ([`Watchers::publish`]), with the position it answers; a transaction that
+/// rolls back publishes nothing.
+///
 /// # Errors
 ///
 /// Any error writes nothing. In the read transaction, for the first item in
@@ -387,6 +393,7 @@ pub async fn apply<E: KvEngine>(
     clock: &Clock,
     pools: &Pools,
     headers: &Headers,
+    watchers: &Watchers,
     items: Items,
 ) -> Result<f64, ContractError> {
     let items = Arc::new(items);
@@ -395,8 +402,11 @@ pub async fn apply<E: KvEngine>(
         .read(move |txn| transaction::plan(txn, &read_pools, &read_items))
         .await?;
     let (clock, pools, headers) = (clock.clone(), pools.clone(), headers.clone());
+    let watchers = watchers.clone();
     let ((), position) = engine
-        .write(move |txn| transaction::write(txn, &clock, &pools, &headers, &items, planned))
+        .write(move |txn| {
+            transaction::write(txn, &clock, &pools, &headers, &watchers, &items, planned)
+        })
         .await?;
     Ok(position)
 }

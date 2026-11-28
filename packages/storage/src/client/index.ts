@@ -49,6 +49,7 @@ import {
   messagesOf,
   type ValueKey,
 } from './values.js';
+import { changesOf, failed } from './watch.js';
 
 /**
  * The most bytes of a `RegisterRequest`'s `descriptor_set`, 2 MiB; a larger
@@ -277,6 +278,22 @@ const storageOf = (
       calling(call, async () => {
         await client.deleteBlob({ hash }, connectOptionsOf(call));
       }),
+    watch: (request, call) => {
+      const types = [...(request.types ?? [])];
+      const streams = [...(request.streams ?? [])];
+
+      try {
+        types.forEach(typeSchema);
+        streams.forEach(streamSchema);
+      } catch (error) {
+        return failed(error);
+      }
+
+      return changesOf(
+        client.watch({ types, streams }, connectOptionsOf(call)),
+        call,
+      );
+    },
   };
 };
 
