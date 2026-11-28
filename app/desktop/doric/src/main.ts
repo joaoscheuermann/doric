@@ -17,6 +17,7 @@ import { DesktopPlatform } from './platform/app';
 import { HOST_URL } from './platform/bridge/host-bridge';
 import { createPlatformLog } from './platform/log';
 import type { NotificationApi } from './platform/native/notifications';
+import { materialFor } from './platform/windows/appearance';
 
 let connection: ConnectionMonitor | null = null;
 
@@ -50,8 +51,14 @@ void app.whenReady().then(async () => {
       'window',
       nativeTheme.shouldUseDarkColors,
     );
-    for (const window of BrowserWindow.getAllWindows())
-      window.setBackgroundColor(color);
+    // A glass window stays transparent: a color would cover its vibrancy.
+    for (const window of BrowserWindow.getAllWindows()) {
+      const entry = platform.registry.byWebContents(window.webContents.id);
+
+      if (materialFor(entry?.kind, process.platform) === 'none') {
+        window.setBackgroundColor(color);
+      }
+    }
   });
   await platform.prepare();
 

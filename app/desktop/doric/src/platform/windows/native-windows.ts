@@ -31,6 +31,7 @@ import type { WindowTokens } from '../tokens';
 import {
   chromeFor,
   keepsWindowButtons,
+  materialFor,
   nativeOptions,
   type ParsedAppearance,
   windowOptions,
@@ -558,7 +559,12 @@ export class NativeWindows {
     const chrome = () =>
       push(contents, {
         type: 'chrome',
-        chrome: chromeFor(appearance.titleBar, tokens, window.isFullScreen()),
+        chrome: chromeFor(
+          appearance.titleBar,
+          tokens,
+          window.isFullScreen(),
+          materialFor('path', platform),
+        ),
       });
 
     window.on('enter-full-screen', chrome);

@@ -646,8 +646,8 @@ test('the window is one canvas: the title bar and the nav carry no fill and no r
 
   const canvas = opened.document.querySelector('[data-slot="sidebar-wrapper"]');
   assert.ok(
-    classesOf(canvas).includes('bg-sidebar'),
-    'the canvas is --sidebar',
+    classesOf(canvas).includes('bg-window-frame'),
+    'the canvas is the window frame',
   );
 
   const bar = opened.document.querySelector('[data-slot="settings-title-bar"]');

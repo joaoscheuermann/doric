@@ -12,4 +12,5 @@ export const applyChrome = (
   style.setProperty('--doric-safe-top', `${chrome.safeArea.top}px`);
   style.setProperty('--doric-safe-left', `${chrome.safeArea.left}px`);
   style.setProperty('--doric-safe-right', `${chrome.safeArea.right}px`);
+  root.dataset.material = chrome.material ?? 'none';
 };

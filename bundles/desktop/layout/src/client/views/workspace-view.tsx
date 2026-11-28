@@ -122,13 +122,13 @@ function Workspace() {
     // over the page. The sidebar comes first, so the tab bar keeps no macOS
     // inset (`85:7726`, UR1).
     return (
-      <div className="flex h-svh min-h-0 flex-col bg-background text-foreground">
-        <div className="flex min-h-0 flex-1 bg-sidebar">
+      <div className="flex h-svh min-h-0 flex-col bg-window-frame text-foreground">
+        <div className="flex min-h-0 flex-1 bg-window-frame">
           <aside className="flex shrink-0" aria-label="Dashboard navigation">
             <SidebarScope>
               <Sidebar
                 collapsible="none"
-                className="h-full w-[280px] shrink-0 font-normal"
+                className="h-full w-[280px] shrink-0 bg-window-frame font-normal"
               >
                 <KeptRegion region={sidebarRegion} />
                 <BundleHealthNotice className="mx-2 shrink-0" />
@@ -138,7 +138,7 @@ function Workspace() {
           </aside>
           <div
             data-slot="dashboard-content"
-            className="flex min-w-0 flex-1 flex-col bg-sidebar"
+            className="flex min-w-0 flex-1 flex-col bg-window-frame"
           >
             <Region name={SHELL_TITLEBAR_TABS} />
             <Region name={SHELL_PAGE} />
@@ -149,7 +149,7 @@ function Workspace() {
   }
 
   return (
-    <div className="flex h-svh min-h-0 flex-col bg-sidebar text-foreground">
+    <div className="flex h-svh min-h-0 flex-col bg-window-frame text-foreground">
       <SidebarProvider
         style={panelWidth}
         className="min-h-0 flex-1 flex-col overflow-hidden"

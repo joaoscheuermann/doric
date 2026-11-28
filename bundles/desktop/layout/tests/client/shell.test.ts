@@ -324,7 +324,7 @@ test('the workspace canvas is the sidebar fill', async () => {
 
   const layout = single(rendered.root, '[data-slot="workspace-layout"]');
   assert.ok(
-    layout.classList.contains('bg-sidebar'),
+    layout.classList.contains('bg-window-frame'),
     `The workspace layout is not on the sidebar canvas: ${layout.className}`,
   );
 });

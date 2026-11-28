@@ -7,7 +7,11 @@ import { windowAppearanceSchema } from 'bundle/contracts';
 
 import { splashWindowOptions } from '../src/platform/splash/window';
 import { loadWindowTokens } from '../src/platform/tokens';
-import { chromeFor, nativeOptions } from '../src/platform/windows/appearance';
+import {
+  chromeFor,
+  materialFor,
+  nativeOptions,
+} from '../src/platform/windows/appearance';
 
 const tokensPath = resolve('packages/desktop/dist/tokens.json');
 const tokens = loadWindowTokens(tokensPath);
@@ -32,7 +36,7 @@ const webPreferences = {
 };
 
 describe('native window options', () => {
-  test('the workspace window uses the system dark background on macOS and Linux', () => {
+  test('the workspace window is transparent glass over the vibrancy on macOS', () => {
     assert.deepEqual(
       nativeOptions(workspace, tokens, 'darwin', screen, preload),
       {
@@ -41,11 +45,20 @@ describe('native window options', () => {
         minWidth: 960,
         minHeight: 640,
         show: false,
-        backgroundColor: '#1c1a17',
+        backgroundColor: '#00000000',
+        vibrancy: 'under-window',
+        visualEffectState: 'followWindow',
         titleBarStyle: 'hidden',
         trafficLightPosition: { x: 14, y: 14 },
         webPreferences,
       },
+    );
+  });
+
+  test('the workspace window uses the system dark background on Linux and Windows', () => {
+    assert.equal(
+      nativeOptions(workspace, tokens, 'win32', screen, preload).vibrancy,
+      undefined,
     );
     assert.deepEqual(
       nativeOptions(workspace, tokens, 'linux', screen, preload),
@@ -63,7 +76,7 @@ describe('native window options', () => {
 
   test('a light appearance paints the native window #fbf8f2 before loading', () => {
     assert.equal(
-      nativeOptions(workspace, tokens, 'darwin', screen, preload, false)
+      nativeOptions(workspace, tokens, 'linux', screen, preload, false)
         .backgroundColor,
       '#fbf8f2',
     );
@@ -78,7 +91,9 @@ describe('native window options', () => {
         minWidth: 720,
         minHeight: 520,
         show: false,
-        backgroundColor: '#1c1a17',
+        backgroundColor: '#00000000',
+        vibrancy: 'under-window',
+        visualEffectState: 'followWindow',
         titleBarStyle: 'hidden',
         trafficLightPosition: { x: 14, y: 14 },
         webPreferences,
@@ -165,6 +180,18 @@ describe('native window options', () => {
 });
 
 describe('window chrome', () => {
+  test('tells an app window on macOS, and only it, that it is glass', () => {
+    assert.equal(materialFor('path', 'darwin'), 'glass');
+    assert.equal(materialFor('view', 'darwin'), 'none');
+    assert.equal(materialFor(undefined, 'darwin'), 'none');
+    assert.equal(materialFor('path', 'win32'), 'none');
+    assert.equal(materialFor('path', 'linux'), 'none');
+    assert.equal(
+      chromeFor('integrated', tokens, false, 'glass').material,
+      'glass',
+    );
+  });
+
   test('releases the native controls inset in fullscreen', () => {
     assert.deepEqual(chromeFor('integrated', tokens, true).safeArea, {
       top: 0,
@@ -178,6 +205,7 @@ describe('window chrome', () => {
       titleBar: 'integrated',
       height: 40,
       safeArea: { top: 0, left: 80, right: 0 },
+      material: 'none',
     });
     assert.deepEqual(chromeFor('native', tokens).safeArea, {
       top: 0,

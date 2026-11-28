@@ -106,7 +106,7 @@ import {
 } from './splash/window';
 import { DesktopState, WindowPaths } from './state';
 import { loadWindowTokens, type WindowTokens } from './tokens';
-import { chromeFor } from './windows/appearance';
+import { chromeFor, materialFor } from './windows/appearance';
 import { CloseAnswers } from './windows/close';
 import { NativeWindows } from './windows/native-windows';
 import { type WindowEntry, WindowRegistry } from './windows/registry';
@@ -480,6 +480,7 @@ export class DesktopPlatform {
       entry?.appearance.titleBar ?? 'none',
       this.tokens,
       entry?.window.isFullScreen(),
+      materialFor(entry?.kind, this.options.platform ?? process.platform),
     );
   }
 

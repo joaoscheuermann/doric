@@ -19,6 +19,27 @@ export interface WorkArea {
   readonly height: number;
 }
 
+/** The native material behind a window's page (window-appearance.md). */
+export type WindowMaterial = NonNullable<WindowChrome['material']>;
+
+/**
+ * The fully transparent background a glass window is created with: an opaque
+ * one would cover the vibrancy view.
+ */
+export const GLASS_BACKGROUND = '#00000000';
+
+/**
+ * An app window on macOS is glass: main puts the `under-window` vibrancy
+ * behind its page, so the window's frame shows a frosted desktop. A view
+ * window shows a page of the host that knows nothing of the material, and
+ * the other platforms keep an opaque window.
+ */
+export const materialFor = (
+  kind: 'path' | 'view' | undefined,
+  platform: NodeJS.Platform,
+): WindowMaterial =>
+  kind === 'path' && platform === 'darwin' ? 'glass' : 'none';
+
 const clamp = (value: number, minimum: number, maximum: number): number =>
   Math.max(minimum, Math.min(value, maximum));
 
@@ -72,7 +93,11 @@ export const windowOptions = (
   };
 };
 
-/** The constructor options of a window with this appearance and its preload. */
+/**
+ * The constructor options of an app window with this appearance and its
+ * preload. On macOS it is glass ({@link materialFor}): transparent, over the
+ * `under-window` vibrancy, which follows the window's active state.
+ */
 export const nativeOptions = (
   appearance: ParsedAppearance,
   tokens: WindowTokens,
@@ -82,6 +107,13 @@ export const nativeOptions = (
   dark = true,
 ): Electron.BrowserWindowConstructorOptions => ({
   ...windowOptions(appearance, tokens, platform, workArea, dark),
+  ...(materialFor('path', platform) === 'glass'
+    ? {
+        backgroundColor: GLASS_BACKGROUND,
+        vibrancy: 'under-window' as const,
+        visualEffectState: 'followWindow' as const,
+      }
+    : {}),
   webPreferences: {
     contextIsolation: true,
     nodeIntegration: false,
@@ -104,6 +136,7 @@ export const chromeFor = (
   titleBar: ParsedAppearance['titleBar'],
   tokens: WindowTokens,
   fullscreen = false,
+  material: WindowMaterial = 'none',
 ): WindowChrome => ({
   titleBar,
   height: tokens.titlebarHeight,
@@ -111,4 +144,5 @@ export const chromeFor = (
     titleBar === 'none' || fullscreen
       ? { top: 0, left: 0, right: 0 }
       : { top: 0, left: tokens.reservedWidth, right: 0 },
+  material,
 });
