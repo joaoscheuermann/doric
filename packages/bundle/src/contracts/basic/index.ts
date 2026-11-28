@@ -55,6 +55,10 @@ export const basicContracts = Object.freeze({
   'secrets.backend/v1': spec('one', ['host'], secretsBackendMethods),
   'storage/v1': spec('one', ['host'], storageMethods),
   'storage.backend/v1': spec('one', ['host'], storageBackendMethods),
+  // Served over gRPC only (`KvService`), so the envelope has no methods for it.
+  'storage.kv/v1': spec('one', ['host'], {}),
+  // Served over gRPC only (`StorageService`), so the envelope has no methods for it.
+  'storage/v2': spec('one', ['host'], {}),
   'events/v1': spec('one', ['host'], eventsMethods),
   'models/v1': spec('one', ['host'], modelsMethods),
   'models.provider/v1': spec('many', ['host'], modelsProviderMethods),

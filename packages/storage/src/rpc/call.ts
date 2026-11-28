@@ -3,8 +3,8 @@
 // client call rejects with.
 
 import {
-  type CallOptions as ConnectCallOptions,
   Code,
+  type CallOptions as ConnectCallOptions,
   ConnectError,
   type HandlerContext,
 } from '@connectrpc/connect';
@@ -61,8 +61,29 @@ const transportCodes = new Map<Code, string>([
   [Code.Unavailable, 'unavailable'],
 ]);
 
-/** The `ContractError` a client call that threw `error` rejects with. */
-export const clientFailure = (error: unknown): ContractError => {
+/**
+ * The `ContractError` a client call made for `call` that threw `error`
+ * rejects with. An `internal` or `cancelled` failure of a call whose signal
+ * has aborted is `cancelled`, and of a call whose deadline has passed
+ * `deadline_exceeded`: the peer may end such a call first, with its own code.
+ */
+export const clientFailure = (
+  error: unknown,
+  call?: CallArg,
+): ContractError => {
+  const failure = failureOf(error);
+  const ended =
+    failure.code === 'internal' || failure.code === 'cancelled'
+      ? endedCodeOf(call)
+      : undefined;
+
+  return ended === undefined || ended === failure.code
+    ? failure
+    : new ContractError(ended, failure.message);
+};
+
+/** The `ContractError` of `error` as the transport reported it. */
+const failureOf = (error: unknown): ContractError => {
   if (isContractError(error)) {
     return error;
   }
@@ -77,6 +98,25 @@ export const clientFailure = (error: unknown): ContractError => {
   }
 
   return toContractError(error);
+};
+
+/**
+ * `cancelled` once the signal of `call` has aborted, `deadline_exceeded` once
+ * its deadline has passed, otherwise `undefined`.
+ */
+const endedCodeOf = (call?: CallArg): string | undefined => {
+  if (call === undefined) {
+    return undefined;
+  }
+
+  if (call.signal?.aborted === true) {
+    return 'cancelled';
+  }
+  const deadline = isCall(call) ? deadlineOf(call) : (call.deadline ?? 0);
+
+  return deadline > 0 && Date.now() >= deadline
+    ? 'deadline_exceeded'
+    : undefined;
 };
 
 /** Runs a client call, rejecting with the `ContractError` it failed with. */

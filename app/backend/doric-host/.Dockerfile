@@ -3,6 +3,14 @@
 # Pin the base image by digest so every stage uses the same reviewed Node and
 # Debian userspace even if the upstream tag later moves.
 ARG BASE_IMAGE=node:26-bookworm-slim@sha256:5df79989ed685e09f0a98019db4cebfb22fb9df1a53c0161664a011f7ff6b0f1
+# Pin the Rust image the same way: the digest of the multi-architecture index
+# of `rust:1.100.0-bookworm` on Docker Hub on 2026-11-28. Its version is
+# `rust-toolchain.toml`'s channel; it builds the native bundles' executables.
+ARG RUST_IMAGE=rust:1.100.0-bookworm@sha256:75d26c23c24cc6ea1cdabf0714a6bff8fd7bf3248716043fd7ae86dac7f41b94
+
+# The Rust toolchain stage runs nothing: the builder copies its Cargo and
+# rustup homes.
+FROM ${RUST_IMAGE} AS rust-toolchain
 
 # Build Doric and its built-in bundles in one stage so compilation is complete
 # before the verified VMM and guest artifacts are assembled into the runtime.
@@ -12,16 +20,28 @@ WORKDIR /workspace
 # The slim base carries no system CA store. `buf` (a Go binary, unlike Node
 # with its bundled roots) verifies TLS against it when it fetches the
 # `buf.lock` dependencies from buf.build during `generate-proto`. The store
-# stays in this stage; the runtime stages copy only /workspace.
+# stays in this stage; the runtime stages copy only /workspace. `gcc` and
+# `libc6-dev` are the linker and C library the Rust build needs (and the C
+# sources it compiles).
 RUN apt-get update \
- && apt-get install -y --no-install-recommends ca-certificates \
+ && apt-get install -y --no-install-recommends ca-certificates gcc libc6-dev \
  && rm -rf /var/lib/apt/lists/*
+
+# The Rust toolchain, set to `rust-toolchain.toml`'s channel so rustup uses
+# the installed toolchain and installs nothing. It stays in this stage.
+COPY --from=rust-toolchain /usr/local/cargo /usr/local/cargo
+COPY --from=rust-toolchain /usr/local/rustup /usr/local/rustup
+ENV CARGO_HOME=/usr/local/cargo RUSTUP_HOME=/usr/local/rustup RUSTUP_TOOLCHAIN=1.100.0 PATH=/usr/local/cargo/bin:$PATH
 
 # Root metadata and the relevant workspace trees are all required before
 # installation: npm materializes workspace links and TypeScript follows project
 # references across package boundaries while compiling Doric and its bundles.
 COPY package.json package-lock.json nx.json tsconfig.json tsconfig.base.json ./
 COPY patches ./patches
+# The Cargo workspace: its members are crates under `bundles/` and `packages/`,
+# copied below, and the SEA spike's stub.
+COPY Cargo.toml Cargo.lock rust-toolchain.toml ./
+COPY scripts/sea-spike/stub-rs ./scripts/sea-spike/stub-rs
 # Each project's `generate-proto` target runs `buf generate` against the root
 # buf workspace. `buf.yaml` lists every module directory, so each must exist,
 # including the benchmark's `.proto` module (only its `proto/` tree: the
@@ -47,19 +67,22 @@ RUN npm install --global npm@11.13.0
 # inputs; Nx's required post-install step is then invoked explicitly, and so
 # is the root's `postinstall`, `patch-package`, which applies `patches/` to
 # the installed dependencies. The
-# Prisma client is generated before compiling, and the Doric entrypoint is
-# placed at the path expected by its package metadata.
+# Prisma client is generated before compiling; tsc writes the Doric entrypoint
+# under `dist/src/`, the path its package metadata expects.
 # Nx's `build-bundles` target is the single definition of the bundle build: it
 # builds every project tagged `type:bundle`, then `stage --dev` stages every
 # `bundles/<group>/<id>` that holds a manifest into
 # `app/backend/doric-host/dist/bundles/<id>`, writing each built host part's
-# `host/command.json` (`node <bundleDir>/dist/host/main.mjs`), the command the
+# `host/command.json` (`node <bundleDir>/dist/host/main.mjs` for a sea host
+# part, the built executable for a native one), the command the
 # platform spawns the bundle's process with. The Nx plugins and the task runner
 # come from the lockfile; `--ignore-scripts` keeps any lifecycle script from
 # running. `NX_DAEMON=false` keeps
 # the build from starting a background daemon and `--skip-nx-cache` forces
 # every task to run. A failing bundle build stops the image build here rather
-# than at boot.
+# than at boot. The three `find dist/target` lines then prune Cargo's target
+# directory down to the one file a staged command names,
+# `dist/target/doric-sqlite/debug/doric-sqlite`, dropping the build cache.
 RUN npm ci --ignore-scripts \
  && node node_modules/nx/bin/post-install \
  && npx patch-package --error-on-fail \
@@ -67,9 +90,9 @@ RUN npm ci --ignore-scripts \
  && npx tsc --build packages/storage/tsconfig.lib.json app/backend/doric-host/tsconfig.lib.json --force \
  && node packages/bundle/dist/build/platform-schemas.js \
  && NX_DAEMON=false npx nx run doric-host:build-bundles --skip-nx-cache \
- && mkdir -p app/backend/doric-host/dist/src \
- && mv app/backend/doric-host/dist/index.* app/backend/doric-host/dist/src/ \
- && mv app/backend/doric-host/dist/lib app/backend/doric-host/dist/src/
+ && find dist/target -mindepth 1 -maxdepth 1 ! -name doric-sqlite -exec rm -rf {} + \
+ && find dist/target/doric-sqlite -mindepth 1 -maxdepth 1 ! -name debug -exec rm -rf {} + \
+ && find dist/target/doric-sqlite/debug -mindepth 1 -maxdepth 1 ! -name doric-sqlite -exec rm -rf {} +
 
 # Migration only needs the compiled workspace.
 FROM ${BASE_IMAGE} AS agent-runtime

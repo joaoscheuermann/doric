@@ -128,7 +128,9 @@ export {
 export { LayeredDirectory } from './layered-directory.js';
 export {
   type ContractEntry,
+  type HostKind,
   hostAssetsOf,
+  hostKindOf,
   httpPrefixOf,
   httpPrefixPattern,
   type Manifest,

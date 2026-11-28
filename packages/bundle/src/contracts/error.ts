@@ -112,6 +112,10 @@ export const contractErrorCodes = [
   'model_catalog_unreadable',
   'compaction_failed',
   'internal_error',
+  // storage.kv/v1 and the sqlite engine (phase 4, S74b)
+  'condition_failed',
+  'storage_path_missing',
+  'storage_format_unsupported',
 ] as const;
 
 export type ContractErrorCode = (typeof contractErrorCodes)[number];

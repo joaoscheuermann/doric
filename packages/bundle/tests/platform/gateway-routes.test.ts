@@ -250,6 +250,30 @@ describe('servedMethods', () => {
         .includes(catalog('Distribution')),
     );
   });
+
+  test('never serves a method of storage.kv/v1 or storage/v2, whether a bundle provides it or the platform lists it', () => {
+    const storageIndex = createCatalogIndex([
+      demoFile({ id: 'storage.kv/v1', package: 'doric.storage.kv.v1' }),
+      demoFile({ id: 'storage/v2', package: 'doric.storage.v2' }),
+      demoHost,
+    ]);
+    const platform = ['doric.storage.kv.v1', 'doric.storage.v2'].map((pkg) => {
+      const info = storageIndex.method(path(`${pkg}.DemoService`, 'Echo'));
+
+      assert.ok(info !== undefined, pkg);
+
+      return info;
+    });
+    const resolved = resolveHost({
+      sqlite: { mode: 'alive', provides: ['storage.kv/v1@1.0.0', 'storage/v2@2.0.0'] },
+      demo: { mode: 'alive', provides: ['demo/v1@1.0.0'] },
+    });
+    const paths = servedMethods(storageIndex, resolved, platform).map((info) => info.path);
+
+    assert.ok(!paths.some((entry) => entry.startsWith('/doric.storage.')), paths.join(', '));
+    assert.ok(paths.includes('/demo.v1.DemoService/Echo'));
+    assert.ok(paths.includes('/demo.v1.DemoService/Watch'));
+  });
 });
 
 // ---------------------------------------------------------------------------

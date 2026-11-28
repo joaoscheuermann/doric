@@ -1,0 +1,8 @@
+{
+  "manifestVersion": 2,
+  "id": "sqlite",
+  "version": "1.0.0",
+  "engines": { "doric": "^1.0.0" },
+  "provides": ["storage.kv/v1@1.0.0", "storage/v2@2.0.0"],
+  "host": { "kind": "native" }
+}

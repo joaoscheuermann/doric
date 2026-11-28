@@ -1,0 +1,18 @@
+[package]
+name = "doric-sqlite"
+version = "0.0.0"
+edition.workspace = true
+publish = false
+description = "The key-value engine of `sqlite`: a library over one SQLite file."
+
+[dependencies]
+doric-bundle = { path = "../../../../packages/bundle-rs" }
+prost.workspace = true
+prost-types.workspace = true
+rusqlite.workspace = true
+tokio.workspace = true
+tokio-stream.workspace = true
+
+[build-dependencies]
+protox.workspace = true
+tonic-prost-build.workspace = true

@@ -4,9 +4,29 @@
   "projectType": "library",
   "sourceRoot": "packages/storage/src",
   "targets": {
+    "generate-proto": {
+      "executor": "nx:run-commands",
+      "cache": true,
+      "inputs": [
+        "{workspaceRoot}/buf.yaml",
+        "{workspaceRoot}/buf.lock",
+        "{workspaceRoot}/buf.gen.yaml",
+        "{projectRoot}/proto/**/*.proto",
+        {
+          "externalDependencies": ["@bufbuild/buf", "@bufbuild/protoc-gen-es"]
+        }
+      ],
+      "outputs": ["{projectRoot}/src/contracts/gen"],
+      "options": {
+        "commands": [
+          "npx buf generate --template buf.gen.yaml --path packages/storage/proto/doric -o packages/storage"
+        ],
+        "parallel": false
+      }
+    },
     "build": {
       "executor": "nx:run-commands",
-      "dependsOn": ["^build"],
+      "dependsOn": ["generate-proto", "^build"],
       "outputs": ["{projectRoot}/dist"],
       "options": {
         "command": "tsc --build packages/storage/tsconfig.lib.json"
@@ -14,19 +34,31 @@
     },
     "typecheck": {
       "executor": "nx:run-commands",
-      "dependsOn": ["^build"],
+      "dependsOn": ["generate-proto", "^build"],
       "options": {
         "command": "tsc --build packages/storage/tsconfig.json --emitDeclarationOnly"
       }
     },
     "test": {
       "executor": "nx:run-commands",
-      "dependsOn": ["^build", "build"],
+      "dependsOn": ["generate-proto", "^build", "build", "sqlite:compile"],
       "outputs": ["{projectRoot}/dist-tests"],
       "options": {
         "commands": [
           "tsc -p packages/storage/tsconfig.spec.json",
-          "node --test packages/storage/dist-tests/tests/*.test.js"
+          "find packages/storage/dist-tests/tests -maxdepth 1 -name '*.test.js' ! -name kv-heavy.test.js -exec node --test {} +"
+        ],
+        "parallel": false
+      }
+    },
+    "test-heavy": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["^build", "build", "sqlite:compile"],
+      "outputs": ["{projectRoot}/dist-tests"],
+      "options": {
+        "commands": [
+          "tsc -p packages/storage/tsconfig.spec.json",
+          "node --test --test-timeout=1800000 packages/storage/dist-tests/tests/kv-heavy.test.js"
         ],
         "parallel": false
       }

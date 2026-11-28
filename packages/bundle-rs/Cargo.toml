@@ -1,0 +1,27 @@
+[package]
+name = "doric-bundle"
+version = "0.0.0"
+edition.workspace = true
+publish = false
+description = "The Rust SDK of Doric bundles: the bundle side of the control stream, server side only."
+
+[lib]
+name = "doric_bundle"
+path = "src/lib.rs"
+
+[[example]]
+name = "conformance"
+path = "examples/conformance.rs"
+
+[dependencies]
+prost.workspace = true
+prost-types.workspace = true
+tokio.workspace = true
+tokio-stream.workspace = true
+tokio-util.workspace = true
+tonic.workspace = true
+tonic-prost.workspace = true
+
+[build-dependencies]
+protox.workspace = true
+tonic-prost-build.workspace = true

@@ -1,6 +1,7 @@
 version: v2
 modules:
   - path: packages/bundle/proto
+  - path: packages/storage/proto
   - path: bundles/features/files/proto
   - path: bundles/foundation/host-config/proto
   - path: bundles/runtime/runtime/proto
@@ -23,6 +24,7 @@ modules:
   - path: bundles/desktop/settings/proto
   - path: bundles/desktop/chat/proto
   - path: bundles/foundation/transport/proto
+  - path: bundles/foundation/sqlite/proto
   - path: benchmarks/proto-codec/proto
 deps:
   - buf.build/bufbuild/protovalidate

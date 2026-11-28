@@ -5,7 +5,8 @@
 # names the project that owns the `.proto` files of a directory, so a
 # generated file imports another project's generated file through that
 # project's export `./contracts/gen/*`; `buf/validate` and `google/rpc` are
-# generated in `packages/bundle` only.
+# generated in `packages/bundle` only. The first matching pattern wins, so
+# `doric/storage/conformance/` (`packages/storage`) precedes `doric/storage/`.
 version: v2
 plugins:
   - local: protoc-gen-es
@@ -20,6 +21,7 @@ plugins:
       - map_imports=doric/skills/v1/:bundle/contracts/gen
       - map_imports=doric/settings/v1/:bundle/contracts/gen
       - map_imports=doric/secrets/:bundle/contracts/gen
+      - map_imports=doric/storage/conformance/:storage/contracts/gen
       - map_imports=doric/storage/:bundle/contracts/gen
       - map_imports=doric/events/v1/:bundle/contracts/gen
       - map_imports=doric/models/:bundle/contracts/gen

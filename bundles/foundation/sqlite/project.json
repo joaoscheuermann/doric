@@ -1,0 +1,76 @@
+{
+  "name": "sqlite",
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "projectType": "application",
+  "sourceRoot": "bundles/foundation/sqlite/storage/src",
+  "tags": ["type:rust", "type:bundle"],
+  "targets": {
+    "check": {
+      "executor": "@monodon/rust:check",
+      "dependsOn": ["@org/source:proto-export"],
+      "outputs": ["{options.target-dir}"],
+      "options": {
+        "package": "doric-storage",
+        "target-dir": "dist/target/doric-sqlite"
+      }
+    },
+    "build": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["compile", "bundle:build"],
+      "outputs": ["{projectRoot}/dist"],
+      "options": {
+        "command": "node packages/bundle/dist/build/cli.js build bundles/foundation/sqlite"
+      }
+    },
+    "compile": {
+      "executor": "@monodon/rust:build",
+      "dependsOn": ["@org/source:proto-export"],
+      "outputs": ["{options.target-dir}"],
+      "options": {
+        "package": "doric-storage",
+        "bin": "doric-sqlite",
+        "target-dir": "dist/target/doric-sqlite"
+      },
+      "configurations": {
+        "production": {
+          "release": true
+        }
+      }
+    },
+    "test": {
+      "cache": true,
+      "executor": "nx:run-commands",
+      "dependsOn": ["@org/source:proto-export"],
+      "outputs": ["{workspaceRoot}/dist/target/doric-sqlite"],
+      "options": {
+        "command": "cargo test --locked -p doric-sqlite -p doric-storage --target-dir dist/target/doric-sqlite",
+        "cwd": "{workspaceRoot}"
+      }
+    },
+    "lint": {
+      "cache": true,
+      "executor": "nx:run-commands",
+      "dependsOn": ["@org/source:proto-export"],
+      "outputs": ["{workspaceRoot}/dist/target/doric-sqlite"],
+      "options": {
+        "command": "cargo clippy --all-targets --locked -p doric-sqlite -p doric-storage --target-dir dist/target/doric-sqlite -- -D warnings",
+        "cwd": "{workspaceRoot}"
+      }
+    },
+    "format-check": {
+      "cache": true,
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "cargo fmt --check -p doric-sqlite -p doric-storage",
+        "cwd": "{workspaceRoot}"
+      }
+    },
+    "clean": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "cargo clean --target-dir dist/target/doric-sqlite",
+        "cwd": "{workspaceRoot}"
+      }
+    }
+  }
+}

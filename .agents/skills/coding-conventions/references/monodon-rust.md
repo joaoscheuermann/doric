@@ -16,6 +16,21 @@
 | `lint`  | `@monodon/rust:lint`  | Run `cargo clippy`                                   |
 | `run`   | `@monodon/rust:run`   | Run `cargo run` (binaries only)                      |
 
+Exception: a Rust crate that is also a bundle (tagged `type:bundle`) names its
+`@monodon/rust:check` target `check`, builds its executable with a `compile`
+target (`@monodon/rust:build`), and makes `build` the bundle-CLI build, which
+depends on `compile` and `bundle:build`, as
+[`bundles/foundation/sqlite/project.json`](../../../../bundles/foundation/sqlite/project.json)
+does. Such a bundle may hold several crates in one Nx project: `sqlite` has
+the library `engine/` (`doric-sqlite`) and the binary package `storage/`
+(`doric-storage`); `check` and `compile` name the binary's package
+(`"package": "doric-storage"`), and `test`, `lint` and `format-check` are
+`nx:run-commands` targets passing `-p` for every crate. `clean` is
+`cargo clean --target-dir dist/target/doric-sqlite` with `cwd`
+`{workspaceRoot}`: the project directory has no `Cargo.toml`, so cargo run
+there would walk up to the workspace. The template below is
+for every other crate.
+
 ## Workspace Conventions
 
 - A workspace `Cargo.toml` at the repo root with `resolver = '2'` is standard.

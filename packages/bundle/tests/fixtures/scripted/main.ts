@@ -39,12 +39,18 @@
 //   1, sends `Signal { topic: "hello" }`. Serves `Register`, which logs
 //   `call`, waits `ms`, logs `answered` and answers `g<generation>`, or logs
 //   `cancelled` and fails when the call is cancelled first;
+// - `generations-held`: as `generations`, but `Register` holds its answer
+//   until the log holds a line `test answer <anything>`, written by the
+//   test, instead of for `ms`;
 // - `hold-on-drain`: as `generations`, and its `draining` handler, for
 //   itself, takes a `doric.generation/v1` hold (`held`) before it returns
 //   and releases it `ms` later (`released`);
 // - `call-repeat`: `count` times (1 when absent), one after the other, waits
 //   `ms` and calls `Register`, then logs `call-ok:<registrationId>` or
 //   `call-failed:<Doric code>`;
+// - `call-on-trigger`: as `call-repeat` with a `count` of 1, then waits until
+//   the log holds a line `test call <anything>`, written by the test, and
+//   calls `Register` once more, logging the same way;
 // - `serve-models`: serves `models/v1`'s `Kind`, which logs `call`, waits
 //   `ms`, logs `answered` and answers the kind `{ id: <request id>, label:
 //   "g<generation>" }`;
@@ -250,6 +256,29 @@ const callRegister = async (
   }
 };
 
+/** `Register` from `context`; logs `call-ok:<registrationId>` or the failure. */
+const callRepeatOnce = async (context: HostContext): Promise<void> => {
+  try {
+    const { registrationId } = await context.services
+      .use(SettingsService)
+      .register(register);
+
+    record(`call-ok:${registrationId}`);
+  } catch (error) {
+    const { code } = fromConnectError(ConnectError.from(error));
+
+    record(`call-failed:${code}`);
+  }
+};
+
+/** Whether the test has written a line starting with `prefix` to the log. */
+const triggered = (prefix = 'test call '): boolean =>
+  log !== undefined &&
+  log !== '' &&
+  readFileSync(log, 'utf8')
+    .split('\n')
+    .some((line) => line.startsWith(prefix));
+
 const settings = (
   implementation: Partial<ServiceImpl<typeof SettingsService>>,
 ): ServiceEntry =>
@@ -450,6 +479,7 @@ switch (mode) {
     run(() => {}, { deactivate: () => new Promise<void>(() => {}) });
     break;
   case 'generations':
+  case 'generations-held':
   case 'hold-on-drain':
     run((context) => watchGenerations(context, mode === 'hold-on-drain'), {
       services: [
@@ -458,10 +488,19 @@ switch (mode) {
             record('call');
 
             const cancelled = await new Promise<boolean>((resolve) => {
-              const timer = setTimeout(() => resolve(false), ms);
+              const timer =
+                mode === 'generations-held'
+                  ? setInterval(() => {
+                      if (triggered('test answer ')) {
+                        clearInterval(timer);
+                        resolve(false);
+                      }
+                    }, 20)
+                  : setTimeout(() => resolve(false), ms);
 
               handler.signal.addEventListener('abort', () => {
                 clearTimeout(timer);
+                clearInterval(timer);
                 resolve(true);
               });
             });
@@ -488,19 +527,22 @@ switch (mode) {
 
         for (let index = 0; index < times; index += 1) {
           await sleep(ms);
-
-          try {
-            const { registrationId } = await context.services
-              .use(SettingsService)
-              .register(register);
-
-            record(`call-ok:${registrationId}`);
-          } catch (error) {
-            const { code } = fromConnectError(ConnectError.from(error));
-
-            record(`call-failed:${code}`);
-          }
+          await callRepeatOnce(context);
         }
+      })();
+    });
+    break;
+  case 'call-on-trigger':
+    run((context) => {
+      void (async () => {
+        await sleep(ms);
+        await callRepeatOnce(context);
+
+        while (!triggered()) {
+          await sleep(20);
+        }
+
+        await callRepeatOnce(context);
       })();
     });
     break;

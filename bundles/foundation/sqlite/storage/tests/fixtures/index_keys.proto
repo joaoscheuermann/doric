@@ -1,0 +1,51 @@
+// A test fixture of `doric-storage` (spec `docs/designs/grpc-processes.md`,
+// "The layout", "The golden file"): one message with every kind of field an
+// index may name, and some it may not, for the JSON form and the index values
+// the engine computes. It is outside every buf module; the tests compile it
+// with `protox`.
+syntax = "proto3";
+
+package fixture.v1;
+
+import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+// An enum, written by name in the JSON form.
+enum Kind {
+  KIND_UNSPECIFIED = 0;
+  KIND_NOTE = 1;
+  KIND_TASK = 2;
+}
+
+// A nested message.
+message Nested {
+  string label = 1;
+}
+
+// A value with every scalar kind, an enum, well-known types, an `optional`
+// field, a nested message and a repeated field.
+message Sample {
+  double a_double = 1;
+  float a_float = 2;
+  int32 an_int32 = 3;
+  int64 an_int64 = 4;
+  uint32 a_uint32 = 5;
+  uint64 a_uint64 = 6;
+  sint32 a_sint32 = 7;
+  sint64 a_sint64 = 8;
+  fixed32 a_fixed32 = 9;
+  fixed64 a_fixed64 = 10;
+  sfixed32 an_sfixed32 = 11;
+  sfixed64 an_sfixed64 = 12;
+  bool a_bool = 13;
+  string a_string = 14;
+  bytes some_bytes = 15;
+  Kind kind = 16;
+  google.protobuf.Timestamp at = 17;
+  google.protobuf.Duration took = 18;
+  google.protobuf.StringValue wrapped = 19;
+  optional string maybe = 20;
+  Nested nested = 21;
+  repeated string tags = 22;
+}

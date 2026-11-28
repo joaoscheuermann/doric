@@ -11,7 +11,8 @@ versioned service contracts. This package holds what makes that work:
   (`bundle/runtime`);
 - the Node side of the host: discovery, the catalog and the build CLI
   (`bundle`);
-- in-process test harnesses for bundles (`bundle/testing`);
+- test harnesses for bundles (`bundle/testing`): in-process ones, and
+  `startTestProcess`, which spawns one built bundle process;
 - the import-map specifiers a client part leaves to its window
   (`bundle/externals`) and the generated JSON Schemas (`bundle/schemas/*`).
 
@@ -76,11 +77,23 @@ the one `bundle/contracts` instance of a `desktopMain` generation
 | `bundle/schemas/*`       | `dist/schemas/*`, written by the build               | Data             | The desktop platform build, which copies the folder by path (see [Who uses it](#who-uses-it))                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 
 `./contracts/gen/*` exports the protobuf-es code generated from
-[`proto/`](proto), its 39 contract files (the platform contracts under
+[`proto/`](proto), its 41 contract files (the platform contracts under
 `doric/platform/<name>/v1`, the options and control files under
 `doric/platform/v1`, the basic contracts under `doric/<name>/v1`, among
 them `storage/v1`, `storage.backend/v1` and `secrets.backend/v1` in the shape
-of the spec's "Storage until phase 4", and `models.provider/v1`, and the
+of the spec's "Storage until phase 4", and `models.provider/v1`, the
+`storage.kv/v1` contract of phase 4 (`doric/storage/kv/v1/kv.proto`,
+`KvService` with `Get`, `Range` and `Commit`, no count or size rules per A76;
+`sqlite` serves it (S74a), `kvClient` and `openTestEngine` call it (S74b),
+it is a basic host contract (S75a), `sqlite`'s native manifest provides it (S75b), and it
+serves only the caller `doric` (S76)), the `storage/v2` contract of phase 4
+(`doric/storage/v2/storage.proto`, `doric.storage.v2`, `2.0.0`, with
+`Register`, `Get`, `Query`, `Read`, `Commit`, `Health`, `PutBlob`, `GetBlob`
+and `DeleteBlob`; `RegisterRequest` carries a descriptor set of at most 2 MiB,
+`QueryPage` has `optional string next_cursor`, and the other messages are
+copied from `storage/v1`; a basic host contract since S77a1, whose `Register`
+`sqlite` serves since S77a2, `Commit` and `Get` since S77a3a and `Query` since S77a3b, beside `storage/v1`, which `core`
+serves until S84), and the
 conformance suite's `doric/conformance/v1/conformance.proto`), with `buf/validate` and `google/rpc`, as `bundle/contracts/gen/<path>_pb.js`, resolved like the
 code entries. The `generate-proto` target writes it into `src/contracts/gen/`,
 which Git ignores, and `build` and `typecheck` depend on it; another project's
@@ -356,6 +369,10 @@ function isContractId(value: unknown): value is ContractId;
 function isPlatformContract(id: string): boolean; // id starts with "doric."
 function majorOf(id: string): number; // "git.commands/v2" → 2
 ```
+
+`ids.ts` also holds, outside `bundle/contracts`, `internalContracts`
+(`['storage.kv/v1', 'storage/v2']`, frozen): the contracts only the platform
+calls (A79), none of whose methods the gateway serves.
 
 `majorOf` checks only the `/v<major>` suffix (`/\/v([1-9][0-9]*)$/`), so it
 also answers for a string that fails `contractIdPattern`; without the suffix
@@ -948,6 +965,7 @@ of `contractErrorCodes` by who raises them:
 | `tool_error`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | Tools served by `createToolHandlers` in host parts: a tool error (an `Error` named `ToolErrorObject` with data `{ code, message, toolName?, callId?, diagnostic?, issues? }`) thrown by `execute` or `check` crosses the router as `FAILED_PRECONDITION` with every field of the data in `details.toolError`, without its cause chain, and `core` keeps it through `tools/v1` `Execute` and `Check`; plain errors stay `internal`; phase 3, slice S51a of [`grpc-processes.md`](../../docs/designs/grpc-processes.md)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | `unknown_session`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | `runtime.workspace/v1` in [`runtime`](../../bundles/runtime/runtime/README.md) for a session id it does not hold (`NOT_FOUND`); phase 3, slice S47 of [`grpc-processes.md`](../../docs/designs/grpc-processes.md)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | `invalid_config`, `invalid_credential`, `invalid_provider`, `invalid_project`, `invalid_project_color`, `invalid_thread`, `invalid_project_path`, `invalid_execution`, `invalid_branch`, `invalid_prompt`, `invalid_steer`, `invalid_resume`, `invalid_rewind`, `invalid_interrupt`, `invalid_terminal`, `invalid_cursor`, `invalid_size`, `invalid_credential_id`, `invalid_project_id`, `invalid_thread_id`, `invalid_page`, `invalid_cwd`, `invalid_event_cursor` (`INVALID_ARGUMENT`); `credential_not_found`, `vm_not_found`, `project_not_found`, `project_path_not_found`, `thread_not_found`, `prompt_not_found`, `unknown_prompt`, `missing`, `terminal_missing` (`NOT_FOUND`); `configuration_rejected`, `model_catalog_unreadable`, `compaction_failed` (`UNAVAILABLE`); `internal_error` (`INTERNAL`) | The public API `doric.api.*` of `transport` (phase 3, slice S60 of [`grpc-processes.md`](../../docs/designs/grpc-processes.md)): its refusal reasons that have a row in the error table; its other reasons travel as `FAILED_PRECONDITION`, and `credential_name_taken` stays `ALREADY_EXISTS`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| `condition_failed`, `storage_path_missing`, `storage_format_unsupported`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | The `sqlite` engine of `storage.kv/v1` ([sqlite README](../../bundles/foundation/sqlite/README.md)): a commit condition that does not hold (`ABORTED`, `details.key` in hexadecimal), a `DORIC_STORAGE_PATH` that is missing or not a directory (`details.path`) and a file of an unknown `user_version` (`details.userVersion`), both `FAILED_PRECONDITION`; phase 4, slice S74b of [`grpc-processes.md`](../../docs/designs/grpc-processes.md)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 
 ### Registration helpers
 
@@ -966,6 +984,17 @@ A registration that needs its registrant's services (a command, a tool of the
 caller's services, before the input is validated, so the provider receives the
 bound value ([`dispatch.ts`](src/runtime/dispatch.ts), step 3 of a stub call
 in [`Services` and the part contexts](#services-and-the-part-contexts)).
+
+### Descriptor files
+
+```ts
+function closure(files: Iterable<DescFile>): DescFile[];
+```
+
+`closure` answers `files` and every file they import, transitively, each once
+(by name), imports first; it is pure. The build and the router use it for a
+binary `FileDescriptorSet`, and the `storage/v2` client for the descriptor set
+it registers ([`descriptor-set.ts`](src/platform/descriptor-set.ts)).
 
 ### Skills
 
@@ -1009,7 +1038,8 @@ method table (`<name>Methods`). A provider must implement exactly that table
 [`services.ts`](src/runtime/services.ts)). The methods, data and errors of
 each contract are described with its provider: the contracts `core` provides
 in the [core README](../../bundles/foundation/core/README.md); the backends
-with [`postgres`](../../bundles/foundation/postgres/README.md).
+`storage.backend/v1` and `secrets.backend/v1` with [`postgres`](../../bundles/foundation/postgres/README.md),
+`storage.kv/v1` with [`sqlite`](../../bundles/foundation/sqlite/README.md).
 `models.provider/v1` has several providers and `core` consumes it, so its
 full shape is here, in [The `models.provider/v1`
 contract](#the-modelsproviderv1-contract); each model provider's README states
@@ -1040,6 +1070,8 @@ function basicContractSpec(id: string): BasicContractSpec | undefined;
 | `secrets.backend/v1` | `SecretsBackendV1` | `host`                  | one         |                      | [`secrets.ts`](src/contracts/basic/secrets.ts)       |
 | `storage/v1`         | `StorageV1`        | `host`                  | one         |                      | [`storage.ts`](src/contracts/basic/storage.ts)       |
 | `storage.backend/v1` | `StorageBackendV1` | `host`                  | one         |                      | [`storage.ts`](src/contracts/basic/storage.ts)       |
+| `storage.kv/v1`      |                    | `host`                  | one         |                      | gRPC only (`KvService`), no envelope methods         |
+| `storage/v2`         |                    | `host`                  | one         |                      | gRPC only (`StorageService`), no envelope methods    |
 | `events/v1`          | `EventsV1`         | `host`                  | one         |                      | [`events.ts`](src/contracts/basic/events.ts)         |
 | `models/v1`          | `ModelsV1`         | `host`                  | one         |                      | [`models.ts`](src/contracts/basic/models.ts)         |
 | `models.provider/v1` | `ModelsProviderV1` | `host`                  | many        |                      | [`models.ts`](src/contracts/basic/models.ts)         |
@@ -1805,6 +1837,11 @@ without it: "a manifest without manifestVersion is not supported by Doric 2;
 write manifest version 2" ([`manifest.ts`](src/runtime/manifest.ts)).
 The fields and rules of version 1 are in [The bundle
 manifest](../../docs/architecture/bundles/manifest.md).
+
+In version 2, `host.kind` is `sea` (a Node SEA, the default) or `native` (a
+Rust executable); a native host part refuses `httpPrefix` and `assets`.
+`hostKindOf(manifest)` answers v2's `host.kind`, and `sea` for every v1
+manifest.
 
 ```ts
 const compositionSchema: z.ZodType<Composition>; // strict
@@ -2862,6 +2899,11 @@ exits with code 70 (`EXIT_HOST_GONE`). A service listed twice, or an
 `httpServer` already listening, rejects with a `TypeError` before the stream
 opens.
 
+A handler's response is limited by its frame: a response whose encoded
+`ConnectRequest` frame (the `CallMessage` with its `callId`) would pass 4 MiB
+(`maxMessageBytes`) is not sent, and the call ends `limit_exceeded`
+([`serve.ts`](src/sdk/host/serve.ts)).
+
 `httpServer` is bound to `127.0.0.1:0` before the stream opens and its port is
 the Hello's `httpPort`; the gateway forwards the requests under the manifest's
 `host.httpPrefix` to it. A part whose manifest sets no `host.httpPrefix` may
@@ -3122,7 +3164,9 @@ function stagedHostPart(bundlesDir: string): (bundleId: string) => boolean;
   provider it answers `UNIMPLEMENTED`, `unknown_contract`. After those it
   serves the platform's own `DESKTOP` methods (`doric.catalog/v1`'s members,
   `doric.diagnostics/v1.Report`); the platform's other methods answer
-  `UNIMPLEMENTED`, and a path it does not serve a plain 404.
+  `UNIMPLEMENTED`, and a path it does not serve a plain 404. It never serves a
+  method of `internalContracts` (`storage.kv/v1` and `storage/v2`), whatever
+  its options (S76).
 - `doric.catalog/v1` is served in full: `Distribution` (with a `hostBoot`
   drawn at random per start), `ReadArtifact` (chunks of at most 1 MiB, the file
   hashed again before answering, else `not_found` with `{ sha256 }`), `Watch`
@@ -3132,7 +3176,7 @@ function stagedHostPart(bundlesDir: string): (bundleId: string) => boolean;
 - A publish runs one at a time and adopts in order: the supervisor, the
   current resolution and the gateway, the diagnostics
   (`DiagnosticsStore.adopt`), the distribution, the open `Watch` calls.
-- `withBasicContracts(index)` answers `index` with the 12 basic `HOST`
+- `withBasicContracts(index)` answers `index` with the 14 basic `HOST`
   contracts of `basicHostContractFiles` as a fallback (`index`'s files win
   where both hold one), since a staged `descriptors.binpb` holds only its
   bundle's own protos ([`basic-contracts.ts`](src/platform/basic-contracts.ts)).
@@ -3300,7 +3344,8 @@ refuses a tag that does not start with the caller's bundle id
 
 For the process model (phase 2 of
 [`grpc-processes.md`](../../docs/designs/grpc-processes.md)) the entry adds an
-in-memory router and the protocol conformance suite. Both load Node modules
+in-memory router, the protocol conformance suite and `startTestProcess`, which
+spawns a bundle process under a test router. They load Node modules
 (`router.ts` runs the host SDK's call handling, and `runConformance` loads a
 suite that imports `node:` built-ins), so `bundle/testing` runs in Node only.
 
@@ -3319,6 +3364,18 @@ interface TestRouter {
   client<S extends DescService>(ref: S, options?: TestClientOptions): Client<S>;
   readonly control: TestRouterControl; // generationChanged, peerSignal, stop
   readonly logs: readonly TestLogRecord[];
+}
+
+function startTestProcess(options: TestProcessOptions): Promise<TestProcess>;
+interface TestProcessOptions {
+  readonly bundleId: string; // the id the process's Hello must carry
+  readonly command: readonly string[]; // program and arguments; empty: invalid_input
+  readonly env?: Readonly<Record<string, string>>;
+}
+interface TestProcess {
+  transport(caller: string, generation?: number): Transport; // host-to-bundle calls, stamped with this caller and generation (default 1)
+  stop(): Promise<void>; // Stop, then SIGKILL after 5 s
+  readonly exited: Promise<number | null>;
 }
 
 function runConformance(options: ConformanceOptions): Promise<void>;
@@ -3348,7 +3405,67 @@ registers the protocol conformance cases as `node:test` tests against a
 fixture serving `doric.conformance.v1.ConformanceService`: the Hello, health,
 activation, flow control, the error table, cancellation and deadlines, drain,
 `Stop`, an unknown method and the 4 MiB limit. The target
-`bundle:conformance` runs it on the TypeScript SDK's fixture.
+`bundle:conformance` runs it on the TypeScript SDK's fixture and, through
+`tests/conformance/rust.test.ts`, on the Rust SDK's fixture
+([`packages/bundle-rs`](../bundle-rs/README.md)), which it builds first with
+`doric-bundle:compile-example`.
+
+`startTestProcess` ([`process.ts`](src/testing/process.ts)) runs one built
+bundle process under a test router: it listens on a loopback port, spawns
+`command` as the supervisor does, accepts the Hello of `bundleId`
+(generation 1) and activates the process. Its instance has version `0.0.0`,
+generation 1 and incarnation 1; `transport(caller, generation = 1)` stamps each
+call with `{ bundleId: caller, version: '0.0.0', generation, incarnation: 1 }`,
+the generation it is given, 1 when absent. It sends no
+health check, and a call the process makes to the router fails with
+`undeclared_requirement`. A unary or client-streaming call that ends OK with
+other than one response fails `internal`; a call open when the process exits
+fails `unavailable`. A call's deadline is the Connect call's `timeoutMs`
+(none when it has none); unary, server-, client- and bidi-streaming methods
+are all supported.
+
+The process gets `process.env`, then `env` on top of it, then the variables
+the supervisor sets at spawn ([`spawn.ts`](src/platform/supervisor/spawn.ts)),
+which win. Among them `DORIC_BUNDLE_CACHE` is
+`<DORIC_STATE_DIR>/bundles/<bundleId>/0.0.0`, with `/var/lib/doric` when
+`DORIC_STATE_DIR` is not set.
+
+`startTestProcess` rejects when `command` is empty
+(`ContractError('invalid_input')`) or the spawn fails, and, after killing the
+process, when the process:
+
+- exits before it is active;
+- sends no Hello within 10 s;
+- sends a first frame that is not Hello;
+- opens its control stream without the instance token;
+- sends a Hello of another protocol version, bundle, generation or
+  incarnation;
+- fails `Activate` (with that failure's `ContractError`) or does not answer it
+  within 60 s.
+
+The example runs the conformance fixture, as
+[`process.test.ts`](tests/testing/process.test.ts) does (inside this package;
+`ConformanceService` is not exported):
+
+```ts
+import { createClient } from '@connectrpc/connect';
+import { startTestProcess } from 'bundle/testing';
+import { ConformanceService } from '../../src/contracts/gen/doric/conformance/v1/conformance_pb.js';
+
+const bundle = await startTestProcess({
+  bundleId: 'conformance.fixture',
+  command: ['dist/target/doric-bundle/debug/examples/conformance'],
+});
+try {
+  const client = createClient(ConformanceService, bundle.transport('test'));
+  const { text } = await client.echo({ text: 'hello' }); // 'hello'
+} finally {
+  await bundle.stop();
+}
+```
+
+Both `startTestProcess` and `runConformance` drive the process through the
+suite's internal session ([`conformance/session.ts`](src/testing/conformance/session.ts)).
 
 ## `bundle/externals`
 
@@ -3420,8 +3537,9 @@ function buildBundle(
 ): Promise<BuildResult>;
 function bundleDirectories(root: string): Promise<readonly string[]>;
 interface StageOptions {
-  readonly dev?: boolean;
-} // default false
+  readonly dev?: boolean; // default false
+  readonly targetDir?: string; // Cargo target dir of native host parts; default resolve('dist/target'), relative to the current directory
+}
 function stageBundles(
   destination: string,
   bundleDirs: readonly string[],
@@ -3498,6 +3616,10 @@ function hostProvides(input: {
   services: readonly StaticServiceEntry[];
   index: CatalogIndex;
 }): readonly HostProvide[];
+function nativeProvides(input: {
+  manifest: Manifest;
+  index: CatalogIndex;
+}): readonly HostProvide[];
 function contractDocument(contract: RecordedContract): ContractDocument;
 function schemaPath(contractId: string): string;
 ```
@@ -3529,6 +3651,14 @@ served contract `provides` lists: the declared version, kind and cardinality
 from the `.proto`, `local: false` and the path `schemas/<id>.json`, for which
 no schema file is written. The build's dry activation of the parts still
 runs ([`cli.ts`](src/build/cli.ts)).
+
+For a native host part (`host.kind: 'native'`), `buildBundle` runs no host
+esbuild and refuses a bundle that has `src/host/main.ts`; `served` comes from
+`nativeProvides({ manifest, index })`, which answers, in `provides` order and
+without duplicates, each listed id the index knows as a `HOST` contract whose
+file declares a contract-role service (`kind: 'service'`, the `.proto`'s
+cardinality, `source` the `.proto` file name), and leaves out every other id,
+so `checkRecording` reports it as provided by no part.
 
 **Parts** ([`parts.ts`](src/build/parts.ts)). Each part with a source entry is
 rebuilt into a cleared output folder with esbuild, bundled as ESM; inline
@@ -3573,7 +3703,12 @@ stages: any other directory below `<dest>` stays
 ([`cli.ts`](src/build/cli.ts)). `doric-host` stages every bundle into
 `app/backend/doric-host/dist/bundles`. With `--dev`, each bundle with a built
 `dist/host/main.mjs` also gets `<dest>/<id>/host/command.json`, `["node",
-"<abs bundleDir>/dist/host/main.mjs"]`.
+"<abs bundleDir>/dist/host/main.mjs"]`. A native host part stages its Cargo
+executable `<targetDir>/doric-<id>/<profile>/doric-<id>`: with `--dev` (debug
+profile) only `host/command.json`, `["<abs exe>"]`, is written and nothing is
+copied; otherwise the release executable is copied to `host/doric-<id>` with
+mode 0755. A missing executable fails with a `BuildError` naming
+`npx nx run <id>:compile` (`<id>:compile:production` for release).
 
 **`copy-md`** removes every `.md` below `<to>`, then copies each `.md` below
 `<from>` to the same relative path; other files are kept, a missing `<from>`
@@ -3587,14 +3722,14 @@ manifest](../../docs/architecture/bundles/manifest.md) and
 
 ## Build and test this package
 
-| Target                  | Runs                                                                                                                                                                                                                                                                 |
-| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `bundle:generate-proto` | `buf generate` of `proto/doric` and of `dist/proto`'s `buf/validate` and `google/rpc` into `src/contracts/gen/`, after `@org/source:proto-export`; cached                                                                                                            |
-| `bundle:build`          | After `generate-proto`: `tsc --build packages/bundle/tsconfig.lib.json` into `dist/`, then `node packages/bundle/dist/build/platform-schemas.js`, which writes `dist/schemas/`                                                                                       |
-| `bundle:typecheck`      | After `generate-proto` and `build`: `tsc --build packages/bundle/tsconfig.json --emitDeclarationOnly`, then `tsc -p packages/bundle/tsconfig.browser.json` (the browser-safe entries)                                                                                |
-| `bundle:test`           | After `build` and `^build`: `tsc -p tsconfig.browser.json` (type check only, `noEmit`), `tsc -p tsconfig.spec.json` (writes `dist-tests/`), then `node --test 'packages/bundle/dist-tests/tests/*.test.js' 'packages/bundle/dist-tests/tests/platform/**/*.test.js'` |
-| `bundle:conformance`    | After `build` and `^build`: `tsc -p tsconfig.spec.json`, then `node --test 'packages/bundle/dist-tests/tests/conformance/*.test.js'`, the protocol conformance suite on the TypeScript SDK's fixture                                                                 |
-| `bundle:bench-rk4`      | After `build` and `^build`, not cached: `tsc -p tsconfig.spec.json`, then `node packages/bundle/dist-tests/tests/bench/rk4.js`, RK4's benchmark; it exits 1 when RK4's rule fails, unless `RK4_NO_FAIL=1`                                                            |
+| Target                  | Runs                                                                                                                                                                                                                                                                                                                                                                                      |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `bundle:generate-proto` | `buf generate` of `proto/doric` and of `dist/proto`'s `buf/validate` and `google/rpc` into `src/contracts/gen/`, after `@org/source:proto-export`; cached                                                                                                                                                                                                                                 |
+| `bundle:build`          | After `generate-proto`: `tsc --build packages/bundle/tsconfig.lib.json` into `dist/`, then `node packages/bundle/dist/build/platform-schemas.js`, which writes `dist/schemas/`                                                                                                                                                                                                            |
+| `bundle:typecheck`      | After `generate-proto` and `build`: `tsc --build packages/bundle/tsconfig.json --emitDeclarationOnly`, then `tsc -p packages/bundle/tsconfig.browser.json` (the browser-safe entries)                                                                                                                                                                                                     |
+| `bundle:test`           | After `build`, `^build` and `sqlite:build`: `tsc -p tsconfig.browser.json` (type check only, `noEmit`), `tsc -p tsconfig.spec.json` (writes `dist-tests/`), then `node --test 'packages/bundle/dist-tests/tests/*.test.js' 'packages/bundle/dist-tests/tests/platform/**/*.test.js' 'packages/bundle/dist-tests/tests/testing/*.test.js'`; also depends on `doric-bundle:compile-example` |
+| `bundle:conformance`    | After `build`, `^build` and `doric-bundle:compile-example`: `tsc -p tsconfig.spec.json`, then `node --test 'packages/bundle/dist-tests/tests/conformance/*.test.js'`, the protocol conformance suite on the TypeScript SDK's fixture and, in `rust.test.ts`, on the Rust SDK's fixture                                                                                                    |
+| `bundle:bench-rk4`      | After `build` and `^build`, not cached: `tsc -p tsconfig.spec.json`, then `node packages/bundle/dist-tests/tests/bench/rk4.js`, RK4's benchmark; it exits 1 when RK4's rule fails, unless `RK4_NO_FAIL=1`                                                                                                                                                                                 |
 
 ```console
 npx nx run bundle:build

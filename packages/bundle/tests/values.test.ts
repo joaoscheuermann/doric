@@ -136,6 +136,8 @@ void test('every basic and platform method has a stated way across the envelope'
       identity: 'crosses',
       connect: 'crosses',
     },
+    'storage.kv/v1': {},
+    'storage/v2': {},
     'events/v1': {
       register: 'optimistic via definition+disposable',
       sink: 'optimistic via disposable',

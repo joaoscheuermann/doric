@@ -1,0 +1,181 @@
+// `storage.kv/v1` (host, 1.0.0): an ordered key-value store. Its provider is the
+// engine bundle, `sqlite`, and it serves only the platform: the caller `doric`
+// (A79). Any other caller is answered `not_owner`, with the message
+// `storage.kv/v1 serves only the platform.` and no details, before any I/O.
+// Keys and values are byte strings; keys are ordered by unsigned bytewise
+// comparison.
+//
+// Guarantees every engine gives:
+//
+// 1. Order. `Range` answers the keys of `[start, end)` in key order, or in
+//    reverse order with `reverse`, and stops after `limit` entries (1 to
+//    1,000); a caller continues from the last key it received.
+// 2. Versions and positions. Every successful commit receives a position: a
+//    whole number above the position of every commit that succeeded before it
+//    and below 2^53; positions need not be consecutive. A key's version is the
+//    position of the commit that last wrote it; an absent key has version 0.
+//    A positioned put writes `key_prefix` followed by the position as 8 bytes,
+//    big-endian.
+// 3. Atomic, conditional commits. A commit applies all its mutations or none.
+//    Its conditions are checked against the state left by every commit with a
+//    lower position; mutations apply in item order, so a later item on the
+//    same key wins.
+// 4. Reads. The items of one `Get` call, and the entries of one `Range` call,
+//    each come from one committed state, which includes every commit that
+//    answered before the call began and, with the commit at a position, every
+//    commit with a lower position.
+// 5. Durability. A commit that answered survives a restart of the engine.
+// 6. Limits. Every engine accepts at least a key of 4,096 bytes, a value of
+//    1,048,576 bytes, 1,000 keys per `Get`, 1,000 entries per `Range`, and a
+//    commit of 200,000 items and 67,108,864 bytes of keys and values; a call
+//    completes within its deadline, which the library sets to at most 30
+//    seconds.
+// 7. Nothing else. No schema, no secondary index, no watch, no expiry: the
+//    engine never reads a value.
+// 8. Isolation. The engine checks the keys that `doric-storage` writes for a
+//    caller: every key must start with the caller's prefix, the UTF-8 bytes of
+//    `<bundleId>/`, taken from the caller the router stamped: each key read;
+//    `start` and `end` of a range and of a clear range; the key of each
+//    condition, put and delete; and the key prefix of each positioned put.
+//    Otherwise nothing is read or written. The caller `doric` is not checked.
+//
+// Errors: `not_owner` (a caller but `doric`, with the message `storage.kv/v1
+// serves only the platform.` and no details; nothing is read or written),
+// `condition_failed` (a condition does not hold; `details.key`, the first
+// failing key in item order, in hexadecimal; nothing is written),
+// `limit_exceeded` (over a limit of guarantee 6; `details.limit` names it:
+// `keyBytes`, `valueBytes`, `getKeys` for a `Get` of more than 1,000 keys,
+// `rangeLimit` for a `limit` above 1,000, `commitItems` or `commitBytes`) and
+// `invalid_input` (a `Get` with no keys, a `limit` of 0, a `start` after `end`
+// in a `Range` or a `clear_range`, a commit item with no case set, or a commit
+// with no mutation).
+//
+// This file carries no protovalidate rule on a count or a size (A76): the
+// engine checks the limits, the isolation and the refusals above itself, so an
+// engine whose SDK does not validate answers the same codes. Its one rule is
+// `(buf.validate.oneof).required` on `CommitRequest.item`.
+syntax = "proto3";
+
+package doric.storage.kv.v1;
+
+import "buf/validate/validate.proto";
+import "doric/platform/v1/options.proto";
+
+option (doric.platform.v1.contract) = {
+  id: "storage.kv/v1"
+  cardinality: CARDINALITY_ONE
+  environment: ENVIRONMENT_HOST
+};
+
+// Reads and atomic commits over the caller's keys.
+service KvService {
+  // Answers one item per requested key, in request order, all from one
+  // committed state.
+  rpc Get(GetRequest) returns (stream GetResponse);
+  // Answers the entries of `[start, end)` in key order, or in reverse order,
+  // all from one committed state.
+  rpc Range(RangeRequest) returns (stream RangeResponse);
+  // Takes conditions and mutations and applies them, all or none, at the end
+  // of the stream; answers the commit's position.
+  rpc Commit(stream CommitRequest) returns (CommitResponse);
+}
+
+// The request of `Get`.
+message GetRequest {
+  // The keys to read: 1 to 1,000, each under the caller's prefix.
+  repeated bytes keys = 1;
+}
+
+// One item of `Get`, for one requested key.
+message GetResponse {
+  // The requested key.
+  bytes key = 1;
+  // The key's value; unset when the key is absent.
+  optional bytes value = 2;
+  // The key's version: the position of the commit that last wrote it; 0 when
+  // the key is absent.
+  double version = 3;
+}
+
+// The request of `Range`.
+message RangeRequest {
+  // The first key of the range, included.
+  bytes start = 1;
+  // The end of the range, excluded; not before `start`.
+  bytes end = 2;
+  // The most entries to answer: 1 to 1,000.
+  uint32 limit = 3;
+  // Answers the entries in reverse key order, from the last key before `end`.
+  bool reverse = 4;
+  // Answers the keys and versions only; `value` stays empty.
+  bool keys_only = 5;
+}
+
+// One entry of `Range`.
+message RangeResponse {
+  // The entry's key.
+  bytes key = 1;
+  // The entry's value; empty with `keys_only`.
+  bytes value = 2;
+  // The entry's version: the position of the commit that last wrote it.
+  double version = 3;
+}
+
+// One item of a commit: a condition or a mutation.
+message CommitRequest {
+  // The item; a commit item with no case set is `invalid_input`.
+  oneof item {
+    option (buf.validate.oneof).required = true;
+
+    // The key's version must be `version`; 0 means the key must be absent.
+    Condition condition = 1;
+    // Writes a value under a key.
+    Put put = 2;
+    // Removes a key.
+    bytes delete = 3;
+    // Removes every key in `[start, end)`.
+    KeyRange clear_range = 4;
+    // Writes `key_prefix` followed by the commit's position as 8 bytes,
+    // big-endian.
+    PositionedPut positioned_put = 5;
+  }
+}
+
+// A condition of a commit.
+message Condition {
+  // The key the condition is on.
+  bytes key = 1;
+  // The version the key must have; 0 means the key must be absent.
+  double version = 2;
+}
+
+// A write of a value under a key.
+message Put {
+  // The key to write.
+  bytes key = 1;
+  // The value to write.
+  bytes value = 2;
+}
+
+// A range of keys, `[start, end)`; a `start` after `end` is `invalid_input`.
+message KeyRange {
+  // The first key, included.
+  bytes start = 1;
+  // The end, excluded.
+  bytes end = 2;
+}
+
+// A write under a key that ends with the commit's position.
+message PositionedPut {
+  // The key's beginning; the commit's position, as 8 bytes, big-endian,
+  // follows it.
+  bytes key_prefix = 1;
+  // The value to write.
+  bytes value = 2;
+}
+
+// The response of `Commit`.
+message CommitResponse {
+  // The commit's position, which is also the version of every key it wrote.
+  double position = 1;
+}

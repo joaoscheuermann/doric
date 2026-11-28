@@ -7,7 +7,72 @@ query cursor, the stream-id rule, the conflict and limit errors and the batch
 accounting. It also holds an in-memory implementation of `storage.backend/v1`
 and `secrets.backend/v1`, which is the executable reference of the protocol and
 the storage of unit tests, and the conformance kit that every storage backend
-passes.
+passes. Since slice S77b1 it also holds the `storage/v2` client, `openStorage`,
+through which a bundle stores its documents (below).
+
+Phase 4 of [`grpc-processes.md`](../../docs/designs/grpc-processes.md) adds the
+key-value side of storage: the `Kv` client of `storage.kv/v1`, the contract of
+the `sqlite` engine bundle ([sqlite README](../../bundles/foundation/sqlite/README.md));
+the KV conformance kit `runKvConformance`; and `storage/testing`, which spawns
+that engine for a test. `storage/memory` and the `storage.backend/v1`
+conformance suites stay until slice S85a deletes them. There is no storage
+library over `Kv` (A79): the engine owns the layout.
+
+Since slice S77b1 the package root also exports the `storage/v2` client
+(`src/client/`): `openStorage(context, files)` registers the bundle's
+descriptor files once (a descriptor set of at most 2,097,152 bytes, checked
+before any call, else `limit_exceeded` with `details.limit` `"descriptorSet"`) and answers a `Storage` with `get`, `query`,
+`commit`, `read`, `health`, `putBlob`, `getBlob` and `deleteBlob`. Values are
+checked against their type and protovalidate before they are written
+(`invalid_input` with `{type, id}` and the first violation), stored in chunks
+of at most 1 MiB, and a value that does not decode is `invalid_output`. Until
+S78 the engine refuses stream items (`invalid_input`, "Stream items are not
+supported."), and `read`, `health` and the blob methods answer
+`unknown_contract`. The client's own refusals, made before any call, are
+`invalid_input`, and a call's signal or deadline makes it `cancelled` or
+`deadline_exceeded`; `limit_exceeded` (`"descriptorSet"`) comes only from
+`openStorage` and the registration that `TestEngine.storage` shares with it. `storage/testing` adds
+`TestEngine.storage(bundleId, files, generation = 1)` and
+`openTestStorage(bundleId, files)`, whose `TestStorage {storage, kv, reset,
+close}` registers the files again after each `reset()`, since the KV clear
+deletes the declarations. The conformance messages `Note`, `Thread` and
+`Plain` are in `proto/doric/storage/conformance/v1/conformance.proto`,
+generated into `src/contracts/gen/` (`./contracts/gen/*`, target
+`generate-proto`).
+
+Since slice S77b2 the `storage/v2` conformance kit is in
+`src/conformance/v2/`, not exported; the v1 kit in `src/conformance/` is
+unchanged. `runStorageV2Conformance(options)` (`v2/index.ts`) opens a
+`V2Harness` over a spawned engine before the cases and closes it after them,
+as `runKvConformance` does, with a default timeout of 120 s per case; the case
+lists are `storageV2Cases`, `instanceV2Cases` and `registrationV2Cases`
+(`v2ConformanceCases` holds all three). `V2Harness` (`v2/harness.ts`) has
+`open(bundleId?, files?, generation?)`, `raw(caller, generation)`, `reset()`
+and `fresh()`, a new engine for a case of generations, since `reset()` keeps
+the remembered highest generation; the kit closes it when the case ends.
+`openV2Harness(options?: V2HarnessOptions {name, openEngine})` answers a
+`V2HarnessHandle`, a `V2Harness` with `close()`, and `V2RunOptions` holds
+`name`, `cases`, `openEngine`, `skip` and `timeout`. Its 63 cases are 41
+active ones, D1–D7, `T4.3-prefix` and `T4.3-16MiB` (`documents.ts`), R1–R3
+(`revisions.ts`), Q1–Q4 (`indexes.ts`), Q5, Q6 and T4.9 (`paging.ts`),
+Q7–Q10 and T4.23 (`keyed.ts`), C1, C4 and `not_owner` through raw clients
+(`concurrency.ts`), the document parts of X1, X2 and X5 (`failure.ts`), L2,
+`L2-bytes` and L3 (`limits.ts`, no L1), REG1–REG5 (`registration.ts`) and
+GEN1–GEN3 (`generations.ts`, each on `fresh()`), and 22 skipped ones, skipped
+with the reason `S78: streams` (`untilS78`) until S78 adds streams: C2, C3,
+`X1-streams`, X3, X4, `X5-streams`, P1 and P2; S1–S6 and `T4.3-event-3MiB`
+(`streams.ts`, an event of exactly 3,145,728 bytes round-trips and one byte
+more is `limit_exceeded`); B1–B5 and `T4.3-health` (`blobs.ts`); and
+`not_owner-streams` (`concurrency.ts`, run by `storage-instances.test.ts`). The cases also pin that a range bound of
+another kind is allowed, an empty type id is `invalid_input`, a no-field index
+lists every document in id order, a `Storage` registered without a type
+refuses a get of it with `invalid_input` before any call, and
+`limit_exceeded`'s details are exactly `{limit}`. S77b2 also fixed three drifts
+of the client: an appended event is chunked like a value (an `event` item of at
+most 1 MiB, then `chunk` items); an event that encodes to 0 bytes is
+`invalid_input` `{stream}`; an append with no events is `invalid_input`
+`{stream}`; and `dropStreams` or `truncate` on an undeclared stream is
+`invalid_input`, all before any call.
 
 The contract itself, its references and method schemas, is exported by
 `bundle/contracts`
@@ -23,31 +88,36 @@ bundles that store data is in
 
 ## Who uses it
 
-| Entry point           | Imported by                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `storage`             | The `postgres` bundle, which implements `storage.backend/v1` with these helpers ([`backend.ts`](../../bundles/foundation/postgres/src/host/storage/backend.ts), [`commit.ts`](../../bundles/foundation/postgres/src/host/storage/commit.ts), [`declare.ts`](../../bundles/foundation/postgres/src/host/storage/declare.ts), [`query.ts`](../../bundles/foundation/postgres/src/host/storage/query.ts)); the `core` bundle's `storage/v1` and `events/v1` facades, which apply the same batch and stream-id rules before calling the backend ([`storage/facade.ts`](../../bundles/foundation/core/src/host/storage/facade.ts), [`events/service.ts`](../../bundles/foundation/core/src/host/events/service.ts)) |
-| `storage/memory`      | Tests only: the tests of `core`, `runtime` and `mcp` and of the host, which boot over the memory backends ([`core/tests/support/router.ts`](../../bundles/foundation/core/tests/support/router.ts), [`runtime/tests/store/support.ts`](../../bundles/runtime/runtime/tests/store/support.ts), [`mcp/tests/support/world.ts`](../../bundles/features/mcp/tests/support/world.ts), [`credential-adapter.test.ts`](../../app/backend/doric-host/tests/credential-adapter.test.ts))                                                                                                                                                                                                                                |
-| `storage/conformance` | The test suite of each storage backend: `postgres` and this package's memory backend ([`postgres/tests/conformance.test.ts`](../../bundles/foundation/postgres/tests/conformance.test.ts), [`memory-conformance.test.ts`](tests/memory-conformance.test.ts))                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| Entry point           | Imported by                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `storage`             | Bundles that store documents, through `openStorage` and the `Storage` types; the `postgres` bundle, which implements `storage.backend/v1` with these helpers ([`backend.ts`](../../bundles/foundation/postgres/src/host/storage/backend.ts), [`commit.ts`](../../bundles/foundation/postgres/src/host/storage/commit.ts), [`declare.ts`](../../bundles/foundation/postgres/src/host/storage/declare.ts), [`query.ts`](../../bundles/foundation/postgres/src/host/storage/query.ts)); the `core` bundle's `storage/v1` and `events/v1` facades, which apply the same batch and stream-id rules before calling the backend ([`storage/facade.ts`](../../bundles/foundation/core/src/host/storage/facade.ts), [`events/service.ts`](../../bundles/foundation/core/src/host/events/service.ts)) |
+| `storage/memory`      | Tests only: the tests of `core`, `runtime` and `mcp` and of the host, which boot over the memory backends ([`core/tests/support/router.ts`](../../bundles/foundation/core/tests/support/router.ts), [`runtime/tests/store/support.ts`](../../bundles/runtime/runtime/tests/store/support.ts), [`mcp/tests/support/world.ts`](../../bundles/features/mcp/tests/support/world.ts), [`credential-adapter.test.ts`](../../app/backend/doric-host/tests/credential-adapter.test.ts))                                                                                                                                                                                                                                                                                                             |
+| `storage/conformance` | The test suite of each storage backend: `postgres` and this package's memory backend ([`postgres/tests/conformance.test.ts`](../../bundles/foundation/postgres/tests/conformance.test.ts), [`memory-conformance.test.ts`](tests/memory-conformance.test.ts)); the KV kit on the `sqlite` engine ([`kv.test.ts`](tests/kv.test.ts))                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| `storage/testing`     | This package's engine tests ([`kv.test.ts`](tests/kv.test.ts), [`kv-heavy.test.ts`](tests/kv-heavy.test.ts), [`kv-client.test.ts`](tests/kv-client.test.ts), [`test-engine.test.ts`](tests/test-engine.test.ts), [`storage-client.test.ts`](tests/storage-client.test.ts)) and the `storage/v2` kit in `src/conformance/v2/`, which spawns the engine through `test-engine.ts`                                                                                                                                                                                                                                                                                                                                                                                                              |
 
-No other bundle imports it: bundles reach storage through the core's
-`storage/v1` facade ([Storage and history](../../docs/architecture/bundles/storage.md)).
+Bundles that store documents import `openStorage` from `storage`; the others
+reach storage through the core's `storage/v1` facade
+([Storage and history](../../docs/architecture/bundles/storage.md)).
 
 ## Entry points
 
 The package is ESM (`"type": "module"`) and private; it declares `bundle`,
-`tslib` and `zod` as dependencies and imports only `bundle`, and it runs on
-Node.js (`Buffer`, `node:crypto`, and `node:test` in the kit)
+`@bufbuild/protobuf`, `@bufbuild/protovalidate`, `@connectrpc/connect`, `tslib` and `zod` as
+dependencies, and it runs on Node.js (`Buffer`, `node:crypto`, `node:fs`, and
+`node:os`, `node:path`, `node:url`, and `node:test` in the kits)
 ([`package.json`](package.json)). Each entry resolves to `src/` under the
 `@org/source` condition and to the built `dist/` otherwise.
 
-| Specifier              | Source                                                 | Contents                                                                                                                                                                                                                           |
-| ---------------------- | ------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `storage`              | [`src/index.ts`](src/index.ts)                         | Index keys, query cursors, stream ids, conflict and limit errors, batch accounting                                                                                                                                                 |
-| `storage/memory`       | [`src/memory/index.ts`](src/memory/index.ts)           | `memoryStorageBackend`, `memorySecretsBackend`, `createMemoryStore`                                                                                                                                                                |
-| `storage/conformance`  | [`src/conformance/index.ts`](src/conformance/index.ts) | `runStorageConformance`, `runConformanceCase`, `conformanceCases` and the harness types                                                                                                                                            |
-| `storage/rpc`          | [`src/rpc/index.ts`](src/rpc/index.ts)                 | `serveStorageBackend`, `storageBackendClient`, `serveSecretsBackend`, `secretsBackendClient`, `serveStorage`, `storageClient` and the chunked JSON codec (`encodeJson`, `decodeJson`, `chunkBytes`, `joinChunks`, `maxChunkBytes`) |
-| `storage/rpc/chunks`   | [`src/rpc/chunks.ts`](src/rpc/chunks.ts)               | The chunked JSON codec alone, without `node:` imports, for browser-safe callers such as `runtime/contracts`                                                                                                                        |
-| `storage/package.json` | [`package.json`](package.json)                         | The manifest                                                                                                                                                                                                                       |
+| Specifier                 | Source                                                 | Contents                                                                                                                                                                                                                                                 |
+| ------------------------- | ------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `storage`                 | [`src/index.ts`](src/index.ts)                         | Index keys, query cursors, stream ids, conflict and limit errors, batch accounting; `Kv`, `kvLimits`, `kvClient`; `openStorage` and the `Storage` types (`Storage`, `StorageQuery`, `CommitBatch`, `StreamAppend` and the rest of `src/client/types.ts`) |
+| `storage/contracts/gen/*` | [`src/contracts/gen/`](src/contracts/gen/)             | The generated conformance messages `Note`, `Thread` and `Plain`                                                                                                                                                                                          |
+| `storage/memory`          | [`src/memory/index.ts`](src/memory/index.ts)           | `memoryStorageBackend`, `memorySecretsBackend`, `createMemoryStore`                                                                                                                                                                                      |
+| `storage/conformance`     | [`src/conformance/index.ts`](src/conformance/index.ts) | `runStorageConformance`, `runConformanceCase`, `conformanceCases` and the harness types; `runKvConformance`, `KvConformanceHarness`, `KvTarget`                                                                                                          |
+| `storage/rpc`             | [`src/rpc/index.ts`](src/rpc/index.ts)                 | `serveStorageBackend`, `storageBackendClient`, `serveSecretsBackend`, `secretsBackendClient`, `serveStorage`, `storageClient` and the chunked JSON codec (`encodeJson`, `decodeJson`, `chunkBytes`, `joinChunks`, `maxChunkBytes`)                       |
+| `storage/rpc/chunks`      | [`src/rpc/chunks.ts`](src/rpc/chunks.ts)               | The chunked JSON codec alone, without `node:` imports, for browser-safe callers such as `runtime/contracts`                                                                                                                                              |
+| `storage/testing`         | [`src/testing.ts`](src/testing.ts)                     | `openTestEngine`, `TestEngine`, `TestEngineOptions`, `openTestStorage`, `TestStorage`                                                                                                                                                                    |
+| `storage/package.json`    | [`package.json`](package.json)                         | The manifest                                                                                                                                                                                                                                             |
 
 Every error the helpers and the memory backends raise is a `ContractError` of
 `bundle/contracts`, `new ContractError(code, message, details?)`, recognized
@@ -134,6 +204,15 @@ compares document ids by their UTF-8 bytes, the order PostgreSQL gives with
 `COLLATE "C"`; a backend breaks ties between equal index keys with it
 ([`keys.ts`](src/keys.ts)).
 
+The Rust engine owns the index-key encoding: `keys.rs` and `schema.rs` of
+[`sqlite`](../../bundles/foundation/sqlite/README.md)'s `doric-storage` port
+`encodeIndexKey`, `decodeIndexKey`, `indexValues` and `resolvePointer` byte for
+byte, and write the golden file
+`bundles/foundation/sqlite/storage/tests/fixtures/index-keys.json`.
+[`index-parity.test.ts`](tests/index-parity.test.ts) (T4.23) pins this module
+to it: it recomputes every key of the golden file with `keys.ts` and
+protobuf-es and expects the same bytes.
+
 ### Query cursors
 
 ```ts
@@ -190,6 +269,93 @@ Each function builds, and does not throw, the `ContractError` a backend raises
 | `limitExceeded(what, limit)`                       | `limit_exceeded`    | by `what`: `The commit batch holds more than <limit> items.`, `A document is larger than <limit> bytes.` or `An appended event is larger than <limit> bytes.` | `{ what, limit }`, `what` being `'batch'`, `'document'` or `'append'` |
 
 A revision of 0 means the document is absent.
+
+`limit_exceeded` has two shapes. These helpers put the number in
+`details.limit`, next to `what`; `Kv` puts the name of the limit there, one of
+the names of `kvLimits` ([`Kv`](#kv-the-client-of-storagekvv1)).
+
+### `Kv`: the client of `storage.kv/v1`
+
+`Kv` is the TypeScript face of the `sqlite` engine's `KvService`
+([`kv.ts`](src/kv.ts)), which serves only the platform, the caller `doric`:
+
+```ts
+interface Kv {
+  get(request: GetRequest, call?: CallArg): AsyncIterable<GetResponse>;
+  range(request: RangeRequest, call?: CallArg): AsyncIterable<RangeResponse>;
+  commit(
+    items: Iterable<CommitRequest> | AsyncIterable<CommitRequest>,
+    call?: CallArg,
+  ): Promise<CommitResponse>;
+}
+```
+
+- `get` yields one answer per key, in request order; an absent key has no
+  `value` and version 0.
+- `range` yields at most `limit` entries of `[start, end)` in unsigned bytewise
+  order, or reversed with `reverse`, without values when `keysOnly` is set.
+- `commit` sends its items as one commit and resolves with its `position` once
+  it is durable: above every earlier commit's, and the version of every key it
+  wrote. Mutations apply in item order, all or none; the first condition that
+  fails rejects the commit with `condition_failed`. A commit with no mutation
+  is `invalid_input`.
+
+A refused call reads or writes nothing, and each `get` or `range` reads one
+committed state. `kvLimits` is frozen and names the limits as
+`limit_exceeded` reports them in `details.limit`:
+
+| Limit         | Value               |
+| ------------- | ------------------- |
+| `keyBytes`    | 4096                |
+| `valueBytes`  | 1 048 576 (1 MiB)   |
+| `getKeys`     | 1000                |
+| `rangeLimit`  | 1000                |
+| `commitItems` | 200 000             |
+| `commitBytes` | 67 108 864 (64 MiB) |
+
+Every refusal is a `ContractError` with the contract's code and details:
+
+| Code                | When                                                                                                                                                            | Details                           |
+| ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------- |
+| `invalid_input`     | a `get` with no keys; a `range` with `limit` 0; a `start` after `end` in a `range` or a `clearRange`; a commit item with no case set; a commit with no mutation | —                                 |
+| `limit_exceeded`    | a limit of the table above is passed                                                                                                                            | `{ limit }`, the limit's name     |
+| `not_owner`         | any caller but `doric`, before any other check (message `storage.kv/v1 serves only the platform.`)                                                              | —                                 |
+| `condition_failed`  | the first condition that fails, in item order                                                                                                                   | `{ key }`, the key in hexadecimal |
+| `cancelled`         | the call's signal aborted                                                                                                                                       | —                                 |
+| `deadline_exceeded` | the call's deadline passed                                                                                                                                      | —                                 |
+| `unavailable`       | the engine cannot be reached                                                                                                                                    | —                                 |
+
+The engine serves only the caller `doric`, the platform: any other caller is
+`not_owner` before any limit, store or I/O. The library `doric-sqlite` also
+checks each key against the caller's prefix (`engine/src/limits.rs`), but over
+`storage.kv/v1` that check never refuses, since `doric` passes every key. It
+then checks a call in a fixed
+order and answers the first refusal:
+
+- `get`: no keys; more than `getKeys` keys; then, key by key, the caller's
+  prefix and `keyBytes`.
+- `range`: `limit` 0; `limit` above `rangeLimit`; `start` after `end`; the
+  prefix of `start`, then of `end`; then `keyBytes`.
+- `commit`, item by item as they arrive: no case set; the prefix; `keyBytes`
+  (a positioned put counts its `key_prefix` plus 8 bytes); `valueBytes`; a
+  `clearRange` whose `start` is after its `end`; `commitItems`; `commitBytes`
+  (every key an item names plus every value). Each item's prefix is thus
+  checked before `commitItems`. Once the items end, a commit with no mutation
+  is `invalid_input`; conditions are checked inside the transaction.
+
+The engine's side of these errors is in the
+[sqlite README](../../bundles/foundation/sqlite/README.md#errors).
+
+`kvClient(client)` adapts a Connect client of `KvService` to a `Kv`. It maps
+transport codes as `clientFailure(error, call?)` of [`rpc/call.ts`](src/rpc/call.ts) does:
+`CANCELLED` becomes `cancelled`, `DEADLINE_EXCEEDED` becomes
+`deadline_exceeded` and `UNAVAILABLE` becomes `unavailable`, while a Doric
+refusal keeps its code and details. When the call's signal has aborted or its
+deadline has passed, an `internal` or `cancelled` failure answers `cancelled`
+or `deadline_exceeded` instead, so the `Kv` errors above hold for the client. A `Call` or `CallOptions` becomes the Connect options
+of its signal and deadline; an already-aborted signal rejects with `cancelled`
+before any call. The client's transport fixes the caller every call is stamped
+with.
 
 ### Batch accounting
 
@@ -468,8 +634,10 @@ The conformance kit runs over the router with the memory backend
 
 ## `storage/conformance`: the conformance kit
 
-The kit is the set of cases every `storage.backend/v1` implementation must
-pass. It registers them as `node:test` tests and asserts with
+The entry holds two kits. This section's kit is the set of cases every
+`storage.backend/v1` implementation must pass; the KV kit, for
+`storage.kv/v1` engines, follows it
+([the KV kit](#storageconformance-the-kv-kit)). It registers them as `node:test` tests and asserts with
 `node:assert/strict` ([`index.ts`](src/conformance/index.ts)).
 
 ### The harness
@@ -806,6 +974,122 @@ after a truncation, a gap in the feed) fails the cases that guard what it
 breaks ([`memory-conformance.test.ts`](tests/memory-conformance.test.ts),
 [`kit-self.test.ts`](tests/kit-self.test.ts)).
 
+## `storage/conformance`: the KV kit
+
+`runKvConformance(harness, options?)` registers one `node:test` suite, titled
+`harness.name`, with one test per case of `storage.kv/v1`
+([`kv/index.ts`](src/conformance/kv/index.ts)). A case marked `heavy`
+(`KvCase.heavy`) streams a commit of 200,001 items and takes minutes: with
+`{ heavy: true }` (`KvConformanceOptions`) the suite registers only the heavy
+cases, and without it every other case:
+
+```ts
+interface KvTarget {
+  kv(caller: string): Kv; // every call stamped with `caller`; only `doric` is served
+  reset(): Promise<void>; // removes every key of every caller
+  close(): Promise<void>;
+}
+
+interface KvConformanceHarness {
+  readonly name: string;
+  open(): Promise<KvTarget>; // the engine, empty
+}
+```
+
+The suite opens one target in `before`, resets it before each case and closes
+it in `after`, even when a case fails. Its 30 cases (28 in a default run; `{ heavy: true }` runs the 2 heavy ones),
+every one calling as `doric` but the refusal case,
+cover range order and
+reverse ranges, `limit` and continuation
+([`order.ts`](src/conformance/kv/order.ts)); versions, positions, positioned
+puts, conditions, item order, `clearRange` and concurrent commits
+([`commit.ts`](src/conformance/kv/commit.ts)); every limit and the order of
+refusals ([`limits.ts`](src/conformance/kv/limits.ts)); the caller rule, one
+case refusing a caller but `doric` with `not_owner` for a `Get`, a `Range` and
+a `Commit` and one where `doric` reaches every prefix
+([`access.ts`](src/conformance/kv/access.ts)); and a seeded sequence of 2,000
+operations checked against a model
+([`random.ts`](src/conformance/kv/random.ts)). The seed is 20261127, or
+`DORIC_KV_SEED` when set, and a failure names the seed and the index of the
+first operation that differs. A refusal is matched on its code and `details`;
+the hexadecimal `details.key` is compared without regard to case.
+
+The `sqlite` engine runs the kit through `openTestEngine`
+([`kv.test.ts`](tests/kv.test.ts)):
+
+```ts
+runKvConformance({ name: 'sqlite', open: () => openTestEngine() });
+```
+
+and runs the heavy cases in [`kv-heavy.test.ts`](tests/kv-heavy.test.ts),
+with `{ heavy: true }`.
+
+## `storage/testing`: the test engine
+
+`openTestEngine(options?)` spawns `dist/target/doric-sqlite/debug/doric-sqlite`,
+the debug build of `npx nx run sqlite:compile`, through `startTestProcess` of
+`bundle/testing`, with `DORIC_STORAGE_PATH` set to its directory, and resolves
+once the process is active ([`testing.ts`](src/testing.ts),
+[`test-engine.ts`](src/test-engine.ts)). It finds the binary from the
+repository root, the nearest directory above the module that holds `nx.json`
+(`repoRoot` and `testEngineBinary()` in `test-engine.ts`). The internal
+`openTestEngineAt(binary, options?)` answers a `TestEngine` plus
+`raw(caller, generation = 1)`, raw `storage/v2` clients that the v2 kit's
+`not_owner` cases use; `openTestEngine` is typed `Promise<TestEngine>`, but the
+object it answers is the same one and also has `raw`.
+There is no in-process `Kv`: a test that needs one opens an engine.
+
+- Without `path`, the engine runs in a new
+  `mkdtemp(join(tmpdir(), 'doric-test-engine-'))` directory, which `close()`
+  removes once the process has stopped.
+- With `path`, a directory the test made, `close()` leaves it in place, so a
+  second engine on the same `path` reads what the first wrote.
+- `kv(caller)` answers the same `Kv` for the same caller; `reset()` is one
+  commit of the caller `doric` that clears every key; the engine refuses any
+  caller but `doric` with `not_owner`; a second `close()`
+  answers the first one's promise: while that close is pending it waits for
+  it, and once it has settled it resolves at once.
+- `storage(bundleId, files, generation = 1)` registers `files` (and their
+  imports) as `bundleId` of `generation` and answers that bundle's `Storage`,
+  every call stamped `{ bundleId, generation }` as the router stamps it, so
+  its records are under `<bundleId>/`; each call registers again. It rejects
+  as `openStorage` does, and with `unavailable` once the engine is closed.
+- `reset()`'s clear writes outside `doric/`, so it suspends and clears the
+  engine's cache of document headers. It also deletes the declarations, but it
+  does not reset the engine's remembered highest generation: after
+  `storage(x, f, 2)`, `reset()` and `storage(x, f, 1)`, nothing is registered,
+  since generation 1 is below the highest. A test of generations uses a fresh
+  engine per case.
+- `openTestStorage(bundleId, files)` opens an engine of its own and answers
+  `TestStorage { storage, kv, reset(), close() }`: `storage` is
+  `engine.storage(bundleId, files)`, `kv` the engine's `kv('doric')`, and
+  `reset()` calls the engine's `reset()` and registers the files again, so
+  the next case starts on an empty store with the bundle's declarations.
+- It rejects with
+  `Error('doric-sqlite is not built: run npx nx run sqlite:compile')` when the
+  binary is missing, and with the failure of `startTestProcess` when the
+  process does not start.
+
+```ts
+import { create } from '@bufbuild/protobuf';
+import { CommitRequestSchema } from 'bundle/contracts/gen/doric/storage/kv/v1/kv_pb.js';
+import { openTestEngine } from 'storage/testing';
+
+const engine = await openTestEngine();
+const kv = engine.kv('doric');
+const bytes = (text: string) => new TextEncoder().encode(text);
+
+await kv.commit([
+  create(CommitRequestSchema, {
+    item: {
+      case: 'put',
+      value: { key: bytes('doric/notes/a'), value: bytes('1') },
+    },
+  }),
+]);
+await engine.close();
+```
+
 ## Build and test
 
 Run from the repository root ([`project.json`](project.json)):
@@ -813,13 +1097,48 @@ Run from the repository root ([`project.json`](project.json)):
 ```console
 npx nx run storage:build      # tsc --build tsconfig.lib.json into dist/
 npx nx run storage:typecheck  # tsc --build tsconfig.json --emitDeclarationOnly
-npx nx run storage:test       # tsc -p tsconfig.spec.json, then node --test dist-tests/tests/*.test.js
+npx nx run storage:test       # tsc -p tsconfig.spec.json, then node --test dist-tests/tests/*.test.js except kv-heavy
+npx nx run storage:test-heavy # the same build, then node --test dist-tests/tests/kv-heavy.test.js (30 min timeout)
 ```
 
-Each target builds its dependencies (`bundle`) first. The tests are
-[`keys.test.ts`](tests/keys.test.ts) and [`protocol.test.ts`](tests/protocol.test.ts)
-for the helpers, [`memory-backends.test.ts`](tests/memory-backends.test.ts)
-for the memory backends, and the two kit suites above.
+`test` depends on `generate-proto`, which generates the conformance messages
+into `src/contracts/gen/`; `test-heavy` gets it through its dependency on
+`build` ([`project.json`](project.json), `test-heavy`'s `dependsOn`). Both
+targets depend on `sqlite:compile`, so running them needs the Rust toolchain
+(cargo). Each target builds its dependencies (`bundle`) first.
+
+These tests spawn the debug `doric-sqlite` binary:
+[`kv.test.ts`](tests/kv.test.ts), the KV kit on the engine;
+[`kv-heavy.test.ts`](tests/kv-heavy.test.ts), its heavy cases, which only
+`test-heavy` runs; [`kv-file.test.ts`](tests/kv-file.test.ts), the storage
+path and file format; [`test-engine.test.ts`](tests/test-engine.test.ts),
+`openTestEngine`; [`kv-client.test.ts`](tests/kv-client.test.ts), `kvClient`;
+[`storage-client.test.ts`](tests/storage-client.test.ts), the `storage/v2`
+client through `openTestStorage`; and the v2 kit,
+[`storage.test.ts`](tests/storage.test.ts) (49 cases, 19 skipped),
+[`storage-instances.test.ts`](tests/storage-instances.test.ts) (6, 3 skipped)
+and [`registration.test.ts`](tests/registration.test.ts) (8).
+
+The other tests do not spawn it:
+[`storage-client-items.test.ts`](tests/storage-client-items.test.ts), the
+items the client sends (CI1–CI10), over a recording `Storage`;
+[`index-parity.test.ts`](tests/index-parity.test.ts), the index keys against
+the engine's golden file; [`keys.test.ts`](tests/keys.test.ts) and
+[`protocol.test.ts`](tests/protocol.test.ts), the helpers;
+[`memory-backends.test.ts`](tests/memory-backends.test.ts), the memory
+backends; [`rpc-backend.test.ts`](tests/rpc-backend.test.ts),
+[`rpc-secrets.test.ts`](tests/rpc-secrets.test.ts),
+[`rpc-storage.test.ts`](tests/rpc-storage.test.ts),
+[`rpc-chunks.test.ts`](tests/rpc-chunks.test.ts) and
+[`rpc-chunks-export.test.ts`](tests/rpc-chunks-export.test.ts), `storage/rpc`
+and its chunked codec; and the `storage.backend/v1` kit's suites,
+[`memory-conformance.test.ts`](tests/memory-conformance.test.ts),
+[`rpc-conformance.test.ts`](tests/rpc-conformance.test.ts) and
+[`kit-self.test.ts`](tests/kit-self.test.ts).
+
+CI runs `storage:test` in its platform test step and `storage:test-heavy` in
+its step "Run heavy storage tests"
+([`ci.yml`](../../.github/workflows/ci.yml)).
 
 ## Related documents
 
@@ -829,5 +1148,9 @@ for the memory backends, and the two kit suites above.
   backend and the full shape of `storage.backend/v1` and `secrets.backend/v1`.
 - [core README](../../bundles/foundation/core/README.md#storagev1): the
   `storage/v1` facade.
+- [sqlite README](../../bundles/foundation/sqlite/README.md): the
+  `storage.kv/v1` engine behind `Kv` and `storage/testing`.
+- [gRPC processes](../../docs/designs/grpc-processes.md): the spec of
+  `storage.kv/v1`, `Kv` and the KV kit.
 - [Local history](../../docs/features/local-history.md): how the storage
   identity keys the desktop's snapshots.

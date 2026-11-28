@@ -1,0 +1,30 @@
+[package]
+name = "doric-storage"
+version = "0.0.0"
+edition.workspace = true
+publish = false
+description = "The engine bundle `sqlite`: `storage.kv/v1` over one SQLite file, and `storage/v2` (`Register`, `Commit`, `Get` and `Query`) with its layout library."
+
+[[bin]]
+name = "doric-sqlite"
+path = "src/main.rs"
+
+[dependencies]
+base64.workspace = true
+doric-sqlite = { path = "../engine" }
+doric-bundle = { path = "../../../../packages/bundle-rs" }
+prost.workspace = true
+prost-reflect.workspace = true
+prost-types.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+tokio.workspace = true
+tokio-stream.workspace = true
+
+[build-dependencies]
+protox.workspace = true
+tonic-prost-build.workspace = true
+
+[dev-dependencies]
+protox.workspace = true
+tokio-util.workspace = true

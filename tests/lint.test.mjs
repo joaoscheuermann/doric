@@ -151,3 +151,30 @@ test('ignores generated source', () => {
   assert.equal(result.status, 0);
   assert.deepEqual(result.diagnostics, []);
 });
+
+test('the image pins the Rust image of rust-toolchain.toml by digest and selects its channel', () => {
+  const dockerfile = readFileSync(
+    join(root, 'app/backend/doric-host/.Dockerfile'),
+    'utf8',
+  );
+  const channel = /^channel = "([^"]+)"$/m.exec(
+    readFileSync(join(root, 'rust-toolchain.toml'), 'utf8'),
+  )?.[1];
+  const pins = dockerfile
+    .split('\n')
+    .map((line) =>
+      /^ARG RUST_IMAGE=rust:(\d+\.\d+\.\d+)-bookworm@sha256:[0-9a-f]{64}$/.exec(
+        line,
+      ),
+    )
+    .filter((match) => match !== null);
+  const toolchains = [...dockerfile.matchAll(/RUSTUP_TOOLCHAIN=(\S+)/g)].map(
+    ([, value]) => value,
+  );
+
+  assert.ok(channel !== undefined, 'rust-toolchain.toml names a channel');
+  assert.equal(pins.length, 1, 'one ARG RUST_IMAGE pinned by digest');
+  assert.equal(pins[0][1], channel);
+  assert.ok(toolchains.length > 0, 'the image sets RUSTUP_TOOLCHAIN');
+  assert.deepEqual(new Set(toolchains), new Set([channel]));
+});

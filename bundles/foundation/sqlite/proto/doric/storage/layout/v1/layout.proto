@@ -1,0 +1,42 @@
+// The engine's records of the storage layout (spec docs/designs/grpc-processes.md,
+// "The layout"), generated only for doric-storage.
+syntax = "proto3";
+
+package doric.storage.layout.v1;
+
+// A storage type's declaration, under ("type", type).
+message TypeDeclaration {
+  // The full name of the value's message.
+  string message_type = 1;
+  // The type's indexes, in declaration order.
+  repeated IndexDeclaration indexes = 2;
+  // The lowercase SHA-256 hex of the descriptor set it was declared with.
+  string schema = 3;
+}
+
+// One index of a type.
+message IndexDeclaration {
+  // The index name, unique within its type.
+  string name = 1;
+  // The JSON-name paths of the indexed fields, in key order.
+  repeated string fields = 2;
+  // Whether no two documents may hold the same key; an absent option is false.
+  bool unique = 3;
+}
+
+// A document without its value's later chunks, under ("doc", type, id).
+message DocumentHeader {
+  // The document's revision.
+  uint32 revision = 1;
+  // The size of the whole value, in bytes.
+  uint32 value_size = 2;
+  // The number of ("doc.chunk", type, id, n) records; 0 when `chunk` holds the
+  // whole value.
+  uint32 chunk_count = 3;
+  // The value's first 983,040 bytes.
+  bytes chunk = 4;
+  // The document's index keys, at most 16, each stored without the prefix.
+  repeated bytes index_keys = 5;
+  // When the document was last written, ISO-8601 in UTC.
+  string updated_at = 6;
+}

@@ -12,6 +12,7 @@
 // (`tests/support/scripted-host.ts`); every process is ended in `after`.
 
 import assert from 'node:assert/strict';
+import { appendFileSync } from 'node:fs';
 import test, { describe } from 'node:test';
 
 import { file_doric_settings_v1_settings } from '../../src/contracts/gen/doric/settings/v1/settings_pb.js';
@@ -89,9 +90,8 @@ describe('a publish that changes a bundle', () => {
     const env = await setupPlatform(t, {
       settings: { ...settingsProvider, ms: 1_500 },
       app: {
-        mode: 'call-repeat',
+        mode: 'call-on-trigger',
         ms: 100,
-        count: 2,
         requires: ['settings/v1@^1.0.0'],
       },
     });
@@ -108,7 +108,7 @@ describe('a publish that changes a bundle', () => {
       env.platform.publish(
         resolveHost({
           settings: settingsProvider,
-          app: { mode: 'call-repeat', requires: ['settings/v1@^1.0.0'] },
+          app: { mode: 'call-on-trigger', requires: ['settings/v1@^1.0.0'] },
         }),
       ),
       'the publish',
@@ -126,6 +126,9 @@ describe('a publish that changes a bundle', () => {
       ),
       'generation 1 acknowledged draining before the publish answered',
     );
+
+    // The second call goes out only now that generation 2 is active.
+    appendFileSync(env.log.path, 'test call 0\n');
 
     await until(
       () =>
@@ -447,7 +450,7 @@ describe('the drain of generation 1', () => {
 
   test('lasts while a unary call it made is in flight, and stops after the call ends', async (t) => {
     const callBundles = {
-      settings: { ...settingsProvider, ms: 1_500 },
+      settings: { ...settingsProvider, mode: 'generations-held' },
       app: {
         mode: 'call-repeat',
         ms: 100,
@@ -475,6 +478,8 @@ describe('the drain of generation 1', () => {
 
     assert.deepEqual(result, { status: 'published', bundles: ['app'] });
 
+    // The provider holds its answer until the test releases it, so the call
+    // is still in flight however long the publish took.
     await sleep(300);
 
     assert.ok(
@@ -482,6 +487,13 @@ describe('the drain of generation 1', () => {
       'generation 1 of the app stopped while its call was in flight',
     );
 
+    appendFileSync(env.log.path, 'test answer 0\n');
+
+    await until(
+      () => env.log.eventsOf('settings').includes('answered'),
+      'the provider to answer the call',
+      4_000,
+    );
     await until(
       () => eventsOfInstance(env.log, 'app', '1.1').includes('deactivated'),
       'generation 1 of the app to stop',

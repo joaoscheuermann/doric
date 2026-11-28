@@ -101,9 +101,16 @@ jobs:
         run: npx nx run-many -t test --projects=tag:type:bundle
 
       # The platform the bundles build on: the bundle package, the desktop
-      # platform package, the platform's import map and the desktop app.
+      # platform package, the platform's import map, the desktop app and the
+      # storage library, whose KV suite runs on a spawned sqlite engine.
       - name: Run platform tests
-        run: npx nx run-many -t test -p bundle,desktop,doric-platform,doric-app
+        run: npx nx run-many -t test -p bundle,desktop,doric-platform,doric-app,storage
+
+      # The KV conformance cases that stream a commit of 200,001 items, left
+      # out of `storage:test` because they take minutes.
+      - name: Run heavy storage tests
+        timeout-minutes: 30
+        run: npx nx run storage:test-heavy
 
       - name: Run Agent tests
         run: npx nx test agent
@@ -139,6 +146,10 @@ jobs:
       - run: npm ci
         env:
           CXXFLAGS: -std=c++20
+
+      # The suite builds the Rust SDK's fixture (doric-bundle:compile-example).
+      - name: Install the Rust toolchain
+        run: rustup show active-toolchain || rustup toolchain install
 
       - name: Run the protocol conformance suite
         run: npx nx run bundle:conformance

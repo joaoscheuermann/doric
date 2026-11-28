@@ -1,10 +1,10 @@
 # Spec appendix: the owner's decisions and the search notes
 
-- Status: part of [Spec: one process per bundle over gRPC](../grpc-processes.md), version 6.8 (2026-11-22), accepted.
+- Status: part of [Spec: one process per bundle over gRPC](../grpc-processes.md), version 6.57 (2026-11-27), accepted. Version 6.57 adds the sixth round, the owner's answers A79–A81 of 2026-11-27, with what they revoke or narrow, and the seventh, the owner's answer A82 of 2026-11-28.
 - What this file holds: (1) the project owner's decisions 1–28 for this spec, (2) the decisions of Spec 1 that this spec cites, and (3) a summary of the two search notes that version 2 relied on, with what version 3 re-read in the code. The spec cites the decisions as "decision N" and Spec 1's as "Spec 1 decision N". The originals are notes outside the repository (`/workspace/.notes/grpc-spec2/findings.md`, `/workspace/.notes/bundle-isolation/findings.md`); this file copies their substance so the spec can be read from the repository alone. Where a note gave a decision a question label, this file names the topic instead; the spec's own questions are only those of its [Questions](../grpc-processes.md#questions) section.
 - Builds on: commit `4677b54c`. Paths are from the repository root; a line number names the line at that commit.
 
-## 1. The owner's decisions for this spec (2026-11-21)
+## 1. The owner's decisions for this spec (2026-11-21, 2026-11-27 and 2026-11-28)
 
 Decided earlier, as Spec 1 decision 29 (section 2): (a) bundles in other languages are a goal; (b) bundle processes run only on the host's machine or container; (c) contract types are defined by `.proto` and gRPC; (d) the host supervises every bundle process; (e) desktopMain is emptied.
 
@@ -48,8 +48,22 @@ Fifth round:
 
 25. The owner explicitly approves the multi-process scope for Spec 2; the spec updates `AGENTS.md` HC-003 and HC-004 to the new process model.
 26. The document is a spec, written directly, at `docs/designs/grpc-processes.md` (no concept), on the branch `feat/grpc-processes` from `4677b54c`.
-27. Spec 2 delivers only the language-neutral protocol and the TypeScript SDK; no other language. (Narrowed by the owner after version 3 of the spec, its answer A28: Spec 2 also delivers a server-side Rust SDK for the storage engine, a protocol conformance suite for both SDKs, and a TypeScript SQLite reference backend.)
+27. Spec 2 delivers only the language-neutral protocol and the TypeScript SDK; no other language. (Narrowed by the owner after version 3 of the spec, its answer A28: Spec 2 also delivers a server-side Rust SDK for the storage engine, a protocol conformance suite for both SDKs, and a TypeScript SQLite reference backend. A78 cut the backend, and A79, in the sixth round below, keeps the Rust SDK server-only and moves all of storage into the Rust bundle.)
 28. The public listener accepts gRPC and the Connect protocol, not gRPC-Web.
+
+Sixth round (2026-11-27, after version 6.56; the spec's answers A79–A81, which [Owner answers](../grpc-processes.md#owner-answers) holds in full):
+
+29. (A79) All of storage runs in Rust, in one bundle, `sqlite`, with two crates: `doric-storage` handles documents, revisions, declared and unique indexes, streams with sequence and truncation, content-addressed blobs, health and watch/feed; `doric-sqlite` is the current engine, which `doric-storage` calls as a library, in process, behind an engine trait. One operation is a single SQLite transaction on the writer, with no version condition and no retry. The bundle serves a new high-level contract through the router (named `storage/v1` by the owner; the spec writes `storage/v2`, its question Q32); every storage operation passes the router exactly once, and no bundle connects to storage directly. `storage.kv/v1` becomes an internal layer, kept, restricted to the platform's caller `doric`, for the migration and the inspection tool. Credentials stay with `core`, which seals the secret with AES-GCM. What it changes in the spec's earlier answers:
+    - A21: ~~the documents, revisions, indexes, streams, blobs and feed become a key-encoding layer outside the engine, and the backend understands nothing about content~~ Revoked: the layer is the engine bundle's crate `doric-storage`, which decodes values to compute index keys (A81).
+    - A31: ~~the key-value layer is a library in each bundle's SDK; only the TypeScript SDK has it in Spec 2~~ Revoked: the layer runs in the engine bundle, and each SDK has a thin client of the new contract; A31's prefix rule, batch limits and one bundle's keys per commit stay.
+    - A28: ~~a minimal Rust SDK, server side only, beside the TypeScript SDK and its storage library~~ Narrowed: the Rust SDK stays server-only, and the TypeScript SDK gets a thin client of the new contract in place of the library.
+    - A46: ~~the library's `feed()` and the inspection tool's `feed` command leave; the library keeps no header or stream-head cache, and RK22 measures the uncached path~~ Narrowed: `doric-storage` serves a live watch of the caller's own records, with no durable feed (the spec's Q33), and A80 revokes the cut of the cache.
+30. (A80) The engine keeps an in-memory cache from the start, of stream heads and document headers. It is safe because only the writer writes; it is invalidated or updated in the same transaction. This revokes A46 on that point; RK22 measures the cached path.
+31. (A81) The engine decodes values with each bundle's protobuf descriptors to compute index keys. The spec designs how each bundle registers its FileDescriptorSet with the engine at activation, by prefix and by generation; two generations during a drain; the backfill of a new index and uniqueness during it; and the build check of slice S79. The open decision of where protovalidate runs (the engine, the TypeScript client or both) is the spec's question Q31.
+
+Seventh round (2026-11-28, the stage 4 review of version 6.57; the spec's answer A82, which [Owner answers](../grpc-processes.md#owner-answers) holds in full):
+
+32. (A82) Each of phases 5 to 8 is planned when it starts: before any of its code, its plan gives the phase's slices, each slice's changes file by file, and each test's file and assertions. Until then the spec's files, criteria and tests of phases 5 to 8 (T5.1–T7.1) are provisional; they state each phase's scope, not its plan.
 
 ## 2. Spec 1 decisions cited by this spec
 

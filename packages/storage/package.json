@@ -14,6 +14,12 @@
       "import": "./dist/index.js",
       "default": "./dist/index.js"
     },
+    "./contracts/gen/*": {
+      "@org/source": "./src/contracts/gen/*",
+      "types": "./dist/contracts/gen/*",
+      "import": "./dist/contracts/gen/*",
+      "default": "./dist/contracts/gen/*"
+    },
     "./memory": {
       "@org/source": "./src/memory/index.ts",
       "types": "./dist/memory/index.d.ts",
@@ -37,10 +43,17 @@
       "types": "./dist/rpc/chunks.d.ts",
       "import": "./dist/rpc/chunks.js",
       "default": "./dist/rpc/chunks.js"
+    },
+    "./testing": {
+      "@org/source": "./src/testing.ts",
+      "types": "./dist/testing.d.ts",
+      "import": "./dist/testing.js",
+      "default": "./dist/testing.js"
     }
   },
   "dependencies": {
     "@bufbuild/protobuf": "^2.17.0",
+    "@bufbuild/protovalidate": "^1.3.0",
     "@connectrpc/connect": "^2.3.0",
     "bundle": "0.0.1",
     "tslib": "^2.3.0",

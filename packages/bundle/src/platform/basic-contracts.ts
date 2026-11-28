@@ -16,7 +16,9 @@ import { file_doric_secrets_v1_secrets } from 'bundle/contracts/gen/doric/secret
 import { file_doric_settings_v1_settings } from 'bundle/contracts/gen/doric/settings/v1/settings_pb.js';
 import { file_doric_skills_v1_skills } from 'bundle/contracts/gen/doric/skills/v1/skills_pb.js';
 import { file_doric_storage_backend_v1_backend } from 'bundle/contracts/gen/doric/storage/backend/v1/backend_pb.js';
+import { file_doric_storage_kv_v1_kv } from 'bundle/contracts/gen/doric/storage/kv/v1/kv_pb.js';
 import { file_doric_storage_v1_storage } from 'bundle/contracts/gen/doric/storage/v1/storage_pb.js';
+import { file_doric_storage_v2_storage } from 'bundle/contracts/gen/doric/storage/v2/storage_pb.js';
 import { file_doric_tools_v1_tools } from 'bundle/contracts/gen/doric/tools/v1/tools_pb.js';
 
 import { type CatalogIndex, createCatalogIndex } from './catalog-index.js';
@@ -24,11 +26,12 @@ import { type CatalogIndex, createCatalogIndex } from './catalog-index.js';
 /**
  * The descriptor files of the basic `HOST` contracts `packages/bundle`
  * defines: one file per id of `basicContracts` whose environments include
- * `host` (12 today: `hooks/v1`, `log/v1`, `tools/v1`, `skills/v1`,
+ * `host` (14 today: `hooks/v1`, `log/v1`, `tools/v1`, `skills/v1`,
  * `settings/v1`, `secrets/v1`, `secrets.backend/v1`, `storage/v1`,
- * `storage.backend/v1`, `events/v1`, `models/v1`, `models.provider/v1`), in
- * that order. No bundle's `descriptors.binpb` holds the ones its own files do
- * not import, though bundles provide them. Frozen.
+ * `storage.backend/v1`, `storage.kv/v1`, `storage/v2`, `events/v1`,
+ * `models/v1`, `models.provider/v1`), in that order. No bundle's
+ * `descriptors.binpb` holds the ones its own files do not import, though
+ * bundles provide them. Frozen.
  */
 export const basicHostContractFiles: readonly DescFile[] = Object.freeze([
   file_doric_hooks_v1_hooks,
@@ -40,6 +43,8 @@ export const basicHostContractFiles: readonly DescFile[] = Object.freeze([
   file_doric_secrets_backend_v1_backend,
   file_doric_storage_v1_storage,
   file_doric_storage_backend_v1_backend,
+  file_doric_storage_kv_v1_kv,
+  file_doric_storage_v2_storage,
   file_doric_events_v1_events,
   file_doric_models_v1_models,
   file_doric_models_provider_v1_provider,

@@ -72,6 +72,7 @@ composition.overrides.json
 
 # Rust build output and the exported protos (proto-export)
 /dist/target/
+/target/
 /dist/proto/
 
 # Generated protobuf-es code (generate-proto)

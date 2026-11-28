@@ -271,13 +271,46 @@ const checkPart = (
   });
 };
 
+/** How a bundle's host part is built and shipped (spec §14, A30). */
+export type HostKind = 'sea' | 'native';
+
+/**
+ * Refuses the `host` fields a native host part cannot use: `httpPrefix` and
+ * `assets`, each an issue at `['host', <field>]` saying the Rust SDK serves
+ * none. A `sea` host part is not checked here.
+ */
+const checkNativeHost = (
+  host: {
+    readonly kind: HostKind;
+    readonly httpPrefix?: string | undefined;
+    readonly assets?: readonly string[] | undefined;
+  },
+  context: z.core.$RefinementCtx,
+): void => {
+  if (host.kind !== 'native') {
+    return;
+  }
+
+  for (const field of ['httpPrefix', 'assets'] as const) {
+    if (host[field] !== undefined) {
+      context.addIssue({
+        code: 'custom',
+        path: ['host', field],
+        message: `A native host part has no ${field} (the Rust SDK serves none).`,
+      });
+    }
+  }
+};
+
 /**
  * Manifest v2 (A41, D30): v1's `id`, `version`, `engines`, `provides`,
  * `desktopScope` and `description` with their v1 rules, and `requires` and
  * `optional` moved under each part. `host` and `client` are optional and parse
  * to `{ requires: [], optional: [] }` when absent; `host` also holds
- * `httpPrefix` and `assets`. Unknown keys at any level are refused. Top-level `requires` or
- * `optional` is refused.
+ * `kind` (`sea` by default, or `native`: a Rust executable, A30),
+ * `httpPrefix` and `assets`, the last two refused for a native host part.
+ * Unknown keys at any level are refused. Top-level `requires` or `optional`
+ * is refused.
  */
 export const manifestV2Schema = z
   .object({
@@ -292,6 +325,8 @@ export const manifestV2Schema = z
     host: z
       .object({
         ...partListFields,
+        /** `sea` (a Node SEA, the default) or `native` (a Rust executable). */
+        kind: z.enum(['sea', 'native']).default('sea'),
         httpPrefix: httpPrefix.optional(),
         assets: z.array(assetGlob).optional(),
       })
@@ -306,6 +341,7 @@ export const manifestV2Schema = z
     checkEntries(manifest.provides, 'provides', context);
     checkPart(manifest.host, 'host', context);
     checkPart(manifest.client, 'client', context);
+    checkNativeHost(manifest.host, context);
     checkDesktopScope(manifest.desktopScope, manifest.provides, context);
   });
 
@@ -357,6 +393,14 @@ export const httpPrefixOf = (manifest: Manifest): string | undefined =>
  */
 export const hostAssetsOf = (manifest: Manifest): readonly string[] =>
   manifest.host?.assets ?? [];
+
+/**
+ * The kind of `manifest`'s host part: v2's `host.kind` (`'sea'` when the
+ * manifest omits it), and `'sea'` for every v1 manifest, which has no
+ * `kind`. Pure; never throws on a manifest produced by `parseManifest`.
+ */
+export const hostKindOf = (manifest: Manifest): HostKind =>
+  manifest.manifestVersion === 2 ? manifest.host.kind : 'sea';
 
 export interface ReadManifest {
   /** v1 or v2 as written. */

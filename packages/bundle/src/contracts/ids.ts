@@ -20,6 +20,12 @@ export const bundleIdPattern = /^[a-z][a-z0-9-]*$/;
 /** The identity the platform uses as caller and owner of `doric.*` contracts. */
 export const PLATFORM_BUNDLE_ID = 'doric';
 
+/** The contracts only the platform calls (A79): the gateway serves none of their methods, whatever their options. */
+export const internalContracts: readonly ContractId[] = Object.freeze([
+  'storage.kv/v1',
+  'storage/v2',
+]);
+
 export const isContractId = (value: unknown): value is ContractId =>
   typeof value === 'string' && contractIdPattern.test(value);
 

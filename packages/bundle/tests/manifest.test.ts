@@ -19,6 +19,7 @@ import {
   rangeMajor,
   satisfies,
 } from '../src/runtime/index.js';
+import { hostKindOf } from '../src/runtime/manifest.js';
 import { manifest, withRoot, writeBundle } from './support/fixtures.js';
 
 const valid = manifest('git', {
@@ -167,7 +168,7 @@ void test('accepts the spec files example as a v2 manifest and answers each part
 void test('v2 part objects are optional and default to empty lists', () => {
   const parsed = manifestV2Schema.parse(minimalV2);
 
-  assert.deepEqual(parsed.host, { requires: [], optional: [] });
+  assert.deepEqual(parsed.host, { requires: [], optional: [], kind: 'sea' });
   assert.deepEqual(parsed.client, { requires: [], optional: [] });
   assert.deepEqual(parsed.provides, []);
 
@@ -347,6 +348,100 @@ void test('hostAssetsOf answers [] when the manifest sets no host.assets', () =>
   assert.deepEqual(hostAssetsOf(parseManifest(minimalV2).manifest), []);
 });
 
+// Native host parts (spec §14 "Rust", A30; S75a) ----------------------------
+
+void test('v2 accepts host.kind native or sea, defaults it to sea and refuses any other value', () => {
+  assert.equal(
+    manifestV2Schema.parse({ ...minimalV2, host: { kind: 'native' } }).host
+      .kind,
+    'native',
+  );
+  assert.equal(
+    manifestV2Schema.parse({ ...minimalV2, host: { kind: 'sea' } }).host.kind,
+    'sea',
+  );
+  assert.equal(manifestV2Schema.parse(minimalV2).host.kind, 'sea');
+  assert.equal(
+    manifestV2Schema.parse({ ...minimalV2, host: { requires: [] } }).host.kind,
+    'sea',
+  );
+
+  for (const kind of ['rust', 'SEA', 'Native', '', 1, null]) {
+    const document = { ...minimalV2, host: { kind } };
+
+    assert.equal(
+      manifestV2Schema.safeParse(document).success,
+      false,
+      String(kind),
+    );
+    assert.throws(() => parseManifest(document), String(kind));
+  }
+});
+
+void test('v1 refuses host.kind, of either value', () => {
+  for (const kind of ['native', 'sea']) {
+    const document = { ...valid, host: { kind } };
+
+    assert.equal(manifestV1Schema.safeParse(document).success, false, kind);
+    assert.throws(() => parseManifest(document), kind);
+  }
+});
+
+void test('a native host part refuses httpPrefix and assets with an issue at each field; a sea part accepts them', () => {
+  const fields = {
+    httpPrefix: '/screen/',
+    assets: ['src/host/skills/*.md'],
+  } as const;
+
+  for (const [field, value] of Object.entries(fields)) {
+    const result = manifestV2Schema.safeParse({
+      ...minimalV2,
+      host: { kind: 'native', [field]: value },
+    });
+
+    assert.equal(result.success, false, field);
+    assert.deepEqual(
+      result.error?.issues.map(({ path, message }) => ({ path, message })),
+      [
+        {
+          path: ['host', field],
+          message: `A native host part has no ${field} (the Rust SDK serves none).`,
+        },
+      ],
+      field,
+    );
+
+    for (const host of [{ kind: 'sea', [field]: value }, { [field]: value }]) {
+      assert.equal(
+        manifestV2Schema.safeParse({ ...minimalV2, host }).success,
+        true,
+        `sea ${field}`,
+      );
+    }
+  }
+});
+
+void test('hostKindOf answers the v2 host.kind, sea when it is omitted, and sea for v1', () => {
+  assert.equal(
+    hostKindOf(
+      parseManifest({ ...minimalV2, host: { kind: 'native' } }).manifest,
+    ),
+    'native',
+  );
+  assert.equal(
+    hostKindOf(parseManifest({ ...minimalV2, host: { kind: 'sea' } }).manifest),
+    'sea',
+  );
+  assert.equal(hostKindOf(parseManifest(minimalV2).manifest), 'sea');
+  assert.equal(hostKindOf(parseManifest(valid).manifest), 'sea');
+  assert.equal(
+    hostKindOf(
+      parseManifest({ ...valid, host: { httpPrefix: '/screen/' } }).manifest,
+    ),
+    'sea',
+  );
+});
+
 void test('refuses host.assets globs that are not relative, normal and "/"-separated', () => {
   const refused = [
     '',
@@ -445,7 +540,8 @@ void test('refuses a manifest without manifestVersion with the Doric 2 message',
   for (const document of v0Documents) {
     assert.throws(
       () => parseManifest(document),
-      (error: unknown) => error instanceof Error && v0Refusal.test(error.message),
+      (error: unknown) =>
+        error instanceof Error && v0Refusal.test(error.message),
     );
   }
 });

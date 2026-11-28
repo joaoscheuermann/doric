@@ -1,0 +1,470 @@
+// `storage/v2` (host, 2.0.0): the contract every bundle stores through. Its
+// provider is the engine bundle `sqlite` (A79, from S77a2). A bundle registers the
+// descriptors of its storage types and stream entries, reads and writes
+// documents of its own types, reads and appends to streams it owns, and stores
+// content-addressed blobs. The engine builds every key from the caller the
+// router stamped, under the prefix `<bundleId>/`, so a bundle reaches only its
+// own records. A document's and an entry's `value` is protobuf binary, carried
+// in chunks of at most 1 MiB after the item it belongs to.
+//
+// Errors: `revision_conflict` (an `expect` item does not match the stored
+// revision; details `{ type, id, expected, actual }`), `sequence_conflict`
+// (an append's `expectedSequence` is not the stream's `lastSequence`),
+// `unique_conflict` (a put violates a unique index), `limit_exceeded` (with
+// `details.limit`: the batch, a document, an append or a blob goes over the
+// engine's limits, or a `RegisterRequest`'s `descriptor_set` passes 2,097,152
+// bytes, `"descriptorSet"`), `unknown_type`, `invalid_index_value` (an indexed
+// field holds an object or an array), `invalid_stream` (a stream id does not
+// follow `<owner>.<family>/<key>`), `invalid_input` (a value of a type with
+// indexes does not decode with the type's schema, an empty batch, a read after
+// the stream's `lastSequence`, or a malformed cursor) and `not_owner` (a type,
+// stream or blob outside the caller's prefix, or the caller `doric`). A commit
+// that fails applies nothing.
+syntax = "proto3";
+
+package doric.storage.v2;
+
+import "buf/validate/validate.proto";
+import "doric/platform/v1/options.proto";
+import "google/protobuf/struct.proto";
+
+option (doric.platform.v1.contract) = {
+  id: "storage/v2"
+  cardinality: CARDINALITY_ONE
+  environment: ENVIRONMENT_HOST
+};
+
+// The calling bundle's documents, streams and blobs.
+service StorageService {
+  // Registers the caller's storage descriptors, at activation (A81).
+  rpc Register(RegisterRequest) returns (RegisterResponse);
+  // One document: a `document` item, then its value's chunks.
+  rpc Get(GetRequest) returns (stream GetResponse);
+  // A page item, then per document its `document` item and chunks.
+  rpc Query(QueryRequest) returns (stream QueryResponse);
+  // A page item, then per entry its `entry` item and chunks.
+  rpc Read(ReadRequest) returns (stream ReadResponse);
+  // One batch, applied in one transaction at the end of the stream.
+  rpc Commit(stream CommitRequest) returns (CommitResponse);
+  // The engine's measurements, for the caller's own low-storage policy.
+  rpc Health(HealthRequest) returns (HealthResponse);
+  // Stores a blob, sent as chunks of its bytes, and answers its hash.
+  rpc PutBlob(stream PutBlobRequest) returns (PutBlobResponse);
+  // A blob: a `head` item, then, when found, its bytes in chunks.
+  rpc GetBlob(GetBlobRequest) returns (stream GetBlobResponse);
+  // Removes a blob; an unknown or malformed hash is a no-op.
+  rpc DeleteBlob(DeleteBlobRequest) returns (DeleteBlobResponse);
+}
+
+// The caller's storage descriptors.
+message RegisterRequest {
+  // A binary `google.protobuf.FileDescriptorSet` of the caller's storage files
+  // and their imports; more than 2,097,152 bytes is `limit_exceeded`
+  // (`descriptorSet`).
+  bytes descriptor_set = 1;
+}
+
+// The descriptors are registered.
+message RegisterResponse {}
+
+// A document's key: its type and its id within the type.
+message DocumentKey {
+  // The storage type, `<name>/v<major>`.
+  string type = 1;
+  // The document's id within the type.
+  string id = 2;
+}
+
+// A stored document without its value, whose chunks follow it.
+message StoredDocument {
+  // The storage type.
+  string type = 1;
+  // The document's id within the type.
+  string id = 2;
+  // The document's revision, a whole number.
+  double revision = 3 [(buf.validate.field).cel = {
+    id: "revision.integer"
+    message: "revision must be a whole number"
+    expression: "this == double(int(this))"
+  }];
+}
+
+// The bounds of an index range; each bound is a string, a number, a boolean
+// or null.
+message StorageRange {
+  // Index keys above this one.
+  optional google.protobuf.Value gt = 1;
+  // Index keys from this one.
+  optional google.protobuf.Value gte = 2;
+  // Index keys below this one.
+  optional google.protobuf.Value lt = 3;
+  // Index keys up to this one.
+  optional google.protobuf.Value lte = 4;
+}
+
+// A query of one type's documents by one of its indexes.
+message StorageQuery {
+  // The storage type.
+  string type = 1;
+  // The index's name.
+  string index = 2;
+  // The values the leading fields of the index key must equal, in key order;
+  // each a string, a number, a boolean or null.
+  repeated google.protobuf.Value equals = 3;
+  // The range the next field of the key must fall in.
+  optional StorageRange range = 4;
+  // "asc" or "desc"; absent is "asc".
+  optional string order = 5 [(buf.validate.field).string = {
+    in: [
+      "asc",
+      "desc"
+    ]
+  }];
+  // The most documents the page holds, 1 to 1000.
+  int32 limit = 6 [(buf.validate.field).int32 = {
+    gt: 0
+    lte: 1000
+  }];
+  // Where the page starts: the `next_cursor` of the previous page.
+  optional string cursor = 7;
+}
+
+// A read of one stream's entries after a sequence.
+message StreamRead {
+  // The stream's id, `<owner>.<family>/<key>`.
+  string stream = 1;
+  // The sequence the read starts after, a whole number from 0.
+  double after_sequence = 2 [
+    (buf.validate.field).double.gte = 0,
+    (buf.validate.field).cel = {
+      id: "after_sequence.integer"
+      message: "afterSequence must be a whole number"
+      expression: "this == double(int(this))"
+    }
+  ];
+  // The most entries the page holds.
+  int32 limit = 3 [(buf.validate.field).int32.gt = 0];
+}
+
+// A stream entry without its value, whose chunks follow it.
+message StreamEntry {
+  // The entry's sequence, a whole number above 0.
+  double sequence = 1 [
+    (buf.validate.field).double.gt = 0,
+    (buf.validate.field).cel = {
+      id: "sequence.integer"
+      message: "sequence must be a whole number"
+      expression: "this == double(int(this))"
+    }
+  ];
+  // When the engine committed the entry (ISO-8601, milliseconds, UTC).
+  string created_at = 2;
+}
+
+// A truncation of a stream.
+message TruncationMark {
+  // Entries above this sequence were removed.
+  double after_sequence = 1 [
+    (buf.validate.field).double.gte = 0,
+    (buf.validate.field).cel = {
+      id: "after_sequence.integer"
+      message: "afterSequence must be a whole number"
+      expression: "this == double(int(this))"
+    }
+  ];
+  // The stream's `lastSequence` when the truncation committed.
+  double at_sequence = 2 [
+    (buf.validate.field).double.gte = 0,
+    (buf.validate.field).cel = {
+      id: "at_sequence.integer"
+      message: "atSequence must be a whole number"
+      expression: "this == double(int(this))"
+    }
+  ];
+}
+
+// The head of a `Query` page.
+message QueryPage {
+  // Where the next page starts: the unpadded base64url of the tuple bytes,
+  // after `("idx", type, name)`, of the page's last document's entry; absent
+  // once the read reached the end of the bounds.
+  optional string next_cursor = 1;
+}
+
+// The head of a `Read` page.
+message StreamPage {
+  // The stream's counter: it never decreases, even after a truncation.
+  double last_sequence = 1 [
+    (buf.validate.field).double.gte = 0,
+    (buf.validate.field).cel = {
+      id: "last_sequence.integer"
+      message: "lastSequence must be a whole number"
+      expression: "this == double(int(this))"
+    }
+  ];
+  // The marks with `afterSequence < request.afterSequence <= atSequence`:
+  // the truncations that removed entries this reader may already hold.
+  repeated TruncationMark truncations = 2;
+}
+
+// The revision a document must hold for a batch to apply; 0 means it must
+// not exist.
+message ExpectedRevision {
+  // The storage type.
+  string type = 1;
+  // The document's id within the type.
+  string id = 2;
+  // The revision, a whole number from 0.
+  double revision = 3 [
+    (buf.validate.field).double.gte = 0,
+    (buf.validate.field).cel = {
+      id: "revision.integer"
+      message: "revision must be a whole number"
+      expression: "this == double(int(this))"
+    }
+  ];
+}
+
+// The truncation of a batch: removes a stream's entries above a sequence.
+message StreamTruncate {
+  // The stream's id.
+  string stream = 1;
+  // The last sequence kept, a whole number from 0.
+  double after_sequence = 2 [
+    (buf.validate.field).double.gte = 0,
+    (buf.validate.field).cel = {
+      id: "after_sequence.integer"
+      message: "afterSequence must be a whole number"
+      expression: "this == double(int(this))"
+    }
+  ];
+}
+
+// An append of a batch to one stream; its events follow it.
+message StreamAppend {
+  // The stream's id.
+  string stream = 1;
+  // The `lastSequence` the stream must hold for the batch to apply; absent
+  // appends whatever it holds.
+  optional double expected_sequence = 2 [
+    (buf.validate.field).double.gte = 0,
+    (buf.validate.field).cel = {
+      id: "expected_sequence.integer"
+      message: "expectedSequence must be a whole number"
+      expression: "this == double(int(this))"
+    }
+  ];
+}
+
+// The engine's measurements. A disk that cannot be measured is
+// "unavailable" without `disk`.
+message StorageHealth {
+  // "ok" or "unavailable".
+  string status = 1 [(buf.validate.field).string = {
+    in: [
+      "ok",
+      "unavailable"
+    ]
+  }];
+  // Whether the engine accepts writes.
+  bool writable = 2;
+  // Why the engine is unavailable or read-only.
+  optional string reason = 3;
+  // The disk's blocks, when measured.
+  optional StorageDisk disk = 4;
+}
+
+// The blocks of the disk the engine writes to.
+message StorageDisk {
+  // Every block, a whole number from 0.
+  double blocks = 1 [
+    (buf.validate.field).double.gte = 0,
+    (buf.validate.field).cel = {
+      id: "blocks.integer"
+      message: "blocks must be a whole number"
+      expression: "this == double(int(this))"
+    }
+  ];
+  // The blocks available, a whole number from 0.
+  double available_blocks = 2 [
+    (buf.validate.field).double.gte = 0,
+    (buf.validate.field).cel = {
+      id: "available_blocks.integer"
+      message: "availableBlocks must be a whole number"
+      expression: "this == double(int(this))"
+    }
+  ];
+}
+
+// Asks one document.
+message GetRequest {
+  // The storage type.
+  string type = 1;
+  // The document's id within the type.
+  string id = 2;
+}
+
+// One item of a `Get` read: the document, then its value's chunks.
+message GetResponse {
+  // The item.
+  oneof item {
+    option (buf.validate.oneof).required = true;
+    // The document, first and once.
+    StoredDocument document = 1;
+    // The next bytes of the value's protobuf binary, at most 1 MiB.
+    bytes chunk = 2 [(buf.validate.field).bytes = {
+      min_len: 1
+      max_len: 1048576
+    }];
+  }
+}
+
+// Asks one page of a type's documents.
+message QueryRequest {
+  // The query.
+  StorageQuery storage_query = 1 [(buf.validate.field).required = true];
+}
+
+// One item of a `Query` page.
+message QueryResponse {
+  // The item.
+  oneof item {
+    option (buf.validate.oneof).required = true;
+    // The page's head, first and once.
+    QueryPage page = 1;
+    // The next document; its value's chunks follow.
+    StoredDocument document = 2;
+    // The next bytes of the current document's value, at most 1 MiB.
+    bytes chunk = 3 [(buf.validate.field).bytes = {
+      min_len: 1
+      max_len: 1048576
+    }];
+  }
+}
+
+// Asks one page of a stream's entries.
+message ReadRequest {
+  // The read.
+  StreamRead stream_read = 1 [(buf.validate.field).required = true];
+}
+
+// One item of a `Read` page.
+message ReadResponse {
+  // The item.
+  oneof item {
+    option (buf.validate.oneof).required = true;
+    // The page's head, first and once.
+    StreamPage page = 1;
+    // The next entry; its value's chunks follow.
+    StreamEntry entry = 2;
+    // The next bytes of the current entry's value, at most 1 MiB.
+    bytes chunk = 3 [(buf.validate.field).bytes = {
+      min_len: 1
+      max_len: 1048576
+    }];
+  }
+}
+
+// One item of a batch. A `put` is followed by its value's chunks, an
+// `append` by its events, each an `event` item with the first chunk of the
+// event's protobuf binary and `chunk` items with the rest. A batch holds at least
+// one entry and at most one `truncate`.
+message CommitRequest {
+  // The item.
+  oneof item {
+    option (buf.validate.oneof).required = true;
+    // A revision a document must hold.
+    ExpectedRevision expect = 1;
+    // A document to write; its value's chunks follow.
+    DocumentKey put = 2;
+    // A document to remove.
+    DocumentKey delete = 3;
+    // A whole stream to remove, with its entries and truncation marks.
+    string drop_stream = 4 [(buf.validate.field).string.min_len = 1];
+    // The batch's truncation.
+    StreamTruncate truncate = 5;
+    // An append to a stream; at least one `event` follows.
+    StreamAppend append = 6;
+    // The first bytes of the next event of the current append, at most
+    // 1 MiB.
+    bytes event = 7 [(buf.validate.field).bytes = {
+      min_len: 1
+      max_len: 1048576
+    }];
+    // The next bytes of the current value, at most 1 MiB.
+    bytes chunk = 8 [(buf.validate.field).bytes = {
+      min_len: 1
+      max_len: 1048576
+    }];
+  }
+}
+
+// The batch is applied.
+message CommitResponse {
+  // The engine's position of the commit, a whole number.
+  double position = 1 [(buf.validate.field).cel = {
+    id: "position.integer"
+    message: "position must be a whole number"
+    expression: "this == double(int(this))"
+  }];
+}
+
+// Asks the engine's measurements.
+message HealthRequest {}
+
+// The engine's measurements.
+message HealthResponse {
+  // The measurements.
+  StorageHealth storage_health = 1 [(buf.validate.field).required = true];
+}
+
+// One chunk of a blob's bytes.
+message PutBlobRequest {
+  // The next bytes, at most 1 MiB.
+  bytes chunk = 1 [(buf.validate.field).bytes = {
+    min_len: 1
+    max_len: 1048576
+  }];
+}
+
+// The stored blob.
+message PutBlobResponse {
+  // The blob's hash, `sha256:<hex>`.
+  string hash = 1 [(buf.validate.field).string.pattern = "^sha256:[0-9a-f]{64}$"];
+}
+
+// Asks a blob's bytes.
+message GetBlobRequest {
+  // The blob's hash, `sha256:<hex>`.
+  string hash = 1;
+}
+
+// Whether a blob is stored.
+message BlobHead {
+  // Whether a blob has the hash; its chunks follow only when it has.
+  bool found = 1;
+}
+
+// One item of a `GetBlob` read.
+message GetBlobResponse {
+  // The item.
+  oneof item {
+    option (buf.validate.oneof).required = true;
+    // The read's head, first and once.
+    BlobHead head = 1;
+    // The blob's next bytes, at most 1 MiB.
+    bytes chunk = 2 [(buf.validate.field).bytes = {
+      min_len: 1
+      max_len: 1048576
+    }];
+  }
+}
+
+// Removes a blob.
+message DeleteBlobRequest {
+  // The blob's hash.
+  string hash = 1;
+}
+
+// The blob is gone, or was never stored.
+message DeleteBlobResponse {}

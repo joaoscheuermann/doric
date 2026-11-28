@@ -1,0 +1,97 @@
+// The storage types of the `storage/v2` conformance suites
+// (`packages/storage/src/conformance/v2/`, spec
+// `docs/designs/grpc-processes.md`, "The TypeScript client"): test data of
+// the bundle id `conformance`, never a contract, so the file has no
+// `(doric.platform.v1.contract)` option. The suites register these
+// messages, and variants built from them at run time
+// (`packages/storage/tests/support/descriptors.ts`), through the client.
+syntax = "proto3";
+
+package doric.storage.conformance.v1;
+
+import "buf/validate/validate.proto";
+import "doric/platform/v1/options.proto";
+
+// A document with a unique index and a non-unique one; its title is
+// validated by the client's protovalidate before any call.
+message Note {
+  option (doric.platform.v1.storage_type) = {
+    type: "conformance.note/v1"
+    indexes: [
+      {
+        name: "byTitle"
+        fields: ["title"]
+        unique: true
+      },
+      {
+        name: "byTag"
+        fields: ["tag"]
+      }
+    ]
+  };
+  // At most 64 characters.
+  string title = 1 [(buf.validate.field).string.max_len = 64];
+  // Shared by many notes.
+  string tag = 2;
+  // Any bytes, up to the document's size limit; the large-value cases fill it.
+  bytes body = 3;
+}
+
+// Who owns a thread; the index `byOwner` reaches `id` through `owner`.
+message Owner {
+  string id = 1;
+}
+
+// A document with compound, nested and optional index fields of every
+// scalar kind an index takes.
+message Thread {
+  option (doric.platform.v1.storage_type) = {
+    type: "conformance.thread/v1"
+    indexes: [
+      {
+        name: "byProject"
+        fields: [
+          "projectId",
+          "createdAt"
+        ]
+      },
+      {
+        name: "byParent"
+        fields: [
+          "projectId",
+          "parentId"
+        ]
+      },
+      {
+        name: "byOwner"
+        fields: ["owner.id"]
+      },
+      {
+        name: "byCount"
+        fields: ["count"]
+      },
+      {
+        name: "byFlag"
+        fields: ["flag"]
+      },
+      {
+        name: "byName"
+        fields: ["name"]
+      }
+    ]
+  };
+  string project_id = 1;
+  // Absent for a top-level thread: its index value is `null`.
+  optional string parent_id = 2;
+  string created_at = 3;
+  Owner owner = 4;
+  optional double count = 5;
+  optional bool flag = 6;
+  optional string name = 7;
+}
+
+// A document with no index: the engine never decodes its value.
+message Plain {
+  option (doric.platform.v1.storage_type) = {type: "conformance.plain/v1"};
+  string text = 1;
+}

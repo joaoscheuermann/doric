@@ -34,6 +34,7 @@ import {
 } from '@connectrpc/connect-node';
 
 import { ContractError } from '../../contracts/error.js';
+import { internalContracts } from '../../contracts/ids.js';
 import {
   clientPartHeader,
   providerHeader,
@@ -83,7 +84,8 @@ export type GatewayRelay = (
  * A method of `platform` that is not `DESKTOP` (`Descriptors`,
  * `doric.diagnostics/v1.Get`, `doric.generation/v1.*`) is never served.
  * Each path appears once, at its first place. Every other method is never
- * served. Pure; never throws.
+ * served. It never serves a method of `internalContracts`, whatever its
+ * options. Pure; never throws.
  */
 export const servedMethods = (
   index: CatalogIndex,
@@ -124,7 +126,11 @@ export const servedMethods = (
     }
   }
 
-  return [...publicApi, ...desktop, ...inProcess];
+  const internal = new Set<string>(internalContracts);
+
+  return [...publicApi, ...desktop, ...inProcess].filter(
+    ({ contract }) => !internal.has(contract.id),
+  );
 };
 
 export interface GatewayHandlerOptions {

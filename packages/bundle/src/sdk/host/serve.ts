@@ -30,10 +30,10 @@ import {
   callDeadline,
 } from '../../contracts/call.js';
 import { ContractError, toContractError } from '../../contracts/error.js';
-import type {
-  CallStart,
+import {
+  type CallStart,
   ConnectRequestSchema,
-  ConnectResponse,
+  type ConnectResponse,
 } from '../../contracts/gen/doric/platform/v1/control_pb.js';
 import { StatusSchema } from '../../contracts/gen/google/rpc/status_pb.js';
 import {
@@ -153,7 +153,7 @@ export interface CallServer {
  * - the call ends with one `CallEnd`: code 0 when the handler returns, the
  *   status `toStatus` encodes for a `ContractError`, `internal` with the
  *   message for any other error, and `limit_exceeded` instead of a
- *   `CallMessage` over 4 MiB.
+ *   response whose encoded `ConnectRequest` frame would pass 4 MiB.
  *
  * A frame for an unknown `callId` other than `CallStart` is ignored.
  */
@@ -256,21 +256,22 @@ export const createCallServer = (options: CallServerOptions): CallServer => {
           method.output,
           create(method.output, response as MessageInitShape<DescMessage>),
         );
-
-        if (payload.length > maxMessageBytes) {
-          throw new ContractError(
-            'limit_exceeded',
-            `A response of ${start.method} exceeds ${maxMessageBytes} bytes.`,
-          );
-        }
-
-        await served.spend();
-        send({
+        const frame = create(ConnectRequestSchema, {
           frame: {
             case: 'callMessage',
             value: { callId: start.callId, payload },
           },
         });
+
+        if (toBinary(ConnectRequestSchema, frame).length > maxMessageBytes) {
+          throw new ContractError(
+            'limit_exceeded',
+            `A response frame of ${start.method} exceeds ${maxMessageBytes} bytes.`,
+          );
+        }
+
+        await served.spend();
+        send(frame);
       }
     });
   };

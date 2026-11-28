@@ -85,7 +85,12 @@ export interface ResolveInput {
   readonly recovery?: { readonly reason: string };
 }
 
-const BACKENDS = new Set(['storage.backend/v1', 'secrets.backend/v1']);
+const BACKENDS = new Set([
+  'storage.backend/v1',
+  'secrets.backend/v1',
+  'storage.kv/v1',
+  'storage/v2',
+]);
 
 /** Core facades whose replacement may require the backends (decision "Fundação"). */
 const FACADES = new Set(['events/v1', 'settings/v1', 'models/v1']);
@@ -440,6 +445,9 @@ export const resolveEnvironment = (
 
     const replacesFacade = contracts.some((contract) => FACADES.has(contract));
 
+    // A foundation bundle may require a backend (`storage.backend/v1`,
+    // `secrets.backend/v1`, `storage.kv/v1` or `storage/v2`) only when it
+    // replaces a facade, and nothing else.
     for (const required of requiresOf(entry)) {
       if (!(BACKENDS.has(required.id) && replacesFacade)) {
         quarantine(

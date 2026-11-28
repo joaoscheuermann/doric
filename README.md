@@ -246,7 +246,9 @@ This guide runs the host and the desktop app on one computer. You need:
   [`.Dockerfile`](app/backend/doric-host/.Dockerfile)). Install npm with
   `npm install --global npm@11.13.0`: npm 10 refuses `npm ci` on this lockfile.
 - `rustup`, which installs the Rust toolchain
-  [`rust-toolchain.toml`](rust-toolchain.toml) pins. `buf` comes from npm
+  [`rust-toolchain.toml`](rust-toolchain.toml) pins; the host image copies the
+  same version from a digest-pinned `rust` image (`RUSTUP_TOOLCHAIN`), which
+  `tests/lint.test.mjs` checks. `buf` comes from npm
   (`npx buf`). `generate-proto`, which `build` and `typecheck` depend on,
   resolves the `buf.build` modules [`buf.lock`](buf.lock) pins, so the first
   build needs network access to the Buf Schema Registry or a filled buf cache.
@@ -557,7 +559,7 @@ are:
 | ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `app/backend/`     | The host, [`doric-host`](app/backend/doric-host/README.md), and its end-to-end suite `doric-host-e2e`                                                                                                                                                                                                                                                                                                                                   |
 | `app/desktop/`     | The Electron app [`doric`](app/desktop/doric/README.md) (Nx project `doric-app`), the shell [`doric-renderer`](app/desktop/doric-renderer/README.md), `doric-platform`, which builds the shared platform packages, their import map, the theme stylesheet and the bundle JSON schemas into the app's `assets/` ([`build.mjs`](app/desktop/doric-platform/build.mjs)), and the end-to-end suite `doric-e2e` (Nx project `doric-app-e2e`) |
-| `bundles/<group>/` | The 33 bundles, each with a `manifest.json`, a README and an `AGENTS.md`; their map is [Bundles](#bundles)                                                                                                                                                                                                                                                                                                                              |
+| `bundles/<group>/` | The 34 bundle directories, each with a `manifest.json` (`foundation/sqlite` a native one), with a README and an `AGENTS.md`; their map is [Bundles](#bundles)                                                                                                                                                                                                                                                                           |
 | `packages/`        | Libraries the host, the app and the bundles build on; see [Packages](#packages)                                                                                                                                                                                                                                                                                                                                                         |
 | `tools/`           | [`tool-okf`](tools/okf/README.md), the `okf_search` agent tool                                                                                                                                                                                                                                                                                                                                                                          |
 | `scripts/`         | Command-line scripts: those of [Scripts of the root](#scripts-of-the-root) and the phase 0 spike [`sea-spike.mjs`](scripts/sea-spike.mjs)                                                                                                                                                                                                                                                                                               |
@@ -663,7 +665,8 @@ npm run lint
 DORIC_DATABASE_URL=postgresql://doric:doric@127.0.0.1:5432/doric npx nx run doric-host:migrate
 DORIC_TEST_DATABASE_URL=postgresql://doric:doric@127.0.0.1:5432/doric npx nx test doric-host
 DORIC_TEST_DATABASE_URL=postgresql://doric:doric@127.0.0.1:5432/doric npx nx run-many -t test --projects=tag:type:bundle
-npx nx run-many -t test -p bundle,desktop,doric-platform,doric-app
+npx nx run-many -t test -p bundle,desktop,doric-platform,doric-app,storage
+npx nx run storage:test-heavy   # 30-minute timeout
 npx nx test agent
 npx nx run-many -t lint test format-check --projects=tag:type:rust
 npx nx run-many -t build typecheck
@@ -674,7 +677,7 @@ npx nx run-many -t build typecheck
 
 Besides these, the jobs below run `bundle:conformance` and `bundle:bench-rk4`.
 CI runs no other test target: not the tests of `doric-renderer`, `tool-okf`
-and the packages other than `agent`, `bundle` and `desktop`, nor
+and the packages other than `agent`, `bundle`, `desktop` and `storage`, nor
 [`spawn-agent.test.mjs`](scripts/tests/spawn-agent.test.mjs). Run a package's
 tests with `npx nx test <package>` and the script's with
 `node --test scripts/tests/spawn-agent.test.mjs`.
@@ -687,8 +690,10 @@ artifact `sea-spike-<runner>` ([`ci.yml`](.github/workflows/ci.yml),
 [Bundle processes](docs/features/bundle-processes.md)).
 
 A third job, `conformance`, runs on `ubuntu-latest` and `ubuntu-24.04-arm`:
-after `npm ci` it runs `npx nx run bundle:conformance`, the protocol
-conformance suite on the TypeScript SDK's fixture, and, on `ubuntu-latest`
+after `npm ci` it installs the Rust toolchain, which the Rust SDK's fixture
+needs, and runs `npx nx run bundle:conformance`, the protocol
+conformance suite on the TypeScript SDK's fixture and on the Rust SDK's
+fixture, and, on `ubuntu-latest`
 only, `npx nx run bundle:bench-rk4` with `RK4_NO_FAIL=1`, which reports RK4's
 numbers without failing the job ([`ci.yml`](.github/workflows/ci.yml),
 [Bundle processes](docs/features/bundle-processes.md)).
@@ -791,7 +796,7 @@ Each README describes the bundle's manifest, contracts, behavior and tests.
 
 | Group      | Bundles                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Foundation | [`core`](bundles/foundation/core/README.md), [`host-config`](bundles/foundation/host-config/README.md), [`postgres`](bundles/foundation/postgres/README.md), [`transport`](bundles/foundation/transport/README.md)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| Foundation | [`core`](bundles/foundation/core/README.md), [`host-config`](bundles/foundation/host-config/README.md), [`postgres`](bundles/foundation/postgres/README.md), [`sqlite`](bundles/foundation/sqlite/README.md), [`transport`](bundles/foundation/transport/README.md)                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | Runtime    | [`runtime`](bundles/runtime/runtime/README.md), [`default`](bundles/runtime/default/README.md)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 | Providers  | [`openai`](bundles/providers/openai/README.md), [`openrouter`](bundles/providers/openrouter/README.md), [`claude`](bundles/providers/claude/README.md), [`codex`](bundles/providers/codex/README.md)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | Sandboxes  | [`docker`](bundles/sandboxes/docker/README.md), [`firecracker`](bundles/sandboxes/firecracker/README.md)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
@@ -800,26 +805,27 @@ Each README describes the bundle's manifest, contracts, behavior and tests.
 
 ### Packages
 
-| Package                                                         | What it is                                                                                      |
-| --------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| [`bundle`](packages/bundle/README.md)                           | The bundle platform: manifest, contracts, loader, build and distribution                        |
-| [`desktop`](packages/desktop/README.md)                         | The browser code every desktop window shares: UI, read helpers, the window protocol, the loader |
-| [`storage`](packages/storage/README.md)                         | The protocol of the storage backend contract                                                    |
-| [`agent`](packages/agent/README.md)                             | An embeddable agent loop                                                                        |
-| [`llms`](packages/llms/README.md)                               | One provider contract for chat, streaming, tool calls and model listing                         |
-| [`messages`](packages/messages/README.md)                       | An in-memory conversation history ready to send to a provider                                   |
-| [`tool`](packages/tool/README.md)                               | Typed, provider-neutral agent tools                                                             |
-| [`oauth`](packages/oauth/README.md)                             | The OAuth authorization-code flow with PKCE and the Claude Code and Codex profiles              |
-| [`sandbox`](packages/sandbox/README.md)                         | The provider-neutral sandbox contract                                                           |
-| [`docker-sandbox`](packages/docker-sandbox/README.md)           | The Docker sandbox provider                                                                     |
-| [`firecracker-sandbox`](packages/firecracker-sandbox/README.md) | The Firecracker microVM sandbox provider                                                        |
-| [`sandpool`](packages/sandpool/README.md)                       | A process-local pool of sandbox sessions                                                        |
-| [`session`](packages/session/README.md)                         | A process-local store of values keyed by ID, with single-flight creation                        |
-| [`okf`](packages/okf/README.md)                                 | Generation of Open Knowledge Format bundles                                                     |
-| [`victor`](packages/victor/README.md)                           | Ranked in-memory lexical, vector and hybrid search                                              |
-| [`state-machine`](packages/state-machine/README.md)             | Typed state machines built from a map of handlers                                               |
-| [`jsonl`](packages/jsonl/README.md)                             | Appending and reading JSON Lines files                                                          |
-| [`config`](packages/config/README.md)                           | A validator for agent configuration carried in message metadata                                 |
+| Package                                                         | What it is                                                                                                                                                 |
+| --------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`bundle`](packages/bundle/README.md)                           | The bundle platform: manifest, contracts, loader, build and distribution                                                                                   |
+| [`bundle-rs`](packages/bundle-rs/README.md)                     | The Rust SDK of bundles (crate `doric-bundle`), server side only                                                                                           |
+| [`desktop`](packages/desktop/README.md)                         | The browser code every desktop window shares: UI, read helpers, the window protocol, the loader                                                            |
+| [`storage`](packages/storage/README.md)                         | The protocol of the storage backend contract; `Kv`, the client of `storage.kv/v1`; the backend and KV conformance kits; `storage/testing`, the test engine |
+| [`agent`](packages/agent/README.md)                             | An embeddable agent loop                                                                                                                                   |
+| [`llms`](packages/llms/README.md)                               | One provider contract for chat, streaming, tool calls and model listing                                                                                    |
+| [`messages`](packages/messages/README.md)                       | An in-memory conversation history ready to send to a provider                                                                                              |
+| [`tool`](packages/tool/README.md)                               | Typed, provider-neutral agent tools                                                                                                                        |
+| [`oauth`](packages/oauth/README.md)                             | The OAuth authorization-code flow with PKCE and the Claude Code and Codex profiles                                                                         |
+| [`sandbox`](packages/sandbox/README.md)                         | The provider-neutral sandbox contract                                                                                                                      |
+| [`docker-sandbox`](packages/docker-sandbox/README.md)           | The Docker sandbox provider                                                                                                                                |
+| [`firecracker-sandbox`](packages/firecracker-sandbox/README.md) | The Firecracker microVM sandbox provider                                                                                                                   |
+| [`sandpool`](packages/sandpool/README.md)                       | A process-local pool of sandbox sessions                                                                                                                   |
+| [`session`](packages/session/README.md)                         | A process-local store of values keyed by ID, with single-flight creation                                                                                   |
+| [`okf`](packages/okf/README.md)                                 | Generation of Open Knowledge Format bundles                                                                                                                |
+| [`victor`](packages/victor/README.md)                           | Ranked in-memory lexical, vector and hybrid search                                                                                                         |
+| [`state-machine`](packages/state-machine/README.md)             | Typed state machines built from a map of handlers                                                                                                          |
+| [`jsonl`](packages/jsonl/README.md)                             | Appending and reading JSON Lines files                                                                                                                     |
+| [`config`](packages/config/README.md)                           | A validator for agent configuration carried in message metadata                                                                                            |
 
 ## License
 

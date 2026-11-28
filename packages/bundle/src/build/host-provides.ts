@@ -1,7 +1,8 @@
 // What a bundle's host part provides beyond its dry-activation recording
 // (spec `docs/designs/grpc-processes.md`, A61, A63, A70): the contracts its
 // static `services` list serves and the `provides` ids whose `.proto` marks a
-// hooks, event, settings or storage-type contract.
+// hooks, event, settings or storage-type contract; for a native host part
+// (A30), the `provides` ids served by a contract-role service.
 
 import { hasOption } from '@bufbuild/protobuf';
 
@@ -150,6 +151,59 @@ export const hostProvides = (input: {
       cardinality: contract.cardinality,
       source: contract.file.proto.name,
       declared: version,
+    });
+  }
+
+  return provides;
+};
+
+/**
+ * What a native host part provides (spec §14, A30): it has no recording and
+ * no static `services` list, so its manifest's `provides` says it all.
+ *
+ * Answers, in the order of `manifest.provides` and without duplicates (first
+ * occurrence wins), each listed id that `index` knows as a `HOST` contract
+ * whose file declares a contract-role service: `kind: 'service'`, the
+ * contract's cardinality in its `.proto`, `source` the `.proto` file name
+ * (`doric/storage/kv/v1/kv.proto`) and `declared` the listed version. Leaves
+ * out every other id (unknown to `index`, of another environment, or whose
+ * file declares no contract-role service), so `checkRecording` reports it as
+ * provided by no part. A `provides` entry that does not parse is skipped.
+ *
+ * Pure and deterministic; never throws.
+ */
+export const nativeProvides = (input: {
+  readonly manifest: Manifest;
+  readonly index: CatalogIndex;
+}): readonly HostProvide[] => {
+  const { manifest, index } = input;
+  const answered = new Set<string>();
+  const provides: HostProvide[] = [];
+
+  for (const entry of manifest.provides) {
+    const parsed = parseContractEntry(entry);
+
+    if (parsed === undefined || answered.has(parsed.id)) {
+      continue;
+    }
+
+    answered.add(parsed.id);
+    const contract = index.contract(parsed.id);
+
+    if (
+      contract === undefined ||
+      contract.environment !== 'HOST' ||
+      !hasContractService(contract, index)
+    ) {
+      continue;
+    }
+
+    provides.push({
+      id: parsed.id,
+      kind: 'service',
+      cardinality: contract.cardinality,
+      source: contract.file.proto.name,
+      declared: parsed.spec,
     });
   }
 

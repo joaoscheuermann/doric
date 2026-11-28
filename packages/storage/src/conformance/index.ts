@@ -29,6 +29,12 @@ export type {
   ConformanceInstance,
   ConformanceOpenOptions,
 } from './harness.js';
+export {
+  type KvConformanceHarness,
+  type KvConformanceOptions,
+  type KvTarget,
+  runKvConformance,
+} from './kv/index.js';
 
 /** Every case, grouped, in the order the kit runs them. */
 export const conformanceCases: readonly ConformanceCase[] = Object.freeze([

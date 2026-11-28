@@ -1,0 +1,258 @@
+{
+  "descriptorSet": "CvsBCh5nb29nbGUvcHJvdG9idWYvZHVyYXRpb24ucHJvdG8SD2dvb2dsZS5wcm90b2J1ZiI6CghEdXJhdGlvbhIYCgdzZWNvbmRzGAEgASgDUgdzZWNvbmRzEhQKBW5hbm9zGAIgASgFUgVuYW5vc0KDAQoTY29tLmdvb2dsZS5wcm90b2J1ZkINRHVyYXRpb25Qcm90b1ABWjFnb29nbGUuZ29sYW5nLm9yZy9wcm90b2J1Zi90eXBlcy9rbm93bi9kdXJhdGlvbnBi+AEBogIDR1BCqgIeR29vZ2xlLlByb3RvYnVmLldlbGxLbm93blR5cGVzYgZwcm90bzMK/wEKH2dvb2dsZS9wcm90b2J1Zi90aW1lc3RhbXAucHJvdG8SD2dvb2dsZS5wcm90b2J1ZiI7CglUaW1lc3RhbXASGAoHc2Vjb25kcxgBIAEoA1IHc2Vjb25kcxIUCgVuYW5vcxgCIAEoBVIFbmFub3NChQEKE2NvbS5nb29nbGUucHJvdG9idWZCDlRpbWVzdGFtcFByb3RvUAFaMmdvb2dsZS5nb2xhbmcub3JnL3Byb3RvYnVmL3R5cGVzL2tub3duL3RpbWVzdGFtcHBi+AEBogIDR1BCqgIeR29vZ2xlLlByb3RvYnVmLldlbGxLbm93blR5cGVzYgZwcm90bzMKhgQKHmdvb2dsZS9wcm90b2J1Zi93cmFwcGVycy5wcm90bxIPZ29vZ2xlLnByb3RvYnVmIiMKC0RvdWJsZVZhbHVlEhQKBXZhbHVlGAEgASgBUgV2YWx1ZSIiCgpGbG9hdFZhbHVlEhQKBXZhbHVlGAEgASgCUgV2YWx1ZSIiCgpJbnQ2NFZhbHVlEhQKBXZhbHVlGAEgASgDUgV2YWx1ZSIjCgtVSW50NjRWYWx1ZRIUCgV2YWx1ZRgBIAEoBFIFdmFsdWUiIgoKSW50MzJWYWx1ZRIUCgV2YWx1ZRgBIAEoBVIFdmFsdWUiIwoLVUludDMyVmFsdWUSFAoFdmFsdWUYASABKA1SBXZhbHVlIiEKCUJvb2xWYWx1ZRIUCgV2YWx1ZRgBIAEoCFIFdmFsdWUiIwoLU3RyaW5nVmFsdWUSFAoFdmFsdWUYASABKAlSBXZhbHVlIiIKCkJ5dGVzVmFsdWUSFAoFdmFsdWUYASABKAxSBXZhbHVlQoMBChNjb20uZ29vZ2xlLnByb3RvYnVmQg1XcmFwcGVyc1Byb3RvUAFaMWdvb2dsZS5nb2xhbmcub3JnL3Byb3RvYnVmL3R5cGVzL2tub3duL3dyYXBwZXJzcGL4AQGiAgNHUEKqAh5Hb29nbGUuUHJvdG9idWYuV2VsbEtub3duVHlwZXNiBnByb3RvMwrAFwoQaW5kZXhfa2V5cy5wcm90bxIKZml4dHVyZS52MRoeZ29vZ2xlL3Byb3RvYnVmL2R1cmF0aW9uLnByb3RvGh9nb29nbGUvcHJvdG9idWYvdGltZXN0YW1wLnByb3RvGh5nb29nbGUvcHJvdG9idWYvd3JhcHBlcnMucHJvdG8iHgoGTmVzdGVkEhQKBWxhYmVsGAEgASgJUgVsYWJlbCLJBQoGU2FtcGxlEhkKCGFfZG91YmxlGAEgASgBUgdhRG91YmxlEhcKB2FfZmxvYXQYAiABKAJSBmFGbG9hdBIZCghhbl9pbnQzMhgDIAEoBVIHYW5JbnQzMhIZCghhbl9pbnQ2NBgEIAEoA1IHYW5JbnQ2NBIZCghhX3VpbnQzMhgFIAEoDVIHYVVpbnQzMhIZCghhX3VpbnQ2NBgGIAEoBFIHYVVpbnQ2NBIZCghhX3NpbnQzMhgHIAEoEVIHYVNpbnQzMhIZCghhX3NpbnQ2NBgIIAEoElIHYVNpbnQ2NBIbCglhX2ZpeGVkMzIYCSABKAdSCGFGaXhlZDMyEhsKCWFfZml4ZWQ2NBgKIAEoBlIIYUZpeGVkNjQSHwoLYW5fc2ZpeGVkMzIYCyABKA9SCmFuU2ZpeGVkMzISHwoLYW5fc2ZpeGVkNjQYDCABKBBSCmFuU2ZpeGVkNjQSFQoGYV9ib29sGA0gASgIUgVhQm9vbBIZCghhX3N0cmluZxgOIAEoCVIHYVN0cmluZxIdCgpzb21lX2J5dGVzGA8gASgMUglzb21lQnl0ZXMSJAoEa2luZBgQIAEoDjIQLmZpeHR1cmUudjEuS2luZFIEa2luZBIqCgJhdBgRIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXBSAmF0Ei0KBHRvb2sYEiABKAsyGS5nb29nbGUucHJvdG9idWYuRHVyYXRpb25SBHRvb2sSNgoHd3JhcHBlZBgTIAEoCzIcLmdvb2dsZS5wcm90b2J1Zi5TdHJpbmdWYWx1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",
+  "indexKeys": [
+    {
+      "fields": [
+        "aDouble",
+        "aFloat",
+        "anInt32",
+        "anInt64",
+        "aUint32",
+        "aUint64",
+        "aSint32",
+        "aSint64",
+        "aFixed32",
+        "aFixed64",
+        "anSfixed32",
+        "anSfixed64",
+        "aBool",
+        "aString",
+        "someBytes"
+      ],
+      "key": "04bff800000000000004bfd0000000000000043ff7ffffffffffff052d34000104c01400000000000005360001043fe3ffffffffffff052d38000104c0220000000000000531300001043fd9ffffffffffff052d31320001030574657874000105414145430001",
+      "messageType": "fixture.v1.Sample",
+      "name": "every scalar kind",
+      "value": "CQAAAAAAAPg/FQAAgD4Y/f//////////ASD8//////////8BKAUwBjgNQA9NCQAAAFEKAAAAAAAAAF31////YfT/////////aAFyBHRleHR6AwABAg=="
+    },
+    {
+      "fields": [
+        "kind"
+      ],
+      "key": "054b494e445f4e4f54450001",
+      "messageType": "fixture.v1.Sample",
+      "name": "an enum",
+      "value": "gAEB"
+    },
+    {
+      "fields": [
+        "anInt64",
+        "aUint64"
+      ],
+      "key": "053930303731393932353437343039393300010531383434363734343037333730393535313631350001",
+      "messageType": "fixture.v1.Sample",
+      "name": "64-bit integers beyond 2^53",
+      "value": "IIGAgICAgIAQMP///////////wE="
+    },
+    {
+      "fields": [
+        "someBytes"
+      ],
+      "key": "052b2f38410001",
+      "messageType": "fixture.v1.Sample",
+      "name": "bytes",
+      "value": "egP7/wA="
+    },
+    {
+      "fields": [
+        "at"
+      ],
+      "key": "05323032332d31312d31345432323a31333a32302e3530305a0001",
+      "messageType": "fixture.v1.Sample",
+      "name": "a timestamp",
+      "value": "igEMCIDiz6oGEIDKte4B"
+    },
+    {
+      "fields": [
+        "took"
+      ],
+      "key": "05313730303030303030302e353030730001",
+      "messageType": "fixture.v1.Sample",
+      "name": "a duration",
+      "value": "kgEMCIDiz6oGEIDKte4B"
+    },
+    {
+      "fields": [
+        "wrapped"
+      ],
+      "key": "05770001",
+      "messageType": "fixture.v1.Sample",
+      "name": "a wrapper",
+      "value": "mgEDCgF3"
+    },
+    {
+      "fields": [
+        "aDouble",
+        "anInt32",
+        "anInt64",
+        "aBool",
+        "aString",
+        "someBytes",
+        "kind"
+      ],
+      "key": "0480000000000000000480000000000000000530000102050001050001054b494e445f554e5350454349464945440001",
+      "messageType": "fixture.v1.Sample",
+      "name": "fields at their defaults",
+      "value": ""
+    },
+    {
+      "fields": [
+        "nested.label",
+        "maybe",
+        "at"
+      ],
+      "key": "010101",
+      "messageType": "fixture.v1.Sample",
+      "name": "a missing nested path",
+      "value": ""
+    },
+    {
+      "fields": [
+        "nested.label",
+        "tags.1"
+      ],
+      "key": "057800010574310001",
+      "messageType": "fixture.v1.Sample",
+      "name": "a nested field and an array element",
+      "value": "qgEDCgF4sgECdDCyAQJ0MQ=="
+    },
+    {
+      "fields": [
+        "maybe"
+      ],
+      "key": "056d0001",
+      "messageType": "fixture.v1.Sample",
+      "name": "a set optional field",
+      "value": "ogEBbQ=="
+    },
+    {
+      "fields": [
+        "aDouble"
+      ],
+      "key": "048000000000000000",
+      "messageType": "fixture.v1.Sample",
+      "name": "a double at -0",
+      "value": ""
+    }
+  ],
+  "platformKeys": {
+    "host": "646f7269632f056d657461000105686f73740001",
+    "identity": "646f7269632f056d6574610001056964656e746974790001",
+    "layout": "646f7269632f056d6574610001056c61796f75740001",
+    "migration": "646f7269632f056d6574610001056d6967726174696f6e0001"
+  },
+  "tuples": [
+    {
+      "bytes": "",
+      "tuple": []
+    },
+    {
+      "bytes": "01",
+      "tuple": [
+        null
+      ]
+    },
+    {
+      "bytes": "02",
+      "tuple": [
+        false
+      ]
+    },
+    {
+      "bytes": "03",
+      "tuple": [
+        true
+      ]
+    },
+    {
+      "bytes": "048000000000000000",
+      "tuple": [
+        0.0
+      ]
+    },
+    {
+      "bytes": "044007ffffffffffff",
+      "tuple": [
+        -1.5
+      ]
+    },
+    {
+      "bytes": "04001e330c7a14375f",
+      "tuple": [
+        -1e+308
+      ]
+    },
+    {
+      "bytes": "04ffe1ccf385ebc8a0",
+      "tuple": [
+        1e+308
+      ]
+    },
+    {
+      "bytes": "048000000000000001",
+      "tuple": [
+        5e-324
+      ]
+    },
+    {
+      "bytes": "04c33fffffffffffff",
+      "tuple": [
+        9007199254740991.0
+      ]
+    },
+    {
+      "bytes": "050001",
+      "tuple": [
+        ""
+      ]
+    },
+    {
+      "bytes": "056100ff620001",
+      "tuple": [
+        "a\u0000b"
+      ]
+    },
+    {
+      "bytes": "05c3a9f09f98800001",
+      "tuple": [
+        "é😀"
+      ]
+    },
+    {
+      "bytes": "04bff0000000000000057800010103",
+      "tuple": [
+        1.0,
+        "x",
+        null,
+        true
+      ]
+    },
+    {
+      "bytes": "056d6574610001056c61796f75740001",
+      "tuple": [
+        "meta",
+        "layout"
+      ]
+    },
+    {
+      "bytes": "056d6574610001056d6967726174696f6e0001",
+      "tuple": [
+        "meta",
+        "migration"
+      ]
+    },
+    {
+      "bytes": "056d6574610001056964656e746974790001",
+      "tuple": [
+        "meta",
+        "identity"
+      ]
+    },
+    {
+      "bytes": "056d657461000105686f73740001",
+      "tuple": [
+        "meta",
+        "host"
+      ]
+    }
+  ]
+}

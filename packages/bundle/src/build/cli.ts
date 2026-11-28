@@ -1,4 +1,5 @@
 import {
+  chmod,
   copyFile,
   cp,
   mkdir,
@@ -28,6 +29,7 @@ import type { Descriptor, DescriptorEntry } from '../runtime/descriptor.js';
 import { descriptorSchema } from '../runtime/descriptor.js';
 import { jsonEqual } from '../runtime/json-schema.js';
 import {
+  hostKindOf,
   type Manifest,
   manifestV1Schema,
   manifestV2Schema,
@@ -35,7 +37,7 @@ import {
   parseManifest,
 } from '../runtime/manifest.js';
 import { installDomShim } from './dom-shim.js';
-import { hostProvides } from './host-provides.js';
+import { hostProvides, nativeProvides } from './host-provides.js';
 import { checkRecording, recordActivation } from './record.js';
 import {
   contractDocument,
@@ -560,6 +562,14 @@ export const checkContractEnvironment = (input: {
  * exposure is its `.proto`'s, which the gateway reads from
  * `descriptors.binpb`. A contract the desktopMain part records gets no host
  * entry, in any manifest version.
+ *
+ * Native host part (`host.kind: "native"`, spec §14 "Rust", A30): no esbuild
+ * runs for it and no `dist/host/main.mjs` is written; cargo builds its
+ * executable apart, and {@link stageBundles} copies it. A native bundle with
+ * a `src/host/main.ts` rejects with a BuildError
+ * `A native host part has no src/host/main.ts.`. What its host part provides
+ * is `nativeProvides`' answer (`host-provides.ts`) for the manifest, in
+ * place of {@link hostProvides}'.
  */
 export const buildBundle = async (
   bundleDir: string,
@@ -599,9 +609,14 @@ export const buildBundle = async (
 
   await rm(join(dist, 'host', 'main.mjs'), { force: true });
 
-  await copyFile(manifestPath, join(dist, 'manifest.json'));
-
   const source = join(root, 'src');
+  const native = hostKindOf(manifest) === 'native';
+
+  if (native && (await exists(join(source, 'host', 'main.ts')))) {
+    throw new BuildError('A native host part has no src/host/main.ts.');
+  }
+
+  await copyFile(manifestPath, join(dist, 'manifest.json'));
 
   for (const path of await discoverSkills(source)) {
     try {
@@ -688,7 +703,9 @@ export const buildBundle = async (
 
   const services = await readStaticServices(root);
   const index = await loadBuildIndex(root, services);
-  const served = hostProvides({ manifest, recorded, services, index });
+  const served = native
+    ? nativeProvides({ manifest, index })
+    : hostProvides({ manifest, recorded, services, index });
   const problems = checkRecording(manifest, recorded, served);
 
   if (problems.length > 0) {
@@ -713,12 +730,14 @@ export const buildBundle = async (
     );
   }
 
-  const { buildHostPart } = await import('./host.js');
+  if (!native) {
+    const { buildHostPart } = await import('./host.js');
 
-  try {
-    await buildHostPart({ bundleDir: root });
-  } catch (error) {
-    throw new BuildError(messageOf(error));
+    try {
+      await buildHostPart({ bundleDir: root });
+    } catch (error) {
+      throw new BuildError(messageOf(error));
+    }
   }
 
   const versions = new Map(
@@ -837,8 +856,16 @@ export interface StageOptions {
    * `<bundleDir>/dist/host/main.mjs` exists also gets
    * `<dest>/<id>/host/command.json`, a JSON array
    * `["node", "<absolute bundleDir>/dist/host/main.mjs"]` (default false).
+   * A native host part's `command.json` is `["<abs debug executable>"]`
+   * instead (see {@link StageOptions.targetDir}).
    */
   readonly dev?: boolean;
+  /**
+   * Where cargo writes each crate's output: a native host part's executable is
+   * `<targetDir>/doric-<id>/{debug,release}/doric-<id>`. Default
+   * `resolve('dist/target')`, since the CLI runs from the repository root.
+   */
+  readonly targetDir?: string;
 }
 
 /**
@@ -850,6 +877,16 @@ export interface StageOptions {
  * The staged `<id>` is read by `manifestVersion` with `parseManifest`
  * (`runtime/manifest.ts`), so a version 1 or 2 manifest stages; rejects with
  * `parseManifest`'s error on an invalid manifest.
+ *
+ * Native host part (`host.kind: "native"`, spec §14 "Rust", A30), with
+ * `exe` = `<targetDir>/doric-<id>/<profile>/doric-<id>`
+ * ({@link StageOptions.targetDir}): with `options.dev` (profile `debug`),
+ * `host/command.json` is the JSON array `["<absolute exe>"]` and no
+ * executable is copied; without it (profile `release`), `exe` is copied to
+ * `<dest>/<id>/host/doric-<id>` with mode `0o755`. A missing `exe` rejects
+ * with the BuildError
+ * `<id>: <exe> is missing; run npx nx run <id>:compile` (`debug`) or
+ * `… run npx nx run <id>:compile:production` (`release`).
  */
 export const stageBundles = async (
   destination: string,
@@ -878,6 +915,39 @@ export const stageBundles = async (
       recursive: true,
       filter: (path) => !path.endsWith('.tsbuildinfo'),
     });
+
+    if (hostKindOf(manifest) === 'native') {
+      const profile = options.dev === true ? 'debug' : 'release';
+      const name = `doric-${manifest.id}`;
+      const exe = join(
+        options.targetDir ?? resolve('dist/target'),
+        name,
+        profile,
+        name,
+      );
+
+      if (!(await exists(exe))) {
+        throw new BuildError(
+          `${manifest.id}: ${exe} is missing; run npx nx run ${manifest.id}:compile${profile === 'release' ? ':production' : ''}`,
+        );
+      }
+
+      await mkdir(join(staged, 'host'), { recursive: true });
+
+      if (options.dev === true) {
+        await writeFile(
+          join(staged, 'host', 'command.json'),
+          json([resolve(exe)]),
+        );
+      } else {
+        const copied = join(staged, 'host', name);
+
+        await copyFile(exe, copied);
+        await chmod(copied, 0o755);
+      }
+
+      continue;
+    }
 
     const main = join(dist, 'host', 'main.mjs');
 

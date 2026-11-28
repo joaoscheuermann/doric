@@ -119,6 +119,11 @@ export {
   minimalUiCore,
 } from './minimal-ui-core.js';
 export {
+  startTestProcess,
+  type TestProcess,
+  type TestProcessOptions,
+} from './process.js';
+export {
   createTestRouter,
   type TestClientOptions,
   type TestLogRecord,

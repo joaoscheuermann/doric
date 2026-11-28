@@ -54,20 +54,20 @@
     },
     "test": {
       "executor": "nx:run-commands",
-      "dependsOn": ["build", "^build"],
+      "dependsOn": ["build", "^build", "doric-bundle:compile-example", "sqlite:build"],
       "outputs": ["{projectRoot}/dist-tests"],
       "options": {
         "commands": [
           "tsc -p packages/bundle/tsconfig.browser.json",
           "tsc -p packages/bundle/tsconfig.spec.json",
-          "node --test 'packages/bundle/dist-tests/tests/*.test.js' 'packages/bundle/dist-tests/tests/platform/**/*.test.js'"
+          "node --test 'packages/bundle/dist-tests/tests/*.test.js' 'packages/bundle/dist-tests/tests/platform/**/*.test.js' 'packages/bundle/dist-tests/tests/testing/*.test.js'"
         ],
         "parallel": false
       }
     },
     "conformance": {
       "executor": "nx:run-commands",
-      "dependsOn": ["build", "^build"],
+      "dependsOn": ["build", "^build", "doric-bundle:compile-example"],
       "outputs": ["{projectRoot}/dist-tests"],
       "options": {
         "commands": [

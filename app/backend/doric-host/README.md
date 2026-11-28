@@ -180,7 +180,8 @@ The targets are defined in [`project.json`](project.json):
   every project it depends on.
 - `build-bundles` builds every Nx project tagged `type:bundle`, then stages
   every bundle into `dist/bundles` with `stage --dev`, so each staged host
-  part runs from its source tree's `dist/host/main.mjs`; it is never cached.
+  part runs from its source tree: a sea host part from its `dist/host/main.mjs`,
+  a native one from its built executable; it is never cached.
 - `migrate` runs `prisma migrate deploy` with
   [`prisma.config.ts`](prisma.config.ts), whose schema and migrations are the
   `postgres` bundle's, against `DORIC_DATABASE_URL`, or
@@ -673,10 +674,11 @@ In order:
    executable
    ([`staged.ts`](../../../packages/bundle/src/platform/staged.ts)). `build-bundles` stages with `--dev`, which writes a
    `command.json` pointing at the source tree's
-   `<bundleDir>/dist/host/main.mjs`
+   `<bundleDir>/dist/host/main.mjs` for a sea host part, or at its built
+   executable for a native one
    ([`cli.ts`](../../../packages/bundle/src/build/cli.ts)). Client-only
    bundles are active and never spawned. Each bundle's `descriptors.binpb` holds only its own
-   protos, so the boot merges the generated files of the 12 basic host
+   protos, so the boot merges the generated files of the 13 basic host
    contracts from `bundle/contracts/gen` into the index (`withBasicContracts`
    of `bundle/platform`;
    the staged descriptors win where both hold a file).
@@ -2216,8 +2218,16 @@ and socat in `runtime`; the build tools, `ca-certificates`, `curl` and the
 other packages install the versions the unpinned `apt-get update` finds.
 Its stages:
 
-- `agent-builder` installs `ca-certificates`, copies `package.json`,
-  `package-lock.json`, `nx.json`, `tsconfig.json`, `tsconfig.base.json`, the
+- `rust-toolchain` is `RUST_IMAGE` (`rust:1.100.0-bookworm` pinned by
+  digest, the channel of `rust-toolchain.toml`) and runs nothing:
+  `agent-builder` copies its Cargo and rustup homes.
+- `agent-builder` installs `ca-certificates`, `gcc` and `libc6-dev` (the
+  linker and C library of the Rust build), copies `/usr/local/cargo` and
+  `/usr/local/rustup` from `rust-toolchain` and sets `CARGO_HOME`,
+  `RUSTUP_HOME`, `PATH` and `RUSTUP_TOOLCHAIN=1.100.0`, so rustup installs
+  nothing. It copies `package.json`,
+  `package-lock.json`, `nx.json`, `tsconfig.json`, `tsconfig.base.json`, `Cargo.toml`, `Cargo.lock`,
+  `rust-toolchain.toml`, `scripts/sea-spike/stub-rs`, the
   root `project.json`, `buf.yaml`, `buf.gen.yaml` and `buf.lock`, the tree
   `benchmarks/proto-codec/proto` and the trees `patches`, `app`, `bundles`,
   `packages` and `tools`, and installs npm 11.13.0. It runs
@@ -2242,9 +2252,11 @@ Its stages:
   `manifest.json` into `app/backend/doric-host/dist/bundles`
   ([`project.json`](project.json),
   [`build/cli.ts`](../../../packages/bundle/src/build/cli.ts)). A failing
-  bundle build fails the image build. It then moves `dist/index.*` and
-  `dist/lib` under `app/backend/doric-host/dist/src`, the path the host's
-  start command names.
+  bundle build fails the image build. `tsc` already writes the host under
+  `app/backend/doric-host/dist/src`, the path the host's start command names.
+  Last, three `find` commands prune `dist/target` to
+  `dist/target/doric-sqlite/debug/doric-sqlite`, the executable the staged
+  `sqlite` command names.
 - `agent-runtime` holds the built `/workspace` on the base image. Compose's
   `migrate` service runs it.
 - `docker-runtime` adds nftables, the OpenSSH client and a static Dropbear

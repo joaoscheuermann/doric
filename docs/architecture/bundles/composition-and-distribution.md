@@ -134,7 +134,7 @@ The shipped composition names one provider for each of the two contracts the cor
 
 In each environment the catalog orders the scheduled bundles in three phases ([`catalog.ts`](../../../packages/bundle/src/runtime/catalog.ts)):
 
-1. **Foundation**: each bundle chosen under `providers` for a contract the core provides or requires in that environment. Within the foundation the providers of `storage.backend/v1` and `secrets.backend/v1` come first. A foundation bundle that lists a contract under `requires` is quarantined with `foundation_requires`, except a replacement of `events/v1`, `settings/v1` or `models/v1` that requires a storage or secrets backend.
+1. **Foundation**: each bundle chosen under `providers` for a contract the core provides or requires in that environment. Within the foundation the providers of `storage.backend/v1`, `secrets.backend/v1`, `storage.kv/v1` and `storage/v2` come first. A foundation bundle that lists a contract under `requires` is quarantined with `foundation_requires`, except a replacement of `events/v1`, `settings/v1` or `models/v1` that requires one of these backends.
 2. **Core**: each contract the core requires that an enabled bundle provides in that environment must be provided by an active foundation bundle, in a version that satisfies the core's range; otherwise the environment is in recovery mode. A required contract that no enabled bundle provides in any environment also puts it in recovery mode; one that enabled bundles provide only in other environments does not.
 3. **Others**: the remaining bundles, in dependency order from the `requires` of their manifests, with a lexical tie-break. The members of a dependency cycle are quarantined.
 

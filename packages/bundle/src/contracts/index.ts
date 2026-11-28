@@ -1,6 +1,7 @@
 // Browser-safe public entrypoint for bundle authors: imports only relative
 // modules and zod. Nothing here touches Node APIs.
 
+export { closure } from '../platform/descriptor-set.js';
 export * from './basic/index.js';
 export {
   type Call,

@@ -14,7 +14,7 @@ import {
   platformContracts,
 } from '../src/contracts/platform.js';
 import { platformSchemaDocuments } from '../src/index.js';
-import { parseManifest } from '../src/runtime/manifest.js';
+import { type Manifest, parseManifest } from '../src/runtime/manifest.js';
 
 void test('doric.notifications/v1 is a desktopMain contract only (WP-10N), taking exactly a title and a body', () => {
   const spec = platformContracts['doric.notifications/v1'];
@@ -215,14 +215,28 @@ const sourceManifests = (): Map<string, unknown> => {
   return found;
 };
 
-void test('catalogManifestSchema accepts every bundle manifest of the repository as the runtime validates it', () => {
+/**
+ * `manifest` in the form `doric.catalog/v1` publishes it: a version 2 `host`
+ * without `kind`, which the runtime defaults and the catalog leaves out.
+ */
+const published = (manifest: Manifest): unknown => {
+  if (manifest.manifestVersion !== 2) {
+    return manifest;
+  }
+
+  const { kind: _kind, ...host } = manifest.host;
+
+  return { ...manifest, host };
+};
+
+void test('catalogManifestSchema accepts every bundle manifest of the repository in its published form', () => {
   const manifests = sourceManifests();
   const refused: string[] = [];
 
   assert.ok(manifests.size > 0);
   for (const [name, document] of manifests) {
     const { manifest } = parseManifest(document);
-    const parsed = catalogManifestSchema.safeParse(manifest);
+    const parsed = catalogManifestSchema.safeParse(published(manifest));
     if (!parsed.success) {
       refused.push(`${name}: ${parsed.error.message}`);
     }

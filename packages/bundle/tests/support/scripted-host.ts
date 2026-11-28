@@ -136,8 +136,10 @@ export interface Script {
     | 'call-in-deactivate'
     | 'ignore-stop'
     | 'generations'
+    | 'generations-held'
     | 'hold-on-drain'
     | 'call-repeat'
+    | 'call-on-trigger'
     | 'serve-models'
     | 'http-prefix'
     | 'http-server'
@@ -172,7 +174,13 @@ const basics = ['hooks/v1@1.0.0', 'tools/v1@1.0.0', 'skills/v1@1.0.0'];
 /** A bundle's directory when no `dirOf` is given: one that does not exist. */
 const defaultDirOf = (id: string): string => `/bundles/${id}`;
 
-const coreCandidate = (
+/**
+ * The candidate `core` of the fixture resolutions: a version 1 manifest that
+ * provides `hooks/v1`, `tools/v1` and `skills/v1` at 1.0.0, with its
+ * descriptor, installed in `dirOf('core')` (`/bundles/core`, which does not
+ * exist, when undefined). `commandsOf` runs it as an `alive` script.
+ */
+export const coreCandidate = (
   dirOf: (id: string) => string = defaultDirOf,
 ): CatalogCandidate => {
   const source = manifest('core', { provides: basics });

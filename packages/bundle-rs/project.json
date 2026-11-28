@@ -1,0 +1,68 @@
+{
+  "name": "doric-bundle",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "projectType": "library",
+  "sourceRoot": "packages/bundle-rs/src",
+  "tags": ["type:rust"],
+  "targets": {
+    "build": {
+      "executor": "@monodon/rust:check",
+      "dependsOn": ["@org/source:proto-export"],
+      "outputs": ["{options.target-dir}"],
+      "options": {
+        "target-dir": "dist/target/doric-bundle"
+      }
+    },
+    "compile-example": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["@org/source:proto-export"],
+      "outputs": ["{workspaceRoot}/dist/target/doric-bundle"],
+      "options": {
+        "command": "cargo build --locked -p doric-bundle --example conformance --target-dir dist/target/doric-bundle",
+        "cwd": "{workspaceRoot}"
+      }
+    },
+    "test": {
+      "cache": true,
+      "executor": "@monodon/rust:test",
+      "dependsOn": ["@org/source:proto-export"],
+      "outputs": ["{options.target-dir}"],
+      "options": {
+        "target-dir": "dist/target/doric-bundle",
+        "locked": true
+      },
+      "configurations": {
+        "production": {
+          "release": true
+        }
+      }
+    },
+    "lint": {
+      "cache": true,
+      "executor": "@monodon/rust:lint",
+      "dependsOn": ["@org/source:proto-export"],
+      "outputs": ["{options.target-dir}"],
+      "options": {
+        "target-dir": "dist/target/doric-bundle",
+        "all-targets": true,
+        "locked": true,
+        "args": ["-D", "warnings"]
+      }
+    },
+    "format-check": {
+      "cache": true,
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "cargo fmt --check -p doric-bundle",
+        "cwd": "{workspaceRoot}"
+      }
+    },
+    "clean": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "cargo clean",
+        "cwd": "{projectRoot}"
+      }
+    }
+  }
+}

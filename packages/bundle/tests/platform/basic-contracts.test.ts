@@ -8,6 +8,10 @@ import test from 'node:test';
 
 import { file_doric_models_v1_models } from '../../src/contracts/gen/doric/models/v1/models_pb.js';
 import { file_doric_secrets_v1_secrets } from '../../src/contracts/gen/doric/secrets/v1/secrets_pb.js';
+import {
+  QueryPageSchema,
+  StorageService,
+} from '../../src/contracts/gen/doric/storage/v2/storage_pb.js';
 import { file_doric_tools_v1_tools } from '../../src/contracts/gen/doric/tools/v1/tools_pb.js';
 import { basicContracts } from '../../src/contracts/index.js';
 import { descriptorSetBytes } from '../../src/platform/descriptor-set.js';
@@ -43,6 +47,72 @@ void test('the files declare exactly the basicContracts ids with a host environm
     assert.ok(file, id);
     assert.equal(createCatalogIndex([file]).contract(id)?.file, file, id);
   }
+});
+
+void test('storage.kv/v1 is a basic host contract of cardinality one with no envelope methods, and its file is a basic host file', () => {
+  const spec = basicContracts['storage.kv/v1'];
+
+  assert.equal(spec.cardinality, 'one');
+  assert.deepEqual(spec.environments, ['host']);
+  assert.deepEqual(Object.keys(spec.methods), []);
+
+  const file = basicHostContractFiles.find(
+    (candidate) => candidate.proto.name === 'doric/storage/kv/v1/kv.proto',
+  );
+
+  assert.ok(file, 'doric/storage/kv/v1/kv.proto is a basic host file');
+  assert.equal(
+    createCatalogIndex([file]).contract('storage.kv/v1')?.environment,
+    'HOST',
+  );
+  assert.equal(
+    withBasicContracts(stagedTools()).contract('storage.kv/v1')?.file.proto
+      .name,
+    'doric/storage/kv/v1/kv.proto',
+  );
+});
+
+void test('storage/v2 is a basic host contract of cardinality one with no envelope methods, and its file is a basic host file', () => {
+  const spec = basicContracts['storage/v2'];
+
+  assert.equal(spec.cardinality, 'one');
+  assert.deepEqual(spec.environments, ['host']);
+  assert.deepEqual(Object.keys(spec.methods), []);
+
+  const file = basicHostContractFiles.find(
+    (candidate) => candidate.proto.name === 'doric/storage/v2/storage.proto',
+  );
+
+  assert.ok(file, 'doric/storage/v2/storage.proto is a basic host file');
+  assert.equal(
+    createCatalogIndex([file]).contract('storage/v2')?.environment,
+    'HOST',
+  );
+  assert.equal(
+    withBasicContracts(stagedTools()).contract('storage/v2')?.file.proto.name,
+    'doric/storage/v2/storage.proto',
+  );
+});
+
+void test('storage/v2 serves exactly its nine methods, in order, and a query page holds only its cursor', () => {
+  assert.deepEqual(
+    StorageService.methods.map(({ name }) => name),
+    [
+      'Register',
+      'Get',
+      'Query',
+      'Read',
+      'Commit',
+      'Health',
+      'PutBlob',
+      'GetBlob',
+      'DeleteBlob',
+    ],
+  );
+  assert.deepEqual(
+    QueryPageSchema.fields.map(({ name }) => name),
+    ['next_cursor'],
+  );
 });
 
 void test('a staged file wins over a basic file of the same name; a method only the basic files hold resolves', () => {

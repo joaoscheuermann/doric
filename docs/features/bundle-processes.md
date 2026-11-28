@@ -1,8 +1,9 @@
 # Feature: bundle processes
 
-- Status: `accepted` (phases 0–2 built; phase 3 built apart from the owner's
-  runs of T8, AC3.6 and the host and desktop end-to-end tests on `postgres`,
-  see "Phase 3: what is still open"; phases 4–8 to come)
+- Status: `accepted` (phases 0–3 built; phase 3 closed by the owner's decision
+  A75 with T8, AC3.6 and the host and desktop end-to-end tests on `postgres`
+  not run, see "Phase 3: what was not run"; phase 4 in progress, S72–S77b built, see
+  "Phase 4"; phases 5–8 to come)
 
 ## Problem
 
@@ -276,11 +277,13 @@ Each cell is the median of five runs (RSS ranges in MiB). Both Hello columns
 run to the bundle process's first `BundleHostService/Connect` request, a lower
 bound of its Hello.
 
-### Phase 3: what is still open
+### Phase 3: what was not run
 
 Phase 3 ends when its "Ends with" in the spec's Phases table and AC3.1–AC3.16
-hold. RK1's gate (AC3.16) and RK2's (AC3.7) pass; phase 3 is not complete.
-Still open, each a run for the owner:
+hold. RK1's gate (AC3.16) and RK2's (AC3.7) pass. On 2026-11-27 the owner
+declared phase 3 complete and let phase 4 start (spec A75), although three
+checks, each a run for the owner, were not run. They stay unrun and are waived
+by A75, not met:
 
 - T8 (RK18, RK31), below.
 - AC3.6 (RK6): a TCP connection from inside a Docker sandbox and from inside a
@@ -288,6 +291,12 @@ Still open, each a run for the owner:
   records it met and no test covers it; it needs the sandboxes.
 - The host and desktop end-to-end tests, green on `postgres` (phase 3's end
   condition).
+
+Phase 4 deletes the `postgres` bundle and PostgreSQL from the deployment (spec
+A27, A45). After that, the end-to-end tests cannot run on `postgres`, so phase
+3's end-to-end baseline on `postgres` cannot be proved anymore. T8's procedure
+below stays for the owner; it is written for the branch on `postgres`, so a run
+after phase 4 needs its database environment adapted.
 
 ### Phase 3: T8, for the owner to run (RK18, RK31)
 
@@ -1089,6 +1098,679 @@ manifest accepts `host.assets`, and the build's dry activation answers
 `use(<DescService>)` of a host contract with an inert stub after checking the
 descriptor against the part's lists (a descriptor without the contract option
 is refused).
+
+### Phase 4
+
+The owner's decisions A76–A78 settle phase 4: `sqlite` in Rust is the only
+storage engine, with no TypeScript backend. Slice S72 (spec version 6.56,
+[Phases](../designs/grpc-processes.md#phases), "Phase 4's slices") adds the Rust SDK of
+section 10, "The Rust SDK": `packages/bundle-rs`, the crate `doric-bundle`
+(described in its [README](../../packages/bundle-rs/README.md)). It is the
+bundle side of the control stream, server side only: a bundle implements
+`Bundle` (`services`, `activate`, `stop`), registers its methods in `Services`
+(`unary`, `server_stream`, `client_stream`) and calls `doric_bundle::run` from
+`main`. Per A28 it has no client of the router, so a Rust bundle calls no other
+bundle. It does not validate requests against protovalidate rules, but a
+request that does not decode ends the call `invalid_input`. Its conformance
+fixture
+`packages/bundle-rs/examples/conformance.rs` mirrors the TypeScript fixture,
+and `packages/bundle/tests/conformance/rust.test.ts` runs the conformance
+suite against it; `bundle:conformance` depends on
+`doric-bundle:compile-example`.
+
+Where the spec says nothing, S72 chose:
+
+- a handler is polled once before the reader takes the next frame, as the
+  TypeScript SDK runs it synchronously;
+- after `StopResult` the SDK waits up to 250 ms (`FLUSH_GRACE`) for the host to
+  end the stream;
+- a cancelled call waits for its handler instead of aborting it, and ends
+  `CANCELLED` whatever the handler answers;
+- a method the bundle did not register answers `unknown_contract`
+  (`UNIMPLEMENTED`);
+- the process exits 70 also when its environment is missing or malformed and
+  when the connection fails;
+- logs are JSON lines on stdout with `level`, `msg`, `bundleId`, `generation`
+  and `incarnation`; lines logged before the environment is read have no
+  instance fields;
+- a request that does not decode ends the call `invalid_input`; in a
+  client-streaming call it is the last item of `Requests`, an `Err`;
+- a panic in `activate` answers `internal`; a panic in `stop` is logged, and
+  `StopResult` and exit 0 follow;
+- a control stream that ends during the stop exits 0;
+- the process exits 70 also when the first host frame is neither `Accepted`
+  nor `Rejected`, and when its runtime fails to start;
+- an empty environment variable counts as missing;
+- a `deadline_unix_ms` of 0 or NaN means no deadline;
+- the Hello timeout of 10 s counts from process start;
+- handlers still running at exit are abandoned;
+- `FLUSH_GRACE` starts once `StopResult` has left the outbound queue.
+
+Rules for bundle authors, from S72's review:
+
+- a handler must not block before its first `.await`: the SDK polls it once
+  before reading the next frame, so a blocking handler holds back
+  `HealthCheck`, `CallCancel`, `CallCredit` and `Stop`, and the host can
+  quarantine the instance after `health_timeout`; blocking work goes to
+  `tokio::task::spawn_blocking`;
+- the 4 MiB limit applies to the encoded frame, not only to the message:
+  a response whose frame would pass it ends the call `limit_exceeded`. The
+  review applied the same rule to the TypeScript SDK's call server
+  (`packages/bundle/src/sdk/host/serve.ts` measures the encoded
+  `ConnectRequest` frame) and added two boundary cases to the conformance
+  suite, run on both fixtures: `bundle:conformance` went from 58 to 62 tests.
+
+S72's verification: T4.5 and AC4.3 pass on x64 in this sandbox
+(`npx nx run bundle:conformance`, 58 of 58 tests, the TypeScript and Rust
+fixtures, run before the review added the two boundary cases above; 62 of 62
+after it); arm64 is left to CI. AC4.6 holds for the SDK:
+`#![forbid(unsafe_code)]`, clippy with `-D warnings`, `rustfmt --check`, and
+`cargo test` with 6 tests and 1 doctest.
+
+Slice S73 (spec version 6.56, QD, T4.21) adds the contract
+`storage.kv/v1` (`packages/bundle/proto/doric/storage/kv/v1/kv.proto`,
+`KvService` with `Get`, `Range` and `Commit`, generated as `kv_pb.ts`; per A76
+it has no count or size rules) and `startTestProcess` in `bundle/testing`
+(`packages/bundle/src/testing/process.ts`), which spawns one built bundle
+process under a test router, activates it and hands the test Connect
+transports whose calls reach the process as host-to-bundle calls. As of S73,
+nothing serves or calls `storage.kv/v1` yet. The conformance suite's `Session` moves
+to the internal `src/testing/conformance/session.ts` and answers a process's
+own calls with `undeclared_requirement`. `bundle:test` also runs
+`tests/testing/*.test.js` and depends on `doric-bundle:compile-example`.
+
+Where the spec says nothing, S73 chose:
+
+- an empty `command` rejects with `ContractError('invalid_input')`;
+- a unary or client-streaming call that ends OK with other than one response
+  fails `internal`;
+- the instance and every stamped caller have version `0.0.0`, generation 1
+  and incarnation 1;
+- a stricter Hello check: besides another bundle or generation it rejects
+  another protocol version or incarnation, a first frame that is not Hello and a
+  control stream without the instance token;
+- a call's deadline comes from the Connect call's `timeoutMs`;
+- bidi-streaming methods are supported too;
+- `process.ts` imports `session.ts` lazily, when `startTestProcess` runs.
+
+S73's verification: `bundle` typecheck, build and test (1382 pass) and
+`bundle:conformance` (62 pass). Known issue: `tests/platform/drain.test.js`,
+"starts generation 2…", is flaky; it failed once in a full run and passed
+alone 10 of 10 times.
+
+Slice S74a adds the engine bundle
+[`bundles/foundation/sqlite`](../../bundles/foundation/sqlite/README.md) (crate
+`doric-sqlite`, Nx project `sqlite`), the first server of `storage.kv/v1`, in
+Rust on `rusqlite` 0.43.0 with SQLite bundled, and `doric_bundle::log(Level,
+&str)` to the Rust SDK. The root `Cargo.toml` gains the member and `rusqlite`;
+`package-lock.json` is regenerated (below). What it does:
+
+- one file, `$DORIC_STORAGE_PATH/doric.sqlite3`, in the current directory when
+  the variable is unset or empty; WAL, format `user_version = 1`;
+- the open reads `user_version` first and refuses an unknown format
+  (`storage_format_unsupported`) or a missing directory
+  (`storage_path_missing`) without touching anything;
+- one writer thread with a queue of 64 runs the commits one at a time in
+  `BEGIN IMMEDIATE` transactions; four read-only connections serve `Get` and
+  `Range`, which answer through channels of 16;
+- the prefix check (`not_owner`), the limits (`limit_exceeded` with
+  `details.limit`) and A76's `invalid_input` refusals run before any
+  transaction;
+- every call before activation answers `unavailable`; stop runs
+  `wal_checkpoint(TRUNCATE)`, so the `-wal` file is empty after it unless the
+  checkpoint is blocked or fails, which is logged at `warn`.
+
+Cancellation, now in section 17 of the spec: a `Commit` whose stream ends
+because the call was cancelled writes nothing; a cancelled `Commit` writes
+nothing unless the writer has already begun its transaction; a cancelled read
+stops at its next answer; the SDK ends a cancelled call with gRPC `CANCELLED`.
+A checkpoint failure on stop is logged at `warn` and the connection still
+closes. The order of the checks is part of the contract (see the bundle's
+README, "Errors"). The manifest is S75b's; not yet: read-only mode (S88, with
+the inspection tool; the spec records the deferral).
+
+The lockfile: S72 added `doric-bundle` without updating `package-lock.json`,
+so `npm ci` failed from S72 on. S74a regenerated it with
+`npm install --package-lock-only --ignore-scripts` (provenance per HC-008):
+it gains `doric-bundle` and `sqlite` and drops 25 stale `extraneous`
+workspace entries.
+
+S74a's verification: `cargo test` with 43 tests (`sqlite`) and 8 tests and 1
+doctest (`doric-bundle`); `nx run-many -t lint test build format-check compile
+-p sqlite doric-bundle` with `-D warnings`; `bundle:conformance` (62 pass); and
+an end-to-end smoke through `startTestProcess`: a put answers position 1, a get
+answers the value at version 1 and nothing at 0, `b/k` from caller `a` is
+`not_owner`, and stop exits 0 with an empty `-wal`.
+
+Slice S74b adds the TypeScript side of `storage.kv/v1` in
+[`packages/storage`](../../packages/storage/README.md):
+
+- the error codes `condition_failed` (gRPC `ABORTED`), `storage_path_missing`
+  and `storage_format_unsupported` (both `FAILED_PRECONDITION`, the default) in
+  `contractErrorCodes` of `bundle/contracts`;
+- `Kv`, `kvLimits` and `kvClient` from the root entry `storage`: the client
+  interface, the frozen limits by the names `details.limit` reports, and the
+  adapter of a Connect `KvService` client that turns every `ConnectError` into
+  its `ContractError`;
+- `runKvConformance` from `storage/conformance`, the KV conformance kit: 29
+  cases at S74b (33 since S75a, 31 of them in a default run), the last a seeded sequence of 2,000 operations checked against a
+  model (seed 20261127, or `DORIC_KV_SEED`);
+- the entry `storage/testing` with `openTestEngine`, which spawns the debug
+  `doric-sqlite` binary through `startTestProcess`, in a `mkdtemp` directory
+  that `close()` removes or on a given `path` it leaves; the internal
+  `openTestEngineAt` in `test-engine.ts` takes the binary path;
+- the tests `kv.test.ts` (T4.2, the kit on the engine), `kv-file.test.ts`
+  (T4.18, the storage path and file format) and `test-engine.test.ts` (T4.20,
+  without its `openTestStorage` case, which S77b1 built as TE1–TE2);
+- `storage:test` depends on `sqlite:compile`, and CI's platform test step runs
+  `storage`.
+
+Its decisions:
+
+- `openTestEngine` finds the repository root by walking up from its module to
+  the nearest directory holding `nx.json`, so it works from `src`, `dist` and
+  `dist-tests/src` alike.
+- The kit compares the hexadecimal `details.key` of a refusal without regard
+  to case, so an engine may answer either case.
+- The `commitItems` case is slow, 66.5 s of `kv.test.ts`'s 76.9 s: it sends a
+  commit of 200,001 items, refused, and one of 200,000, which passes. S75a
+  moved it out of `storage:test` into `storage:test-heavy`.
+
+S74b's verification: `storage:test` passes 248 of 248 in about 77.5 s
+(`kv.test.ts` 76.9 s, `kv-file.test.ts` 1.07 s, `test-engine.test.ts`
+1.65 s); before `kvClient` existed the kit passed against the real engine
+through an adapter with seeds 20261127, 1 and 42; `nx affected -t typecheck`
+passes on 57 projects. Still to come then: `openStorage` and `openTestStorage`
+(built in S77b1), the storage library (S77–S78), and the deletion of `storage/memory` and
+the old suites (S85a).
+
+Slice S75a (spec version 6.56, "S75's plan") adds the native host part:
+
+- a v2 manifest's `host.kind` is `sea` (the default) or `native`; a native
+  part refuses `host.httpPrefix` and `host.assets`;
+- for a native part the build runs no host esbuild, refuses a bundle that has
+  `src/host/main.ts`, and takes the contracts the part provides from
+  `nativeProvides({ manifest, index })`: each listed id the index knows as a
+  `HOST` contract with a contract-role service;
+- `stage` writes `host/command.json` with the absolute debug executable under
+  `--dev`, and otherwise copies the release executable to `host/doric-<id>`
+  (0755); both come from `StageOptions.targetDir`, by default
+  `resolve('dist/target')`;
+- `storage.kv/v1` becomes a basic host contract (13 in all) and a backend: a
+  foundation bundle that replaces a facade may require it, and its providers
+  activate with the other backends first;
+- the KV kit's two 200,001-item cases (`commitItems` among them) run only
+  under `runKvConformance(harness, { heavy: true })`: a default run registers
+  31 of the 33 cases, and the new target `storage:test-heavy` and CI step
+  "Run heavy storage tests" (30-minute timeout) run the heavy 2;
+- `clientFailure(error, call?)` answers `cancelled` or `deadline_exceeded`
+  for an `internal` or `cancelled` failure once the call's signal has aborted
+  or its deadline has passed, so `kv-client.test.ts` no longer fails on a
+  deadline that surfaced as `internal`.
+
+The `sqlite` manifest is S75b.
+
+S75a's verification: `bundle:test` passes 1399 of 1399;
+`doric-host:build-bundles` succeeds; `storage:test` passes 256 tests in about
+22–25 s and `storage:test-heavy` 2 tests in 203 s; `kv-client.test` passed 50
+consecutive runs after the deadline fix.
+
+Slice S75b (spec version 6.57) gives `sqlite` its manifest:
+
+- `bundles/foundation/sqlite/manifest.json`: version 2, `1.0.0`,
+  `engines.doric` `^1.0.0`, provides `storage.kv/v1@1.0.0`, `host.kind`
+  `native`; the package is at `0.0.1`, tagged `type:rust` and `type:bundle`,
+  and the `kv.proto` header reads `storage.kv/v1 (host, 1.0.0)`;
+- monodon's cargo `build` target is renamed `sqlite:check`; `sqlite:build` is
+  the bundle build, depending on `compile` and `bundle:build`, and
+  `bundle:test` depends on it;
+- `doric-host:build-bundles` builds and stages `sqlite` (`host/command.json`
+  naming the debug executable); `sqlite` is not in the composition until S84;
+- the host image (`app/backend/doric-host/.Dockerfile`) copies cargo and
+  rustup from a digest-pinned `RUST_IMAGE` stage, sets
+  `RUSTUP_TOOLCHAIN=1.100.0`, installs `gcc` and `libc6-dev`, copies the Cargo
+  files and `stub-rs`, and keeps only
+  `dist/target/doric-sqlite/debug/doric-sqlite`; three broken `mkdir`/`mv`
+  lines are removed, since tsc already writes `dist/src/`;
+- `package-lock.json`: the `sqlite` entry goes from `1.0.0` to `0.0.1`,
+  regenerated with
+  `npx -y npm@11.13.0 install --package-lock-only --ignore-scripts`;
+- tests: T4.22's platform case (`native-host.test.ts`);
+  `platform-contracts.test.ts` checks manifests in their published form, with
+  `host.kind` stripped; `tests/lint.test.mjs` checks that the Rust image tag
+  and `RUSTUP_TOOLCHAIN` match `rust-toolchain.toml`.
+
+S75b's verification: `bundle` and `sqlite` pass 1401 Node tests and 43 cargo
+tests (T4.22 in 2.6 s); `storage:test` 256 of 256; `lint:test` 49 of 49 and
+`boundaries.test.mjs` 37 of 37. The `doric-host` tests were not run (no
+database). The image builds: `DOCKER_BUILDKIT=0 docker build --target
+agent-runtime` exits 0, and in the image `find dist/target -type f` lists only
+`dist/target/doric-sqlite/debug/doric-sqlite` and
+`app/backend/doric-host/dist/src/index.js` exists.
+
+Slice S76 (spec version 6.57) splits `sqlite` and makes `storage.kv/v1`
+platform-only:
+
+- `bundles/foundation/sqlite` is two crates in the one Nx project `sqlite`:
+  `engine/`, the library `doric-sqlite` (`SqliteEngine`, the traits
+  `KvEngine`, `ReadTxn` and `WriteTxn`, the types `KeyRange` and `Entry`,
+  `refusal`, `sqlite_version`, `limits`, `kv`), and `storage/`, the package
+  `doric-storage`, whose binary keeps the name `doric-sqlite` and its path
+  `dist/target/doric-sqlite/{debug,release}/doric-sqlite`; the root
+  `Cargo.toml` lists both. `check` and `compile` run on `doric-storage`;
+  `test`, `lint` and `format-check` cover both crates, and `test` has no
+  `production` configuration;
+- `storage.kv/v1` serves only the caller `doric`: any other caller is
+  `not_owner` (`storage.kv/v1 serves only the platform.`, no details) before
+  any limit, store or I/O; the guarantee-8 prefix checks and the order of the
+  checks are unit-tested in `engine/src/access.rs` (inline) and
+  `engine/src/limits/tests.rs`;
+- a `KvEngine` write is one `BEGIN IMMEDIATE` transaction on the writer
+  thread, its position consecutive with the KV commits; `on_commit` runs after
+  `COMMIT` and a rollback drops it; `foreign_write` uses
+  `PRAGMA data_version`. A read is a `BEGIN DEFERRED` snapshot on a reader;
+- the gateway's `servedMethods` never serves a method of `internalContracts`
+  (`['storage.kv/v1', 'storage/v2']`, `packages/bundle/src/contracts/ids.ts`);
+- the KV kit calls as `doric` throughout: `access.ts` keeps one refusal case
+  for other callers, the two-caller race case is gone, and the kit has 30
+  cases (28 in a default run, 2 heavy); `kv-client` and `test-engine` call as
+  `doric`, and `test-engine` gains a refusal case;
+- the `kv.proto` header and the `Kv` and `TestEngine` doc comments say only
+  the platform is served;
+- known limitation: `cargo doc` warns of an output filename collision between
+  the binary `doric-sqlite` and the library `doric_sqlite`.
+
+S76's verification: `sqlite` is green, `doric-sqlite` passing 62 tests and
+`doric-storage` 3; `storage:test` 254 of 254; `storage:test-heavy` 2 of 2 in
+about 175 s; `bundle:test` 1402 of 1402 in the implementation run. In the
+cleanup run `drain` flaked twice under load, then passed 10 of 10 alone.
+
+Slice S77a1 (spec version 6.57) adds the `storage/v2` contract and the
+engine's index-key library, with no handler serving the contract yet:
+
+- `packages/bundle/proto/doric/storage/v2/storage.proto`
+  (`storage/v2 (host, 2.0.0)`, package `doric.storage.v2`): `Register`, `Get`,
+  `Query`, `Read`, `Commit`, `Health`, `PutBlob`, `GetBlob` and `DeleteBlob`;
+  `RegisterRequest`/`RegisterResponse` carry a descriptor set of at most
+  2 MiB, a limit the `Register` handler enforces from S77a2, `QueryPage` has `optional string next_cursor`, and the other messages
+  are copied from `storage/v1`. It coexists with `storage/v1`, which `core`
+  serves until S84; `sqlite` serves it from S77a2;
+- `storage/v2` is a basic host contract (now 14), in `basicHostContractFiles`
+  and in `BACKENDS`, so its providers come first among the foundation and a
+  foundation facade replacement may require it, and in `internalContracts`
+  since S76;
+- `doric-storage` gains `lib.rs` with `keys` (`Element`, `encode`, `decode`,
+  `key`, a byte-for-byte port of `encodeIndexKey` and `decodeIndexKey` of
+  `packages/storage/src/keys.ts`) and `schema` (`json_form`, protobuf-es
+  `toJson` with `alwaysEmitImplicit` over prost-reflect
+  `skip_default_fields(false)`, and `index_values`, as `indexValues` and
+  `resolvePointer`); the Rust engine owns the encoding;
+- the golden file `bundles/foundation/sqlite/storage/tests/fixtures/index-keys.json`
+  is written by the one golden test in `schema.rs` with
+  `DORIC_WRITE_GOLDEN=1`, from the fixture `storage/tests/fixtures/index_keys.proto`,
+  outside every buf module and compiled by protox;
+  `packages/storage/tests/index-parity.test.ts` (T4.23) recomputes every key
+  with `keys.ts` and protobuf-es;
+- the Cargo workspace gains `prost-reflect` (with `serde`) and `serde_json`,
+  and `Cargo.lock` 7 packages.
+
+S77a1's verification: `doric-sqlite` passing 62 tests and `doric-storage` 15
+lib tests and 3 bin tests; `storage:test` 257 of 257; `bundle:test` 1405 of
+1405, after one run that flaked and two reruns that passed; `buf lint` and
+`proto-check` pass.
+
+Slice S77a2 (spec version 6.57) serves `storage/v2`'s `Register` from
+`sqlite`, which is still not in the composition:
+
+- `bundles/foundation/sqlite/proto/doric/storage/layout/v1/layout.proto`
+  (package `doric.storage.layout.v1`, generated only for Rust):
+  `TypeDeclaration`, `IndexDeclaration` and `DocumentHeader`; it is a buf
+  module in `buf.yaml`, and `buf export` puts it in `dist/proto`;
+- `storage/build.rs` generates the messages of `storage/v2` and `layout` with
+  services cleared, keeping the `google/protobuf/*` files prost-build needs
+  for `google.protobuf.Value`;
+- `doric-storage` gains `layout.rs` (the record keys `("schema", hash)`,
+  `("schema.current")`, `("type", t)` and `under`),
+  `schema/declarations.rs` (`pool` and `declarations`) and `register.rs`
+  (`prepare` and `Registrations::apply`), and `testing.rs`, which compiles
+  test protos with protox; `doric_sqlite::hex` is now `pub`;
+- `Register` refuses the caller `doric` and a type or stream prefix outside
+  the caller's namespace with `not_owner` (a type's namespace is everything
+  before its first `.` or `/`, a stream prefix's owner everything before its
+  first `.`), a descriptor set over 2 MiB with `limit_exceeded`, and with
+  `invalid_input` an index field that is not a singular scalar or well-known
+  value, more than 16 indexes or 8 fields, a duplicate index name, a type
+  declared twice, and an empty or more-than-128-byte id; it reads the
+  `storage_type` and `stream_entry` options with prost-reflect;
+- it hashes the set with SHA-256 and stores the schema and current, writes
+  nothing for a set with nothing new, rewrites a declaration without a
+  rebuild when only `messageType` or `schema` changes, answers changed
+  indexes on a type that has documents with `invalid_input` ("not supported
+  yet") until S77a4a, which removed the refusal, keeps the highest generation in engine memory only, and
+  collects the schemas no longer named;
+- `manifest.json` provides `storage/v2@2.0.0`; the workspace gains `sha2` 0.11.2
+  (8 packages); `doric-storage` gains `sha2`, `prost-types`, and the build
+  dependencies `protox` and `tonic-prost-build`, already workspace
+  dependencies;
+- `drain.test.ts` and the scripted fixture gain the mode `call-on-trigger`:
+  "starts generation 2…" makes its second call only after `publish`
+  resolves, which removes its timing race;
+- the scripted fixture gains the provider mode `generations-held`, whose
+  `Register` holds its answer until the log has a line starting with
+  `test answer `, and `triggered()` takes that prefix: "lasts while a unary
+  call it made is in flight…" publishes, checks that generation 1 has not
+  deactivated, writes `test answer 0`, then waits for `settings answered` and
+  for app 1.1's `deactivated`, and waits for the draining state through the
+  publish answer, since the app's mode `call-repeat` logs no `changed:` event.
+  Both races were in the tests, under CPU load, not in the router. The test
+  alone passes 3 of 3, the whole `drain.test` under 25 busy loops 3 of 3, and
+  `crash.test` under the same load 3 of 3.
+
+S77a2's verification: `doric-sqlite` passing 62 tests and `doric-storage` 45
+lib tests and 7 bin tests; `storage:test` and `lint:test` (49 of 49) pass;
+`buf lint` and `proto-check` pass; `bundle:test` 1406 of 1406, twice, after
+both drain fixes.
+
+Slice S77a3a (spec version 6.58), the first half of S77a3, serves
+`storage/v2`'s `Commit` and `Get` from `sqlite`, still not in the composition:
+
+- `Commit` refuses the caller `doric`, then checks each item as it arrives: an
+  item with no case set is refused, stream items are refused
+  (`Stream items are not supported.`); a chunk needs a put before it and holds
+  1 byte to 1 MiB; then the type's length, its namespace and the id's length
+  (512 bytes); an expected revision in 0..=u32::MAX; 10,000 items, `chunk`
+  items not counted (`limit_exceeded` `"batch"`); 16,777,216 bytes per document
+  (`"document"`), then 67,108,864 bytes per batch (`"batch"`). When the stream
+  ends, a cancelled call is `cancelled`, then an empty batch is refused. A read
+  transaction then answers `unknown_type` (puts, expects and deletes), decodes
+  indexed puts and computes their keys; a key over 2,048 bytes without its
+  prefix is `limit_exceeded` `"indexKey"`. The writer reads the declarations
+  again and recomputes keys whose declaration changed (the change is never
+  refused, but a recomputed put can still fail with `invalid_input`,
+  `invalid_index_value` or `limit_exceeded` `"indexKey"`, before any
+  `revision_conflict`), then runs expects
+  (`revision_conflict` `{type,id,expected,actual}`), deletes and puts
+  (`unique_conflict` `{type,index}`, per put, against the state after the
+  batch's deletes and earlier puts). Only values of a type with indexes are
+  decoded. Revisions count per put, so a
+  delete then a put restarts at 1; values are re-split at 983,040 bytes.
+- `updatedAt`, only in `DocumentHeader`, is monotonic within one process, in
+  `toISOString`'s format; two commits may share it.
+- `Get` checks `doric`, the type's length, the namespace and the id's length,
+  then `unavailable` and `unknown_type`, and streams through a bounded channel;
+  an absent document answers no item, as in v1.
+- Descriptor pools are cached in memory, 32 per process, least recently used,
+  keyed by schema hash; a failed build is not cached.
+
+S77a3a's verification: `doric-storage` 107 lib and 7 bin tests, `doric-sqlite`
+62; no test exercised the handlers `commit_documents` and `get_document` then
+(resolved by S77b1's CL1–CL3 and S77b2's conformance kit). `npx nx run-many -t check compile lint test
+format-check build -p sqlite --skip-nx-cache`, with clippy `-D warnings` and
+`cargo fmt --check`, passed.
+
+Slice S77a3b (spec version 6.59), the second half of S77a3, serves
+`storage/v2`'s `Query` from `sqlite`, which completes S77a3:
+
+- `Query` refuses the caller `doric`, then checks that the request holds a
+  `storage_query` (`A query request holds a storage_query.`), the type's length
+  and namespace, a `limit` of 1–1000 (`LIMIT`), an `order` absent, `asc` or
+  `desc`, the kinds of the values in `equals` and then of the bounds (no kind is
+  `invalid_input`; a struct, a list or a non-finite number is
+  `invalid_index_value`, in `equals` too), the bound pairs, and a cursor in
+  unpadded base64url; then `unavailable`; then, in the read transaction,
+  `unknown_type`, an undeclared index (`Type T has no declared index …`), the
+  arity (`equals` no longer than the index's fields, and shorter when there is a
+  range) and a cursor within the bounds
+  (`The cursor is outside the query's bounds.`).
+- A page is one read transaction, so one snapshot: up to `limit` + 1 entries,
+  reversed for `desc`, strictly after the cursor; the `page` item comes first,
+  then each `document` and its chunks; an empty result is one `page` item.
+  `next_cursor` is set only when a (`limit` + 1)th entry exists, as the
+  unpadded base64url of the tuple bytes of the page's last document's entry
+  (not the (`limit` + 1)th entry's) after `("idx", type, name)`: the values
+  for a unique index, the values then the id for a non-unique one, whose ties
+  sort by id, bytewise. A non-unique entry whose last element is not a string is
+  `internal`, which cannot be reached.
+- `keys::bounds` ports `keyBounds`; `Get` and `Query` share `DocumentItems`,
+  `emit_document` and `Engine::stream_read`; `base64` 0.22.1 is a workspace
+  dependency.
+
+S77a3b's verification: `doric-storage` 143 lib and 7 bin tests (the six `bounds`
+tests of `storage/src/keys.rs:384-495`; `query/tests/{check,page,paging}.rs`, 13, 10 and 7), `doric-sqlite`
+62; no test exercised the handlers `get_document`, `commit_documents` or
+`query_documents` then (resolved by S77b1's CL1–CL3, for the first two, and
+S77b2's conformance kit, for all three). `npx nx run-many -t
+check compile lint test format-check build -p sqlite --skip-nx-cache`, with
+clippy `-D warnings` and `cargo fmt --check`, passed.
+
+Slice S77a4a (spec version 6.60), the first half of S77a4, makes `storage/v2`'s
+`Register` rebuild the indexes of a type that has documents in the same write
+transaction (A81), instead of refusing with `invalid_input`
+(`storage/src/register/backfill.rs`):
+
+- Indexes are compared as whole declarations, name, fields and `unique`; only
+  the ranges are cleared by name, so a rename is a removal plus a new index and
+  a change of fields or `unique` under one name is a change. The changed or
+  removed ones are cleared, the new or changed ones built, in declared order; a pure reorder rebuilds nothing
+  (OQ3). Each header's `index_keys` is rewritten in declared order, the
+  unchanged indexes keeping their keys, and its revision and `updatedAt` stay
+  (OQ6).
+- A rebuild of more than 200,000 documents (`REBUILD_DOCUMENTS`), a removal
+  included, is `limit_exceeded` with `"rebuild"`, counted keys-only before any
+  decode; exactly 200,000 passes (OQ4). The ids are collected first, since a
+  range visitor cannot call `get`, so one value is held at a time (S77a4's plan finding PF7).
+- A duplicate under a rebuilt unique index is `unique_conflict` with
+  `{ type, index, ids }`, `ids` the holder then the second document in id key
+  order; only the first, of the lowest index in declared order, is reported,
+  after every document is read (OQ2). The walk goes on after a conflict is
+  recorded: if a later document fails to decode, fails `index_values` or
+  `layout::index`, or is missing its header or a chunk, that error is answered
+  instead of the recorded `unique_conflict`. No test covers the first-conflict
+  rule across two unique indexes yet; the only conflict test has one. `Commit` keeps `{ type, index }`; S77b's
+  conformance case Q10 must expect `ids` from a rebuild (OQ10, S77a4's plan finding PF4).
+- A value that does not decode keeps `json_form`'s `invalid_input` (OQ5); an
+  index field that holds an object or an array is `invalid_index_value`, from
+  `schema::index_values`; a new key over 2,048 bytes is `limit_exceeded` with
+  `details.limit` `"indexKey"`, from `layout::index`; a message missing from
+  the pool, a missing header or chunk, a header that does not decode and a
+  document key that holds no id are `internal`. Any error rolls back the
+  declaration, the schema, `schema.current` and the generation.
+- The handler logs each rebuild at `info`:
+  `Rebuilt the indexes of <type>: <n> documents in <ms> ms.` (OQ8, S77a4's plan finding PF5).
+
+S77a4a's verification: `doric-storage` 154 lib and 7 bin tests (12 in
+`register/tests/backfill.rs`, the 200,000-document rebuild, about 4.6 s, and the
+200,001 refusal in the normal suite, OQ11; the 200,000 documents carry empty
+`DocumentHeader::default()` headers and the change only removes an index, so
+nothing is decoded, and the longest stall stays for S77c's case (a)), `doric-sqlite` 62; `cargo test`,
+clippy `-D warnings`, `cargo fmt --check` and `npx nx run-many -t check compile
+lint test format-check build -p sqlite` passed.
+
+Slice S77a4b (spec version 6.61), the second half of S77a4, adds the cache of
+document headers (A80, `storage/src/cache.rs`) and fixes the engine's
+`data_version`:
+
+- PF1: `engine/src/writer.rs`'s `run`, the `storage.kv/v1` commit path, no
+  longer reads or stores `data_version`; only `transact`, a storage write's
+  transaction, does. Before, a foreign write followed by a `storage.kv/v1`
+  commit was hidden from the next storage write. `WriteTxn::foreign_write`'s
+  doc says a `storage.kv/v1` commit changes neither its answer nor what it
+  compares against (E1, `engine/src/store/foreign.rs`).
+- `Headers` caches `Header`, a `DocumentHeader` without `chunk`, in an LRU
+  bounded in bytes: `CACHE_BYTES` (64 MiB), each entry its key, its
+  `index_keys` and `ENTRY_BYTES` (64). An entry larger than the bound is not
+  cached, a bound of 0 caches nothing, an absent document is never cached
+  (OQ7), and clones share one cache.
+- `DORIC_SQLITE_CACHE` (`CACHE_VARIABLE`): unset, empty or `1` turns the cache
+  on, `0` off; any other value, non-UTF-8 included, fails the activation before
+  any open with `invalid_input`,
+  `DORIC_SQLITE_CACHE is "0" or "1"; "<value>" is not.` (the value through
+  `to_string_lossy`, the coordinator's choice) and `details.variable` (OQ9).
+  `activate` calls the private `activate_from(storage_path, cache)` with
+  `std::env::var_os`, which sets nothing on an error, so the tests need no
+  `set_var`, which `forbid(unsafe_code)` with edition 2024 forbids (PF8).
+- `Headers::begin(txn)` clears the cache when `foreign_write()` is true and
+  returns a `Staged` overlay: `header` reads what it staged, then its clean
+  reads, then the cache (skipped for a forgotten key), then the transaction,
+  keeping a transaction read as clean unless the key was forgotten; `put` and
+  `forget` stage; `finish` queues the puts, removals and clean reads on
+  `on_commit`, and a rollback drops them. A cache hit still updates the LRU
+  recency inside the transaction, which a rollback does not undo; that changes
+  only the eviction order (R2). `Commit` (`commit::apply`)
+  reads expects, deletes and puts through it and calls `finish` only on
+  success; `Register` (`register::write`) calls `begin` first (PF2), and its
+  rebuild forgets each header it rewrites (OQ6), reading full headers through
+  `stored_header` since it needs `chunk` and writing with `txn.put`. `Get` and
+  `Query` never use it.
+- Every `KvEngine::write` of `doric-storage` calls `Headers::begin` first,
+  whether it touches headers or not: `transact` stores `data_version` after
+  every write (`engine/src/writer.rs:258`), so a write that skips it would hide
+  a foreign write from the next one (RK38). S78's head-only appends and S87's
+  `Import` must follow it. Test fixtures that plant raw headers, such as
+  `plant_headers`, are exempt.
+- PF9: T4.25's other-process case uses a put's revision (H3, H4); the append
+  case is S78's and the `Import` case S87's.
+- Test moves, with no change of behaviour, for the 500-line rule: the binary's
+  4 tests to `storage/src/main/tests.rs`, which also holds M1 and M2 (6 in
+  all; the other 3 bin tests stay inline in `storage/src/kv.rs`, `kv::tests`),
+  and the engine's to `engine/src/{writer,store,limits,readers}/tests.rs`
+  (`engine/src/access.rs` keeps its tests inline).
+
+S77a4b's verification: `doric-sqlite` 63 tests, `doric-storage` 168 lib and 9
+bin tests (H1–H13 in `cache/tests.rs` and `cache/tests/{writes,engines}.rs`,
+H3 and H4 each with a bound of 4,096 and of 0; M1 and M2; E1); `cargo test`,
+clippy `-D warnings`, `cargo fmt --check` and `npx nx run-many -t check compile
+lint test format-check build -p sqlite` passed.
+
+Slice S77b1 (spec version 6.62), the first half of S77b (OQ9), adds the
+`storage/v2` TypeScript client and its test helpers; S77b2 adds the v2
+conformance suites in `packages/storage/src/conformance/v2/` (OQ1), with the
+stream cases written as skipped tests until S78 (OQ2).
+
+- `packages/storage/src/client/`: `types.ts` holds the full `Storage`
+  interface (OQ4): `get`, `query`, `commit`, `read`, `health`, `putBlob`,
+  `getBlob`, `deleteBlob`; `CommitBatch` with `expect`, `put`, `delete`,
+  `dropStreams`, `truncate` and `append`; `StorageQuery` uses `IndexScalar`.
+  Until S78 the engine refuses stream items with `invalid_input` "Stream items
+  are not supported.", and `read`, `health` and the blob methods answer
+  `unknown_contract` ("This bundle does not serve
+  /doric.storage.v2.StorageService/<Method>."). `values.ts` (internal):
+  `encodeValue` checks the type, then protovalidate, and refuses with
+  `invalid_input`, `{type, id}` and the first violation in the message (OQ5);
+  `chunksOf` makes chunks of at most 1 MiB, none for an empty value;
+  `decodeValue` raises `invalid_output` with `{type, id}` and keeps unknown
+  fields; `messagesOf` finds nested messages. `index.ts`:
+  `descriptorSetBytesLimit` (2,097,152), `openStorage(context, files)`,
+  `registerOver` and `storageOver`; it registers once, with no registration
+  tracking (OQ8), and checks the descriptor set before any call. Its own
+  `calling(call, run)` stays beside `rpc/call.ts`'s `calling(run)`, since
+  merging them would change behaviour (a cleanup finding). `queryAll` goes to
+  S80 (OQ7).
+- `storage/testing`: `TestEngine.storage(bundleId, files, generation = 1)` and
+  `openTestStorage(bundleId, files)`, which answers
+  `TestStorage {storage, kv, reset, close}`; `reset()` calls `engine.reset()`
+  and registers the files again, since the KV clear deletes the declarations
+  (PF4).
+- `bundle/testing`'s `transport(caller, generation = 1)` stamps the caller's
+  generation (PF8, OQ6); `bundle/contracts` re-exports `closure`.
+- `sqlite` (PF3, OQ3): a `storage.kv/v1` commit outside `doric/` suspends the
+  header cache. `kv.rs`'s `outside_platform(request)` is true for a put,
+  delete or positioned put outside `doric/`, or a clear range not within
+  `["doric/","doric0")`; `commit` then takes `Headers::suspend()` after
+  `finish` and `store()`. `begin` clears the cache while a suspension is held,
+  and dropping the `Suspension` clears it again; on a cancel after the
+  suspension is taken it is forgotten, so the cache stays off for that
+  process, while a cancel seen earlier returns before any suspension exists. Before, `reset()` left
+  the cache stale, since such a commit does not change `data_version`.
+- `packages/storage/proto/doric/storage/conformance/v1/conformance.proto`
+  declares `Note`, `Thread` and `Plain` for the suites; `storage` gains a
+  `generate-proto` target, `./contracts/gen/*` and `@bufbuild/protovalidate`;
+  `buf.gen.yaml` maps `doric/storage/conformance/` before `doric/storage/`
+  (PF9). Variant declarations are built at run time (OQ10).
+- Carried forward: PF1 (snapshot, C2, C3 and the failure suite's stream parts
+  need S78), PF2 (the v1 kit stays for `postgres`, `memory` and `rpc` until
+  S85a and S85b), PF5 (T4.8's `not_owner` through raw clients) and PF7 (the
+  cases v2 changes), recorded in the spec's S77b1 block.
+
+S77b1's verification: `storage` 274 tests (CL1–CL13 in
+`storage-client.test.ts`, CL2's 16 MiB round trip about 0.9 s; TE1–TE3),
+`bundle` 1409 (P1), `doric-sqlite` 63, `doric-storage` 171 lib and 11 bin
+tests (S1 ×3, S2 ×2). The sandbox has no host `cargo`, so the Rust checks ran
+in the `rust` 1.100.0 Docker image, and `storage:test` and `bundle:test` ran
+without their cargo-dependent tasks.
+
+Slice S77b2 (spec version 6.63) completes S77b with the `storage/v2`
+conformance kit in `packages/storage/src/conformance/v2/`, not exported; the
+v1 kit in `src/conformance/` is unchanged.
+
+- `harness.ts`: `conformanceBundle` (`'conformance'`), `conformanceFiles`,
+  `untilS78 = 'S78: streams'`; `V2Engine`, a `TestEngine` plus
+  `raw(caller, generation)`; `V2Harness` with
+  `open(bundleId?, files?, generation?)`, `raw`, `reset` and `fresh()`, a new
+  engine for the generation cases, since `reset()` keeps the remembered highest
+  generation (the kit closes it when the case ends); `V2Case`, `V2CaseOptions`
+  (`skip`, `timeout`), `caseGroup`, `openV2Engine`, `openV2Harness` with
+  `V2HarnessOptions` (`name`, `openEngine`), which answers `V2HarnessHandle`, a
+  `V2Harness` with `close()`.
+  `support.ts` holds run-time variants of the tests' helpers (`src/` cannot
+  import `tests/`); `fixtures.ts`'s `contract` maps a raw `ConnectError` to a
+  `ContractError`, deliberately not `rpc/call.ts`'s `calling`; `files.ts`
+  builds the `FileDescriptorProto`s, with `streamFiles()` and `eventPrefix`,
+  the stream prefix `conformance.note.events/` of the skipped cases. The
+  `untilS78` doc comment lists every skipped case. A stray empty file
+  `v2/{harness,support,index}.ts`, left by a failed brace expansion, was
+  removed with its compiled outputs.
+- `index.ts`: `storageV2Cases`, `instanceV2Cases`, `registrationV2Cases`,
+  `v2ConformanceCases`, `runV2Case` and `runStorageV2Conformance(options)`
+  with `V2RunOptions` (`name`, `cases`, `openEngine`, `skip`, `timeout`),
+  which opens the harness before the cases and closes it after them, as
+  `runKvConformance` does; the default timeout is 120 s.
+- 63 cases, 41 active and 22 skipped with `untilS78`: D1–D7, `T4.3-prefix`,
+  `T4.3-16MiB`; R1–R3; Q1–Q4; Q5, Q6, T4.9; Q7–Q10 (Q10's rebuild answers
+  `unique_conflict {type, index, ids}`) and T4.23; C1, C4 and `not_owner`
+  through raw clients, C2 and C3 skipped; X1, X2 and X5's document parts,
+  `X1-streams`, X3, X4 and `X5-streams` skipped; P1 and P2 skipped; L2,
+  `L2-bytes` and L3, no L1; REG1–REG5; GEN1–GEN3, each on `fresh()`. Also
+  skipped, written in full against `Storage` (OQ2): `streams.ts` S1–S6 (group
+  `sequence with gaps`, ported from v1 with `NoteEvent`) and
+  `T4.3-event-3MiB` (an event of exactly 3,145,728 bytes round-trips, one byte
+  more is `limit_exceeded`); `blobs.ts` B1–B5 and `T4.3-health`
+  (`{status: 'unavailable', writable: false, reason: 'storage_unmeasurable'}`,
+  or `ok` with integer `disk.blocks > 0` and `0 ≤ availableBlocks ≤ blocks`);
+  `concurrency.ts` `not_owner-streams` (T4.8, in `storage-instances.test.ts`).
+  `storageV2Cases` includes `streamCases` and `blobCases`. Not ported: B1's
+  "blobs are not commits" (no `lastPosition`), B2's base64 refusal (v2 takes
+  bytes; B2 checks that pieces give the same hash) and H2 (no `identity()`).
+  Open for S78: no `details.limit` is named for an event over 3 MiB, so
+  `T4.3-event-3MiB` checks only the code. S78 enables the skipped cases and
+  may adjust their stream prefix.
+- Behaviours the cases pin, confirmed against the engine: a range bound of
+  another kind is allowed (`{gt: true}` on a number field); an empty type id is
+  `invalid_input`, not `not_owner`; a no-field index lists every document in id
+  order; a `Storage` registered without `Plain` refuses a `Plain` get with
+  `invalid_input` before any call; `limit_exceeded`'s details are exactly
+  `{limit}`. D1 indexed a 4,096-byte `tag` at first, which the engine rightly
+  refused (`{limit: "indexKey"}`, A36); those bytes moved into `body`.
+- `test-engine.ts`: `openTestEngineAt(binary, options?)` also answers
+  `raw(caller, generation = 1)`; new `testEngineBinary()`; `repoRoot` moved
+  here from `testing.ts`; `openTestEngine` is unchanged.
+- S77b1's drift, fixed (CI1–CI10 in `storage-client-items.test.ts`): an
+  appended event is chunked (an `event` item of at most 1 MiB, then `chunk`
+  items); an event that encodes to 0 bytes is `invalid_input {stream}` before
+  any call (`min_len: 1`); an `append` with no events is `invalid_input
+{stream}` before any call (CI10); `dropStreams` and `truncate` on an undeclared stream
+  are `invalid_input` before any call; `types.ts`'s summary of the client's own
+  refusals is aligned.
+- Cleanup findings: `fileOf` is duplicated in `v2/files.ts` and
+  `tests/support/descriptors.ts` across the `src`/`tests` boundary;
+  `npx biome check` on the package reports pre-existing format and import-order
+  errors in `conformance/kv/*` and `rpc/*`.
+
+S77b2's verification: `storage.test.ts` 49 cases (19 skipped),
+`storage-instances.test.ts` 6 (3 skipped), `registration.test.ts` 8,
+`storage-client-items.test.ts` 10; `storage` 347 tests, 325 pass, 0 fail, 22
+skipped. Run times vary: L2 takes about 7–8 s
+and REG5 about 1–2 s; `L2-bytes`, L3 and `T4.3-16MiB` about 1 s each.
 
 ## Evolution
 
@@ -2273,3 +2955,109 @@ sandbox pool` then `Sandbox pool configured` with the `logSandboxPool`
   still open" above): T8 (RK18, RK31), whose procedure is "Phase 3: T8, for the
   owner to run" above; AC3.6 (RK6), which needs the Docker and Firecracker
   sandboxes; and the host and desktop end-to-end tests green on `postgres`.
+- 2026-11-27: phase 3 closed, by the owner's decision A75 in
+  [the spec](../designs/grpc-processes.md) (version 6.55): the owner declared
+  phase 3 complete and let phase 4 start. T8 (RK18, RK31), AC3.6 (RK6) and the
+  host and desktop end-to-end tests green on `postgres` were not run; they are
+  waived, not met. Phase 4 deletes `postgres`, so the end-to-end baseline on
+  `postgres` cannot be proved after it. "Phase 3: what is still open" is now
+  "Phase 3: what was not run"; T8's procedure stays. No source file changes.
+- 2026-11-27: phase 4, slice S72, of
+  [the spec](../designs/grpc-processes.md) (version 6.56; section 10, "The
+  Rust SDK"; [Phases](../designs/grpc-processes.md#phases), "Phase 4's
+  slices"; A76–A78 make `sqlite` in Rust the only engine): the Rust SDK
+  `packages/bundle-rs` (crate `doric-bundle`), its conformance fixture and the
+  suite's Rust run. The root `Cargo.toml` gains the member
+  `packages/bundle-rs`, tokio's feature `sync` and `tokio-util` 0.7.20. The
+  choices the spec left open, the rules for handlers and the verification are
+  under "Phase 4" above.
+- 2026-11-27: phase 4, slice S73, of
+  [the spec](../designs/grpc-processes.md) (version 6.56; QD, T4.21): the
+  contract `storage.kv/v1` (unserved yet), `startTestProcess` in
+  `bundle/testing`, and the conformance `Session` moved to an internal module.
+  Its choices, verification and the flaky drain test are under "Phase 4"
+  above.
+- 2026-11-27: phase 4, slice S74a, of
+  [the spec](../designs/grpc-processes.md) (version 6.56; section 17, "The
+  engine"; Q1–Q11): the Rust engine bundle
+  [`sqlite`](../../bundles/foundation/sqlite/README.md), serving
+  `storage.kv/v1` over one SQLite file (no manifest yet), and
+  `doric_bundle::log`, and the regenerated `package-lock.json` that fixes
+  `npm ci`. Its choices and verification are under "Phase 4" above.
+- 2026-11-27: phase 4, slice S74b, of
+  [the spec](../designs/grpc-processes.md) (version 6.56; T4.2, T4.18, T4.20):
+  the TypeScript `Kv` client, the KV conformance kit `runKvConformance`,
+  `storage/testing` with `openTestEngine`, and three error codes. Its
+  decisions and verification are under "Phase 4" above.
+- 2026-11-27: phase 4, slice S75a, of
+  [the spec](../designs/grpc-processes.md) (version 6.56, "S75's plan"): the
+  native host part. A v2 manifest's `host.kind` is `sea` (default) or
+  `native`, and a native part refuses `httpPrefix` and `assets`; the build
+  runs no host esbuild for it, refuses its `src/host/main.ts` and takes its
+  provides from `nativeProvides`; `stage` writes `host/command.json` with the
+  absolute debug executable under `--dev`, else copies the release executable
+  to `host/doric-<id>` (0755), from `StageOptions.targetDir`
+  (`dist/target`). `storage.kv/v1` becomes a basic host contract and a
+  backend a foundation bundle may require. The KV kit's 200,001-item cases
+  move to `runKvConformance(harness, { heavy: true })`, run by the new
+  `storage:test-heavy` target and CI step "Run heavy storage tests";
+  `clientFailure(error, call?)` answers `cancelled` or `deadline_exceeded`
+  for an `internal` or `cancelled` failure once the call's signal has aborted
+  or its deadline has passed. The
+  `sqlite` manifest (S75b) is not part of it.
+- 2026-11-28: phase 4, slice S75b, of
+  [the spec](../designs/grpc-processes.md) (version 6.57): the `sqlite`
+  native manifest; `sqlite:build` becomes the bundle build and the cargo
+  build is `sqlite:check`; `doric-host:build-bundles` stages `sqlite`, outside
+  the composition until S84; the host image gains a digest-pinned Rust
+  toolchain. Its verification is under "Phase 4" above.
+- 2026-11-28: phase 4, slice S76, of
+  [the spec](../designs/grpc-processes.md) (version 6.57): `sqlite` split into
+  the library `doric-sqlite` (`engine/`) and the package `doric-storage`
+  (`storage/`); `KvEngine` transactions; `storage.kv/v1` served only to
+  `doric`, and the gateway never serves `internalContracts`. Its verification
+  is under "Phase 4" above.
+- 2026-11-28: phase 4, slice S77a1, of
+  [the spec](../designs/grpc-processes.md) (version 6.57): the `storage/v2`
+  proto, registered as the 14th basic host contract and served by no handler
+  yet; `doric-storage`'s `keys` and `schema`, which own the index-key
+  encoding; the golden file `index-keys.json` and its TypeScript parity test.
+  Its verification is under "Phase 4" above.
+- 2026-11-28: phase 4, slice S77a2, of
+  [the spec](../designs/grpc-processes.md) (version 6.57): `layout.proto`,
+  `storage/build.rs`, and `sqlite` serving `storage/v2`'s `Register`
+  (declarations, namespace checks, SHA-256 schemas, generations); the drain
+  test's `call-on-trigger` fix. Its verification is under "Phase 4" above.
+- 2026-11-28: phase 4, slice S77a3a, of
+  [the spec](../designs/grpc-processes.md) (version 6.58): `sqlite` serves
+  `storage/v2`'s `Commit` and `Get`, with the per-item check order, the
+  `"document"` and `"indexKey"` limits, process-monotonic `updatedAt` and the
+  descriptor-pool cache; S77a3 split into S77a3a and S77a3b. Its verification
+  is under "Phase 4" above.
+- 2026-11-28: phase 4, slice S77a3b, of
+  [the spec](../designs/grpc-processes.md) (version 6.59): `sqlite` serves
+  `storage/v2`'s `Query`, with `keys::bounds`, the query's check order and
+  arity (PF7), one snapshot per page and the base64url cursor (PF15, Q-C);
+  S77a3 is complete. Its verification is under "Phase 4" above.
+- 2026-11-28: phase 4, slice S77a4a, of
+  [the spec](../designs/grpc-processes.md) (version 6.60): `sqlite`'s
+  `Register` rebuilds changed indexes of a type with documents in one write
+  transaction, with the `"rebuild"` limit of 200,000 documents and
+  `unique_conflict` `{ type, index, ids }`; S77a4 split into S77a4a and S77a4b.
+  Its verification is under "Phase 4" above.
+- 2026-11-28: phase 4, slice S77a4b, of
+  [the spec](../designs/grpc-processes.md) (version 6.61): `sqlite`'s storage
+  writes cache document headers (A80, `DORIC_SQLITE_CACHE`), and a
+  `storage.kv/v1` commit no longer hides a foreign write (PF1); S77a4 is
+  complete. Its verification is under "Phase 4" above.
+- 2026-11-28: phase 4, slice S77b1, of
+  [the spec](../designs/grpc-processes.md) (version 6.62): the `storage/v2`
+  TypeScript client (`openStorage`), `TestEngine.storage` and
+  `openTestStorage`, `transport(caller, generation)`, and the suspension of
+  `sqlite`'s cache by a `storage.kv/v1` commit outside `doric/` (PF3); S77b
+  split into S77b1 and S77b2. Its verification is under "Phase 4" above.
+- 2026-11-28: phase 4, slice S77b2, of
+  [the spec](../designs/grpc-processes.md) (version 6.63): the `storage/v2`
+  conformance kit, 63 cases with 22 skipped until S78 (the stream, blob and
+  health cases among them), and S77b1's drift fixes in the client, CI10
+  included; S77b is complete. Its verification is under "Phase 4" above.

@@ -393,6 +393,80 @@ void test('lets a foundation facade replacement require the backends, nothing el
   assert.match(refused.recovery?.reason ?? '', /myevents/);
 });
 
+void test('lets a foundation facade replacement require storage.kv/v1, and refuses it to one that replaces no facade', () => {
+  const sqlite = candidate('sqlite', { provides: ['storage.kv/v1@1.0.0'] });
+  const coreWithKv = core({
+    provides: [...basics, 'events/v1@1.0.0'],
+    requires: ['storage.kv/v1@^1.0.0'],
+  });
+  const allowed = resolve(
+    [
+      coreWithKv,
+      sqlite,
+      candidate('myevents', {
+        provides: ['events/v1@1.0.0'],
+        requires: ['storage.kv/v1@^1.0.0'],
+      }),
+    ],
+    { providers: { 'storage.kv/v1': 'sqlite', 'events/v1': 'myevents' } },
+  );
+
+  assert.deepEqual(allowed.order, ['sqlite', 'myevents', 'core']);
+  assert.equal(allowed.recovery, undefined);
+
+  const refused = resolve(
+    [
+      coreWithKv,
+      sqlite,
+      candidate('myhooks', {
+        provides: ['hooks/v1@1.0.0'],
+        requires: ['storage.kv/v1@^1.0.0'],
+      }),
+    ],
+    { providers: { 'storage.kv/v1': 'sqlite', 'hooks/v1': 'myhooks' } },
+  );
+
+  assert.deepEqual(codes(refused, 'myhooks'), ['foundation_requires']);
+  assert.match(refused.recovery?.reason ?? '', /myhooks/);
+});
+
+void test('lets a foundation facade replacement require storage/v2, and refuses it to one that replaces no facade', () => {
+  const sqlite = candidate('sqlite', { provides: ['storage/v2@2.0.0'] });
+  const coreWithStorage = core({
+    provides: [...basics, 'events/v1@1.0.0'],
+    requires: ['storage/v2@^2.0.0'],
+  });
+  const allowed = resolve(
+    [
+      coreWithStorage,
+      sqlite,
+      candidate('myevents', {
+        provides: ['events/v1@1.0.0'],
+        requires: ['storage/v2@^2.0.0'],
+      }),
+    ],
+    { providers: { 'storage/v2': 'sqlite', 'events/v1': 'myevents' } },
+  );
+
+  assert.deepEqual(allowed.order, ['sqlite', 'myevents', 'core']);
+  assert.equal(allowed.recovery, undefined);
+
+  const refused = resolve(
+    [
+      coreWithStorage,
+      sqlite,
+      candidate('myhooks', {
+        provides: ['hooks/v1@1.0.0'],
+        requires: ['storage/v2@^2.0.0'],
+      }),
+    ],
+    { providers: { 'storage/v2': 'sqlite', 'hooks/v1': 'myhooks' } },
+  );
+
+  assert.deepEqual(codes(refused, 'myhooks'), ['foundation_requires']);
+  assert.match(refused.recovery?.reason ?? '', /myhooks/);
+});
+
 void test('enters recovery when core is missing, disabled, quarantined or unsatisfied', () => {
   assert.match(
     resolve([candidate('git')], { core: 'core', enabled: ['git'] }).recovery
