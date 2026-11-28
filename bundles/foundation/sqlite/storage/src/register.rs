@@ -26,8 +26,10 @@ mod backfill;
 /// RK27). It bounds every rebuild, one that only removes indexes included:
 /// a type of exactly this many documents rebuilds; one more is
 /// `limit_exceeded` (`details.limit` `"rebuild"`), raised before any
-/// document is decoded.
-pub const REBUILD_DOCUMENTS: usize = 200_000;
+/// document is decoded. 100,000 is RK27's result (AC4.25): 200,000 documents
+/// of 1 KiB took 9,876 ms on the release build, so the limit is the largest
+/// multiple of 10,000 that fits in 5 s.
+pub const REBUILD_DOCUMENTS: usize = 100_000;
 
 /// One rebuild of a type's indexes by [`Registrations::apply`]: the type id,
 /// the number of its documents the rebuild read, and the time it took.

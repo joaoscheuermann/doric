@@ -16,13 +16,18 @@ const caseTimeoutMs = 120_000;
 
 // From `packages/storage/dist-tests/tests/` to the repository root.
 const binary = fileURLToPath(
-  new URL('../../../../dist/target/doric-sqlite/debug/doric-sqlite', import.meta.url),
+  new URL(
+    '../../../../dist/target/doric-sqlite/debug/doric-sqlite',
+    import.meta.url,
+  ),
 );
 
 const storageFile = 'doric.sqlite3';
 
 /** Starts the engine with `env` on top of the test's environment, then stops it. */
-const startAndStop = async (env?: Readonly<Record<string, string>>): Promise<void> => {
+const startAndStop = async (
+  env?: Readonly<Record<string, string>>,
+): Promise<void> => {
   const started = await startTestProcess({
     bundleId: 'sqlite',
     command: [binary],
@@ -36,7 +41,10 @@ const startAndStop = async (env?: Readonly<Record<string, string>>): Promise<voi
 const code =
   (expected: string) =>
   (error: unknown): boolean => {
-    assert.ok(isContractError(error), `expected ${expected}, got ${String(error)}`);
+    assert.ok(
+      isContractError(error),
+      `expected ${expected}, got ${String(error)}`,
+    );
     assert.equal(error.code, expected, error.message);
 
     return true;
@@ -48,7 +56,10 @@ describe('sqlite storage path and format', { timeout: caseTimeoutMs }, () => {
   let root = '';
 
   before(async () => {
-    assert.ok(existsSync(binary), `doric-sqlite is not built: run npx nx run sqlite:compile (${binary})`);
+    assert.ok(
+      existsSync(binary),
+      `doric-sqlite is not built: run npx nx run sqlite:compile (${binary})`,
+    );
     root = await mkdtemp(join(tmpdir(), 'doric-kv-file-'));
   });
 
@@ -101,7 +112,11 @@ describe('sqlite storage path and format', { timeout: caseTimeoutMs }, () => {
       startAndStop({ DORIC_STORAGE_PATH: missing }),
       code('storage_path_missing'),
     );
-    assert.equal(existsSync(missing), false, 'the directory still does not exist');
+    assert.equal(
+      existsSync(missing),
+      false,
+      'the directory still does not exist',
+    );
   });
 
   test('a store whose user_version is 2 fails the activation with storage_format_unsupported and stays as it was', async () => {
@@ -121,7 +136,11 @@ describe('sqlite storage path and format', { timeout: caseTimeoutMs }, () => {
       startAndStop({ DORIC_STORAGE_PATH: dir }),
       code('storage_format_unsupported'),
     );
-    assert.deepEqual(await readFile(file), patched, 'the file\'s bytes are unchanged');
+    assert.deepEqual(
+      await readFile(file),
+      patched,
+      "the file's bytes are unchanged",
+    );
     assert.equal(existsSync(`${file}-wal`), false, 'no -wal file exists');
   });
 });

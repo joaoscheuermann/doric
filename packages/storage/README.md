@@ -1032,7 +1032,10 @@ the debug build of `npx nx run sqlite:compile`, through `startTestProcess` of
 once the process is active ([`testing.ts`](src/testing.ts),
 [`test-engine.ts`](src/test-engine.ts)). It finds the binary from the
 repository root, the nearest directory above the module that holds `nx.json`
-(`repoRoot` and `testEngineBinary()` in `test-engine.ts`). The internal
+(`repoRoot` and `testEngineBinary(profile = 'debug')` in `test-engine.ts`,
+which answers `dist/target/doric-sqlite/<profile>/doric-sqlite`;
+`testEngineBinary('release')` names the release build that `bench-rk27`
+measures). The internal
 `openTestEngineAt(binary, options?)` answers a `TestEngine` plus
 `raw(caller, generation = 1)`, raw `storage/v2` clients that the v2 kit's
 `not_owner` cases use; `openTestEngine` is typed `Promise<TestEngine>`, but the
@@ -1099,13 +1102,16 @@ npx nx run storage:build      # tsc --build tsconfig.lib.json into dist/
 npx nx run storage:typecheck  # tsc --build tsconfig.json --emitDeclarationOnly
 npx nx run storage:test       # tsc -p tsconfig.spec.json, then node --test dist-tests/tests/*.test.js except kv-heavy
 npx nx run storage:test-heavy # the same build, then node --test dist-tests/tests/kv-heavy.test.js (30 min timeout)
+npx nx run storage:bench-rk27 # sqlite:compile:production, tsc -p tsconfig.spec.json, then node dist-tests/tests/bench/rk27.js (cache: false)
 ```
 
 `test` depends on `generate-proto`, which generates the conformance messages
 into `src/contracts/gen/`; `test-heavy` gets it through its dependency on
 `build` ([`project.json`](project.json), `test-heavy`'s `dependsOn`). Both
 targets depend on `sqlite:compile`, so running them needs the Rust toolchain
-(cargo). Each target builds its dependencies (`bundle`) first.
+(cargo). Each target builds its dependencies (`bundle`) first. `bench-rk27` depends on
+`generate-proto`, `^build` and `build`, and runs `sqlite:compile:production`
+as its first command.
 
 These tests spawn the debug `doric-sqlite` binary:
 [`kv.test.ts`](tests/kv.test.ts), the KV kit on the engine;
@@ -1136,9 +1142,26 @@ and its chunked codec; and the `storage.backend/v1` kit's suites,
 [`rpc-conformance.test.ts`](tests/rpc-conformance.test.ts) and
 [`kit-self.test.ts`](tests/kit-self.test.ts).
 
-CI runs `storage:test` in its platform test step and `storage:test-heavy` in
-its step "Run heavy storage tests"
-([`ci.yml`](../../.github/workflows/ci.yml)).
+[`tests/bench/rk27.ts`](tests/bench/rk27.ts) is a script, not a test: it
+measures RK27's write stalls over
+`openTestEngineAt(testEngineBinary('release'))`, (b) three `Commit`s of 10,000
+`Note` puts and 67,108,864 value bytes, then (a) a `Register` that adds the
+non-unique `byTagTitle[tag, title]` over 100,000 `Note`s of 1,024 bytes,
+written in 10 commits of 10,000: exactly the engine's `rebuild` limit
+(`REBUILD_DOCUMENTS`), so a change to that limit must change the literal
+`backfillDocuments`. It prints JSON lines: `rk27.environment`; `rk27.b`, one
+line per run, three in all; `rk27.a`; and `rk27.rule`, with `backfillWithin5s`,
+`rebuildLimit` (only when (a) takes over 5,000 ms) and `commitOver5s`. It
+exits 1 only on an error; without the release binary it says
+to run `npx nx run sqlite:compile:production`. Its results are in
+[the feature doc](../../docs/features/bundle-processes.md), "Phase 4: write
+stalls".
+
+CI runs `storage:test` in its platform test step, `storage:test-heavy` in
+its step "Run heavy storage tests" and `storage:bench-rk27`, report-only, in
+its step "Run the RK27 measurements"
+([`ci.yml`](../../.github/workflows/ci.yml)); both heavy steps have a
+30-minute timeout.
 
 ## Related documents
 

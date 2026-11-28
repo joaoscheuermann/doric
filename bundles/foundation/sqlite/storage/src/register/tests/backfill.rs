@@ -353,12 +353,12 @@ async fn one_document_over_the_rebuild_limit_is_refused_before_any_decode() {
     register(&registrations, &engine, 1, &documents_set(NOTE_BY_TAG))
         .await
         .expect("byTag registers");
-    plant_headers(&engine, 200_001).await;
+    plant_headers(&engine, 100_001).await;
     let stored = declaration(&engine, "a", NOTE).await;
 
     let error = register(&registrations, &engine, 1, &documents_set(NOTE_INDEXES))
         .await
-        .expect_err("200,001 documents are refused");
+        .expect_err("100,001 documents are refused");
 
     assert_eq!(error.code, "limit_exceeded");
     assert_eq!(detail_str(&error, "limit").as_deref(), Some("rebuild"));
@@ -371,15 +371,15 @@ async fn exactly_the_rebuild_limit_of_documents_rebuilds() {
     register(&registrations, &engine, 1, &documents_set(NOTE_INDEXES))
         .await
         .expect("the fixture registers");
-    plant_headers(&engine, 200_000).await;
+    plant_headers(&engine, 100_000).await;
 
     let rebuilt = register(&registrations, &engine, 1, &documents_set(NOTE_BY_TAG))
         .await
-        .expect("200,000 documents rebuild");
+        .expect("100,000 documents rebuild");
 
-    assert_eq!(REBUILD_DOCUMENTS, 200_000);
+    assert_eq!(REBUILD_DOCUMENTS, 100_000);
     assert_eq!(rebuilt.len(), 1);
-    assert_eq!(rebuilt[0].documents, 200_000);
+    assert_eq!(rebuilt[0].documents, 100_000);
 }
 
 #[tokio::test]

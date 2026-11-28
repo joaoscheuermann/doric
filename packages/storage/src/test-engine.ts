@@ -39,11 +39,15 @@ const repoRoot = (): string => {
 };
 
 /**
- * `<repo root>/dist/target/doric-sqlite/debug/doric-sqlite`, the debug build
- * of `npx nx run sqlite:compile` that `openTestEngine` spawns.
+ * `<repo root>/dist/target/doric-sqlite/<profile>/doric-sqlite`: the debug
+ * build of `npx nx run sqlite:compile`, which `openTestEngine` spawns, or with
+ * `'release'` the build of `npx nx run sqlite:compile:production`, which
+ * RK27's measurements spawn.
  */
-export const testEngineBinary = (): string =>
-  join(repoRoot(), 'dist/target/doric-sqlite/debug/doric-sqlite');
+export const testEngineBinary = (
+  profile: 'debug' | 'release' = 'debug',
+): string =>
+  join(repoRoot(), 'dist/target/doric-sqlite', profile, 'doric-sqlite');
 
 /**
  * `openTestEngine` on the executable `binary`: the same engine, directory,

@@ -62,6 +62,19 @@
         ],
         "parallel": false
       }
+    },
+    "bench-rk27": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "dependsOn": ["generate-proto", "^build", "build"],
+      "options": {
+        "commands": [
+          "npx nx run sqlite:compile:production",
+          "tsc -p packages/storage/tsconfig.spec.json",
+          "node packages/storage/dist-tests/tests/bench/rk27.js"
+        ],
+        "parallel": false
+      }
     }
   },
   "tags": []

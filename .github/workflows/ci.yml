@@ -112,6 +112,12 @@ jobs:
         timeout-minutes: 30
         run: npx nx run storage:test-heavy
 
+      # RK27's write-stall measurements (AC4.25) on the release engine:
+      # report-only, so the step fails only on an error, never on a number.
+      - name: Run the RK27 measurements
+        timeout-minutes: 30
+        run: npx nx run storage:bench-rk27
+
       - name: Run Agent tests
         run: npx nx test agent
 

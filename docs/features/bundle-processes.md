@@ -2,7 +2,7 @@
 
 - Status: `accepted` (phases 0–3 built; phase 3 closed by the owner's decision
   A75 with T8, AC3.6 and the host and desktop end-to-end tests on `postgres`
-  not run, see "Phase 3: what was not run"; phase 4 in progress, S72–S77b built, see
+  not run, see "Phase 3: what was not run"; phase 4 in progress, S72–S77c2 built, see
   "Phase 4"; phases 5–8 to come)
 
 ## Problem
@@ -432,6 +432,56 @@ are not verified: check them against `projects.proto` and `mcp.proto`
 (`McpServerInput`) before the run.
 
 T8's results go into this section, beside the S71 measurements above.
+
+## Phase 4: measurements
+
+### Phase 4: write stalls (AC4.25, RK27)
+
+Slice S77c measured RK27's cases (a) and (b) with
+`packages/storage/tests/bench/rk27.ts`, a script run by the target
+`storage:bench-rk27` (`cache: false`: `npx nx run sqlite:compile:production`,
+then `tsc`, then `node packages/storage/dist-tests/tests/bench/rk27.js`) and
+by the report-only CI step "Run the RK27 measurements", after the heavy storage
+tests, with a 30-minute timeout; it is report-only, not a test. It prints JSON
+lines: `rk27.environment`; `rk27.b`, one line per run, three in all; `rk27.a`;
+and `rk27.rule`, with `backfillWithin5s`, `rebuildLimit` (only when (a) takes
+over 5,000 ms) and `commitOver5s`. It exits 1 only on an error; without the release binary it
+says to run `npx nx run sqlite:compile:production`.
+
+- Machine: AMD Ryzen 9 3900X, 24 logical CPUs, 31 GiB RAM, Linux
+  6.18.58.1-microsoft-standard-WSL2 (Debian 12), Node 22.23.5.
+- Commit: measured from the working tree after `2fd8cbb7` (S77c and S77c2
+  uncommitted).
+- Binary profile: release, over `openTestEngineAt(testEngineBinary('release'))`,
+  built in the `rust` 1.100.0 image in about 76 s. The debug build of
+  `openTestEngine()` and `sqlite:compile` compiles SQLite at -O0, so it is not
+  measured (S77c's plan finding PF1); Nx cannot name a configuration in
+  `dependsOn`, so the target runs `sqlite:compile:production` as its first
+  command. The image ships the debug build until phase 7.
+- Runs: (b) three, judged by the maximum; (a) one (the owner's decisions).
+  S77c's run backfilled 200,000 documents and set the limit; since S77c2 (a)
+  backfills exactly the limit, 100,000 documents in 10 commits of 10,000
+  (`backfillDocuments` in `rk27.ts`), and the confirming run measured it.
+
+| Case                | What                                                                                             | Runs                      | Result                              |
+| ------------------- | ------------------------------------------------------------------------------------------------ | ------------------------- | ----------------------------------- |
+| (b), S77c           | one `Commit` of 10,000 `Note` puts, 67,108,864 value bytes                                       | 2,634, 2,398 and 2,335 ms | max 2,634 ms, under 5,000           |
+| (a), S77c           | 200,000 `Note`s of 1,024 bytes, then a `Register` adding the non-unique `byTagTitle[tag, title]` | 9,876 ms                  | 20,251 documents/s, over 5,000 ms   |
+| (b), confirming run | the same                                                                                         | 2,445, 2,294 and 2,239 ms | max 2,445 ms, under 5,000           |
+| (a), confirming run | 100,000 `Note`s of 1,024 bytes, then the same `Register`                                         | 4,122 ms                  | 24,260 documents/s, within 5,000 ms |
+
+Both values are upper bounds: (a) is the `Register` call's wall time at the
+client, which includes the `COMMIT` that the engine's `Rebuilt.elapsed` leaves
+out (PF2), and (b)'s includes moving 64 MiB through the test transport (PF3).
+
+Verdict: (b) passes in both runs. In S77c's run (a) passes 5,000 ms, so the
+rule sets `rebuildLimit` to 100,000: limit = floor(documents/s × 5 / 10,000) ×
+10,000. Slice S77c2 lowered `REBUILD_DOCUMENTS` to 100,000. The confirming run
+at the limit answers `backfillWithin5s: true` and `commitOver5s: false`, with no
+`rebuildLimit`, so the limit is confirmed by measurement.
+The owner made these sandbox release numbers binding, since the sandbox cannot
+produce the CI's numbers (PF5), and AC4.25 closes on them for (a) and (b), the
+confirming run closing (a); (c) comes with S87. No T4 row names S77c: it is AC4.25's measurement (PF4).
 
 ## Current behavior and contracts
 
@@ -1555,9 +1605,10 @@ transaction (A81), instead of refusing with `invalid_input`
   (OQ3). Each header's `index_keys` is rewritten in declared order, the
   unchanged indexes keeping their keys, and its revision and `updatedAt` stay
   (OQ6).
-- A rebuild of more than 200,000 documents (`REBUILD_DOCUMENTS`), a removal
-  included, is `limit_exceeded` with `"rebuild"`, counted keys-only before any
-  decode; exactly 200,000 passes (OQ4). The ids are collected first, since a
+- A rebuild of more than 100,000 documents (`REBUILD_DOCUMENTS`; 200,000 until
+  S77c2, which lowered it on RK27's measurement, see "Phase 4: write stalls"),
+  a removal included, is `limit_exceeded` with `"rebuild"`, counted keys-only
+  before any decode; exactly the limit passes (OQ4). The ids are collected first, since a
   range visitor cannot call `get`, so one value is held at a time (S77a4's plan finding PF7).
 - A duplicate under a rebuilt unique index is `unique_conflict` with
   `{ type, index, ids }`, `ids` the holder then the second document in id key
@@ -1771,6 +1822,28 @@ S77b2's verification: `storage.test.ts` 49 cases (19 skipped),
 `storage-client-items.test.ts` 10; `storage` 347 tests, 325 pass, 0 fail, 22
 skipped. Run times vary: L2 takes about 7–8 s
 and REG5 about 1–2 s; `L2-bytes`, L3 and `T4.3-16MiB` about 1 s each.
+
+Slice S77c (spec version 6.64) measures RK27's cases (a) and (b) on the
+release binary: `packages/storage/tests/bench/rk27.ts`, the target
+`storage:bench-rk27`, `testEngineBinary(profile = 'debug')` in
+`src/test-engine.ts` and the report-only CI step "Run the RK27 measurements".
+Its results are under "Phase 4: write stalls".
+
+S77c's verification: its run of `storage:bench-rk27` printed the S77c rows
+above, 200,000 documents for (a).
+
+Slice S77c2 (spec version 6.64) lowers `REBUILD_DOCUMENTS` in
+`bundles/foundation/sqlite/storage/src/register.rs` to 100,000 on S77c's
+measurement; `register/tests/backfill.rs` rebuilds exactly 100,000 documents
+and refuses 100,001 with `limit_exceeded` `{limit: "rebuild"}`. `rk27.ts`
+backfills exactly the limit (`backfillDocuments = 100_000`, 10 commits of
+10,000), since the engine refuses more. `COMMIT_ITEMS` and `commitItems`,
+200,000, are unchanged.
+
+S77c2's verification: `doric-sqlite` 63 tests, `doric-storage` 171 lib and 11
+bin tests; `cargo test`, clippy `-D warnings` and `cargo fmt --check` pass;
+`storage` 347 tests, 325 pass, 22 skipped; `storage:bench-rk27` exits 0 with
+the confirming run under "Phase 4: write stalls".
 
 ## Evolution
 
@@ -3061,3 +3134,15 @@ sandbox pool` then `Sandbox pool configured` with the `logSandboxPool`
   conformance kit, 63 cases with 22 skipped until S78 (the stream, blob and
   health cases among them), and S77b1's drift fixes in the client, CI10
   included; S77b is complete. Its verification is under "Phase 4" above.
+- 2026-11-28: phase 4, slices S77c and S77c2, of
+  [the spec](../designs/grpc-processes.md) (version 6.64): RK27's
+  measurements (a) and (b) on the release binary (`storage:bench-rk27`,
+  `testEngineBinary('release')`, a report-only CI step), recorded under "Phase
+  4: write stalls"; AC4.25 closed on them, and the `"rebuild"` limit lowered to
+  100,000 documents (`REBUILD_DOCUMENTS`; `register/tests/backfill.rs` rebuilds
+  100,000 and refuses 100,001; `doric-sqlite` 63, `doric-storage` lib 171 and
+  bin 11), confirmed by a run of (a) at the limit (100,000 documents in 4,122
+  ms). `COMMIT_ITEMS` and
+  `commitItems`, 200,000, are unchanged. `format:check` failed on
+  `kv-client.test.ts` and `kv-file.test.ts`, committed in `2fd8cbb7`, which the
+  coordinator formatted; 18 other biome format failures predate S72.

@@ -42,7 +42,10 @@ const pause = (ms: number, signal?: AbortSignal): Promise<void> =>
  * Commit items that arrive slowly: one put, then nothing until `signal`
  * aborts or `ms` have passed, then a second put.
  */
-async function* slowItems(ms: number, signal?: AbortSignal): AsyncGenerator<CommitRequest> {
+async function* slowItems(
+  ms: number,
+  signal?: AbortSignal,
+): AsyncGenerator<CommitRequest> {
   yield put(bytes('a/slow/1'), bytes('v'));
   await pause(ms, signal);
   yield put(bytes('a/slow/2'), bytes('v'));
@@ -114,7 +117,9 @@ describe('kvClient', { timeout: caseTimeoutMs }, () => {
     const kv = opened().kv('doric');
 
     await assert.rejects(
-      collect(kv.get(getRequest([bytes('a/x')]), { deadline: Date.now() - 1000 })),
+      collect(
+        kv.get(getRequest([bytes('a/x')]), { deadline: Date.now() - 1000 }),
+      ),
       refusal('deadline_exceeded'),
     );
   });
@@ -125,7 +130,9 @@ describe('kvClient', { timeout: caseTimeoutMs }, () => {
 
     try {
       await assert.rejects(
-        kv.commit(slowItems(60_000, stop.signal), { deadline: Date.now() + 200 }),
+        kv.commit(slowItems(60_000, stop.signal), {
+          deadline: Date.now() + 200,
+        }),
         refusal('deadline_exceeded'),
       );
     } finally {
@@ -136,7 +143,9 @@ describe('kvClient', { timeout: caseTimeoutMs }, () => {
   test('a contract refusal keeps its code and details', async () => {
     const kv = opened().kv('doric');
 
-    const keys = Array.from({ length: 1001 }, (_, index) => bytes(`a/${index}`));
+    const keys = Array.from({ length: 1001 }, (_, index) =>
+      bytes(`a/${index}`),
+    );
 
     await assert.rejects(
       collect(kv.get(getRequest(keys))),
@@ -153,7 +162,13 @@ describe('kvClient', { timeout: caseTimeoutMs }, () => {
     const kv = closed.kv('doric');
 
     await closed.close();
-    await assert.rejects(collect(kv.get(getRequest([bytes('a/x')]))), refusal('unavailable'));
-    await assert.rejects(kv.commit([put(bytes('a/x'), bytes('v'))]), refusal('unavailable'));
+    await assert.rejects(
+      collect(kv.get(getRequest([bytes('a/x')]))),
+      refusal('unavailable'),
+    );
+    await assert.rejects(
+      kv.commit([put(bytes('a/x'), bytes('v'))]),
+      refusal('unavailable'),
+    );
   });
 });

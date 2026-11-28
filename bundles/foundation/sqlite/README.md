@@ -172,7 +172,7 @@ cache)`, which `activate` calls with `std::env::var_os`, and `headers()`
   name, fields and `unique` — and only the ranges are cleared by name, so a
   rename is a removal plus a new index and a change of fields or `unique` under
   one name is a change; a pure reorder rebuilds nothing), `rebuilt` and
-  `rebuild`: count the ids keys-only up to `REBUILD_DOCUMENTS` (200,000) plus
+  `rebuild`: count the ids keys-only up to `REBUILD_DOCUMENTS` (100,000) plus
   one, clear the changed or removed ranges, walk the documents in key order
   decoding with the pool only when an index needs building, and rewrite each
   header's `index_keys` in declared order, keeping its revision and
@@ -302,7 +302,7 @@ cancelled read stops at its next answer.
 - `limit_exceeded` with `details.limit` `"indexKey"` (from `layout::index`):
   during a rebuild, a new index key over 2,048 bytes.
 - `limit_exceeded` with `details.limit` `"rebuild"`: a rebuild of a type with
-  more than 200,000 documents, any rebuild (a removal included), raised before
+  more than 100,000 documents, any rebuild (a removal included), raised before
   any decode.
 - `unique_conflict` with `type`, `index` and `ids` (the holder, then the second
   document, in id key order): two documents with one key in a rebuilt unique
@@ -432,8 +432,8 @@ The `storage/v2` `Commit` and `Get` limits (`storage/src/layout.rs`,
 document id of at most 512 bytes, an index key of at most 2,048 bytes without
 its prefix (`indexKey`), and stored chunks of 983,040 bytes. A `Query` page
 holds at most 1000 documents (`LIMIT`, `storage/src/query.rs`). A `Register`
-rebuild covers at most 200,000 documents (`rebuild`, `REBUILD_DOCUMENTS`,
-`storage/src/register.rs`). The cache of document headers holds at most
+rebuild covers at most 100,000 documents (`rebuild`, `REBUILD_DOCUMENTS`,
+`storage/src/register.rs`; RK27's measurement set it, AC4.25). The cache of document headers holds at most
 67,108,864 bytes (64 MiB, `CACHE_BYTES`, `storage/src/cache.rs`).
 
 ## Build and test
@@ -471,8 +471,8 @@ the 171 lib tests and 11 bin tests of `doric-storage` (and the 63 of
 `engine/src/store/foreign.rs`, E1), among them those of `storage/src/keys.rs` (its six `bounds` tests, `:384-495`), `storage/src/schema/tests.rs`,
 `storage/src/schema/tests/pools.rs`,
 `storage/src/schema/declarations/tests.rs`, `storage/src/register/tests.rs`,
-`storage/src/register/tests/backfill.rs` (12, the 200,000-document rebuild and
-the 200,001 refusal among them, in the normal suite; the 200,000 documents
+`storage/src/register/tests/backfill.rs` (12, the 100,000-document rebuild and
+the 100,001 refusal among them, in the normal suite; the 100,000 documents
 carry empty `DocumentHeader::default()` headers and the change only removes an
 index, so nothing is decoded), `storage/src/cache/tests.rs` (H10, H11 twice and
 H12: the setting and the header), `storage/src/cache/tests/writes.rs` (H1, H2,
@@ -523,7 +523,10 @@ test, `the_golden_file_holds_what_the_engine_produces` in
 (T4.23), in `storage:test`, recomputes every key with `keys.ts` and
 protobuf-es.
 `storage:test-heavy`, which also depends on `sqlite:compile`, runs the kit's
-heavy cases: the 200,001-item `commitItems` case runs only there. `lint` is clippy with `-D warnings`; `format-check` is
+heavy cases: the 200,001-item `commitItems` case runs only there.
+Report-only, not tests: `storage:bench-rk27` runs RK27's write-stall
+measurements on the release binary, which `sqlite:compile:production` builds
+(its first command). `lint` is clippy with `-D warnings`; `format-check` is
 `cargo fmt --check -p doric-sqlite -p doric-storage`.
 
 Known limitation: `cargo doc` warns of an output filename collision between
@@ -548,7 +551,10 @@ the binary `doric-sqlite` and the library `doric_sqlite`.
 - S77b1 (done): the TypeScript client of `storage/v2`, and the suspension of
   the cache by a `storage.kv/v1` commit outside `doric/`.
 - S77b2 (done): the `storage/v2` conformance suites; S77b is done.
-- S77c: RK27's write-stall measurements.
+- S77c (done): RK27's write-stall measurements (`storage:bench-rk27`, on the
+  release binary).
+- S77c2 (done): the `rebuild` limit lowered to 100,000 documents on S77c's
+  measurement.
 - S78: `storage/v2`'s streams, blobs and health.
 - S84: `sqlite` in the composition.
 - S88: read-only mode, with the inspection tool; the spec records the deferral.
