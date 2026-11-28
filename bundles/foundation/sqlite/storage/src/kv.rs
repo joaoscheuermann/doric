@@ -5,10 +5,7 @@
 use doric_bundle::{Call, ContractError, Requests};
 use doric_sqlite::{
     DORIC,
-    kv::{
-        CommitRequest, CommitResponse, GetRequest, GetResponse, KeyRange, PositionedPut, Put,
-        RangeRequest, RangeResponse, commit_request::Item,
-    },
+    kv::{CommitRequest, CommitResponse, GetRequest, GetResponse, RangeRequest, RangeResponse},
     limits::{self, Batch},
 };
 use tokio_stream::{StreamExt, wrappers::ReceiverStream};
@@ -77,15 +74,6 @@ impl Engine {
     /// before a successful activation, and the errors of
     /// [`doric_sqlite::SqliteEngine::commit`]. A cancelled call writes nothing
     /// unless the writer has already begun its transaction.
-    ///
-    /// A commit with an item [`outside_platform`] holds a
-    /// [`Suspension`](doric_storage::cache::Suspension) of the header cache
-    /// from before its transaction is queued until it ends, so no storage
-    /// write reads a header this commit may have overwritten or removed, and
-    /// the cache is cleared once it ends. When the call is cancelled while
-    /// the commit is queued or running, the writer may still commit it after
-    /// the answer; the suspension is then `mem::forget`-ed, never ended, and
-    /// the cache stays off for the rest of the process.
     pub(crate) async fn commit(
         &self,
         call: Call,
@@ -93,10 +81,8 @@ impl Engine {
     ) -> Result<CommitResponse, ContractError> {
         platform_only(&call)?;
         let mut batch = Batch::default();
-        let mut outside = false;
         while let Some(request) = requests.next().await {
             let request = request?;
-            outside |= outside_platform(&request);
             batch.push(&call.caller.bundle_id, request)?;
         }
         // A cancelled call ends its stream early: what arrived is not the
@@ -106,15 +92,10 @@ impl Engine {
         }
         let items = batch.finish()?;
         let store = self.store()?;
-        let suspension = outside.then(|| self.headers().suspend());
 
         tokio::select! {
             biased;
-            () = call.cancelled.cancelled() => {
-                // The writer may still commit it: the cache stays off.
-                std::mem::forget(suspension);
-                Err(cancelled())
-            }
+            () = call.cancelled.cancelled() => Err(cancelled()),
             position = store.commit(items) => Ok(CommitResponse { position: position? }),
         }
     }
@@ -130,30 +111,6 @@ fn platform_only(call: &Call) -> Result<(), ContractError> {
             "not_owner",
             "storage.kv/v1 serves only the platform.",
         ))
-    }
-}
-
-/// Whether `request` may write a key outside the platform's prefix `doric/`,
-/// which the header cache does not see: a put, a delete or a positioned put
-/// whose key (a positioned put's `key_prefix`) does not start with `doric/`,
-/// or a clear range not within `["doric/", "doric0")`. A condition writes
-/// nothing and is never outside; neither is an item with no case set, which
-/// [`limits::Batch::push`] refuses.
-fn outside_platform(request: &CommitRequest) -> bool {
-    const START: &[u8] = b"doric/";
-    const END: &[u8] = b"doric0";
-    match &request.item {
-        Some(
-            Item::Put(Put { key, .. })
-            | Item::Delete(key)
-            | Item::PositionedPut(PositionedPut {
-                key_prefix: key, ..
-            }),
-        ) => !key.starts_with(START),
-        Some(Item::ClearRange(KeyRange { start, end })) => {
-            start.as_slice() < START || end.as_slice() > END
-        }
-        Some(Item::Condition(_)) | None => false,
     }
 }
 
@@ -175,7 +132,6 @@ mod tests {
     use std::collections::HashMap;
 
     use doric_bundle::{Caller, CancellationToken};
-    use doric_sqlite::kv::{Condition, KeyRange, PositionedPut, Put, commit_request::Item};
     use tokio_stream::Stream;
 
     use super::*;
@@ -245,53 +201,6 @@ mod tests {
             .map(|_| ()),
         ] {
             assert_eq!(item, Err(ContractError::new("not_owner", MESSAGE)));
-        }
-    }
-
-    fn item(item: Item) -> CommitRequest {
-        CommitRequest { item: Some(item) }
-    }
-
-    fn put_of(key: &[u8]) -> CommitRequest {
-        item(Item::Put(Put {
-            key: key.to_vec(),
-            value: b"v".to_vec(),
-        }))
-    }
-
-    fn clear_of(start: &[u8], end: &[u8]) -> CommitRequest {
-        item(Item::ClearRange(KeyRange {
-            start: start.to_vec(),
-            end: end.to_vec(),
-        }))
-    }
-
-    #[test]
-    fn items_that_write_only_under_doric_or_nothing_are_not_outside_the_platform() {
-        for request in [
-            put_of(b"doric/x"),
-            clear_of(b"doric/", b"doric0"),
-            item(Item::Condition(Condition {
-                key: b"a/x".to_vec(),
-                version: 0.0,
-            })),
-            item(Item::PositionedPut(PositionedPut {
-                key_prefix: b"doric/log/".to_vec(),
-                value: b"v".to_vec(),
-            })),
-        ] {
-            assert!(!outside_platform(&request), "{request:?}");
-        }
-    }
-
-    #[test]
-    fn items_that_may_write_outside_doric_are_outside_the_platform() {
-        for request in [
-            put_of(b"a/x"),
-            item(Item::Delete(b"a/x".to_vec())),
-            clear_of(b"", &[0xff]),
-        ] {
-            assert!(outside_platform(&request), "{request:?}");
         }
     }
 

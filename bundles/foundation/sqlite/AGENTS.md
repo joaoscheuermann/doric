@@ -35,7 +35,8 @@ the engine, `test-engine.test.ts` (T4.20) `openTestEngine` and
 `kv-client.test.ts` the `kvClient` adapter, `storage-client.test.ts` the
 `storage/v2` client, `storage.test.ts`, `storage-instances.test.ts` and
 `registration.test.ts` the `storage/v2` conformance kit, which exercises every
-`storage/v2` handler, none skipped, and `watch.test.ts` (T4.26) `Watch`; `sqlite:test` runs the unit tests of both crates; `storage:test-heavy` runs the kit's heavy cases, the commits of
+`storage/v2` handler but `Watch`, none skipped, and `watch.test.ts` (T4.26)
+`Watch`, which the kit does not exercise; `sqlite:test` runs the unit tests of both crates; `storage:test-heavy` runs the kit's heavy cases, the commits of
 200,001 items, which take minutes; `storage:bench-rk27` builds the release binary
 (`sqlite:compile:production`) and runs RK27's write-stall measurements over
 `testEngineBinary('release')`, report-only (not a test). `index-parity.test.ts` (T4.23), in
@@ -53,9 +54,9 @@ index-key encoding (`storage/src/keys.rs`) and serves `storage/v2`'s
 S77a3b), `Read` (`storage/src/streams.rs`, S78a), and `PutBlob`, `GetBlob`,
 `DeleteBlob` (`storage/src/blobs.rs`) and `Health` (`storage/src/health.rs`,
 S78b), and `Watch` (`storage/src/watch.rs`, `storage/src/main/watch.rs`,
-S78c). It keeps the writer's cache of document headers and stream heads
-(`storage/src/cache.rs`, A80, S77a4b, S78a), which `DORIC_SQLITE_CACHE` turns on or
-off.
+S78c). It keeps no cache of document headers or stream heads: S78d removed
+the cache of A80 (A84), and `DORIC_SQLITE_CACHE` is gone; activation reads only
+`DORIC_STORAGE_PATH`.
 Add to it no slot, route or record type of its own; what a record means belongs
 to the bundle that registers its descriptors.
 
@@ -91,25 +92,15 @@ to the bundle that registers its descriptors.
   in the module's `<module>/tests.rs` (or `tests/*.rs`) when the module would
   pass 500 lines, as `engine/src/{writer,store,limits,readers}/tests.rs` and
   `storage/src/main/tests.rs` (declared with `#[path]`) are.
-- Make every `KvEngine::write` of `doric-storage` call `Headers::begin` first,
-  whether it touches document headers or not: `transact` stores
-  `data_version` after every write, so a write that skips it hides a foreign
-  write from the next one (RK38). S78a's appends and S87's `Import`
-  follow this rule too. Read and write headers through its `Staged` overlay,
-  stage changes with `put` and `forget`, call `finish` only on success, and
-  keep `Get` and `Query` off the cache. The exception is `Register`'s backfill
-  (`storage/src/register/backfill.rs`): it needs `chunk`, so it reads full
-  headers through `stored_header`, writes them with `txn.put` and forgets each
-  rewritten header in `Staged`. Test fixtures that plant raw headers, such as
-  `plant_headers`, are exempt.
+- Make every write of `doric-storage` read a document header through
+  `documents::stored_header` and a stream head through
+  `streams::last_sequence`, inside the writer's transaction, which sees its own
+  writes; keep no cache or overlay of them (A84, S78d).
+- Publish `Watch` changes only through `txn.on_commit`, so a change reaches
+  watchers only after `COMMIT` and a rollback publishes nothing.
 - Keep `storage.kv/v1` commits (`engine/src/writer.rs`'s `run`) from reading or
   storing `data_version`; only `transact` does.
-- Make a `storage.kv/v1` commit outside `doric/` suspend the cache: when
-  `storage/src/kv.rs`'s `outside_platform(request)` is true, `commit` takes
-  `Headers::suspend()` after `finish` and `store()`, so the next storage write
-  does not read stale headers; on a cancel, `mem::forget` the `Suspension`, so
-  the cache stays off for that process.
-- Read `DORIC_SQLITE_CACHE` only in `activate`, with `std::env::var_os`, and
+- Read only `DORIC_STORAGE_PATH` in `activate`, with `std::env::var_os`, and
   pass it to `activate_from`; tests call `activate_from` with the value, never
   `set_var`, which `forbid(unsafe_code)` with edition 2024 forbids.
 - Serve the `storage/v2` methods other than `Import`, `Inspect` and `Check`

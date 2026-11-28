@@ -121,7 +121,6 @@ async fn put_all(engine: &SqliteEngine, documents: &[(&str, &str, Vec<u8>)]) {
         engine,
         &Clock::default(),
         &Pools::default(),
-        &crate::cache::Headers::default(),
         &crate::watch::Watchers::default(),
         items,
     )

@@ -39,7 +39,7 @@ fn upload(bytes: &[u8]) -> Upload {
 
 /// Puts `bytes` as a blob of `bundle`.
 async fn put_bytes(engine: &SqliteEngine, bundle: &str, bytes: &[u8]) -> String {
-    put(engine, &Headers::default(), bundle, upload(bytes))
+    put(engine, bundle, upload(bytes))
         .await
         .expect("the put succeeds")
 }
@@ -156,7 +156,7 @@ async fn a_put_answers_the_sha256_of_the_bytes() {
 async fn the_empty_blob_has_the_hash_of_no_bytes() {
     let (_dir, engine) = open_temp();
 
-    let hash = put(&engine, &Headers::default(), "a", Upload::new())
+    let hash = put(&engine, "a", Upload::new())
         .await
         .expect("the put succeeds");
 
@@ -186,9 +186,7 @@ async fn the_same_bytes_in_other_parts_are_the_same_blob() {
         pieces.push(piece.to_vec()).expect("the piece fits");
     }
 
-    let again = put(&engine, &Headers::default(), "a", pieces)
-        .await
-        .expect("the put succeeds");
+    let again = put(&engine, "a", pieces).await.expect("the put succeeds");
 
     assert_eq!(again, hash);
 }
@@ -264,7 +262,7 @@ async fn every_byte_value_round_trips() {
 #[tokio::test]
 async fn the_empty_blob_is_found_with_no_chunk() {
     let (_dir, engine) = open_temp();
-    put(&engine, &Headers::default(), "a", Upload::new())
+    put(&engine, "a", Upload::new())
         .await
         .expect("the put succeeds");
 
@@ -298,7 +296,7 @@ async fn a_delete_removes_the_header_and_every_chunk_and_keeps_other_blobs() {
     let gone = put_bytes(&engine, "a", &bytes(3 * PART_BYTES)).await;
     let kept = put_bytes(&engine, "a", b"kept").await;
 
-    delete(&engine, &Headers::default(), "a", &gone)
+    delete(&engine, "a", &gone)
         .await
         .expect("the delete succeeds");
 
@@ -321,7 +319,7 @@ async fn a_delete_of_a_malformed_or_unknown_hash_is_a_no_op() {
     let unknown = format!("sha256:{}", "0".repeat(64));
 
     for hash in ["md5:abc", "", unknown.as_str()] {
-        let deleted = delete(&engine, &Headers::default(), "a", hash).await;
+        let deleted = delete(&engine, "a", hash).await;
         assert_eq!(deleted, Ok(()), "{hash}");
     }
 
@@ -333,7 +331,7 @@ async fn a_delete_of_another_bundle_leaves_the_blob() {
     let (_dir, engine) = open_temp();
     let hash = put_bytes(&engine, "a", b"a's").await;
 
-    delete(&engine, &Headers::default(), "b", &hash)
+    delete(&engine, "b", &hash)
         .await
         .expect("the delete succeeds");
 

@@ -8,9 +8,8 @@ use doric_sqlite::{ReadTxn, WriteTxn};
 
 use super::{Entry, Items, iso};
 use crate::{
-    cache::{Header, Headers, Staged},
     commit::Clock,
-    documents::unknown_type,
+    documents::{stored_header, unknown_type},
     layout::{self, CHUNK_BYTES, DocumentHeader, TypeDeclaration},
     register::stored_declaration,
     schema::{self, Pools},
@@ -67,11 +66,9 @@ pub(super) fn plan(
 }
 
 /// Applies `items` in one write transaction, with the index keys of `plans`,
-/// recomputed for a put whose declaration changed since [`plan`], reading and
-/// writing headers through `headers` ([`Headers::begin`]), then its stream
-/// items ([`super::streams::write`]), each entry with the puts' `updated_at`
-/// as `created_at`; the cache takes the transaction's headers and stream
-/// heads only once it has committed.
+/// recomputed for a put whose declaration changed since [`plan`], then its
+/// stream items ([`super::streams::write`]), each entry with the puts'
+/// `updated_at` as `created_at`.
 ///
 /// # Errors
 ///
@@ -80,12 +77,10 @@ pub(super) fn write(
     txn: &mut dyn WriteTxn,
     clock: &Clock,
     pools: &Pools,
-    headers: &Headers,
     watchers: &Watchers,
     items: &Items,
     mut plans: Vec<Plan>,
 ) -> Result<(), ContractError> {
-    let mut staged = headers.begin(txn);
     let bundle = &items.bundle;
     let puts: Vec<Put<'_>> = items
         .entries
@@ -112,9 +107,8 @@ pub(super) fn write(
             revision,
         } = entry
         {
-            let actual = staged
-                .header(txn, &layout::document(bundle, type_id, id))?
-                .map_or(0, |header| header.revision);
+            let actual =
+                stored_header(txn, bundle, type_id, id)?.map_or(0, |header| header.revision);
             if actual != *revision {
                 return Err(detailed(
                     "revision_conflict",
@@ -138,7 +132,7 @@ pub(super) fn write(
             continue;
         };
         let document = layout::document(bundle, type_id, id);
-        if let Some(header) = staged.header(txn, &document)? {
+        if let Some(header) = stored_header(txn, bundle, type_id, id)? {
             for n in 1..=header.chunk_count {
                 txn.delete(&layout::chunk(bundle, type_id, id, n))?;
             }
@@ -146,16 +140,14 @@ pub(super) fn write(
                 txn.delete(&layout::prefixed(bundle, key))?;
             }
             txn.delete(&document)?;
-            staged.forget(document);
         }
     }
 
     for (put, plan) in puts.into_iter().zip(&plans) {
-        put_one(txn, &mut staged, bundle, put, &plan.keys, &updated_at)?;
+        put_one(txn, bundle, put, &plan.keys, &updated_at)?;
     }
-    super::streams::write(txn, &mut staged, bundle, &items.entries, &updated_at)?;
-    let change = change(txn, &mut staged, bundle, &items.entries)?;
-    staged.finish(txn);
+    super::streams::write(txn, bundle, &items.entries, &updated_at)?;
+    let change = change(txn, bundle, &items.entries)?;
     let (watchers, bundle) = (watchers.clone(), bundle.clone());
     txn.on_commit(Box::new(move || watchers.publish(&bundle, &change)));
     Ok(())
@@ -163,15 +155,14 @@ pub(super) fn write(
 
 /// What the applied `entries` changed (Q3), at the transaction's position:
 /// each document a put or a delete named and each stream a drop, a truncate or
-/// an append named, once, in the order first named, in its state as `staged`
-/// sees it after the batch.
+/// an append named, once, in the order first named, in its state as `txn`
+/// reads it after the batch.
 ///
 /// # Errors
 ///
-/// The errors of [`Staged::header`] and [`Staged::head`].
+/// The errors of [`stored_header`] and [`crate::streams::last_sequence`].
 fn change(
     txn: &mut dyn WriteTxn,
-    staged: &mut Staged,
     bundle: &str,
     entries: &[Entry],
 ) -> Result<Change, ContractError> {
@@ -186,7 +177,7 @@ fn change(
                 if !documents.insert((type_id, id)) {
                     continue;
                 }
-                let header = staged.header(txn, &layout::document(bundle, type_id, id))?;
+                let header = stored_header(txn, bundle, type_id, id)?;
                 change.documents.push(WatchDocument {
                     r#type: type_id.clone(),
                     id: id.clone(),
@@ -202,7 +193,7 @@ fn change(
                 if !streams.insert(stream) {
                     continue;
                 }
-                let last = staged.head(txn, &layout::head(bundle, stream))?;
+                let last = crate::streams::last_sequence(txn, &layout::head(bundle, stream))?;
                 change.streams.push(WatchStream {
                     stream: stream.clone(),
                     last_sequence: f64::from(last),
@@ -216,7 +207,7 @@ fn change(
 
 /// Writes the put `put` with its index keys `keys`: its header, its chunks
 /// and its keys, removing the chunks and keys of its last header it no longer
-/// has; reads its last header from `staged` and stages the new one there.
+/// has; reads its last header from `txn`.
 ///
 /// # Errors
 ///
@@ -225,14 +216,13 @@ fn change(
 /// errors of the transaction.
 fn put_one(
     txn: &mut dyn WriteTxn,
-    staged: &mut Staged,
     bundle: &str,
     (type_id, id, value): Put<'_>,
     keys: &[IndexKey],
     updated_at: &str,
 ) -> Result<(), ContractError> {
     let document = layout::document(bundle, type_id, id);
-    let old = staged.header(txn, &document)?;
+    let old: Option<DocumentHeader> = stored_header(txn, bundle, type_id, id)?;
     for key in keys.iter().filter(|key| key.unique) {
         if let Some((holder, _)) = txn.get(&layout::prefixed(bundle, &key.key))?
             && holder != id.as_bytes()
@@ -296,7 +286,6 @@ fn put_one(
         updated_at: updated_at.to_owned(),
     };
     txn.put(&document, &prost::Message::encode_to_vec(&header))?;
-    staged.put(document, Header::from(header));
     Ok(())
 }
 

@@ -15,7 +15,6 @@ use doric_sqlite::{KeyRange, KvEngine, ReadTxn, WriteTxn};
 use prost_reflect::DescriptorPool;
 
 use crate::{
-    cache::Headers,
     layout::{self, TypeDeclaration},
     schema,
 };
@@ -134,10 +133,6 @@ impl Registrations {
     /// Answers one [`Rebuilt`] per rebuilt type, in type id order; empty
     /// when nothing was rebuilt, including every `Ok` with no write.
     ///
-    /// The write transaction starts with [`Headers::begin`] on `headers`, so
-    /// a foreign write clears the cache, and once it has committed the cache
-    /// holds no header it rebuilt; an error leaves the cache as it was.
-    ///
     /// # Errors
     ///
     /// The first error of a rebuild, in type id order, with the transaction
@@ -155,7 +150,6 @@ impl Registrations {
     pub async fn apply<E: KvEngine>(
         &self,
         engine: &E,
-        headers: &Headers,
         registration: Registration,
     ) -> Result<Vec<Rebuilt>, ContractError> {
         if self.is_below(&registration) {
@@ -167,13 +161,13 @@ impl Registrations {
             self.raise(&registration);
             return Ok(Vec::new());
         }
-        let (registrations, headers) = (self.clone(), headers.clone());
+        let registrations = self.clone();
         let (rebuilt, _) = engine
             .write(move |txn| {
                 if registrations.is_below(&registration) {
                     return Ok(Vec::new());
                 }
-                let rebuilt = write(txn, &headers, &registration)?;
+                let rebuilt = write(txn, &registration)?;
                 txn.on_commit(Box::new(move || registrations.raise(&registration)));
                 Ok(rebuilt)
             })
@@ -229,10 +223,8 @@ fn is_stored(txn: &mut dyn ReadTxn, registration: &Registration) -> Result<bool,
 /// The errors of [`backfill::rebuild`]; the errors of the transaction.
 fn write(
     txn: &mut dyn WriteTxn,
-    headers: &Headers,
     registration: &Registration,
 ) -> Result<Vec<Rebuilt>, ContractError> {
-    let mut staged = headers.begin(txn);
     let bundle = &registration.bundle;
     txn.put(
         &layout::schema(bundle, &registration.hash),
@@ -253,7 +245,6 @@ fn write(
             let pool = &registration.pool;
             rebuilt.extend(backfill::rebuilt(
                 txn,
-                &mut staged,
                 bundle,
                 type_id,
                 pool,
@@ -294,7 +285,6 @@ fn write(
     for key in &unnamed {
         txn.delete(key)?;
     }
-    staged.finish(txn);
     Ok(rebuilt)
 }
 

@@ -18,7 +18,6 @@ use doric_bundle::ContractError;
 use doric_sqlite::{KvEngine, refusal};
 
 use crate::{
-    cache::Headers,
     layout,
     schema::Pools,
     streams::{checked, whole_sequence},
@@ -356,13 +355,6 @@ impl Batch {
 /// each entry taking the commit's `updated_at` as `createdAt`, and the
 /// truncate's mark, at the stream's last sequence after the appends.
 ///
-/// The write transaction reads and writes headers through `headers`
-/// ([`Headers::begin`] first): it reads a header from the cache when it holds
-/// one, from SQLite otherwise, and the cache holds, once the commit has
-/// succeeded and before the next write, each put's new header and none of a
-/// deleted document; an error leaves the cache as it was. The answer and the
-/// stored state are the same with any bound, 0 included.
-///
 /// Once `COMMIT` succeeds, and before it answers, the writer publishes the
 /// commit's [`crate::watch::Change`] to `watchers`
 /// ([`Watchers::publish`]), with the position it answers; a transaction that
@@ -392,7 +384,6 @@ pub async fn apply<E: KvEngine>(
     engine: &E,
     clock: &Clock,
     pools: &Pools,
-    headers: &Headers,
     watchers: &Watchers,
     items: Items,
 ) -> Result<f64, ContractError> {
@@ -401,12 +392,10 @@ pub async fn apply<E: KvEngine>(
     let planned = engine
         .read(move |txn| transaction::plan(txn, &read_pools, &read_items))
         .await?;
-    let (clock, pools, headers) = (clock.clone(), pools.clone(), headers.clone());
+    let (clock, pools) = (clock.clone(), pools.clone());
     let watchers = watchers.clone();
     let ((), position) = engine
-        .write(move |txn| {
-            transaction::write(txn, &clock, &pools, &headers, &watchers, &items, planned)
-        })
+        .write(move |txn| transaction::write(txn, &clock, &pools, &watchers, &items, planned))
         .await?;
     Ok(position)
 }

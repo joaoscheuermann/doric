@@ -3,8 +3,7 @@
 //! the writing bundle's prefix, its key `("blob", hash)` with `hash` the
 //! `sha256:<hex>` of its bytes, a [`BlobHeader`](crate::layout::BlobHeader)
 //! holding its first [`CHUNK_BYTES`](crate::layout::CHUNK_BYTES) and the
-//! rest in `("blob.chunk", hash, n)` records. Every write calls
-//! [`Headers::begin`] first.
+//! rest in `("blob.chunk", hash, n)` records.
 
 use std::ops::ControlFlow;
 
@@ -13,7 +12,6 @@ use doric_sqlite::{KvEngine, ReadTxn, WriteTxn, refusal};
 use sha2::Sha256;
 
 use crate::{
-    cache::Headers,
     layout::{self, BlobHeader, CHUNK_BYTES},
     v2::{BlobHead, GetBlobResponse, get_blob_response::Item},
 };
@@ -68,9 +66,9 @@ impl Upload {
     }
 }
 
-/// Stores `upload` as a blob of `bundle` in one write transaction, which
-/// calls [`Headers::begin`] first: its header and chunks, unless its header
-/// exists, which means the same bytes are stored. Answers its hash,
+/// Stores `upload` as a blob of `bundle` in one write transaction: its header
+/// and chunks, unless its header exists, which means the same bytes are
+/// stored. Answers its hash,
 /// `sha256:<hex>`.
 ///
 /// # Errors
@@ -78,7 +76,6 @@ impl Upload {
 /// The errors of the write.
 pub async fn put<E: KvEngine>(
     engine: &E,
-    headers: &Headers,
     bundle: &str,
     upload: Upload,
 ) -> Result<String, ContractError> {
@@ -86,10 +83,10 @@ pub async fn put<E: KvEngine>(
         "sha256:{}",
         doric_sqlite::hex(&sha2::Digest::finalize(upload.sha256))
     );
-    let (headers, bundle, stored) = (headers.clone(), bundle.to_owned(), hash.clone());
+    let (bundle, stored) = (bundle.to_owned(), hash.clone());
     let bytes = upload.bytes;
     engine
-        .write(move |txn| write(txn, &headers, &bundle, &stored, &bytes))
+        .write(move |txn| write(txn, &bundle, &stored, &bytes))
         .await?;
     Ok(hash)
 }
@@ -98,12 +95,10 @@ pub async fn put<E: KvEngine>(
 /// header exists.
 fn write(
     txn: &mut dyn WriteTxn,
-    headers: &Headers,
     bundle: &str,
     hash: &str,
     bytes: &[u8],
 ) -> Result<(), ContractError> {
-    headers.begin(txn);
     let key = layout::blob(bundle, hash);
     if txn.get(&key)?.is_some() {
         return Ok(());
@@ -188,25 +183,22 @@ fn decode_header(value: &[u8]) -> Result<BlobHeader, ContractError> {
 }
 
 /// Deletes the blob `hash` of `bundle`, its header and its chunks, in one
-/// write transaction, which calls [`Headers::begin`] first. A malformed or
-/// unknown hash is a no-op.
+/// write transaction. A malformed or unknown hash is a no-op.
 ///
 /// # Errors
 ///
 /// The errors of the write.
 pub async fn delete<E: KvEngine>(
     engine: &E,
-    headers: &Headers,
     bundle: &str,
     hash: &str,
 ) -> Result<(), ContractError> {
     if !well_formed(hash) {
         return Ok(());
     }
-    let (headers, bundle, hash) = (headers.clone(), bundle.to_owned(), hash.to_owned());
+    let (bundle, hash) = (bundle.to_owned(), hash.to_owned());
     engine
         .write(move |txn| {
-            headers.begin(txn);
             let chunks = layout::under(&bundle, &["blob.chunk", &hash]);
             txn.clear_range(&chunks.start, &chunks.end)?;
             txn.delete(&layout::blob(&bundle, &hash))

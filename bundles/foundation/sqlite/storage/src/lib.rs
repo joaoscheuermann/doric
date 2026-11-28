@@ -4,14 +4,11 @@
 //! "The layout"): the tuple encoding of every key ([`keys`]), the layout's
 //! records ([`layout`]), a bundle's descriptors and the index values of a
 //! protobuf value decoded with them ([`schema`]), `Register` ([`register`]),
-//! `Commit` ([`commit`]), `Get` ([`documents`]) and `Query` ([`query`]), and
-//! the cache of document headers that `Register`'s and `Commit`'s write
-//! transactions read ([`cache`]).
+//! `Commit` ([`commit`]), `Get` ([`documents`]) and `Query` ([`query`]).
 
 use doric_bundle::{Caller, ContractError};
 
 pub mod blobs;
-pub mod cache;
 pub mod commit;
 pub mod documents;
 pub mod health;

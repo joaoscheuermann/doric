@@ -105,10 +105,7 @@ async fn register(
     set: &[u8],
 ) -> Result<(), ContractError> {
     let registration = prepare(&caller(bundle, generation), set.to_vec())?;
-    registrations
-        .apply(engine, &crate::cache::Headers::default(), registration)
-        .await
-        .map(drop)
+    registrations.apply(engine, registration).await.map(drop)
 }
 
 /// The value of `key`, or `None`.

@@ -174,6 +174,21 @@ pub fn check(bundle: &str, request: &ReadRequest) -> Result<Read, ContractError>
     })
 }
 
+/// The last sequence of the stream whose head key is `key`
+/// ([`layout::head`]), as `txn` reads it: the stored [`StreamHead`]'s, or 0
+/// for an absent stream.
+///
+/// # Errors
+///
+/// `internal` for a stored head that does not decode; the errors of
+/// [`ReadTxn::get`].
+pub(crate) fn last_sequence(txn: &mut dyn ReadTxn, key: &[u8]) -> Result<u32, ContractError> {
+    match txn.get(key)? {
+        Some((value, _)) => Ok(decoded::<StreamHead>(&value, "head")?.last_sequence),
+        None => Ok(0),
+    }
+}
+
 /// Reads the page `read` of `bundle`'s stream in `txn`, one read transaction,
 /// and emits it: first a `page` item with the stream's `last_sequence` (0 for
 /// an absent stream) and its truncation marks with `after_sequence <
@@ -197,10 +212,7 @@ pub fn read(
     emit: &mut dyn FnMut(ReadResponse) -> ControlFlow<()>,
 ) -> Result<(), ContractError> {
     let stream = read.stream.as_str();
-    let last = match txn.get(&layout::head(bundle, stream))? {
-        Some((value, _)) => decoded::<StreamHead>(&value, "head")?.last_sequence,
-        None => 0,
-    };
+    let last = last_sequence(txn, &layout::head(bundle, stream))?;
     if read.after > last {
         return Err(past_end(stream, "read", read.after, last));
     }

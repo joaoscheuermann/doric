@@ -6,7 +6,7 @@ use doric_storage::{layout, schema::DESCRIPTOR_SET_BYTES};
 use prost::Message as _;
 
 use super::*;
-use crate::testing::{TempDir, caller, code_of, detail_str, open_temp, storage_set};
+use crate::testing::{TempDir, caller, code_of, open_temp, storage_set};
 
 fn call_from(bundle_id: &str) -> Call {
     Call {
@@ -150,42 +150,6 @@ async fn a_valid_set_registers_on_the_open_store() {
     assert_eq!(declaration.message_type, "fixture.v1.Note");
 }
 
-#[tokio::test]
-async fn an_invalid_cache_setting_is_refused_before_the_open() {
-    let dir = TempDir::new();
-    let engine = Engine::default();
-
-    let error = engine
-        .activate_from(Some(dir.path().into()), Some("2".into()))
-        .await
-        .expect_err("the setting is refused");
-
-    assert_eq!(error.code, "invalid_input");
-    assert_eq!(
-        detail_str(&error, "variable").as_deref(),
-        Some(CACHE_VARIABLE)
-    );
-    assert_eq!(code_of(engine.store().map(|_| ())), "unavailable");
-    assert!(
-        !dir.path().join("doric.sqlite3").exists(),
-        "the store was opened"
-    );
-}
-
-#[tokio::test]
-async fn a_cache_setting_of_0_activates_with_no_cache() {
-    let dir = TempDir::new();
-    let engine = Engine::default();
-
-    let activated = engine
-        .activate_from(Some(dir.path().into()), Some("0".into()))
-        .await;
-
-    assert_eq!(activated, Ok(()));
-    assert_eq!(engine.headers().bound(), 0);
-    engine.stop().await;
-}
-
 // S78b: `Health` and the blob methods before activation, and `Health` after
 // it (R14).
 
@@ -276,7 +240,7 @@ async fn health_after_activation_measures_the_storage_path() {
     let dir = TempDir::new();
     let engine = Engine::default();
     engine
-        .activate_from(Some(dir.path().into()), None)
+        .activate_from(Some(dir.path().into()))
         .await
         .expect("the activation succeeds");
 

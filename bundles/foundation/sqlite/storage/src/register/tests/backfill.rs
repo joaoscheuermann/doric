@@ -31,9 +31,7 @@ async fn register(
     set: &[u8],
 ) -> Result<Vec<Rebuilt>, ContractError> {
     let registration = prepare(&caller("a", generation), set.to_vec())?;
-    registrations
-        .apply(engine, &crate::cache::Headers::default(), registration)
-        .await
+    registrations.apply(engine, registration).await
 }
 
 fn key(id: &str) -> DocumentKey {
@@ -70,7 +68,6 @@ async fn commit(engine: &SqliteEngine, puts: &[(String, Vec<u8>)], deletes: &[&s
         engine,
         &Clock::default(),
         &Pools::default(),
-        &crate::cache::Headers::default(),
         &crate::watch::Watchers::default(),
         items,
     )

@@ -4,6 +4,7 @@
 
 mod apply;
 mod conflicts;
+mod engines;
 
 use std::ops::ControlFlow;
 
@@ -92,7 +93,6 @@ async fn commit_with(
         engine,
         clock,
         &Pools::default(),
-        &crate::cache::Headers::default(),
         &crate::watch::Watchers::default(),
         items,
     )
@@ -544,7 +544,6 @@ async fn commit_watched(
         engine,
         &Clock::default(),
         &Pools::default(),
-        &crate::cache::Headers::default(),
         watchers,
         items,
     )

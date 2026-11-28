@@ -2,7 +2,7 @@
 
 - Status: `accepted` (phases 0–3 built; phase 3 closed by the owner's decision
   A75 with T8, AC3.6 and the host and desktop end-to-end tests on `postgres`
-  not run, see "Phase 3: what was not run"; phase 4 in progress, S72–S78c built, see
+  not run, see "Phase 3: what was not run"; phase 4 in progress, S72–S78d built, see
   "Phase 4"; phases 5–8 to come)
 
 ## Problem
@@ -43,6 +43,13 @@ written in `.proto`.
 - **`buf breaking` skipped while the base has no `.proto` (coordinator
   decision, spec v6.4).** CI skips `buf breaking` when the pull request base has
   no `buf.yaml` or `.proto` files.
+- **`Watch` stays (A83, owner, 2026-11-28, on Q37).** `storage/v2.Watch`,
+  built by S78c, is kept with no reader in phase 4.
+- **No header or stream-head cache (A84, owner, 2026-11-28, on Q38).** The
+  cache of A80 is removed by S78d: every write reads document headers and
+  stream heads from SQLite inside the writer's transaction, and
+  `DORIC_SQLITE_CACHE`, RK38 and T4.25 are gone; S90 measures the uncached path
+  only. This revokes A80.
 
 ## Phase 0: measurements
 
@@ -1676,11 +1683,12 @@ document headers (A80, `storage/src/cache.rs`) and fixes the engine's
 - Every `KvEngine::write` of `doric-storage` calls `Headers::begin` first,
   whether it touches headers or not: `transact` stores `data_version` after
   every write (`engine/src/writer.rs:258`), so a write that skips it would hide
-  a foreign write from the next one (RK38). S78's head-only appends and S87's
-  `Import` must follow it. Test fixtures that plant raw headers, such as
-  `plant_headers`, are exempt.
-- PF9: T4.25's other-process case uses a put's revision (H3, H4); the append
-  case is S78's and the `Import` case S87's.
+  a foreign write from the next one (RK38). S78a's appends followed it; S78d
+  removed the rule with the cache (A84). Test fixtures that plant raw headers,
+  such as `plant_headers`, were exempt.
+- PF9: T4.25's other-process case used a put's revision (H3, H4); S78a added
+  the append case, and S78d removed T4.25 with the cache, replacing its
+  two-engine cases with P1 and P2 (T4.3, AC4).
 - Test moves, with no change of behaviour, for the 500-line rule: the binary's
   4 tests to `storage/src/main/tests.rs`, which also holds M1 and M2 (6 in
   all; the other 3 bin tests stay inline in `storage/src/kv.rs`, `kv::tests`),
@@ -1754,8 +1762,8 @@ Slice S77b2 (spec version 6.63) completes S77b with the `storage/v2`
 conformance kit in `packages/storage/src/conformance/v2/`, not exported; the
 v1 kit in `src/conformance/` is unchanged.
 
-- `harness.ts`: `conformanceBundle` (`'conformance'`), `conformanceFiles`;
-  `V2Engine`, a `TestEngine` plus
+- `harness.ts`: `conformanceBundle` (`'conformance'`), `conformanceFiles`,
+  `untilS78 = 'S78: streams'` (deleted by S78b); `V2Engine`, a `TestEngine` plus
   `raw(caller, generation)`; `V2Harness` with
   `open(bundleId?, files?, generation?)`, `raw`, `reset` and `fresh()`, a new
   engine for the generation cases, since `reset()` keeps the remembered highest
@@ -1767,8 +1775,8 @@ v1 kit in `src/conformance/` is unchanged.
   import `tests/`); `fixtures.ts`'s `contract` maps a raw `ConnectError` to a
   `ContractError`, deliberately not `rpc/call.ts`'s `calling`; `files.ts`
   builds the `FileDescriptorProto`s, with `streamFiles()` and `eventPrefix`,
-  the stream prefix `conformance.note.events/` of the skipped cases. The
-  `untilS78` doc comment lists every skipped case. A stray empty file
+  the stream prefix `conformance.note.events/` of the cases then skipped. The
+  `untilS78` doc comment listed every skipped case. A stray empty file
   `v2/{harness,support,index}.ts`, left by a failed brace expansion, was
   removed with its compiled outputs.
 - `index.ts`: `storageV2Cases`, `instanceV2Cases`, `registrationV2Cases`,
@@ -1776,7 +1784,7 @@ v1 kit in `src/conformance/` is unchanged.
   with `V2RunOptions` (`name`, `cases`, `openEngine`, `skip`, `timeout`),
   which opens the harness before the cases and closes it after them, as
   `runKvConformance` does; the default timeout is 120 s.
-- 63 cases, 41 active and 22 skipped with `untilS78`: D1–D7, `T4.3-prefix`,
+- At S77b2, 63 cases, 41 active and 22 skipped with `untilS78`: D1–D7, `T4.3-prefix`,
   `T4.3-16MiB`; R1–R3; Q1–Q4; Q5, Q6, T4.9; Q7–Q10 (Q10's rebuild answers
   `unique_conflict {type, index, ids}`) and T4.23; C1, C4 and `not_owner`
   through raw clients, C2 and C3 skipped; X1, X2 and X5's document parts,
@@ -1792,9 +1800,9 @@ v1 kit in `src/conformance/` is unchanged.
   `storageV2Cases` includes `streamCases` and `blobCases`. Not ported: B1's
   "blobs are not commits" (no `lastPosition`), B2's base64 refusal (v2 takes
   bytes; B2 checks that pieces give the same hash) and H2 (no `identity()`).
-  Open for S78: no `details.limit` is named for an event over 3 MiB, so
-  `T4.3-event-3MiB` checks only the code. S78 enables the skipped cases and
-  may adjust their stream prefix.
+  Open for S78 at S77b2: no `details.limit` was named for an event over 3 MiB,
+  so `T4.3-event-3MiB` checked only the code; S78 was to enable the skipped
+  cases (S78a enabled the stream cases, S78b the rest).
 - Behaviours the cases pin, confirmed against the engine: a range bound of
   another kind is allowed (`{gt: true}` on a number field); an empty type id is
   `invalid_input`, not `not_owner`; a no-field index lists every document in id
@@ -1866,20 +1874,20 @@ bin tests; clippy `-D warnings` and `cargo fmt --check` clean, in the `rust`
 1.100.0 image; `storage` 347 tests, 341 pass, 0 fail, 6 skipped; `biome` clean
 on the changed files (15 errors predate it, in untouched files).
 
-Slice S78b (spec version 6.66; S72–S78a committed in `3dddad79`, S78b not yet
-committed) builds blobs and health in `doric-storage`. `PutBlob` is a client
+Slice S78b (spec version 6.66; committed in `bfd5d257`) builds blobs and health in `doric-storage`. `PutBlob` is a client
 stream of at most 33,554,432 bytes; one byte more is `limit_exceeded` with
 `details.limit` `"blob"` (S78a's Q1). It is idempotent, keyed
 `sha256:<64 lowercase hex>` under the bundle's prefix, and writes a
 `BlobHeader {size, chunk_count, chunk}` and then `blob.chunk` records of
 `CHUNK_BYTES`. `GetBlob` answers `head {found}` and then the chunks, from one
 read transaction; a malformed or unknown hash is `found: false`. `DeleteBlob`
-clears the blob; a malformed or unknown hash is a no-op. Every blob write calls
-`Headers::begin` first (RK38). `Health` comes from `statvfs` (`nix` 0.32.0) on
+clears the blob; a malformed or unknown hash is a no-op. Every blob write called
+`Headers::begin` first (RK38), until S78d removed the cache. `Health` comes from `statvfs` (`nix` 0.32.0) on
 `DORIC_STORAGE_PATH`: `ok`, writable, with the disk's `blocks` and
 `availableBlocks`; when `statvfs` fails, `unavailable`, not writable, with the
 reason `storage_unmeasurable`. Before activation every method answers
-`unavailable`. `stream_read` and `ANSWERS` move to the new
+`unavailable`, after its own checks: the caller `doric` gets `not_owner` first,
+and each method's request checks run before `store()`. `stream_read` and `ANSWERS` move to the new
 `storage/src/main/reads.rs`, which keeps `main.rs` under 500 lines; `Cargo.lock`
 gains `nix` and `cfg_aliases`. In the kit, `untilS78` is deleted, B1–B5 and
 `T4.3-health` run, and `T4.3-prefix-records` also puts a blob; CL13, the last
@@ -1889,14 +1897,14 @@ S78b's verification: `doric-sqlite` 63 tests, `doric-storage` 231 lib and 17
 bin tests; clippy `-D warnings` and `cargo fmt --check` clean, in the `rust`
 1.100.0 image; `storage` 346 tests, 346 pass, none skipped.
 
-Slice S78c (spec version 6.67; S72–S78b committed in `bfd5d257`, S78c not yet
-committed) builds `Watch` (T4.26), which completes S78. The owner keeps `Watch` (A83, on Q37); S78c was built before that answer. `storage/v2` gains
+Slice S78c (spec version 6.67; committed in `b3dab1ae`) builds `Watch` (T4.26), which completes S78. The owner keeps `Watch` (A83, on Q37); S78c was built before that answer. `storage/v2` gains
 `rpc Watch` and `WatchRequest`, `WatchResponse`, `WatchDocument` and
 `WatchStream`, as additions only. In `storage/src/watch.rs` each subscriber has
 a bounded buffer of 1,024; when it is full the subscriber is dropped and its
-stream ends with `unavailable` `Watch fell behind.`. The checks refuse `doric`,
-then a type or stream of another namespace (`not_owner`), then a malformed
-stream (`invalid_stream`). The writer publishes through `txn.on_commit`, so
+stream ends with `unavailable` `Watch fell behind.`. The checks refuse `doric`
+first; then each type, `invalid_input` (its length), then `not_owner`; then
+each stream, `invalid_input` for its length, then `invalid_stream`, then
+`not_owner`. The writer publishes through `txn.on_commit`, so
 only after `COMMIT`; a rollback publishes nothing. A response has one entry per
 key in its last state (Q3): a delete has revision 0 and `deleted` true, a drop
 has `lastSequence` 0, and `expect` is not listed. The coordinator decided that
@@ -1917,6 +1925,31 @@ bin tests; clippy `-D warnings` and `cargo fmt --check` clean, in the `rust`
 1.100.0 image; `storage` 351 pass, 0 fail, `watch.test.ts` 5 of 5;
 `basic-contracts` 6 of 6. `nx run bundle:test` was not run, since the sandbox
 has no host cargo.
+
+Slice S78d (spec version 6.69; S72–S78c committed in `b3dab1ae`, S78d not yet
+committed) removes `doric-storage`'s cache of document headers and stream heads
+(A84). `storage/src/cache.rs` and its tests are deleted. Every write reads a
+header through `documents::stored_header` and a head through the new
+`streams::last_sequence` (the decoded head, or 0), inside the writer's
+transaction; the transaction's own reads see its writes, so no overlay is kept.
+`Commit`, `Register` and its backfill, and the blob writes lose their `Headers`
+argument. `Watch`'s `Change` is built from the same direct reads, so it too
+reads through the transaction. `DORIC_SQLITE_CACHE` is no longer read:
+activation takes only `DORIC_STORAGE_PATH`, and `activate_from` takes only the
+storage path. `kv.rs` no longer suspends anything (`outside_platform` is gone)
+but keeps its `tokio::select!`, so a cancelled `storage.kv/v1.Commit` still
+answers `cancelled` (Q3). `WriteTxn::foreign_write` and the writer's
+`data_version` tracking are kept but now unused, left for a later slice or an
+owner call (Q1). P1 and P2, in the new `storage/src/commit/tests/engines.rs`,
+are regression tests of two engines on one file taking turns: three puts of one
+document by A, B, A reach revision 3, and three appends reach sequences 1–3 with
+no gap or duplicate; they trace to T4.3 and AC4's two-process guarantee, not to
+T4.25 (Q2). Deleted: the 26 cache tests, M1 and M2 of the setting, and the two
+S2 tests of `outside_platform`. No caller's answer changes.
+
+S78d's verification: `doric-sqlite` lib 63 tests; `doric-storage` lib 228 and
+bin 13; clippy `-D warnings` and `cargo fmt --check` clean; `storage` TS 351
+pass, 0 fail.
 
 ## Evolution
 
@@ -3220,18 +3253,19 @@ sandbox pool` then `Sandbox pool configured` with the `logSandboxPool`
   `kv-client.test.ts` and `kv-file.test.ts`, committed in `2fd8cbb7`, which the
   coordinator formatted; 18 other biome format failures predate S72.
 - 2026-11-28: phase 4, slice S78a, of
-  [the spec](../designs/grpc-processes.md) (version 6.65), not yet committed:
+  [the spec](../designs/grpc-processes.md) (version 6.65), committed in
+  `3dddad79`:
   streams in `doric-storage` (`Commit`'s stream items, `Read`, the stream heads
   in the cache); Q-B removed; Q1 (`"append"` limit) and Q2 (the item count)
   decided; 16 stream cases unskipped and `T4.3-prefix-records` added.
 - 2026-11-28: phase 4, slice S78b, of
-  [the spec](../designs/grpc-processes.md) (version 6.66), not yet committed;
-  S72–S78a committed in `3dddad79`: blobs (`PutBlob`, `GetBlob`, `DeleteBlob`)
+  [the spec](../designs/grpc-processes.md) (version 6.66), committed in
+  `bfd5d257`: blobs (`PutBlob`, `GetBlob`, `DeleteBlob`)
   and `Health` in `doric-storage`; every method `unavailable` before
   activation; `untilS78` and CL13 deleted; no case of the kit is skipped.
 - 2026-11-28: phase 4, slice S78c, of
-  [the spec](../designs/grpc-processes.md) (version 6.67), not yet committed;
-  S72–S78b committed in `bfd5d257`: `Watch` in `doric-storage` and
+  [the spec](../designs/grpc-processes.md) (version 6.67), committed in
+  `b3dab1ae`: `Watch` in `doric-storage` and
   `Storage.watch` in the client; a response lists only the named entries; S78
   complete.
 - 2026-11-28: owner answers A83–A85 in
@@ -3239,3 +3273,10 @@ sandbox pool` then `Sandbox pool configured` with the `logSandboxPool`
   (A83, Q37); the header and stream-head cache is removed now by the new slice
   S78d, not yet built, which revokes A80 and leaves S90 measuring the uncached
   path only (A84, Q38); A10 holds and S82 drops no variable (A85, Q39).
+- 2026-11-28: phase 4, slice S78d, of
+  [the spec](../designs/grpc-processes.md) (version 6.69), not yet committed;
+  S72–S78c committed in `b3dab1ae`: the header and stream-head cache removed
+  (A84); every write reads headers and heads inside the writer's transaction;
+  `DORIC_SQLITE_CACHE` no longer read; `foreign_write` and `data_version` kept
+  unused (Q1); P1 and P2 added as two-engine regression tests (Q2); `kv.rs`
+  keeps its cancel `select!` (Q3).

@@ -23,7 +23,6 @@ use doric_bundle::{Bundle, Call, ContractError, Level, Requests, Services};
 use doric_sqlite::SqliteEngine;
 use doric_storage::{
     blobs::{self, Upload},
-    cache::{CACHE_VARIABLE, Headers},
     commit::{self, Batch},
     documents, health,
     register::{self, Registrations},
@@ -59,10 +58,6 @@ struct Engine {
     /// The decoded pools of stored schemas, shared by every `storage/v2`
     /// commit.
     pools: Pools,
-    /// The cache of document headers that every `storage/v2` `Register` and
-    /// `Commit` writes through; set once, by the activation that sets the
-    /// store ([`Engine::headers`]).
-    headers: Arc<OnceLock<Headers>>,
     /// The storage directory, `DORIC_STORAGE_PATH`; set once, by the
     /// activation that sets the store.
     dir: Arc<OnceLock<PathBuf>>,
@@ -158,24 +153,18 @@ impl Bundle for Engine {
             )
     }
 
-    /// Chooses the header cache from `DORIC_SQLITE_CACHE`
-    /// ([`Headers::from_setting`]), then opens the store
-    /// ([`doric_sqlite::open`]) in `DORIC_STORAGE_PATH`, the current directory
-    /// when the variable is unset or empty, off the runtime's threads, and logs
-    /// [`doric_sqlite::sqlite_version`] at `info` ([`Engine::activate_from`]).
+    /// Opens the store ([`doric_sqlite::open`]) in `DORIC_STORAGE_PATH`, the
+    /// current directory when the variable is unset or empty, off the
+    /// runtime's threads, and logs [`doric_sqlite::sqlite_version`] at `info`
+    /// ([`Engine::activate_from`]).
     ///
     /// # Errors
     ///
-    /// `invalid_input` (`details.variable` `"DORIC_SQLITE_CACHE"`) for a
-    /// value other than unset, empty, `0` or `1`, before the open; then the
-    /// error of [`doric_sqlite::open`]: `storage_path_missing`,
+    /// The error of [`doric_sqlite::open`]: `storage_path_missing`,
     /// `storage_format_unsupported` or `internal`. The store then stays unset.
     async fn activate(&self) -> Result<(), ContractError> {
-        self.activate_from(
-            std::env::var_os("DORIC_STORAGE_PATH"),
-            std::env::var_os(CACHE_VARIABLE),
-        )
-        .await
+        self.activate_from(std::env::var_os("DORIC_STORAGE_PATH"))
+            .await
     }
 
     /// Closes the store, if one is open ([`SqliteEngine::close`]): it waits for
@@ -188,22 +177,15 @@ impl Bundle for Engine {
 }
 
 impl Engine {
-    /// The activation with `storage_path` as `DORIC_STORAGE_PATH` and `cache`
-    /// as [`CACHE_VARIABLE`]: first [`Headers::from_setting`]`(cache)`, then
-    /// the open as [`Bundle::activate`] gives it; on success the cache and
-    /// the store are set, each once. A second activation keeps the first
-    /// cache and store, and closes the store it opened.
+    /// The activation with `storage_path` as `DORIC_STORAGE_PATH`: the open
+    /// as [`Bundle::activate`] gives it; on success the store is set, once. A
+    /// second activation keeps the first store, and closes the store it
+    /// opened.
     ///
     /// # Errors
     ///
-    /// The `invalid_input` of [`Headers::from_setting`], before any open and
-    /// with nothing set; then the errors of [`Bundle::activate`].
-    async fn activate_from(
-        &self,
-        storage_path: Option<OsString>,
-        cache: Option<OsString>,
-    ) -> Result<(), ContractError> {
-        let headers = Headers::from_setting(cache.as_deref())?;
+    /// The errors of [`Bundle::activate`].
+    async fn activate_from(&self, storage_path: Option<OsString>) -> Result<(), ContractError> {
         let dir = storage_path
             .filter(|path| !path.is_empty())
             .map_or_else(|| PathBuf::from("."), PathBuf::from);
@@ -218,20 +200,13 @@ impl Engine {
             Level::Info,
             &format!("SQLite {} is open.", doric_sqlite::sqlite_version()),
         );
-        // A second activation keeps the first cache and store, so the store
-        // it opened is closed.
-        let _ = self.headers.set(headers);
+        // A second activation keeps the first store, so the store it opened
+        // is closed.
         let _ = self.dir.set(dir);
         if let Err(store) = self.store.set(store) {
             store.close().await;
         }
         Ok(())
-    }
-
-    /// The cache the activation chose; [`Headers::default`] when none has
-    /// been set, as for a store set without an activation, which then stays.
-    fn headers(&self) -> &Headers {
-        self.headers.get_or_init(Headers::default)
     }
 
     /// The open store.
@@ -260,9 +235,7 @@ impl Engine {
     ) -> Result<RegisterResponse, ContractError> {
         let registration = register::prepare(&call.caller, request.descriptor_set)?;
         let store = self.store()?;
-        let applied = self
-            .registrations
-            .apply(store, self.headers(), registration);
+        let applied = self.registrations.apply(store, registration);
         for rebuilt in applied.await? {
             doric_bundle::log(Level::Info, &rebuilt.to_string());
         }
@@ -301,7 +274,7 @@ impl Engine {
         tokio::select! {
             biased;
             () = call.cancelled.cancelled() => Err(kv::cancelled()),
-            position = commit::apply(store, &self.clock, &self.pools, self.headers(), &self.watchers, items) => {
+            position = commit::apply(store, &self.clock, &self.pools, &self.watchers, items) => {
                 Ok(CommitResponse { position: position? })
             }
         }
@@ -415,7 +388,7 @@ impl Engine {
         if call.cancelled.is_cancelled() {
             return Err(kv::cancelled());
         }
-        let hash = blobs::put(self.store()?, self.headers(), bundle, upload).await?;
+        let hash = blobs::put(self.store()?, bundle, upload).await?;
         Ok(PutBlobResponse { hash })
     }
 
@@ -458,7 +431,7 @@ impl Engine {
         request: DeleteBlobRequest,
     ) -> Result<DeleteBlobResponse, ContractError> {
         let bundle = doric_storage::bundle(&call.caller)?;
-        blobs::delete(self.store()?, self.headers(), bundle, &request.hash).await?;
+        blobs::delete(self.store()?, bundle, &request.hash).await?;
         Ok(DeleteBlobResponse {})
     }
 }
@@ -473,9 +446,8 @@ mod watch;
 #[allow(dead_code, reason = "the library's tests use the rest")]
 mod testing;
 
-/// S77a2: the `Register` handler's order of checks (T4.24); S77a4b: the
-/// activation's cache setting; S78b: `Health` and the blob methods before
-/// activation.
+/// S77a2: the `Register` handler's order of checks (T4.24); S78b: `Health`
+/// and the blob methods before activation.
 #[cfg(test)]
 #[path = "main/tests.rs"]
 mod tests;

@@ -88,11 +88,11 @@ of the spec's "Storage until phase 4", and `models.provider/v1`, the
 it is a basic host contract (S75a), `sqlite`'s native manifest provides it (S75b), and it
 serves only the caller `doric` (S76)), the `storage/v2` contract of phase 4
 (`doric/storage/v2/storage.proto`, `doric.storage.v2`, `2.0.0`, with
-`Register`, `Get`, `Query`, `Read`, `Commit`, `Health`, `PutBlob`, `GetBlob`
-and `DeleteBlob`; `RegisterRequest` carries a descriptor set of at most 2 MiB,
+ten methods, `Register`, `Get`, `Query`, `Read`, `Commit`, `Health`, `PutBlob`,
+`GetBlob`, `DeleteBlob` and `Watch`; `RegisterRequest` carries a descriptor set of at most 2 MiB,
 `QueryPage` has `optional string next_cursor`, and the other messages are
 copied from `storage/v1`; a basic host contract since S77a1, whose `Register`
-`sqlite` serves since S77a2, `Commit` and `Get` since S77a3a and `Query` since S77a3b, beside `storage/v1`, which `core`
+`sqlite` serves since S77a2, `Commit` and `Get` since S77a3a, `Query` since S77a3b, `Read` and `Commit`'s stream items since S78a, `Health`, `PutBlob`, `GetBlob` and `DeleteBlob` since S78b and `Watch` since S78c, so all ten, beside `storage/v1`, which `core`
 serves until S84), and the
 conformance suite's `doric/conformance/v1/conformance.proto`), with `buf/validate` and `google/rpc`, as `bundle/contracts/gen/<path>_pb.js`, resolved like the
 code entries. The `generate-proto` target writes it into `src/contracts/gen/`,

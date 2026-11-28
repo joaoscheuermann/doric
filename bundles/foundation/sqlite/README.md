@@ -10,11 +10,11 @@ SQLite file, through `rusqlite` 0.43.0 with SQLite bundled, and only to the
 caller `doric`, the platform. It holds all of storage (A79): the engine
 `doric-sqlite` reads no value, and `doric-storage` decodes values with each
 bundle's descriptors (`storage/src/schema.rs`), owns the index-key encoding
-(`storage/src/keys.rs`) and serves `storage/v2`'s `Register` (S77a2), `Commit` and `Get` (S77a3a), `Query` (S77a3b), `Read` and `Commit`'s stream items (S78a), and `PutBlob`, `GetBlob`, `DeleteBlob` and `Health` (S78b), and `Watch` (S78c), and keeps the writer's cache of document headers and stream heads (A80, S77a4b, S78a), which `DORIC_SQLITE_CACHE` turns on or off. It is section
+(`storage/src/keys.rs`) and serves `storage/v2`'s `Register` (S77a2), `Commit` and `Get` (S77a3a), `Query` (S77a3b), `Read` and `Commit`'s stream items (S78a), and `PutBlob`, `GetBlob`, `DeleteBlob` and `Health` (S78b), and `Watch` (S78c). Every write reads document headers and stream heads from SQLite inside the writer's transaction; the cache of A80, which `DORIC_SQLITE_CACHE` turned on or off, was removed by S78d (A84), and `DORIC_SQLITE_CACHE` is no longer read. It is section
 17, "The engine", of
 [`docs/designs/grpc-processes.md`](../../../docs/designs/grpc-processes.md);
 see [`docs/features/bundle-processes.md`](../../../docs/features/bundle-processes.md),
-"Phase 4" (slices S74a, S76, S77a1, S77a2, S77a3a, S77a3b, S77a4a and S77a4b).
+"Phase 4" (slices S74a, S76, S77a1, S77a2, S77a3a, S77a3b, S77a4a, S77a4b, S78a, S78b, S78c and S78d).
 
 - [`engine/`](engine), the library `doric-sqlite`: `SqliteEngine`, the traits
   `KvEngine`, `ReadTxn` and `WriteTxn`, the types `KeyRange` and `Entry`,
@@ -26,18 +26,18 @@ see [`docs/features/bundle-processes.md`](../../../docs/features/bundle-processe
   `schema` (with `Pools`, the descriptor-pool cache), `layout` (the key
   builders `document`, `chunk`, `index` and `prefixed`), `register`, `commit`
   (`Batch`, `Items`, `apply`, `Clock`), `documents` (`check`, `get`), `query`
-  (`LIMIT`, `Plan`, `check`, `page`) and `cache` (`Headers`, `Staged`,
-  `Header`), and the helper `bundle`;
+  (`LIMIT`, `Plan`, `check`, `page`), `streams` (`check`, `checked`, `read`),
+  `blobs`, `health` and `watch`, and the helper `bundle`;
   [`storage/src/main.rs`](storage/src/main.rs) serves
   `/doric.storage.v2.StorageService/Register`, `/Commit`, `/Get`, `/Query`,
-  `/Read`, `/PutBlob`, `/GetBlob`, `/DeleteBlob` and `/Health`, each
-  `unavailable` before activation; `storage/src/main/reads.rs` holds
-  `stream_read` and `ANSWERS`, `storage/src/blobs.rs` the blobs and
+  `/Read`, `/PutBlob`, `/GetBlob`, `/DeleteBlob`, `/Health` and `/Watch`, each
+  `unavailable` before activation once the caller and the request pass their
+  checks; `storage/src/main/reads.rs` holds `stream_read`, `ANSWERS` and
+  `query_documents`, `storage/src/blobs.rs` the blobs and
   `storage/src/health.rs` `Health`, from `statvfs` on `DORIC_STORAGE_PATH`.
   `storage/src/watch.rs` holds `Watch`'s subscribers (a buffer of 1,024 each;
   one that falls behind ends with `unavailable`), published after `COMMIT`, and
-  `storage/src/main/watch.rs` its handler; `query_documents` is in
-  `main/reads.rs` (S78c).
+  `storage/src/main/watch.rs` its handler (S78c).
 - [`proto/doric/storage/layout/v1/layout.proto`](proto/doric/storage/layout/v1/layout.proto),
   package `doric.storage.layout.v1`: `TypeDeclaration`, `IndexDeclaration` and
   `DocumentHeader`, `StreamHead`, `StreamEntryHeader`, `TruncationMark` and
@@ -50,11 +50,8 @@ The store is `$DORIC_STORAGE_PATH/doric.sqlite3`, beside its `-wal` and `-shm`
 files. When `DORIC_STORAGE_PATH` is unset or empty, the directory is the current
 directory. The directory must exist; the engine never creates it.
 
-`DORIC_SQLITE_CACHE` turns the cache of document headers on or off
-(`storage/src/cache.rs`): unset, empty or `1` turns it on, `0` turns it off, so
-every storage write reads SQLite. Activation reads it first, before it opens
-anything; any other value, a value that is not UTF-8 included, fails the
-activation (see "Errors").
+Activation reads only `DORIC_STORAGE_PATH`. `DORIC_SQLITE_CACHE`, which turned
+the cache of document headers on or off, is no longer read since S78d (A84).
 
 Format 1 (`PRAGMA user_version = 1`) holds two tables:
 
@@ -62,7 +59,7 @@ Format 1 (`PRAGMA user_version = 1`) holds two tables:
 - `kv_position (id INTEGER NOT NULL PRIMARY KEY CHECK (id = 1), position INTEGER NOT NULL)`,
   one row, starting at position 0.
 
-After checking `DORIC_SQLITE_CACHE`, activation opens the store off the runtime's threads, in this order
+Activation opens the store off the runtime's threads, in this order
 ([`store.rs`](engine/src/store.rs)):
 
 1. the directory must be a directory, else `storage_path_missing`;
@@ -76,50 +73,24 @@ After checking `DORIC_SQLITE_CACHE`, activation opens the store off the runtime'
 
 It then logs `SQLite <version> is open.` at `info`. A failed activation leaves
 the engine without a store. A second `Activate` keeps the first store and closes
-the one it opened; it also keeps the first cache, so a new `DORIC_SQLITE_CACHE`
-setting is ignored.
+the one it opened.
 
 ## Structure
 
 - [`storage/src/main.rs`](storage/src/main.rs): the `Bundle` (activation,
-  stop) and the `storage/v2` `Register`, `Commit`, `Get` and `Query` handlers
-  (`query_documents` serves `Query`); its `Engine` holds the clock and the pool
-  cache, answers through a channel of 16 (`ANSWERS`), and its private
-  `stream_read` runs the read of `Get` and of `Query`. Its `headers`, an
-  `Arc<OnceLock<Headers>>`, is set by the private `activate_from(storage_path,
-cache)`, which `activate` calls with `std::env::var_os`, and `headers()`
-  falls back to the default cache. Its tests are in
+  stop) and the `storage/v2` handlers `Register`, `Commit`, `Get`, `Read`,
+  `Health`, `PutBlob`, `GetBlob` and `DeleteBlob`; its `Engine` holds the
+  clock, the pool cache and the `Watchers`. Its private
+  `activate_from(storage_path)` is what `activate` calls with
+  `std::env::var_os("DORIC_STORAGE_PATH")`. Its tests are in
   [`storage/src/main/tests.rs`](storage/src/main/tests.rs), declared with
   `#[path]`.
-- [`storage/src/cache.rs`](storage/src/cache.rs): `Headers`, the cache of
-  document headers (A80) that storage writes read on the writer thread: each
-  `Header` is a `DocumentHeader` without `chunk`, in an LRU bounded at
-  `CACHE_BYTES` (64 MiB), each entry counting its key, its `index_keys` and
-  `ENTRY_BYTES` (64), the least recently used evicted first. An entry larger
-  than the bound is not cached, a bound of 0 caches nothing, an absent document
-  is never cached, and clones share one cache. `Headers::from_setting` reads
-  `DORIC_SQLITE_CACHE` (`CACHE_VARIABLE`). `begin(txn)` clears the cache when
-  the transaction's `foreign_write()` is true and returns a `Staged` overlay:
-  `header` reads what it staged, then its clean reads, then the cache (skipped
-  for a forgotten key), then the transaction, keeping a transaction read as
-  clean unless the key was forgotten; `put` and `forget` stage; `finish` queues
-  the puts, removals and clean reads on `on_commit`, so a rollback drops them.
-  A cache hit still updates the LRU recency inside the transaction, which a
-  rollback does not undo; that changes only the eviction order.
-  `Headers::suspend()` answers a `Suspension`: while one is held, `begin`
-  clears the cache, and dropping it ends the suspension and clears the cache
-  again. `storage/src/kv.rs`'s `commit` takes one, after `finish` and
-  `store()`, when `outside_platform(request)` is true (a put, delete or
-  positioned put outside `doric/`, or a clear range not within
-  `["doric/","doric0")`), since such a commit does not change `data_version`;
-  on a cancel it is forgotten, so the cache stays off for that process (S77b1). `Commit` reads expects,
-  deletes and puts through it, stages puts, forgets deletes and calls `finish`
-  only on success; `Register` calls `begin` first, and its rebuild reads full
-  headers through `stored_header`, writes them with `txn.put` and forgets each
-  header it rewrites. Every `KvEngine::write` of `doric-storage` calls `begin`
-  first, whether it touches headers or not, since the writer stores
-  `data_version` after every write (S78's appends and S87's `Import`
-  included). `Get` and `Query` never use it.
+- [`storage/src/main/reads.rs`](storage/src/main/reads.rs): `stream_read`,
+  which runs the read of `Get`, `Query`, `Read` and `GetBlob` in one read
+  transaction in a spawned task and answers through a channel of 16
+  (`ANSWERS`), and `query_documents`, which serves `Query`.
+- [`storage/src/main/watch.rs`](storage/src/main/watch.rs): the `Watch`
+  handler.
 - [`storage/src/kv.rs`](storage/src/kv.rs): the three handlers. Each refuses
   any caller but `doric` with `not_owner`, message
   `storage.kv/v1 serves only the platform.` and no details, before any limit,
@@ -155,7 +126,15 @@ cache)`, which `activate` calls with `std::env::var_os`, and `headers()`
   `updatedAt` clock.
 - [`storage/src/commit/transaction.rs`](storage/src/commit/transaction.rs):
   `plan`, the index keys computed in the read transaction, and `write`, the
-  batch in the writer's transaction (expects, deletes, puts).
+  batch in the writer's transaction (expects, deletes, puts), each header read
+  through `documents::stored_header` inside the transaction, which sees the
+  transaction's own writes, so no overlay is kept (S78d, A84).
+- [`storage/src/commit/streams.rs`](storage/src/commit/streams.rs): the batch's
+  stream items in the writer's transaction (drops, truncate, appends), each
+  head read through `streams::last_sequence` inside the transaction (S78d).
+- [`storage/src/streams.rs`](storage/src/streams.rs): `checked`, a stream id's
+  checks; `check` and `read`, `Read`'s checks and read; `last_sequence`, a
+  stream's stored head or 0.
 - [`storage/src/documents.rs`](storage/src/documents.rs): `check` and `get`, the
   `Get` handler's checks and read, and the `pub(crate)` trait `DocumentItems`
   and `emit_document`, which `Get` and `Query` share to answer a document and
@@ -210,7 +189,9 @@ cache)`, which `activate` calls with `std::env::var_os`, and `headers()`
   `COMMIT`, and a rollback drops them. `foreign_write` tells whether
   `PRAGMA data_version` changed since the writer's last `KvEngine` write; a
   `storage.kv/v1` commit neither reads nor stores it, so it changes neither the
-  answer nor what it compares against.
+  answer nor what it compares against. Since S78d removed the cache, no caller of
+  `doric-storage` reads `foreign_write`; it and the `data_version` tracking are
+  kept, unused (S78d's Q1).
 - [`engine/src/readers.rs`](engine/src/readers.rs): four read-only connections, each used by one
   blocking task at a time, so reads never wait for the writer and each read is
   a WAL snapshot. `Get` and `Range` answer through bounded channels of 16, so a
@@ -242,10 +223,10 @@ The engine logs at `warn`:
 
 ### Activation
 
-- `invalid_input` with `details.variable` `DORIC_SQLITE_CACHE`: an activation
-  whose `DORIC_SQLITE_CACHE` is not unset, empty, `0` or `1`, with the message
-  `DORIC_SQLITE_CACHE is "0" or "1"; "<value>" is not.` (a non-UTF-8 value
-  shown lossily); it is checked before any open, and nothing is set.
+Activation fails only as the file's open does (`storage_path_missing`,
+`storage_format_unsupported`, `internal`, below). The `invalid_input` of
+`DORIC_SQLITE_CACHE` is gone with the cache (S78d, A84): the variable is no
+longer read.
 
 ### `storage.kv/v1`
 
@@ -337,11 +318,17 @@ successful activation, then `apply` on the store.
 `Commit` (`commit.rs`, `commit/transaction.rs`) checks in this order:
 
 1. `not_owner`: the caller `doric`.
-2. Per item, as it arrives: an item with no case set; an event with no
-   append before it; a chunk with no put or event before it; a chunk outside 1 byte to 1 MiB; the type's length, its namespace
-   (`not_owner`), the id's length; an expected revision not a whole number in
-   0..=u32::MAX; then `limit_exceeded` `"batch"` for the item count, and for a
-   chunk `"document"`, then `"batch"`.
+2. Per item, as it arrives (`commit.rs:121-140`): an item with no case set;
+   an item other than `event` after an `append` (`An append needs at least one
+event.`); an event with no append or event before it; a chunk with no put or
+   event before it; a chunk or event outside 1 byte to 1 MiB; for an expect,
+   put or delete, the type's length, its namespace (`not_owner`), the id's
+   length; for a `dropStream`, `truncate` or `append`, the stream id's length
+   (`invalid_input`), its form (`invalid_stream`), then its owner
+   (`not_owner`); an expected revision, a truncate's `afterSequence` or an
+   append's `expectedSequence` not a whole number in 0..=u32::MAX, then a
+   second `truncate`; then `limit_exceeded` `"batch"` for the item count, and
+   for a chunk `"document"`, for an event `"append"`, then `"batch"`.
 3. When the stream ends: `cancelled` if the call was cancelled, then an empty
    batch.
 4. `unavailable` before a successful activation.
@@ -353,7 +340,12 @@ successful activation, then `apply` on the store.
    `invalid_input`, `invalid_index_value` or `limit_exceeded` `"indexKey"`,
    before any `revision_conflict`; then expects (`revision_conflict` with `type`, `id`,
    `expected`, `actual`), deletes, and puts (`unique_conflict` with `type` and
-   `index`, checked per put against the state at that moment).
+   `index`, checked per put against the state at that moment); then drops, the
+   truncate (`invalid_input` with `stream`, `afterSequence` and `lastSequence`
+   for a truncate past the stream's last sequence) and appends
+   (`sequence_conflict` with `stream`, `expected` and `actual` for the first
+   append whose expected sequence is not the stream's). Each header and head is
+   read inside the writer's transaction (S78d).
 
 `internal` answers a stored schema, declaration or header that is missing or
 does not decode, and a revision past u32::MAX; `Get` also answers it for a
@@ -418,6 +410,38 @@ id for a non-unique one. Ties on a non-unique index sort by id, bytewise.
   that does not decode (`A stored document header does not decode: <error>.`),
   through `emit_document` and `stored_header` (`documents.rs`).
 
+### `storage/v2` `Read`, `PutBlob`, `GetBlob`, `DeleteBlob`, `Health` and `Watch`
+
+Each checks the caller first: `doric` is `not_owner`
+(`doric_storage::bundle`). Then, in this order:
+
+- `Read` (`main.rs`, `streams.rs`): no `streamRead` (`invalid_input`); the
+  stream id's length (`invalid_input`), its form (`invalid_stream`), its owner
+  (`not_owner`); an `afterSequence` not a whole number in 0..=u32::MAX, a
+  `limit` of 0 or less (`invalid_input`); then `unavailable` before activation;
+  then, in one read transaction (`main/reads.rs`'s `stream_read`), an
+  `afterSequence` above the stream's last sequence (`invalid_input` with
+  `stream`, `afterSequence` and `lastSequence`), before any item, and
+  `internal` for a stored head, entry or mark that does not decode.
+- `PutBlob` (`main.rs`, `blobs.rs`): each chunk as it arrives,
+  `limit_exceeded` `"blob"` once the bytes pass 33,554,432, or the stream's
+  `Err` item; then `cancelled` if the call was cancelled; then `unavailable`
+  before activation; then the errors of the write.
+- `GetBlob` (`main.rs`, `blobs.rs`): `unavailable` before activation; then, in
+  one read transaction, a malformed or unknown hash is `head { found: false }`
+  and no error; `internal` for a missing chunk or a header that does not decode.
+- `DeleteBlob` (`main.rs`, `blobs.rs`): `unavailable` before activation; a
+  malformed or unknown hash is a no-op.
+- `Health` (`main.rs`): `unavailable` before activation; a failed `statvfs` is
+  no error but `status` `"unavailable"` with the reason `storage_unmeasurable`;
+  `internal` (`The measure failed: <error>.`) when the measuring task fails.
+- `Watch` (`main/watch.rs`, `watch.rs`): each type, its length
+  (`invalid_input`), then its namespace (`not_owner`); then each stream, its
+  length (`invalid_input`), its form (`invalid_stream`), its owner
+  (`not_owner`); then `unavailable` before activation. A subscribed watcher that
+  falls behind by 1,024 responses (`BUFFER`) gets the responses it holds, then
+  `unavailable` with the message `Watch fell behind.`
+
 ## Limits
 
 | Limit         | Value            | Of                                                              |
@@ -440,8 +464,14 @@ document id of at most 512 bytes, an index key of at most 2,048 bytes without
 its prefix (`indexKey`), and stored chunks of 983,040 bytes. A `Query` page
 holds at most 1000 documents (`LIMIT`, `storage/src/query.rs`). A `Register`
 rebuild covers at most 100,000 documents (`rebuild`, `REBUILD_DOCUMENTS`,
-`storage/src/register.rs`; RK27's measurement set it, AC4.25). The cache of document headers holds at most
-67,108,864 bytes (64 MiB, `CACHE_BYTES`, `storage/src/cache.rs`).
+`storage/src/register.rs`; RK27's measurement set it, AC4.25).
+
+An appended event holds at most 3,145,728 bytes (`APPEND_BYTES`,
+`storage/src/commit.rs`, `details.limit` `"append"`); `append` items, like
+`chunk` items, are not counted toward the 10,000 items; each event is. A blob holds at most
+33,554,432 bytes (`BLOB_BYTES`, `storage/src/blobs.rs`, `details.limit`
+`"blob"`). A `Watch` subscriber holds at most 1,024 unread responses (`BUFFER`,
+`storage/src/watch.rs`).
 
 ## Build and test
 
@@ -472,7 +502,7 @@ not in the composition yet (S84).
 `cargo test --locked -p doric-sqlite -p doric-storage --target-dir dist/target/doric-sqlite`;
 the tests are unit tests in the modules, the prefix checks and their order in
 `engine/src/access.rs` (inline) and `engine/src/limits/tests.rs`, the caller rule in `storage/src/kv.rs`, and
-the 171 lib tests and 11 bin tests of `doric-storage` (and the 63 of
+the 228 lib tests and 13 bin tests of `doric-storage` (and the 63 of
 `doric-sqlite`, in `engine/src/{writer,store,limits,readers}/tests.rs`,
 `engine/src/access.rs` and
 `engine/src/store/foreign.rs`, E1), among them those of `storage/src/keys.rs` (its six `bounds` tests, `:384-495`), `storage/src/schema/tests.rs`,
@@ -481,27 +511,29 @@ the 171 lib tests and 11 bin tests of `doric-storage` (and the 63 of
 `storage/src/register/tests/backfill.rs` (12, the 100,000-document rebuild and
 the 100,001 refusal among them, in the normal suite; the 100,000 documents
 carry empty `DocumentHeader::default()` headers and the change only removes an
-index, so nothing is decoded), `storage/src/cache/tests.rs` (H10, H11 twice and
-H12: the setting and the header), `storage/src/cache/tests/writes.rs` (H1, H2,
-H5–H9, H13: rollback, `storage.kv/v1` commits, the bound and eviction, H5–H7,
-forgotten and rebuilt headers), `storage/src/cache/tests/engines.rs` (H3 and H4, a second engine on
-the file, each with a bound of 4,096 and of 0), `storage/src/cache/tests/suspension.rs`
-(S1, three tests: the cache's suspension),
+index, so nothing is decoded),
 `storage/src/layout/tests.rs`, `storage/src/commit/tests.rs`,
-`storage/src/commit/tests/{apply,conflicts}.rs`, `storage/src/documents/tests.rs`,
+`storage/src/commit/tests/{apply,conflicts}.rs`,
+`storage/src/commit/tests/engines.rs` (S78d's P1 and P2: two engines on one
+file take turns, and no put or append of the other is lost or taken twice;
+T4.3, AC4), `storage/src/{streams,blobs,health,watch}/tests.rs`,
+`storage/src/documents/tests.rs`,
 `storage/src/query/tests/check.rs` (13), `storage/src/query/tests/page.rs` (10)
 and `storage/src/query/tests/paging.rs` (7), with the helpers of
 `storage/src/query/tests.rs` (over the fixture of `storage/src/testing.rs`,
-whose `a.pair/v1` has the non-unique index `byTagTitle[tag, title]`) and the 11 bin tests:
-6 in `storage/src/main/tests.rs` (3 of the order of the `Register` handler's
-checks and 1 of a registration on the open store, moved from `main.rs`, and M1
-and M2 of the `DORIC_SQLITE_CACHE` setting) and 5 inline in
-`storage/src/kv.rs` (`kv::tests`: 3 of the caller rule and 2, S2, of
-`outside_platform`). The handlers `commit_documents` and `get_document` are
+whose `a.pair/v1` has the non-unique index `byTagTitle[tag, title]`) and the 13 bin tests:
+10 in `storage/src/main/tests.rs` (the order of the `Register` handler's
+checks, a registration on the open store, and, from S78b, `Health` and the
+blob methods before activation) and 3 inline in `storage/src/kv.rs`
+(`kv::tests`, the caller rule). S78d deleted M1 and M2 of the
+`DORIC_SQLITE_CACHE` setting, the two S2 tests of `outside_platform` and the
+26 cache tests. The handlers `commit_documents` and `get_document` are
 exercised over gRPC by CL1–CL3 of
-[`storage-client.test.ts`](../../../packages/storage/tests/storage-client.test.ts),
-and all three, `query_documents` included, by the `storage/v2` conformance kit
-(S77b2), whose Q cases run the queries. The engine's behavior over gRPC is tested from TypeScript by
+[`storage-client.test.ts`](../../../packages/storage/tests/storage-client.test.ts);
+they, `query_documents`, `read_stream` and the S78 handlers `put_blob`,
+`get_blob`, `delete_blob` and `health`, by the `storage/v2` conformance kit
+(S77b2, S78), whose Q cases run the queries; and `watch` by
+[`watch.test.ts`](../../../packages/storage/tests/watch.test.ts). The engine's behavior over gRPC is tested from TypeScript by
 `storage:test` in [`packages/storage`](../../../packages/storage/README.md),
 which depends on `sqlite:compile` and spawns the debug binary: the KV
 conformance suite ([`kv.test.ts`](../../../packages/storage/tests/kv.test.ts)),
@@ -515,8 +547,8 @@ and the `storage/v2` conformance kit
 ([`storage.test.ts`](../../../packages/storage/tests/storage.test.ts),
 [`storage-instances.test.ts`](../../../packages/storage/tests/storage-instances.test.ts),
 [`registration.test.ts`](../../../packages/storage/tests/registration.test.ts)),
-`Watch` by [`watch.test.ts`](../../../packages/storage/tests/watch.test.ts),
-none of whose cases is skipped (50, 6 and 8).
+none of whose cases is skipped (50, 6 and 8), and `Watch` by
+[`watch.test.ts`](../../../packages/storage/tests/watch.test.ts).
 The golden file
 [`storage/tests/fixtures/index-keys.json`](storage/tests/fixtures/index-keys.json)
 holds 18 tuples with their bytes, the four platform keys (`layout`,
@@ -567,5 +599,8 @@ the binary `doric-sqlite` and the library `doric_sqlite`.
   the stream heads in the cache.
 - S78b (done): blobs and health.
 - S78c (done): `Watch`; S78 is done.
+- S78d (done, not yet committed): the cache of document headers and stream
+  heads removed (A84); every write reads them inside the writer's transaction,
+  and `DORIC_SQLITE_CACHE` is no longer read.
 - S84: `sqlite` in the composition.
 - S88: read-only mode, with the inspection tool; the spec records the deferral.

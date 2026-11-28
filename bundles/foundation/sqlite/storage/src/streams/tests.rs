@@ -8,7 +8,6 @@ use prost::Message as _;
 
 use super::*;
 use crate::{
-    cache::Headers,
     commit::{self, Batch, Clock, PART_BYTES},
     layout::{self, DocumentHeader},
     schema::Pools,
@@ -86,7 +85,6 @@ async fn commit(
         engine,
         &Clock::default(),
         &Pools::default(),
-        &Headers::default(),
         &crate::watch::Watchers::default(),
         items,
     )

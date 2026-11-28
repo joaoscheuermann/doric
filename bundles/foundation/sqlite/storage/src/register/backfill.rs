@@ -9,7 +9,6 @@ use prost_reflect::DescriptorPool;
 
 use super::{REBUILD_DOCUMENTS, Rebuilt};
 use crate::{
-    cache::Staged,
     commit::transaction::{detailed, internal},
     documents::stored_header,
     keys::{self, Element},
@@ -40,14 +39,13 @@ fn changes<'a>(
 
 /// Rebuilds the indexes of `type_id` when `declared` changes them from
 /// `stored` other than by order, timed; `None` for a reorder or a type with
-/// no documents. Each header it rewrites leaves the cache through `staged`.
+/// no documents.
 ///
 /// # Errors
 ///
 /// The errors of [`rebuild`].
 pub(super) fn rebuilt(
     txn: &mut dyn WriteTxn,
-    staged: &mut Staged,
     bundle: &str,
     type_id: &str,
     pool: &DescriptorPool,
@@ -59,7 +57,7 @@ pub(super) fn rebuilt(
         return Ok(None);
     }
     let started = Instant::now();
-    let documents = rebuild(txn, staged, bundle, type_id, pool, stored, declared)?;
+    let documents = rebuild(txn, bundle, type_id, pool, stored, declared)?;
     Ok((documents > 0).then(|| Rebuilt {
         type_id: type_id.to_owned(),
         documents,
@@ -78,9 +76,8 @@ pub(super) fn rebuilt(
 /// `declared.message_type` only when `declared` has a new or changed index,
 /// and gains the keys of each new or changed index; each header's
 /// `index_keys` is rewritten in `declared`'s index order, an unchanged
-/// index keeping its stored keys, and keeps its revision and `updated_at`;
-/// it is forgotten in `staged`. It holds one stored value in memory at a
-/// time. It writes no declaration.
+/// index keeping its stored keys, and keeps its revision and `updated_at`.
+/// It holds one stored value in memory at a time. It writes no declaration.
 ///
 /// # Errors
 ///
@@ -97,7 +94,6 @@ pub(super) fn rebuilt(
 /// `pool`; the errors of `txn`.
 pub(super) fn rebuild(
     txn: &mut dyn WriteTxn,
-    staged: &mut Staged,
     bundle: &str,
     type_id: &str,
     pool: &DescriptorPool,
@@ -157,7 +153,6 @@ pub(super) fn rebuild(
         header.index_keys = index_keys;
         let document = layout::document(bundle, type_id, id);
         txn.put(&document, &prost::Message::encode_to_vec(&header))?;
-        staged.forget(document);
     }
     match conflict {
         Some((_, error)) => Err(error),

@@ -32,8 +32,11 @@ S78a the engine applies stream items and serves `read`, and since S78b
 `StorageWatch` and `StorageChange` are exported), one change per commit that
 touches a named type or stream, listing only the named entries; a type or
 stream with no message is `invalid_input` on the first step, and a watcher
-that falls behind its buffer of 1,024 ends with `unavailable`; before activation every method answers
-`unavailable`. The client's own refusals, made before any call, are
+that falls behind its buffer of 1,024 ends with `unavailable`. Before the
+engine's activation every method answers `unavailable`, after its own checks:
+the caller `doric` gets `not_owner` first, and each method's request checks
+run before the engine's store is read. A blob over 33,554,432 bytes is
+`limit_exceeded` with `details.limit` `"blob"`, from the engine. The client's own refusals, made before any call, are
 `invalid_input`, and a call's signal or deadline makes it `cancelled` or
 `deadline_exceeded`; `limit_exceeded` (`"descriptorSet"`) comes only from
 `openStorage` and the registration that `TestEngine.storage` shares with it. `storage/testing` adds
@@ -1062,8 +1065,7 @@ There is no in-process `Kv`: a test that needs one opens an engine.
   every call stamped `{ bundleId, generation }` as the router stamps it, so
   its records are under `<bundleId>/`; each call registers again. It rejects
   as `openStorage` does, and with `unavailable` once the engine is closed.
-- `reset()`'s clear writes outside `doric/`, so it suspends and clears the
-  engine's cache of document headers. It also deletes the declarations, but it
+- `reset()`'s clear writes outside `doric/`. It also deletes the declarations, but it
   does not reset the engine's remembered highest generation: after
   `storage(x, f, 2)`, `reset()` and `storage(x, f, 1)`, nothing is registered,
   since generation 1 is below the highest. A test of generations uses a fresh

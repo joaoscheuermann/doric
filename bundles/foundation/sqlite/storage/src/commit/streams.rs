@@ -1,8 +1,8 @@
 //! The stream items of [`super::apply`]'s write transaction, after the puts
 //! and in this order: the drops, the truncate, the appends, then the
 //! truncate's mark, whose `at_sequence` is the stream's head after the
-//! appends. Every head is read and staged through the transaction's
-//! [`Staged`] overlay.
+//! appends. Every head is read from the transaction, which sees its own
+//! writes.
 
 use doric_bundle::ContractError;
 use doric_sqlite::WriteTxn;
@@ -13,9 +13,8 @@ use super::{
     transaction::{detailed, internal},
 };
 use crate::{
-    cache::Staged,
     layout::{self, CHUNK_BYTES, StreamEntryHeader, StreamHead, TruncationMark},
-    streams::past_end,
+    streams::{last_sequence, past_end},
 };
 
 /// The kinds of a stream's records that hold its entries.
@@ -38,7 +37,6 @@ const ENTRY_KINDS: [&str; 2] = ["stream.entry", "stream.chunk"];
 /// `u32::MAX`; the errors of the transaction.
 pub(super) fn write(
     txn: &mut dyn WriteTxn,
-    staged: &mut Staged,
     bundle: &str,
     entries: &[Entry],
     created_at: &str,
@@ -51,14 +49,13 @@ pub(super) fn write(
                 let range = layout::under(bundle, &[kind, stream]);
                 txn.clear_range(&range.start, &range.end)?;
             }
-            staged.forget(head);
         }
     }
 
     let mut mark = None;
     for entry in entries {
         if let Entry::Truncate { stream, after } = entry {
-            let last = staged.head(txn, &layout::head(bundle, stream))?;
+            let last = last_sequence(txn, &layout::head(bundle, stream))?;
             if *after > last {
                 return Err(past_end(stream, "truncated", *after, last));
             }
@@ -79,12 +76,12 @@ pub(super) fn write(
             events,
         } = entry
         {
-            append(txn, staged, bundle, stream, *expected, events, created_at)?;
+            append(txn, bundle, stream, *expected, events, created_at)?;
         }
     }
 
     if let Some((stream, after)) = mark {
-        let at = staged.head(txn, &layout::head(bundle, stream))?;
+        let at = last_sequence(txn, &layout::head(bundle, stream))?;
         let mark = TruncationMark {
             after_sequence: after,
             at_sequence: at,
@@ -96,10 +93,9 @@ pub(super) fn write(
 }
 
 /// Appends `events` to `stream` after its head, which must be `expected`
-/// when it is `Some`, and stages the new head.
+/// when it is `Some`, and writes the new head.
 fn append(
     txn: &mut dyn WriteTxn,
-    staged: &mut Staged,
     bundle: &str,
     stream: &str,
     expected: Option<u32>,
@@ -107,7 +103,7 @@ fn append(
     created_at: &str,
 ) -> Result<(), ContractError> {
     let head = layout::head(bundle, stream);
-    let mut last = staged.head(txn, &head)?;
+    let mut last = last_sequence(txn, &head)?;
     if let Some(expected) = expected
         && expected != last
     {
@@ -152,6 +148,5 @@ fn append(
         last_sequence: last,
     };
     txn.put(&head, &stored.encode_to_vec())?;
-    staged.put_head(head, last);
     Ok(())
 }

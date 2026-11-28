@@ -22,8 +22,6 @@ import { openTestEngineAt, testEngineBinary } from './test-engine.js';
  * `close()` stops the process, removes the directory `openTestEngine` made.
  * A second `close()` answers the first one's promise: while that close is
  * pending it waits for it, and once it has settled it resolves at once.
- * The `reset()` commit writes outside `doric/`, so the engine also empties
- * its cache of document headers: the next storage write reads SQLite.
  */
 export interface TestEngine extends KvTarget {
   /**

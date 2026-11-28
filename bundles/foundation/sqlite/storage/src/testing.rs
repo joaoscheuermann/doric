@@ -190,7 +190,7 @@ pub(crate) async fn register_documents(engine: &doric_sqlite::SqliteEngine, set:
     let registration =
         crate::register::prepare(&caller("a", 1), set).expect("the fixture's set is valid");
     crate::register::Registrations::default()
-        .apply(engine, &Default::default(), registration)
+        .apply(engine, registration)
         .await
         .expect("the fixture's set registers");
 }
